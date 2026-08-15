@@ -42,7 +42,9 @@ import useMeasurement from '../hooks/useMeasurement.js'
 import useFeatureInteraction from '../hooks/useFeatureInteraction.js'
 import useSelectionTools from '../hooks/useSelectionTools.js'
 import useKeyboardShortcuts from '../hooks/useKeyboardShortcuts.js'
-import { DRAWING_TYPES, DRAWING_TYPE_LIST } from '../map/drawingTypes.js'
+import useGeometryEditing from '../hooks/useGeometryEditing.js'
+import { DRAWING_TYPES, DRAWING_TYPE_LIST, colorPatchFor } from '../map/drawingTypes.js'
+import { geometryToWkt4326 } from '../map/drawing.js'
 import './MapPage.css'
 
 const MAP_READY_FALLBACK_MS = 2500
@@ -288,6 +290,106 @@ export default function MapPage() {
     setActivePanel((current) => (current === panelId ? null : panelId))
   }, [])
 
+  const selectedGeometry = selectedFeature ? featureByKey(selectedFeature.key)?.getGeometry() ?? null : null
+
+  /* Ownership-driven UI state. This only decides which controls are offered —
+     the backend independently re-checks ownership on every mutation and
+     answers 403, so nothing here is load-bearing for security. */
+  const canManageSelected = canManageDrawing({ isAdmin, userId }, selectedFeature)
+  const canManageSelection = canManageAll({ isAdmin, userId }, selectedFeatures)
+  const foreignSelectedCount = selectedFeatures.filter(
+    (item) => !canManageDrawing({ isAdmin, userId }, item),
+  ).length
+
+  /* --- Geometry edit session ----------------------------------------------
+     `workspaceMode.isEditing` is the single switch: it turns the OpenLayers
+     Modify/Translate interactions on here and simultaneously makes every other
+     interaction (draw, measure, box-select) inactive, because each of those is
+     derived from a mode that is no longer current. */
+
+  const editingFeature = workspaceMode.isEditing && selectedFeature
+    ? featureByKey(selectedFeature.key)
+    : null
+
+  const geometryEditing = useGeometryEditing(mapInstance, {
+    active: workspaceMode.isEditing,
+    feature: editingFeature,
+  })
+
+  const { cancel: revertGeometry, commit: commitGeometry } = geometryEditing
+  const { startEditing, stopEditing } = workspaceMode
+  const { updateFeature } = workspace
+
+  const startEdit = useCallback(() => {
+    if (!canManageSelected) return
+    startEditing()
+  }, [canManageSelected, startEditing])
+
+  /** "İptal": geometry snapshot is restored; name/colour drafts simply die. */
+  const cancelEdit = useCallback(() => {
+    revertGeometry()
+    stopEditing()
+  }, [revertGeometry, stopEditing])
+
+  /**
+   * "Kaydet": name, colour and geometry travel in ONE request, so the record
+   * can never end up half-updated. Colour is expanded into the style columns
+   * the type actually has (stroke always, fill where supported) by the same
+   * helper the attribute popup uses.
+   */
+  const saveEdit = useCallback(
+    async ({ name, color }) => {
+      const feature = selectedFeature ? featureByKey(selectedFeature.key) : null
+      if (!feature) return
+
+      const ok = await updateFeature(selectedFeature.key, {
+        name,
+        style: colorPatchFor(selectedFeature.type, color),
+        wkt: geometryToWkt4326(feature.getGeometry()),
+      })
+
+      if (ok) {
+        // The new shape is now the persisted one; drop the undo snapshot so a
+        // later cancel cannot reinstate a geometry the database no longer has.
+        commitGeometry()
+        stopEditing()
+      }
+      // On failure the session stays open with the user's edits intact.
+    },
+    [selectedFeature, featureByKey, updateFeature, commitGeometry, stopEditing],
+  )
+
+  // Losing the selection mid-edit (delete, deselect) must not strand the map in
+  // edit mode with nothing to edit.
+  useEffect(() => {
+    if (workspaceMode.isEditing && !selectedFeature) stopEditing()
+  }, [workspaceMode.isEditing, selectedFeature, stopEditing])
+
+  /* --- Çizimlerim row actions ----------------------------------------------
+     Both route through the SAME state the map uses: the row selects the
+     drawing first, then the shared edit / delete flow takes over. That is what
+     keeps the sidebar and the map showing one selection rather than two. */
+
+  const editFromList = useCallback(
+    (key) => {
+      selectAndZoom(key)
+      // The panel is covering the map it is about to edit; close it so the
+      // Modify handles are actually reachable.
+      setActivePanel(null)
+      startEditing()
+    },
+    [selectAndZoom, startEditing],
+  )
+
+  const deleteFromList = useCallback(
+    (key) => {
+      const item = workspace.drawings.find((drawing) => drawing.key === key)
+      // Same confirmation dialog as the map's own delete — one flow, so soft
+      // delete can never happen without a confirmation step.
+      if (item) setPendingDelete([item])
+    },
+    [workspace.drawings],
+  )
   /** Esc: abort drawing first, then close whatever is open. */
   const handleEscape = useCallback(() => {
     if (pendingDelete) {
@@ -298,6 +400,12 @@ export default function MapPage() {
     // "discard this shape", not "leave the tool".
     if (workspace.pendingDrawing) {
       workspace.cancelPendingDrawing()
+      return
+    }
+    // An open edit session is the next most modal: Esc abandons the edit and
+    // puts the geometry back, rather than dropping the selection under it.
+    if (workspaceMode.isEditing) {
+      cancelEdit()
       return
     }
     if (workspaceMode.isAnalyzing) {
@@ -326,7 +434,7 @@ export default function MapPage() {
       return
     }
     if (selectionCount > 0) workspace.clearSelection()
-  }, [pendingDelete, workspaceMode, styleTarget, activePanel, selectionCount, workspace])
+  }, [pendingDelete, workspaceMode, styleTarget, activePanel, selectionCount, workspace, cancelEdit])
 
   const handleMeasureShortcut = useCallback(
     () => workspaceMode.selectMeasureTool(workspaceMode.activeMeasureTool ?? 'distance'),
@@ -351,16 +459,7 @@ export default function MapPage() {
     {},
   )
 
-  const selectedGeometry = selectedFeature ? featureByKey(selectedFeature.key)?.getGeometry() ?? null : null
 
-  /* Ownership-driven UI state. This only decides which controls are offered —
-     the backend independently re-checks ownership on every mutation and
-     answers 403, so nothing here is load-bearing for security. */
-  const canManageSelected = canManageDrawing({ isAdmin, userId }, selectedFeature)
-  const canManageSelection = canManageAll({ isAdmin, userId }, selectedFeatures)
-  const foreignSelectedCount = selectedFeatures.filter(
-    (item) => !canManageDrawing({ isAdmin, userId }, item),
-  ).length
   const isStylePanelOpen = styleTarget !== null
   // Only one right-hand surface at a time keeps the map readable on tablets.
   // One selected feature gets the detail panel; two or more get the multi
@@ -506,6 +605,11 @@ export default function MapPage() {
                 onZoom={() => selectedFeature && fitExtent(extentOf(selectedFeature.key))}
                 onEditStyle={openStyleForSelection}
                 onDelete={requestDelete}
+                editing={workspaceMode.isEditing}
+                saving={workspace.isSaving}
+                onStartEdit={startEdit}
+                onSaveEdit={saveEdit}
+                onCancelEdit={cancelEdit}
                 canManage={canManageSelected}
               />
 
@@ -525,10 +629,13 @@ export default function MapPage() {
               <DrawingsPanel
                 open={activePanel === 'drawings'}
                 onClose={() => setActivePanel(null)}
-                groups={workspace.drawingGroups}
+                drawings={workspace.drawings}
                 selectedKeys={selectedKeys}
                 visibility={workspace.visibility}
                 visibleCount={workspace.visibleCount}
+                loading={workspace.loadingDrawings}
+                error={workspace.loadError}
+                onRetry={workspace.reloadDrawings}
                 onSelect={selectAndZoom}
                 onToggleSelect={workspace.toggleSelection}
                 onSelectAllVisible={() => {
@@ -536,6 +643,9 @@ export default function MapPage() {
                   showToast('info', count ? `${count} çizim seçildi.` : 'Görünür çizim yok.')
                 }}
                 onClearSelection={workspace.clearSelection}
+                onEdit={editFromList}
+                onDelete={deleteFromList}
+                canManage={(item) => canManageDrawing({ isAdmin, userId }, item)}
               />
 
               <LayersPanel
@@ -577,13 +687,17 @@ export default function MapPage() {
                   !pendingDelete?.length
                     ? ''
                     : pendingDelete.length === 1
-                      ? `Bu ${DRAWING_TYPES[pendingDelete[0].type].label.toLowerCase()} çizimini (#${pendingDelete[0].databaseId}) silmek istediğinize emin misiniz?`
+                      ? // Naming the drawing makes the dialog specific enough to
+                        // catch a mis-click on the wrong row.
+                        `“${pendingDelete[0].name || DRAWING_TYPES[pendingDelete[0].type].label}” çizimini silmek istediğinize emin misiniz?`
                       : `${pendingDelete.length} çizimi silmek istediğinize emin misiniz?`
                 }
                 description={
                   !pendingDelete?.length
                     ? ''
-                    : `${describeSelection(pendingDelete)} veritabanından kalıcı olarak silinecek. Bu işlem geri alınabilir.`
+                    : // Soft delete: the row stays in the database, so promising
+                      // permanent removal here would be untrue.
+                      `${describeSelection(pendingDelete)} haritadan ve Çizimlerim listesinden kaldırılacaktır. Bu işlem geri alınabilir.`
                 }
                 confirmLabel={pendingDelete?.length > 1 ? `${pendingDelete.length} Çizimi Sil` : 'Sil'}
                 onConfirm={confirmDelete}

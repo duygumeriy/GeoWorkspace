@@ -62,51 +62,16 @@
   gap: 0.35rem;
 }
 
-/* A layer toggled off in the Katmanlar panel: its rows are excluded from
-   "Tüm Görünenleri Seç", so the state has to be visible here too. */
-.drawings-group-hidden {
-  padding: 0.1rem 0.4rem;
-  border-radius: var(--radius-full);
-  background: var(--surface);
-  border: 1px solid var(--border-soft);
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-tertiary);
-}
-
-.drawings-group-head {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  width: 100%;
-  min-height: 44px;
-  padding: 0.4rem 0.5rem;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: var(--surface-soft);
-  color: var(--text-primary);
-  font-size: var(--font-small);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.drawings-group-head:hover {
-  background: var(--surface);
-}
-
+/* Group heading. Groups are flat sections now (sorting decides the order
+   inside them), so this is a heading rather than a collapse toggle. */
 .drawings-group-title {
-  flex: 1;
-  text-align: left;
-}
-
-.drawings-chevron {
-  transform: rotate(90deg);
-  transition: transform var(--transition-fast);
+  margin: 0.35rem 0 0.1rem;
+  padding: 0 0.25rem;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   color: var(--text-tertiary);
-}
-
-.drawings-chevron.is-open {
-  transform: rotate(-90deg);
 }
 
 .drawings-items {
@@ -116,12 +81,6 @@
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
-}
-
-.drawings-item-empty {
-  padding: 0.4rem 0.6rem;
-  font-size: var(--font-small);
-  color: var(--text-tertiary);
 }
 
 .drawings-item {
@@ -145,7 +104,7 @@
   color: var(--text-primary);
 }
 
-.drawings-item.is-selected {
+.drawings-row.is-selected .drawings-item {
   border-color: var(--primary-light);
   background: color-mix(in srgb, var(--primary-light) 12%, transparent);
   color: var(--text-primary);
@@ -195,4 +154,232 @@
 .drawings-item-meta {
   font-size: 11px;
   color: var(--text-tertiary);
+}
+
+/* --- Arama / filtre / sıralama kontrolleri --------------------------------
+   Hepsi sarılabilir (wrap) düzendedir: 320px genişliğindeki bir alt sayfada
+   bile hiçbir kontrol yatay kaydırma üretmeden erişilebilir kalır. */
+
+.drawings-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.drawings-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.drawings-search-input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 40px;
+  /* Sağda temizleme butonuna yer bırakılır. */
+  padding: 0.4rem 2rem 0.4rem 0.7rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-full);
+  background: var(--surface-soft);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--font-small);
+}
+
+.drawings-search-input:focus-visible {
+  outline: none;
+  border-color: var(--border-strong);
+}
+
+.drawings-search-input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.drawings-search-clear {
+  position: absolute;
+  right: 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-full);
+  background: var(--surface);
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.drawings-search-clear:hover {
+  color: var(--text-primary);
+}
+
+.drawings-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.drawings-chip {
+  min-height: 34px;
+  padding: 0.25rem 0.65rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-full);
+  background: var(--surface-soft);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.drawings-chip:hover {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+/* Dolu pill + aria-pressed: seçili durum yalnızca renkle anlatılmaz. */
+.drawings-chip.is-active {
+  background: var(--gradient-primary);
+  border-color: transparent;
+  color: #ffffff;
+}
+
+.drawings-selects {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.drawings-select {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  /* İkisi yan yana sığar, sığmazsa alt alta geçer. */
+  flex: 1 1 8rem;
+  min-width: 0;
+}
+
+.drawings-select-label {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.drawings-select select {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 36px;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--surface-solid);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.drawings-select select:focus-visible {
+  outline: none;
+  border-color: var(--border-strong);
+}
+
+/* --- Durum blokları ------------------------------------------------------ */
+
+.drawings-status {
+  margin: 0;
+  padding: 1rem 0.5rem;
+  text-align: center;
+  font-size: var(--font-small);
+  color: var(--text-secondary);
+}
+
+.drawings-error,
+.drawings-empty-filtered {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 0.5rem;
+}
+
+.drawings-error-text {
+  margin: 0;
+  font-size: var(--font-small);
+  color: var(--danger);
+}
+
+.drawings-retry {
+  min-height: 36px;
+  padding: 0.3rem 0.85rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-full);
+  background: var(--surface-soft);
+  color: var(--text-primary);
+  font-size: var(--font-small);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.drawings-retry:hover {
+  border-color: var(--border-strong);
+}
+
+/* --- Satır + satır aksiyonları -------------------------------------------
+   Aksiyonlar HER ZAMAN görünür; hover ile ortaya çıkmazlar. Dokunmatik
+   cihazda hover yoktur ve gizlenen aksiyon erişilemez olurdu. */
+
+.drawings-row {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  min-width: 0;
+}
+
+.drawings-row .drawings-item {
+  /* Uzun adlar aksiyonları ekran dışına itmesin. */
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.drawings-item-icon {
+  display: inline-flex;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.drawings-item-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1rem;
+  flex-shrink: 0;
+}
+
+.drawings-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* 32px dokunma hedefi: dar panelde üç aksiyon yan yana sığar. */
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.drawings-action:hover {
+  background: var(--surface-soft);
+  color: var(--text-primary);
+}
+
+.drawings-action--danger:hover {
+  background: var(--danger-soft);
+  color: var(--danger);
 }
