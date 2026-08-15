@@ -383,3 +383,67 @@
   background: var(--danger-soft);
   color: var(--danger);
 }
+
+/* --- Colour group headers -------------------------------------------------- */
+
+.drawings-group-swatch {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 0.4rem;
+  border-radius: var(--radius-full);
+  background: var(--dot);
+  /* A ring keeps a light swatch visible against a light surface. */
+  box-shadow: 0 0 0 1px var(--border-soft);
+  vertical-align: middle;
+}
+
+/* --- Card metadata ---------------------------------------------------------
+   Description and badges sit under the existing title/meta lines. Both are
+   capped so a long description or a heavily tagged drawing cannot make one row
+   tower over its neighbours. */
+
+.drawings-item-description {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-top: 0.15rem;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  line-height: 1.4;
+  /* Long unbroken strings (a pasted URL) must wrap rather than widen the row. */
+  overflow-wrap: anywhere;
+}
+
+.drawings-item-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem;
+  margin-top: 0.25rem;
+}
+
+.drawings-badge {
+  padding: 0.05rem 0.35rem;
+  border-radius: var(--radius-full);
+  background: var(--surface-soft);
+  border: 1px solid var(--border-soft);
+  font-size: 10px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  max-width: 9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drawings-badge--category {
+  background: rgba(139, 92, 246, 0.14);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.drawings-badge--more {
+  color: var(--text-tertiary);
+}

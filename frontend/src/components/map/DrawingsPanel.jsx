@@ -11,12 +11,14 @@ import {
   CloseIcon,
 } from '../ui/icons/index.js'
 import {
+  CATEGORY_FILTERS,
   DEFAULT_GROUP,
   DEFAULT_SORT,
   GROUP_OPTIONS,
   SORT_OPTIONS,
   TYPE_FILTERS,
   buildDrawingView,
+  colorFilterOptions,
 } from '../../map/drawingFilters.js'
 import { DRAWING_TYPES } from '../../map/drawingTypes.js'
 import './DrawingsPanel.css'
@@ -69,23 +71,41 @@ export default function DrawingsPanel({
   const [selectMode, setSelectMode] = useState(false)
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('all')
+  const [colorFilter, setColorFilter] = useState('all')
+  const [categoryFilter, setCategoryFilter] = useState('all')
   const [sort, setSort] = useState(DEFAULT_SORT)
   const [group, setGroup] = useState(DEFAULT_GROUP)
 
   const { groups, matchCount } = useMemo(
-    () => buildDrawingView(drawings, { search, type: typeFilter, sort, group }),
-    [drawings, search, typeFilter, sort, group],
+    () =>
+      buildDrawingView(drawings, {
+        search,
+        type: typeFilter,
+        color: colorFilter,
+        category: categoryFilter,
+        sort,
+        group,
+      }),
+    [drawings, search, typeFilter, colorFilter, categoryFilter, sort, group],
   )
+
+  /* Colour options come from the data, so the dropdown only ever offers colours
+     that exist and stays short instead of listing every preset plus every
+     possible custom hex. */
+  const colorOptions = useMemo(() => colorFilterOptions(drawings), [drawings])
 
   if (!open) return null
 
   const total = drawings.length
   const selectedCount = selectedKeys.size
-  const isFiltered = search.trim().length > 0 || typeFilter !== 'all'
+  const isFiltered =
+    search.trim().length > 0 || typeFilter !== 'all' || colorFilter !== 'all' || categoryFilter !== 'all'
 
   const resetFilters = () => {
     setSearch('')
     setTypeFilter('all')
+    setColorFilter('all')
+    setCategoryFilter('all')
   }
 
   return (
@@ -154,6 +174,33 @@ export default function DrawingsPanel({
                   {filter.label}
                 </button>
               ))}
+            </div>
+
+            {/* Colour and category are dropdowns rather than chip rows: the
+                type filter has four fixed options that fit on a phone, these
+                two have as many as the data does. */}
+            <div className="drawings-selects">
+              <label className="drawings-select">
+                <span className="drawings-select-label">Renk</span>
+                <select value={colorFilter} onChange={(event) => setColorFilter(event.target.value)}>
+                  {colorOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.id === 'all' ? option.label : `${option.label} (${option.count})`}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="drawings-select">
+                <span className="drawings-select-label">Kategori</span>
+                <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
+                  {CATEGORY_FILTERS.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
 
             <div className="drawings-selects">
@@ -236,6 +283,16 @@ export default function DrawingsPanel({
                     header simply disappears rather than needing a second layout. */}
                 {entry.label && (
                   <h3 className="drawings-group-title">
+                    {/* Colour groups carry a swatch so the header shows the
+                        colour itself, not only its name — which is the only
+                        way a custom hex reads as anything. */}
+                    {entry.swatch && (
+                      <span
+                        className="drawings-group-swatch"
+                        style={{ '--dot': entry.swatch }}
+                        aria-hidden="true"
+                      />
+                    )}
                     {entry.label} ({entry.items.length})
                   </h3>
                 )}
@@ -287,6 +344,34 @@ export default function DrawingsPanel({
                               {config.label} · {formatShortDate(item.createdDate)}
                               {isHidden && ' · gizli'}
                             </span>
+
+                            {/* One clamped line: enough to recognise the record,
+                                never enough to make the row grow. */}
+                            {item.description && (
+                              <span className="drawings-item-description">{item.description}</span>
+                            )}
+
+                            {(item.category || item.tags?.length > 0) && (
+                              <span className="drawings-item-badges">
+                                {item.category && (
+                                  <span className="drawings-badge drawings-badge--category">
+                                    {item.category}
+                                  </span>
+                                )}
+                                {item.tags?.slice(0, 2).map((tag) => (
+                                  <span key={tag} className="drawings-badge">
+                                    {tag}
+                                  </span>
+                                ))}
+                                {/* The rest are counted rather than listed, so a
+                                    heavily tagged drawing cannot flood the row. */}
+                                {item.tags?.length > 2 && (
+                                  <span className="drawings-badge drawings-badge--more">
+                                    +{item.tags.length - 2}
+                                  </span>
+                                )}
+                              </span>
+                            )}
                           </span>
                         </button>
 

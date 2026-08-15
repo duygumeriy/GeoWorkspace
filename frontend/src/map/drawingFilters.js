@@ -1,4 +1,4 @@
-import { DRAWING_TYPES, DRAWING_TYPE_IDS } from './drawingTypes.js'
+import { COLOR_PRESETS, DRAWING_CATEGORIES, DRAWING_TYPES, DRAWING_TYPE_IDS, normalizeHex } from './drawingTypes.js'
 
 /**
  * The search / filter / sort / group pipeline behind the "Çizimlerim" panel.
@@ -38,6 +38,8 @@ export const GROUP_OPTIONS = Object.freeze([
   { id: 'none', label: 'Gruplama Yok' },
   { id: 'type', label: 'Türe Göre' },
   { id: 'date', label: 'Tarihe Göre' },
+  { id: 'color', label: 'Renge Göre' },
+  { id: 'category', label: 'Kategoriye Göre' },
   /* "Bölgeye Göre" is deliberately absent: the repository has no authoritative
      administrative-boundary dataset, and inventing city/district values — or
      pulling them from an external service — would put unverifiable data in
@@ -45,6 +47,75 @@ export const GROUP_OPTIONS = Object.freeze([
 ])
 
 export const DEFAULT_GROUP = 'none'
+
+/* --- Colour ---------------------------------------------------------------
+   A drawing's colour is its stroke, the one field every type has (fill is
+   absent on lines). Presets get their Turkish name; anything else is a custom
+   colour and is shown by its hex. */
+
+/** Preset hex -> Turkish label, for filter options and group headers. */
+const PRESET_LABELS = new Map(COLOR_PRESETS.map((preset) => [preset.value, preset.label]))
+
+/** The colour a drawing is filtered and grouped by. */
+export function colorOf(item) {
+  return normalizeHex(item?.style?.strokeColor) ?? ''
+}
+
+/** "Mor" for a preset, "#A1B2C3" for a custom colour. */
+export function colorLabel(hex) {
+  return PRESET_LABELS.get(hex) ?? hex
+}
+
+/**
+ * Colour filter options built from the drawings actually present.
+ *
+ * Deliberately data-driven rather than a fixed list of every preset: offering
+ * "Kırmızı" when nothing red exists is a dead end, and a fixed list could never
+ * cover custom colours anyway. The dropdown therefore stays as short as the
+ * dataset allows, which is what keeps it from filling with dozens of chips.
+ *
+ * @returns {Array<{ id: string, label: string, count: number }>} "Tüm Renkler" first.
+ */
+export function colorFilterOptions(drawings) {
+  const counts = new Map()
+
+  for (const item of drawings) {
+    const hex = colorOf(item)
+    if (!hex) continue
+    counts.set(hex, (counts.get(hex) ?? 0) + 1)
+  }
+
+  const options = [...counts.entries()]
+    // Presets first in their declared order, then custom colours by hex, so the
+    // list is stable between renders instead of following insertion order.
+    .sort(([a], [b]) => presetIndex(a) - presetIndex(b) || a.localeCompare(b))
+    .map(([hex, count]) => ({ id: hex, label: colorLabel(hex), count }))
+
+  return [{ id: 'all', label: 'Tüm Renkler', count: drawings.length }, ...options]
+}
+
+function presetIndex(hex) {
+  const index = COLOR_PRESETS.findIndex((preset) => preset.value === hex)
+  // Custom colours sort after every preset.
+  return index === -1 ? COLOR_PRESETS.length : index
+}
+
+/* --- Category -------------------------------------------------------------- */
+
+/** Header and filter label for drawings with no category set. */
+export const NO_CATEGORY_LABEL = 'Kategori Yok'
+
+export const CATEGORY_FILTERS = Object.freeze([
+  { id: 'all', label: 'Tümü' },
+  ...DRAWING_CATEGORIES.map((category) => ({ id: category, label: category })),
+  // Its own option rather than an absence: "which drawings did I forget to
+  // categorise" is a question worth being able to ask.
+  { id: 'none', label: NO_CATEGORY_LABEL },
+])
+
+function categoryOf(item) {
+  return (item?.category ?? '').trim()
+}
 
 /**
  * Folds a string for searching: Turkish-aware lowercasing plus diacritic
@@ -136,27 +207,94 @@ function dateBucketOf(value, now = new Date()) {
 }
 
 /**
+ * The text a search matches against.
+ *
+ * Name, description, category and tags are folded together once per item rather
+ * than tested field by field, so a query like "ankara depo" is checked against
+ * one string. The concatenation is cheap next to the folding itself, and the
+ * whole pipeline still runs over one user's drawings in memory — see the note at
+ * the top of this file for where server-side paging would go if that changes.
+ */
+function searchableText(item) {
+  return foldForSearch(
+    [item.name, item.description, item.category, ...(item.tags ?? [])].filter(Boolean).join(' '),
+  )
+}
+
+/**
  * Runs the whole pipeline.
  *
- *   drawings -> search -> type filter -> sort -> group
+ *   drawings -> search -> type -> colour -> category -> sort -> group
+ *
+ * Filters compose: each narrows what the previous one produced, so a red polygon
+ * in "Rota" is found by any combination of the four. None of them is a security
+ * boundary — the server already returned only this user's active records.
  *
  * @param {Array} drawings descriptors from the workspace
- * @param {{ search?: string, type?: string, sort?: string, group?: string }} controls
+ * @param {{ search?: string, type?: string, color?: string, category?: string,
+ *           sort?: string, group?: string }} controls
  * @returns {{ groups: Array<{ id: string, label: string, items: Array }>,
  *             matchCount: number }}
  *   `groups` always has at least one entry when anything matched; ungrouped
  *   results come back as a single unlabelled group so the panel renders one way.
  */
-export function buildDrawingView(drawings, { search = '', type = 'all', sort = DEFAULT_SORT, group = DEFAULT_GROUP } = {}) {
+export function buildDrawingView(
+  drawings,
+  { search = '', type = 'all', color = 'all', category = 'all', sort = DEFAULT_SORT, group = DEFAULT_GROUP } = {},
+) {
   const needle = foldForSearch(search)
 
   const filtered = drawings.filter((item) => {
     if (type !== 'all' && item.type !== type) return false
+    if (color !== 'all' && colorOf(item) !== color) return false
+
+    if (category !== 'all') {
+      const itemCategory = categoryOf(item)
+      // 'none' is the explicit "uncategorised" bucket, not a category name.
+      if (category === 'none' ? itemCategory !== '' : itemCategory !== category) return false
+    }
+
     if (!needle) return true
-    return foldForSearch(item.name).includes(needle)
+    return searchableText(item).includes(needle)
   })
 
   const sorted = [...filtered].sort(COMPARATORS[sort] ?? COMPARATORS[DEFAULT_SORT])
+
+  if (group === 'color') {
+    /* Groups follow the filtered data, in the same preset-then-custom order the
+       colour dropdown uses. `swatch` travels with the group so the header can
+       show the colour itself rather than only naming it. */
+    const byColor = new Map()
+
+    for (const item of sorted) {
+      const hex = colorOf(item)
+      if (!byColor.has(hex)) byColor.set(hex, [])
+      byColor.get(hex).push(item)
+    }
+
+    return {
+      matchCount: sorted.length,
+      groups: [...byColor.entries()]
+        .sort(([a], [b]) => presetIndex(a) - presetIndex(b) || a.localeCompare(b))
+        .map(([hex, items]) => ({ id: hex, label: colorLabel(hex), swatch: hex, items })),
+    }
+  }
+
+  if (group === 'category') {
+    return {
+      matchCount: sorted.length,
+      groups: [
+        ...DRAWING_CATEGORIES.map((name) => ({
+          id: name,
+          label: name,
+          items: sorted.filter((item) => categoryOf(item) === name),
+        })),
+        // Uncategorised drawings last: they are the leftover bucket, not a
+        // category that competes with the named ones for attention.
+        { id: 'none', label: NO_CATEGORY_LABEL, items: sorted.filter((item) => categoryOf(item) === '') },
+      ].filter((entry) => entry.items.length > 0),
+    }
+  }
 
   if (group === 'type') {
     return {
