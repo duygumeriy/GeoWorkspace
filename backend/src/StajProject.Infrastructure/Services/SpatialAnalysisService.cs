@@ -21,6 +21,19 @@ namespace StajProject.Infrastructure.Services;
 /// ödev kriteri "objelerin tamamen kapsanması gerekmez, ufak bir kesişim dahi
 /// yeterlidir" olduğu için sınıra değen kayıtlar da sayılmalıdır.
 /// </para>
+/// <para>
+/// <b>Veri kümesi.</b> Sorgular <see cref="DrawingScopes.InventoryScope"/>
+/// üzerinden yürür: analiz <b>paylaşılan envanter</b> kümesine bakar, çağıranın
+/// kendi çizimlerine değil. Haritanın kullandığı kullanıcı bazlı kapsam
+/// (<see cref="DrawingScopes.UserMapScope"/>) buraya <b>bilinçli olarak</b>
+/// uygulanmaz; uygulansaydı "bu alan kaç envanter kaydına değiyor" sorusunun
+/// cevabı kullanıcıdan kullanıcıya değişir ve önceki ödevin davranışı bozulurdu.
+/// </para>
+/// <para>
+/// Bu, veri sızıntısı değildir: uçtan yalnızca <b>sayılar</b> döner
+/// (<see cref="IntersectionAnalysisResponse"/>), hiçbir zaman çizim satırı,
+/// geometry'si, adı veya sahibi dönmez.
+/// </para>
 /// </summary>
 public class SpatialAnalysisService : ISpatialAnalysisService
 {
@@ -44,23 +57,25 @@ public class SpatialAnalysisService : ISpatialAnalysisService
             return ServiceResult<IntersectionAnalysisResponse>.Failure(parsed.Error!);
         }
 
+        /* Kendi kendini kesen (bowtie) bir halka PostGIS tarafında
+           TopologyException'a (500) yol açardı. Bu kontrol artık
+           WktGeometryParser içindedir — kayıt yolu da aynı kuralı uyguladığı
+           için tek yerde durur ve burada tekrarlanmaz: geçersiz poligon zaten
+           yukarıdaki Parse çağrısında 400 ile geri döner. */
         var polygon = parsed.Value!;
 
-        // Kendi kendini kesen (bowtie) bir halka PostGIS tarafında
-        // TopologyException'a yol açar; 500 yerine anlaşılır bir 400 döndürülür.
-        if (!polygon.IsValid)
-        {
-            return ServiceResult<IntersectionAnalysisResponse>.Failure(
-                "Geçersiz poligon: kenarları kendisiyle kesişiyor. Lütfen alanı yeniden çizin.");
-        }
-
+        /* InventoryScope: sahiplik filtresi YOK. Bu çağrılar paylaşılan envanteri
+           sayar; harita sorgusunun UserMapScope'u buraya taşınmamalıdır. */
         var pointCount = await _dbContext.Points
+            .InventoryScope()
             .CountAsync(entity => entity.Geometry.Intersects(polygon), cancellationToken);
 
         var lineCount = await _dbContext.Lines
+            .InventoryScope()
             .CountAsync(entity => entity.Geometry.Intersects(polygon), cancellationToken);
 
         var polygonQuery = _dbContext.Polygons
+            .InventoryScope()
             .Where(entity => entity.Geometry.Intersects(polygon));
 
         // Yeni kaydedilen poligon kendi analizini çalıştırdığında kendisiyle

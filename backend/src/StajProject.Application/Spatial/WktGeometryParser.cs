@@ -66,6 +66,24 @@ public static class WktGeometryParser
                 "Metrik koordinatlar (ör. EPSG:3857) sadece SRID etiketlenerek kabul edilmez.");
         }
 
+        /* Topolojik geçerlilik. NetTopologySuite'in IsValid'i kendisiyle kesişen
+           halkaları (bowtie), bozuk/kapanmamış ring'leri ve benzeri hatalı
+           poligonları yakalar.
+
+           Kontrol yalnızca yüzey geometrilerine uygulanır: bir LineString'in
+           kendisiyle kesişmesi geçerli bir çizimdir (kavşaklı güzergâh) ve
+           reddedilmemelidir.
+
+           Burada durması önemlidir — hem kayıt hem analiz yolu bu parser'dan
+           geçtiği için geçersiz poligon ne veritabanına yazılabilir ne de
+           PostGIS tarafında TopologyException'a (500) dönüşür; kullanıcı 400
+           ile anlaşılır bir mesaj alır. */
+        if (typed is IPolygonal && !typed.IsValid)
+        {
+            return ServiceResult<TGeometry>.Failure(
+                "Geçersiz poligon: kenarları kendisiyle kesişiyor veya halkası hatalı. Lütfen alanı yeniden çizin.");
+        }
+
         typed.SRID = Srid4326;
         return ServiceResult<TGeometry>.Success(typed);
     }
