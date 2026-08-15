@@ -640,7 +640,7 @@ public class DrawingService : IDrawingService
         where TEntity : class, IDrawingFeature<TGeometry>
         where TGeometry : Geometry
     {
-        var entity = await _dbContext.Set<TEntity>().FindAsync([id], cancellationToken);
+        var entity = await SingleOrDefaultAsync<TEntity>(id, cancellationToken);
 
         if (entity is null)
         {
@@ -686,7 +686,7 @@ public class DrawingService : IDrawingService
     {
         /* Global query filter burada bilerek AKTİFTİR: silinmiş veya pasif bir
            kayıt bulunamaz, dolayısıyla güncellenemez de. */
-        var entity = await _dbContext.Set<TEntity>().FindAsync([id], cancellationToken);
+        var entity = await SingleOrDefaultAsync<TEntity>(id, cancellationToken);
 
         if (entity is null)
         {
@@ -759,7 +759,7 @@ public class DrawingService : IDrawingService
     private async Task<ServiceResult<int>> DeleteAsync<TEntity>(DrawingKind kind, int id, CancellationToken cancellationToken)
         where TEntity : class, IStyledDrawingFeature
     {
-        var entity = await _dbContext.Set<TEntity>().FindAsync([id], cancellationToken);
+        var entity = await SingleOrDefaultAsync<TEntity>(id, cancellationToken);
 
         if (entity is null)
         {
@@ -796,6 +796,23 @@ public class DrawingService : IDrawingService
 
     private static ServiceResult<T> NotFound<T>(DrawingKind kind, int id) =>
         ServiceResult<T>.NotFound($"{kind} kaydı bulunamadı (id: {id}).");
+
+    /// <summary>
+    /// Tek kaydı id ile yükler; <b>global query filter uygulanır</b>, yani
+    /// silinmiş veya pasif kayıt bulunamaz.
+    /// </summary>
+    /// <remarks>
+    /// <c>FindAsync</c> burada bilerek KULLANILMAZ: change tracker'da zaten
+    /// izlenen bir entity varsa Find sorgu çalıştırmaz ve onu doğrudan
+    /// döndürür — bu durumda query filter atlanır ve aynı context içinde
+    /// silinmiş bir kayıt hâlâ güncellenebilir hâle gelirdi. Açık sorgu
+    /// filtrenin her koşulda uygulanmasını garanti eder.
+    /// </remarks>
+    private Task<TEntity?> SingleOrDefaultAsync<TEntity>(int id, CancellationToken cancellationToken)
+        where TEntity : class, IStyledDrawingFeature =>
+        _dbContext.Set<TEntity>()
+            .Where(entity => EF.Property<int>(entity, nameof(IStyledDrawingFeature.Id)) == id)
+            .FirstOrDefaultAsync(cancellationToken);
 
     /// <summary>Entity kolonlarını doğrulanmış stile göre yazar.</summary>
     private static void ApplyStyle(IStyledDrawingFeature entity, DrawingStyle style)
