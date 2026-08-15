@@ -31,4 +31,27 @@ public class UpdateDrawingRequest
     /// doğrulama create ile aynı <c>WktGeometryParser</c> üzerinden yapılır.
     /// </summary>
     public string? Wkt { get; set; }
+
+    /* --- Metadata ------------------------------------------------------------
+       Diğer alanlarla aynı "gönderilmeyen korunur" kuralına tabidirler, ama
+       temizlenebilir de olmaları gerekir. Ayrım şöyle kurulur:
+
+         null        -> alan gönderilmedi, mevcut değer KORUNUR
+         "" / []     -> kullanıcı alanı TEMİZLEDİ
+         dolu değer  -> doğrulanıp yazılır
+
+       Bu olmasaydı bir kullanıcı yanlışlıkla yazdığı açıklamayı hiçbir zaman
+       silemezdi. */
+
+    /// <summary>Yeni açıklama. <c>null</c> korur, boş metin temizler.</summary>
+    public string? Description { get; set; }
+
+    /// <summary>
+    /// Yeni kategori. <c>null</c> korur, boş metin "kategori yok" yapar,
+    /// bilinmeyen bir değer 400 ile reddedilir.
+    /// </summary>
+    public string? Category { get; set; }
+
+    /// <summary>Yeni etiketler. <c>null</c> korur, boş liste tümünü temizler.</summary>
+    public List<string>? Tags { get; set; }
 }

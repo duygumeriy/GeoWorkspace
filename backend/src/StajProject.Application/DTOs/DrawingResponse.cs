@@ -9,6 +9,20 @@ public class DrawingResponse
 
     public string Name { get; set; } = string.Empty;
 
+    /* --- Metadata ------------------------------------------------------------
+       Açıklama ve kategori boş olabilir (null). Tags ise HER ZAMAN dizidir —
+       etiketi olmayan kayıtta boş dizi döner, null değil; böylece frontend
+       filtreleme/gruplama yaparken null kontrolü yapmak zorunda kalmaz. */
+
+    /// <summary>Serbest metin açıklama; yoksa <c>null</c>.</summary>
+    public string? Description { get; set; }
+
+    /// <summary>Kanonik kategori adı; yoksa <c>null</c>.</summary>
+    public string? Category { get; set; }
+
+    /// <summary>Etiketler; yoksa boş dizi.</summary>
+    public List<string> Tags { get; set; } = [];
+
     /// <summary>Kalıcı görünüm bilgisi; her zaman dolu döner.</summary>
     public DrawingStyleDto Style { get; set; } = new();
 

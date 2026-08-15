@@ -19,6 +19,33 @@ internal static class DrawingFeatureConfiguration
             .IsRequired()
             .HasMaxLength(200);
 
+        /* --- Kullanıcı metadata'sı ------------------------------------------
+           Üçü de nullable/boş olabilir; kayıt metadata olmadan da geçerlidir.
+
+           Tags PostgreSQL'in yerel `text[]` tipine düşer: Npgsql List<string>'i
+           doğrudan dizi kolonuna eşler, ek bir tablo veya JSON serileştirme
+           gerekmez. Etiketler yalnızca kendi kayıtlarıyla birlikte okunup
+           yazıldığı için ayrı bir ilişkisel alt sistem (tags + drawing_tags
+           tabloları) buradaki tek fayda olan "etiket başına sorgulama"yı
+           getirmez, buna karşılık üç tabloya birden join maliyeti eklerdi. */
+
+        builder.Property(x => x.Description)
+            .HasColumnName("description")
+            .HasMaxLength(2000);
+
+        builder.Property(x => x.Category)
+            .HasColumnName("category")
+            .HasMaxLength(DrawingCategories.MaxLength);
+
+        /* Kolon NOT NULL'dır (etiketsiz kayıtta boş dizi durur, NULL değil), bu
+           yüzden veritabanı seviyesinde bir varsayılan ŞARTTIR: migration
+           uygulandığında halihazırdaki satırların hepsi boş diziye düşer.
+           Varsayılan olmadan NOT NULL kolon eklemek dolu bir tabloda hata verirdi. */
+        builder.Property(x => x.Tags)
+            .HasColumnName("tags")
+            .IsRequired()
+            .HasDefaultValueSql("'{}'::text[]");
+
         builder.Property(x => x.StrokeColor)
             .IsRequired()
             .HasMaxLength(7);

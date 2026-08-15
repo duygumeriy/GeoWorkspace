@@ -472,6 +472,28 @@ public class DrawingService : IDrawingService
             return ServiceResult<Func<DrawingResponse>>.Failure(style.Error!);
         }
 
+        // Metadata tekil create ile aynı doğrulamadan geçer.
+        var description = DrawingMetadataValidator.ValidateDescription(target.Description);
+
+        if (!description.IsSuccess)
+        {
+            return ServiceResult<Func<DrawingResponse>>.Failure(description.Error!);
+        }
+
+        var category = DrawingMetadataValidator.ValidateCategory(target.Category);
+
+        if (!category.IsSuccess)
+        {
+            return ServiceResult<Func<DrawingResponse>>.Failure(category.Error!);
+        }
+
+        var tags = DrawingMetadataValidator.ValidateTags(target.Tags);
+
+        if (!tags.IsSuccess)
+        {
+            return ServiceResult<Func<DrawingResponse>>.Failure(tags.Error!);
+        }
+
         var owner = RequireOwnerId<Func<DrawingResponse>>();
 
         if (!owner.IsSuccess)
@@ -487,6 +509,9 @@ public class DrawingService : IDrawingService
         var entity = new TEntity
         {
             Name = name.Value!,
+            Description = description.Value,
+            Category = category.Value,
+            Tags = tags.Value!,
             Geometry = parsed.Value!,
             CreatedByUserId = owner.Value,
             CreatedBy = _currentUser.UserName
@@ -567,6 +592,29 @@ public class DrawingService : IDrawingService
             return ServiceResult<DrawingResponse>.Failure(style.Error!);
         }
 
+        /* Metadata: üçü de opsiyoneldir, ama gönderildiyse kayıt oluşmadan ÖNCE
+           doğrulanır — geçersiz bir kategori yüzünden yarım kayıt kalmasın. */
+        var description = DrawingMetadataValidator.ValidateDescription(request.Description);
+
+        if (!description.IsSuccess)
+        {
+            return ServiceResult<DrawingResponse>.Failure(description.Error!);
+        }
+
+        var category = DrawingMetadataValidator.ValidateCategory(request.Category);
+
+        if (!category.IsSuccess)
+        {
+            return ServiceResult<DrawingResponse>.Failure(category.Error!);
+        }
+
+        var tags = DrawingMetadataValidator.ValidateTags(request.Tags);
+
+        if (!tags.IsSuccess)
+        {
+            return ServiceResult<DrawingResponse>.Failure(tags.Error!);
+        }
+
         var owner = RequireOwnerId<DrawingResponse>();
 
         if (!owner.IsSuccess)
@@ -577,6 +625,9 @@ public class DrawingService : IDrawingService
         var entity = new TEntity
         {
             Name = name.Value!,
+            Description = description.Value,
+            Category = category.Value,
+            Tags = tags.Value!,
             Geometry = parsed.Value!,
             // Sahiplik client'tan DEĞİL, doğrulanmış JWT kimliğinden gelir.
             // İstek gövdesindeki createdByUserId/createdBy/ownerId alanları
@@ -602,12 +653,11 @@ public class DrawingService : IDrawingService
         where TGeometry : Geometry
     {
         /* Veri izolasyonu: harita ve "Çizimlerim" yalnızca ÇAĞIRAN kullanıcının
-           kendi çizimlerini görür. Filtre role bakmaz — Admin de bu ekranda
-           yalnızca kendi kayıtlarını görür; yönetim yetkisi mutation tarafında
-           (DrawingAuthorization) korunur, görünürlükte değil.
+           kendi çizimlerini görür. Kapsam DrawingScopes.UserMapScope içinde
+           adlandırılmıştır — envanter analizinin kullandığı paylaşılan kümeden
+           (DrawingScopes.InventoryScope) ayrıldığı yer orasıdır.
 
-           Filtre LINQ üzerinden SQL'e iner; tablo belleğe çekilip sonra
-           süzülmez. IsDeleted/IsActive koşulunu global query filter ekler.
+           IsDeleted/IsActive koşulunu global query filter ekler.
 
            Kimlik yoksa (yapılandırma hatası) boş liste döner: kimliği
            belirlenemeyen bir istek başkasının verisini görmektense hiçbir şey
@@ -625,7 +675,7 @@ public class DrawingService : IDrawingService
         var entities = await _dbContext.Set<TEntity>()
             .AsNoTracking()
             .Include(entity => entity.CreatedByUser)
-            .Where(entity => EF.Property<int>(entity, nameof(IStyledDrawingFeature.CreatedByUserId)) == currentUserId.Value)
+            .UserMapScope(currentUserId.Value)
             .OrderBy(entity => EF.Property<int>(entity, nameof(IStyledDrawingFeature.Id)))
             .ToListAsync(cancellationToken);
 
@@ -715,6 +765,51 @@ public class DrawingService : IDrawingService
             name = validatedName.Value!;
         }
 
+        /* Metadata: her biri gönderilmediyse (null) korunur, gönderildiyse
+           doğrulanır. Boş metin / boş liste "temizle" demektir ve geçerlidir —
+           ayrım DTO'da açıklanmıştır. */
+        var description = entity.Description;
+
+        if (request.Description is not null)
+        {
+            var validatedDescription = DrawingMetadataValidator.ValidateDescription(request.Description);
+
+            if (!validatedDescription.IsSuccess)
+            {
+                return ServiceResult<DrawingResponse>.Failure(validatedDescription.Error!);
+            }
+
+            description = validatedDescription.Value;
+        }
+
+        var category = entity.Category;
+
+        if (request.Category is not null)
+        {
+            var validatedCategory = DrawingMetadataValidator.ValidateCategory(request.Category);
+
+            if (!validatedCategory.IsSuccess)
+            {
+                return ServiceResult<DrawingResponse>.Failure(validatedCategory.Error!);
+            }
+
+            category = validatedCategory.Value;
+        }
+
+        var tags = entity.Tags;
+
+        if (request.Tags is not null)
+        {
+            var validatedTags = DrawingMetadataValidator.ValidateTags(request.Tags);
+
+            if (!validatedTags.IsSuccess)
+            {
+                return ServiceResult<DrawingResponse>.Failure(validatedTags.Error!);
+            }
+
+            tags = validatedTags.Value!;
+        }
+
         // Stil: gönderilmeyen alanlar kaydın mevcut stilinden korunur.
         var merged = DrawingStyleValidator.ValidateForUpdate(request.Style, ReadStyle(entity, kind), kind);
 
@@ -742,6 +837,9 @@ public class DrawingService : IDrawingService
 
         // Buradan sonrası yazma: her girdi doğrulanmış durumda.
         entity.Name = name;
+        entity.Description = description;
+        entity.Category = category;
+        entity.Tags = tags;
         ApplyStyle(entity, merged.Value!);
 
         if (geometry is not null)
@@ -854,6 +952,11 @@ public class DrawingService : IDrawingService
             Id = entity.Id,
             Wkt = WktWriter.Write(entity.Geometry),
             Name = entity.Name,
+            Description = entity.Description,
+            Category = entity.Category,
+            // Kopyalanır: response nesnesi entity'nin listesini paylaşmamalı.
+            // Null gelen bir kolon (migration öncesi satır) boş diziye düşer.
+            Tags = [.. entity.Tags ?? []],
             Style = new DrawingStyleDto
             {
                 StrokeColor = style.StrokeColor,

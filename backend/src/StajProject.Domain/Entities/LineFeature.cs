@@ -12,6 +12,15 @@ public class LineFeature : IDrawingFeature<LineString>
 
     public LineString Geometry { get; set; } = null!;
 
+    /// <summary>Opsiyonel açıklama; soft delete sırasında korunur.</summary>
+    public string? Description { get; set; }
+
+    /// <summary>Opsiyonel kategori (<see cref="DrawingCategories"/>).</summary>
+    public string? Category { get; set; }
+
+    /// <summary>Etiketler; etiketsiz kayıtta boş liste durur.</summary>
+    public List<string> Tags { get; set; } = [];
+
     public string StrokeColor { get; set; } = DrawingStyleDefaults.StrokeColor;
 
     public int StrokeWidth { get; set; } = DrawingStyleDefaults.StrokeWidth;
