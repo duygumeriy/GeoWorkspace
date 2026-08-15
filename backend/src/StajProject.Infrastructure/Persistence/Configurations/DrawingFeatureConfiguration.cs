@@ -34,11 +34,25 @@ internal static class DrawingFeatureConfiguration
         builder.Property(x => x.LineStyle)
             .HasMaxLength(16);
 
+        /* Audit kolonlarının FİZİKSEL adları ödev şartnamesindeki snake_case
+           isimlerdir. C# property adları (CreatedDate, CreatedByUserId …)
+           bilinçli olarak korunur: servis, test ve DTO katmanları bu adlara
+           bağlıdır ve onları yeniden adlandırmak çalışan kodu gereksiz yere
+           kırardı. Eşleştirme tek yerde, burada tanımlıdır:
+
+             CreatedByUserId -> inserted_user_id
+             CreatedDate     -> inserted_date
+             ModifiedDate    -> modified_date
+             IsDeleted       -> is_deleted
+             IsActive        -> is_active                                  */
+
         builder.Property(x => x.CreatedDate)
+            .HasColumnName("inserted_date")
             .IsRequired()
             .HasColumnType("timestamp with time zone");
 
         builder.Property(x => x.ModifiedDate)
+            .HasColumnName("modified_date")
             .IsRequired()
             .HasColumnType("timestamp with time zone");
 
@@ -58,6 +72,7 @@ internal static class DrawingFeatureConfiguration
            kullanılır: lambda ifadesi interface member'ına çözülürdü ve EF
            entity'nin CLR property'sini bekler. */
         builder.Property(nameof(IStyledDrawingFeature.CreatedByUserId))
+            .HasColumnName("inserted_user_id")
             .IsRequired();
 
         builder
@@ -75,8 +90,16 @@ internal static class DrawingFeatureConfiguration
            yalnızca foreign key kısıtı kurulur. Restrict: silme işlemini yapmış
            bir kullanıcının hesabı silinmeye çalışıldığında kayıt korunur. */
         builder.Property(nameof(IStyledDrawingFeature.IsDeleted))
+            .HasColumnName("is_deleted")
             .IsRequired()
             .HasDefaultValue(false);
+
+        /* Mevcut satırlar için varsayılan true: migration uygulandığında
+           halihazırdaki çizimler aktif kalır, hiçbiri görünmez olmaz. */
+        builder.Property(nameof(IStyledDrawingFeature.IsActive))
+            .HasColumnName("is_active")
+            .IsRequired()
+            .HasDefaultValue(true);
 
         builder.Property(nameof(IStyledDrawingFeature.DeletedAt))
             .HasColumnType("timestamp with time zone");

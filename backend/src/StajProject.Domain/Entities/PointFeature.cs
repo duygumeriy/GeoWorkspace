@@ -41,6 +41,9 @@ public class PointFeature : IDrawingFeature<Point>, IPointStyledFeature
     /// <summary>Soft delete işareti; silinen satır korunur, gizlenir.</summary>
     public bool IsDeleted { get; set; }
 
+    /// <summary>Kayıt kullanımdayken true; silindiğinde false olur.</summary>
+    public bool IsActive { get; set; } = true;
+
     public DateTime? DeletedAt { get; set; }
 
     /// <summary>Silme işlemini yapan kullanıcı; sahiplikten bağımsızdır.</summary>

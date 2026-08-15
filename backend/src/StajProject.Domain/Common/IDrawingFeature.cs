@@ -77,6 +77,14 @@ public interface IStyledDrawingFeature
 
     bool IsDeleted { get; set; }
 
+    /// <summary>
+    /// Kaydın kullanımda olup olmadığı. Soft delete ile birlikte
+    /// <c>false</c> olur, geri alma (undo) ile yeniden <c>true</c> yapılır.
+    /// <see cref="IsDeleted"/> "silindi mi", bu alan "kullanımda mı"
+    /// sorusunu yanıtlar; normal sorgular ikisini birden şart koşar.
+    /// </summary>
+    bool IsActive { get; set; }
+
     /// <summary>UTC. Yalnızca silme anında yazılır.</summary>
     DateTime? DeletedAt { get; set; }
 
