@@ -310,8 +310,8 @@ export default function useDrawingWorkspace(map, { showToast, activeDrawTool = n
    * create — all three hand over the same shape of snapshot.
    */
   const persistCreate = useCallback(
-    async ({ type, wkt, style, name, clientKey }) => {
-      const res = await createDrawing(type, wkt, { name, style })
+    async ({ type, wkt, style, name, description, category, tags, clientKey }) => {
+      const res = await createDrawing(type, wkt, { name, style, description, category, tags })
       if (!res.ok) throw new Error(await readApiError(res, 'Çizim kaydedilemedi'))
 
       const saved = await res.json()
@@ -407,6 +407,12 @@ export default function useDrawingWorkspace(map, { showToast, activeDrawTool = n
       if (savedGeometry) feature.setGeometry(savedGeometry)
 
       feature.set('name', saved.name ?? '')
+      // Metadata comes back from the server for the same reason the geometry
+      // does: what the database normalised (trimmed description, canonical
+      // category, de-duplicated tags) is what the map must show.
+      feature.set('description', saved.description ?? '')
+      feature.set('category', saved.category ?? '')
+      feature.set('tags', Array.isArray(saved.tags) ? saved.tags : [])
       feature.set('style', normalizeStyle(type, saved.style))
       feature.set('modifiedDate', saved.modifiedDate)
       feature.unset('previewStyle')
@@ -614,12 +620,15 @@ export default function useDrawingWorkspace(map, { showToast, activeDrawTool = n
    * "Kaydet" in the attribute popup: this is the only place a drawn shape
    * becomes a record. Name and colour travel with the geometry in one POST.
    *
-   * @param {{ name: string, color: string }} attributes
+   * @param {{ name: string, color: string, description?: string,
+   *           category?: string, tags?: string[] }} attributes
+   *   Metadata is optional: the popup keeps it behind "Daha fazla seçenek", so
+   *   the common case still sends only a name and a colour.
    * @returns {Promise<boolean>} false leaves the popup open so the user can fix
    *   the input instead of losing the shape they just drew.
    */
   const savePendingDrawing = useCallback(
-    async ({ name, color }) => {
+    async ({ name, color, description = '', category = '', tags = [] }) => {
       const pending = pendingDrawing
       if (!pending) return false
 
@@ -638,7 +647,16 @@ export default function useDrawingWorkspace(map, { showToast, activeDrawTool = n
       const style = applyStylePatch(pending.type, pending.style, patch)
       const type = DRAWING_TYPES[pending.type]
       const { wkt, clientKey } = pending
-      const snapshot = { type: pending.type, wkt, style, name: trimmedName, clientKey }
+      const snapshot = {
+        type: pending.type,
+        wkt,
+        style,
+        name: trimmedName,
+        description,
+        category,
+        tags,
+        clientKey,
+      }
 
       setSavingCount((count) => count + 1)
 
@@ -803,8 +821,16 @@ export default function useDrawingWorkspace(map, { showToast, activeDrawTool = n
       if (!feature) return false
 
       const type = feature.get('drawingType')
+      /* The snapshot has to cover EVERY field the update can change. Leaving
+         metadata out would make undo a partial restore: the name and geometry
+         would go back while the new description silently stayed. Sending the
+         old values explicitly (including empty strings and an empty tag list)
+         is also what lets undo *clear* a field the edit had filled in. */
       const before = {
         name: feature.get('name') ?? '',
+        description: feature.get('description') ?? '',
+        category: feature.get('category') ?? '',
+        tags: [...(feature.get('tags') ?? [])],
         style: feature.get('style'),
         wkt: geometryToWkt4326(feature.getGeometry()),
       }

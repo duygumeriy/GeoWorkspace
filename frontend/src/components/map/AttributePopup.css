@@ -187,3 +187,90 @@
     animation: none;
   }
 }
+
+/* --- Metadata fields ------------------------------------------------------
+   Description sits with the always-visible fields; category and tags live in
+   the collapsible section below the colour row. */
+
+.attribute-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.attribute-field-label {
+  font-size: var(--font-small);
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.attribute-textarea,
+.attribute-select {
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-soft);
+  background: var(--surface-soft);
+  color: var(--text-primary);
+  font-size: var(--font-small);
+  font-family: inherit;
+}
+
+.attribute-textarea {
+  /* Vertical only: horizontal resizing would let the field escape the popup. */
+  resize: vertical;
+  min-height: 2.6rem;
+  line-height: 1.5;
+}
+
+.attribute-textarea::placeholder {
+  color: var(--text-tertiary);
+}
+
+.attribute-textarea:focus,
+.attribute-select:focus {
+  outline: none;
+  border-color: var(--border-strong);
+}
+
+.attribute-more {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-soft);
+}
+
+.attribute-more-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  align-self: flex-start;
+  padding: 0.25rem 0;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--font-small);
+  font-family: inherit;
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+
+.attribute-more-toggle:hover,
+.attribute-more-toggle:focus-visible {
+  color: var(--text-primary);
+}
+
+.attribute-more-chevron {
+  transition: transform var(--transition-fast);
+}
+
+.attribute-more-chevron.is-open {
+  transform: rotate(180deg);
+}
+
+.attribute-more-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
