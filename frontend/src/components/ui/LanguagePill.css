@@ -1,0 +1,23 @@
+.language-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 16px;
+  border: 1px solid rgba(150, 160, 200, 0.3);
+  border-radius: 999px;
+  background: rgba(5, 8, 18, 0.7);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.language-pill svg:first-child {
+  color: rgba(226, 228, 245, 0.7);
+}
+
+.language-pill-chevron {
+  color: rgba(226, 228, 245, 0.55);
+  transform: rotate(90deg);
+}

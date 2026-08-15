@@ -1,0 +1,198 @@
+.drawings-empty {
+  margin: 0;
+  padding: 1rem 0.5rem;
+  text-align: center;
+  font-size: var(--font-small);
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* Select-mode controls. Wraps rather than scrolls so every action stays
+   reachable inside a 320px-wide bottom sheet. */
+.drawings-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.drawings-mode-btn,
+.drawings-bulk-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 40px;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-full);
+  background: var(--surface-soft);
+  color: var(--text-secondary);
+  font-size: var(--font-small);
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.drawings-mode-btn:hover:not(:disabled),
+.drawings-bulk-btn:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.drawings-bulk-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Filled pill, not a colour swap alone; aria-pressed carries it to AT. */
+.drawings-mode-btn.is-active {
+  background: var(--gradient-primary);
+  border-color: transparent;
+  color: #ffffff;
+}
+
+.drawings-select-status {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.drawings-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+/* A layer toggled off in the Katmanlar panel: its rows are excluded from
+   "Tüm Görünenleri Seç", so the state has to be visible here too. */
+.drawings-group-hidden {
+  padding: 0.1rem 0.4rem;
+  border-radius: var(--radius-full);
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+}
+
+.drawings-group-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 44px;
+  padding: 0.4rem 0.5rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  color: var(--text-primary);
+  font-size: var(--font-small);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.drawings-group-head:hover {
+  background: var(--surface);
+}
+
+.drawings-group-title {
+  flex: 1;
+  text-align: left;
+}
+
+.drawings-chevron {
+  transform: rotate(90deg);
+  transition: transform var(--transition-fast);
+  color: var(--text-tertiary);
+}
+
+.drawings-chevron.is-open {
+  transform: rotate(-90deg);
+}
+
+.drawings-items {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 0.35rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.drawings-item-empty {
+  padding: 0.4rem 0.6rem;
+  font-size: var(--font-small);
+  color: var(--text-tertiary);
+}
+
+.drawings-item {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  min-height: 44px;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.drawings-item:hover {
+  background: var(--surface-soft);
+  color: var(--text-primary);
+}
+
+.drawings-item.is-selected {
+  border-color: var(--primary-light);
+  background: color-mix(in srgb, var(--primary-light) 12%, transparent);
+  color: var(--text-primary);
+}
+
+/* Checkbox box drawn in CSS so the row stays one button (one tap target). */
+.drawings-item-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 5px;
+  color: #ffffff;
+}
+
+.drawings-item-check.is-checked {
+  background: var(--gradient-primary);
+  border-color: transparent;
+}
+
+.drawings-item-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-full);
+  background: var(--dot);
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  flex-shrink: 0;
+}
+
+.drawings-item-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.drawings-item-title {
+  font-size: var(--font-small);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drawings-item-meta {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}

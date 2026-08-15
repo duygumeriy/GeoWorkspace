@@ -1,0 +1,94 @@
+.multi-panel-count {
+  margin: 0;
+  padding: 0.6rem 0.75rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  border: 1px solid var(--border-soft);
+  font-size: var(--font-body);
+  color: var(--text-primary);
+}
+
+.multi-panel-count strong {
+  font-size: var(--font-h2);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  margin-right: 0.3rem;
+  color: var(--primary-light);
+}
+
+.multi-panel-summary {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.multi-panel-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.45rem 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.multi-panel-row:last-child {
+  border-bottom: none;
+}
+
+.multi-panel-row dt {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: var(--font-small);
+  color: var(--text-secondary);
+}
+
+.multi-panel-row dd {
+  margin: 0;
+  font-size: var(--font-small);
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.multi-panel-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.multi-panel-action {
+  justify-content: flex-start;
+  gap: 0.5rem;
+  /* 44px touch target, and the danger action stays reachable on a phone
+     because the sheet body scrolls rather than clipping. */
+  min-height: 44px;
+}
+
+.multi-panel-action .ui-button-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.multi-panel-action--danger {
+  color: var(--danger);
+}
+
+.multi-panel-action--danger:hover:not(:disabled) {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+}
+
+/* Explains why bulk actions are absent for a mixed-ownership selection. */
+.multi-panel-readonly {
+  margin: 0.75rem 0 0;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  color: var(--text-secondary);
+  font-size: var(--font-small);
+  line-height: 1.45;
+}

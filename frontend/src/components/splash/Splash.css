@@ -1,0 +1,109 @@
+.splash {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.4rem;
+  background: var(--bg-primary);
+  pointer-events: none;
+  animation: splash-exit 400ms var(--ease-exit) 1000ms both;
+}
+
+.splash-mark {
+  display: inline-flex;
+  color: var(--primary-light);
+  opacity: 0;
+  animation: splash-mark-enter 500ms var(--ease-out-premium) 150ms both;
+}
+
+.splash-title {
+  margin: 0;
+  font-size: clamp(20px, 3vw, 26px);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text-primary);
+  opacity: 0;
+  animation: splash-title-enter 400ms var(--ease-out-premium) 450ms both;
+}
+
+.splash-rule {
+  position: relative;
+  width: min(40vw, 220px);
+  height: 2px;
+  overflow: hidden;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.splash-rule::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform-origin: left center;
+  background: var(--gradient-primary-cyan);
+  animation: splash-rule-reveal 350ms var(--ease-out-premium) 650ms both;
+}
+
+@keyframes splash-mark-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+    filter: blur(4px) drop-shadow(0 0 0 rgba(139, 92, 246, 0)) drop-shadow(0 0 0 rgba(0, 209, 255, 0));
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0) drop-shadow(0 0 16px rgba(139, 92, 246, 0.35)) drop-shadow(0 0 10px rgba(0, 209, 255, 0.15));
+  }
+}
+
+@keyframes splash-title-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes splash-rule-reveal {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes splash-exit {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.01);
+  }
+}
+
+.splash--reduced {
+  animation: none;
+}
+
+.splash--reduced .splash-mark,
+.splash--reduced .splash-title {
+  animation: none;
+  opacity: 1;
+  transform: none;
+  filter: none;
+}
+
+.splash--reduced .splash-rule::after {
+  animation: none;
+  transform: scaleX(1);
+}

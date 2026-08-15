@@ -1,0 +1,163 @@
+.map-topbar {
+  position: relative;
+  height: 68px;
+  min-height: 68px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0 1.25rem;
+  background: var(--surface-soft);
+  border-bottom: 1px solid var(--border-soft);
+  backdrop-filter: blur(var(--blur-glass));
+  -webkit-backdrop-filter: blur(var(--blur-glass));
+  color: var(--text-primary);
+  box-sizing: border-box;
+  z-index: 20;
+}
+
+.map-topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.map-topbar-menu-btn {
+  display: none;
+  /* 44x44 touch target when it appears on phones. */
+  min-width: 44px;
+  min-height: 44px;
+  flex-shrink: 0;
+}
+
+.map-topbar-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.map-topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  /* Never wraps: a second row would push into the map and double the header. */
+  flex-wrap: nowrap;
+  flex-shrink: 0;
+}
+
+.map-topbar-profile {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.45rem 0.9rem;
+  border-radius: var(--radius-full);
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+}
+
+.map-topbar-username {
+  font-size: var(--font-small);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.map-topbar-timer {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: var(--font-small);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.map-topbar-logout {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--font-small);
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0.3rem 0.1rem;
+  transition: color var(--transition-fast);
+}
+
+.map-topbar-logout:hover {
+  color: var(--danger);
+}
+
+/* Tablet: the sidebar is a rail, so the topbar carries the identity again —
+   only the gaps tighten. */
+@media (max-width: 1024px) {
+  .map-topbar {
+    gap: 0.6rem;
+    padding: 0 1rem;
+  }
+
+  .map-topbar-right {
+    gap: 0.5rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .map-topbar {
+    height: 60px;
+    min-height: 60px;
+    padding: 0 0.6rem;
+    /* Notch clearance when the page is rendered edge to edge. */
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+
+  .map-topbar-menu-btn {
+    display: inline-flex;
+  }
+
+  .map-topbar-left {
+    gap: 0.4rem;
+    /* Title takes the leftover width and truncates instead of pushing. */
+    flex: 1;
+    min-width: 0;
+  }
+
+  .map-topbar-title {
+    font-size: 0.85rem;
+  }
+
+  /* The username lives in the drawer footer on phones; the session countdown
+     stays in the header, where it is the one piece of status worth glancing at. */
+  .map-topbar-username {
+    display: none;
+  }
+
+  .map-topbar-profile {
+    gap: 0.4rem;
+    padding: 0.3rem 0.5rem;
+  }
+
+  /* Icon-only logout keeps the row to a single line at 320px. */
+  .map-topbar-logout {
+    min-width: 44px;
+    min-height: 44px;
+    justify-content: center;
+  }
+
+  .map-topbar-logout span {
+    display: none;
+  }
+}
+
+/* Very narrow phones: drop the theme toggle and the countdown from the header.
+   Both remain reachable — the theme under Ayarlar, the countdown in the drawer
+   footer — and dropping them keeps the header on one line at 320px. */
+@media (max-width: 380px) {
+  .map-topbar-right .theme-toggle,
+  .map-topbar-timer {
+    display: none;
+  }
+}

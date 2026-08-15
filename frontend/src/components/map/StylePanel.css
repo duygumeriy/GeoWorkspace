@@ -1,0 +1,141 @@
+.style-panel-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.35rem;
+  padding: 0.25rem;
+  background: var(--surface-soft);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+}
+
+.style-panel-tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-height: 44px;
+  padding: 0.4rem 0.3rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--font-small);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.style-panel-tab:hover {
+  color: var(--text-primary);
+}
+
+.style-panel-tab.is-active {
+  background: var(--gradient-primary);
+  color: #ffffff;
+}
+
+.style-panel-context {
+  margin: 0;
+  padding: 0.5rem 0.7rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  border: 1px solid var(--border-soft);
+  font-size: var(--font-small);
+  color: var(--text-secondary);
+}
+
+.style-panel-context-hint {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+/* A control plus the note explaining which types it will actually reach.
+   The gap matches the sheet body's own field rhythm. */
+.style-panel-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+/* Not colour-only: the note spells out the scope in words. */
+.style-panel-scope {
+  margin: 0;
+  padding-left: 0.1rem;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--text-tertiary);
+}
+
+/* ------------------------------------------------------------- presets */
+
+.style-panel-presets {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.style-panel-preset-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.style-panel-preset {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 36px;
+  padding: 0.35rem 0.7rem;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-soft);
+  background: var(--surface-soft);
+  color: var(--text-secondary);
+  font-size: var(--font-small);
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.style-panel-preset:hover {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.style-panel-preset-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: var(--radius-full);
+  background: var(--preset-color);
+  border: 1px solid rgba(0, 0, 0, 0.2);
+}
+
+.style-panel-reset {
+  align-self: flex-start;
+  padding: 0.4rem 0;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font-size: var(--font-small);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  min-height: 44px;
+}
+
+.style-panel-reset:hover {
+  color: var(--text-primary);
+}
+
+.style-panel-footer-btn {
+  flex: 1;
+  min-height: 44px;
+}
+
+@media (max-width: 640px) {
+  .style-panel-preset {
+    min-height: 40px;
+  }
+}

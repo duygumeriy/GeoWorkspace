@@ -1,0 +1,172 @@
+/* Additions on top of LoginPage.css for the shorter auth screens.
+   Everything else (background, stars, card chrome, error box, submit button)
+   is inherited from the login page's own classes. */
+
+.auth-card--compact {
+  min-height: 0;
+}
+
+.auth-card--compact form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+/* Explanatory paragraph under the title (e.g. "Kayıtlı e-posta adresinizi
+   girin"). */
+.auth-lead {
+  margin: 0 0 1.6rem;
+  font-size: 14px;
+  line-height: 1.55;
+  color: rgba(226, 228, 240, 0.72);
+}
+
+/* Success state — same visual weight as .login-error, opposite tone. */
+.auth-success {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  background: rgba(52, 211, 153, 0.08);
+  color: #6ee7b7;
+  border: 1px solid rgba(52, 211, 153, 0.28);
+  border-radius: var(--radius-sm);
+  padding: 0.65rem 0.8rem;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.auth-success svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+/* Neutral informational note (e.g. resend hint). */
+.auth-note {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: rgba(226, 228, 240, 0.6);
+}
+
+/* Inline "resend verification" affordance on the login form. */
+.login-resend {
+  align-self: flex-start;
+  font-size: 13px;
+}
+
+/* Footer row: "Zaten hesabın var mı? Giriş yap" */
+.auth-footer {
+  margin: 1.5rem 0 0;
+  text-align: center;
+  font-size: 14px;
+  color: rgba(226, 228, 240, 0.7);
+}
+
+.auth-link {
+  color: var(--primary-light);
+  font-weight: 600;
+  text-decoration: none;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.auth-link:hover {
+  text-decoration: underline;
+}
+
+.auth-link:focus-visible {
+  outline: 2px solid var(--primary-light);
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+
+/* Centred status block for /confirm-email while the token is being checked. */
+.auth-status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.5rem 0 0.5rem;
+  text-align: center;
+}
+
+.auth-status-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(139, 92, 246, 0.12);
+  border: 1px solid rgba(145, 110, 255, 0.35);
+  color: var(--primary-light);
+}
+
+.auth-status-icon--success {
+  background: rgba(52, 211, 153, 0.1);
+  border-color: rgba(52, 211, 153, 0.35);
+  color: #6ee7b7;
+}
+
+.auth-status-icon--error {
+  background: rgba(255, 107, 107, 0.1);
+  border-color: rgba(255, 107, 107, 0.35);
+  color: var(--danger);
+}
+
+.auth-status-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: rgba(226, 228, 240, 0.78);
+}
+
+.auth-spinner {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid rgba(145, 110, 255, 0.25);
+  border-top-color: var(--primary-light);
+  animation: auth-spin 700ms linear infinite;
+}
+
+@keyframes auth-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* The map-side "Şifre Değiştir" form lives inside the Ayarlar sheet, so it
+   uses the panel's own surface rather than the auth card. */
+.security-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.security-form .ui-button {
+  align-self: flex-start;
+}
+
+.security-feedback {
+  margin: 0;
+  font-size: var(--font-small);
+  line-height: 1.5;
+}
+
+.security-feedback--error {
+  color: var(--danger);
+}
+
+.security-feedback--success {
+  color: #34d399;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-spinner {
+    animation-duration: 2s;
+  }
+}

@@ -1,0 +1,180 @@
+/* Docked right-hand card at desktop/tablet, bottom sheet on phones.
+   Every value that differs between the two lives in this file. */
+
+.map-sheet {
+  position: absolute;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-solid);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-panel);
+  color: var(--text-primary);
+  overflow: hidden;
+
+  /* Desktop position: right column, under the topbar. The height stops short
+     of the bottom edge so the panel can never reach the floating draw toolbar,
+     which is centred and grows towards this column on narrower desktops. */
+  top: 1rem;
+  right: 1rem;
+  width: min(340px, calc(100% - 2rem));
+  max-height: calc(100% - 6rem);
+
+  animation: map-sheet-in var(--motion-normal) var(--ease-out-premium);
+}
+
+.map-sheet--danger {
+  border-color: var(--danger);
+}
+
+@keyframes map-sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.map-sheet-handle {
+  display: none;
+}
+
+.map-sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.9rem 1rem 0.6rem;
+  border-bottom: 1px solid var(--border-soft);
+  flex-shrink: 0;
+}
+
+.map-sheet-title {
+  margin: 0;
+  font-size: var(--font-body);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+/* 44x44 touch target even though the glyph is 18px. */
+.map-sheet-close {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.map-sheet-body {
+  padding: 0.9rem 1rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+.map-sheet-footer {
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--border-soft);
+  display: flex;
+  gap: 0.5rem;
+  flex-shrink: 0;
+  background: var(--surface-solid);
+}
+
+/* When two sheets can be open at once the second one stacks below the first. */
+.map-sheet.is-secondary {
+  top: auto;
+  bottom: 1rem;
+}
+
+/* ---------------------------------------------------------------- tablet */
+@media (max-width: 1024px) {
+  .map-sheet {
+    width: min(320px, calc(100% - 1.5rem));
+    top: 0.75rem;
+    right: 0.75rem;
+    max-height: calc(100% - 5.75rem);
+  }
+}
+
+/* ---------------------------------------------------------------- phone */
+@media (max-width: 640px) {
+  .map-sheet {
+    top: auto;
+    right: 0;
+    left: 0;
+    bottom: 0;
+    width: 100%;
+    max-width: 100%;
+    /* Never taller than the viewport minus the topbar. */
+    max-height: min(78vh, calc(100% - 3.5rem));
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    border-bottom: none;
+    animation: map-sheet-up var(--motion-normal) var(--ease-out-premium);
+  }
+
+  .map-sheet.is-secondary {
+    bottom: 0;
+  }
+
+  @keyframes map-sheet-up {
+    from {
+      transform: translateY(100%);
+    }
+    to {
+      transform: none;
+    }
+  }
+
+  .map-sheet-handle {
+    display: block;
+    width: 42px;
+    height: 4px;
+    margin: 0.55rem auto 0.1rem;
+    border-radius: var(--radius-full);
+    background: var(--border-strong);
+    flex-shrink: 0;
+  }
+
+  /* Home-indicator clearance on iOS. */
+  .map-sheet-footer {
+    padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .map-sheet-body {
+    padding-bottom: calc(0.9rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .map-sheet-footer + .map-sheet-body,
+  .map-sheet-footer ~ .map-sheet-body {
+    padding-bottom: 0.9rem;
+  }
+}
+
+/* Landscape phones are very short: cap the sheet so the map stays usable. */
+@media (max-height: 480px) and (orientation: landscape) {
+  .map-sheet {
+    top: 0.5rem;
+    /* Clears the toolbar docked at the bottom of these very short viewports. */
+    bottom: 3.9rem;
+    max-height: none;
+    right: 0.5rem;
+    left: auto;
+    width: min(320px, 55%);
+    border-radius: var(--radius-lg);
+  }
+
+  .map-sheet-handle {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .map-sheet {
+    animation: none;
+  }
+}

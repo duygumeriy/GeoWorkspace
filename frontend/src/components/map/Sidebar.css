@@ -1,0 +1,250 @@
+.map-sidebar {
+  position: relative;
+  width: 240px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 1.25rem 1rem;
+  box-sizing: border-box;
+  background: var(--surface-soft);
+  border-right: 1px solid var(--border-soft);
+  backdrop-filter: blur(var(--blur-glass));
+  -webkit-backdrop-filter: blur(var(--blur-glass));
+  transition: width var(--transition-base), transform var(--transition-base);
+  z-index: 30;
+}
+
+.map-sidebar.is-collapsed {
+  width: 76px;
+}
+
+.map-sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0 0.35rem;
+  min-height: 28px;
+}
+
+.map-sidebar-brand-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--primary-light);
+}
+
+.map-sidebar-brand-name {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.map-sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.map-sidebar-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  /* 44px minimum touch target. */
+  min-height: 44px;
+  width: 100%;
+  padding: 0.7rem 0.75rem;
+  border: none;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text-secondary);
+  text-decoration: none;
+  text-align: left;
+  font-size: var(--font-body);
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.map-sidebar-nav-item:hover {
+  background: var(--surface-soft);
+  color: var(--text-primary);
+}
+
+.map-sidebar.is-collapsed .map-sidebar-nav-item {
+  justify-content: center;
+  padding: 0.7rem 0;
+}
+
+.map-sidebar-nav-item.is-active {
+  background: var(--gradient-primary);
+  color: #fff;
+  box-shadow: var(--shadow-glow-soft);
+}
+
+.map-sidebar-nav-item span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.map-sidebar-footer {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  /* Home-indicator clearance when the drawer is full height on iOS. */
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.map-sidebar-user {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.65rem 0.6rem;
+  border-radius: var(--radius-md);
+  background: var(--surface-soft);
+  border: 1px solid var(--border-soft);
+}
+
+.map-sidebar.is-collapsed .map-sidebar-user {
+  /* No inner padding when collapsed, so the logout button keeps its 44px. */
+  padding: 0;
+  background: none;
+  border: none;
+}
+
+.map-sidebar-username {
+  font-size: var(--font-small);
+  font-weight: 700;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.map-sidebar-session {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.map-sidebar-logout {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  /* Full 44x44 target even when the sidebar is a narrow rail. */
+  min-height: 44px;
+  min-width: 44px;
+  margin-top: 0.15rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-soft);
+  background: none;
+  color: var(--danger);
+  font-size: var(--font-small);
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.map-sidebar-logout:hover {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+}
+
+.map-sidebar-collapse-btn {
+  align-self: flex-end;
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.map-sidebar-collapse-btn svg {
+  transition: transform var(--transition-base);
+  transform: rotate(180deg);
+}
+
+.map-sidebar-collapse-btn.is-collapsed svg {
+  transform: rotate(0deg);
+}
+
+.sidebar-scrim {
+  display: none;
+}
+
+/* Tablet: collapse to a navigation rail so the map keeps the space. */
+@media (max-width: 1024px) and (min-width: 641px) {
+  .map-sidebar:not(.is-mobile-open) {
+    width: 76px;
+  }
+
+  .map-sidebar:not(.is-mobile-open) .map-sidebar-brand-name,
+  .map-sidebar:not(.is-mobile-open) .map-sidebar-username,
+  .map-sidebar:not(.is-mobile-open) .map-sidebar-session,
+  .map-sidebar:not(.is-mobile-open) .map-sidebar-logout span,
+  .map-sidebar:not(.is-mobile-open) .map-sidebar-nav-item span {
+    display: none;
+  }
+
+  .map-sidebar:not(.is-mobile-open) .map-sidebar-nav-item {
+    justify-content: center;
+    padding: 0.7rem 0;
+  }
+
+  .map-sidebar:not(.is-mobile-open) .map-sidebar-user {
+    /* No inner padding in rail mode, so the logout button keeps its 44px. */
+    padding: 0;
+    background: none;
+    border: none;
+  }
+
+  .map-sidebar:not(.is-mobile-open) .map-sidebar-collapse-btn {
+    display: none;
+  }
+}
+
+/* Short viewports (landscape phones): the nav must scroll, not overflow. */
+.map-sidebar {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+@media (max-width: 640px) {
+  .map-sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    height: 100dvh;
+    width: 240px;
+    transform: translateX(-100%);
+    box-shadow: var(--shadow-panel);
+  }
+
+  .map-sidebar.is-mobile-open {
+    transform: translateX(0);
+  }
+
+  .sidebar-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 25;
+  }
+
+  /* The drawer is the only way to navigate on phones — no collapse rail. */
+  .map-sidebar-collapse-btn {
+    display: none;
+  }
+
+  .map-sidebar {
+    padding-top: calc(1.25rem + env(safe-area-inset-top, 0px));
+  }
+}

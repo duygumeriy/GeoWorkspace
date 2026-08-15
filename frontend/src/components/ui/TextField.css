@@ -1,0 +1,81 @@
+.text-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  text-align: left;
+}
+
+.text-field-label {
+  font-size: 15px;
+  font-weight: 500;
+  color: #f2f2f6;
+}
+
+.text-field-control {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-height: clamp(50px, 3.4vw, 54px);
+  padding: 0 1.05rem;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(135, 145, 175, 0.27);
+  background: rgba(5, 8, 18, 0.45);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background var(--transition-fast);
+}
+
+.text-field-control:focus-within {
+  border-color: #8752ff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 0 0 2px rgba(135, 82, 255, 0.15);
+}
+
+.text-field--error .text-field-control {
+  border-color: var(--danger);
+}
+
+.text-field--error .text-field-control:focus-within {
+  box-shadow: 0 0 0 3px var(--danger-soft);
+}
+
+.text-field-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.text-field-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  font-family: inherit;
+  outline: none;
+}
+
+.text-field-input::placeholder {
+  color: rgba(210, 215, 235, 0.45);
+}
+
+/* Chrome/Edge autofill otherwise paints a white input background — force it
+   to stay the same dark surface tone as a normal (non-autofilled) field. */
+.text-field-input:-webkit-autofill,
+.text-field-input:-webkit-autofill:hover,
+.text-field-input:-webkit-autofill:focus,
+.text-field-input:-webkit-autofill:active {
+  -webkit-text-fill-color: var(--text-primary);
+  caret-color: var(--text-primary);
+  -webkit-box-shadow: 0 0 0 1000px var(--surface-solid) inset;
+  box-shadow: 0 0 0 1000px var(--surface-solid) inset;
+  transition: background-color 9999s ease-in-out 0s, color 9999s ease-in-out 0s;
+}
+
+.text-field-trailing {
+  display: inline-flex;
+  flex-shrink: 0;
+}

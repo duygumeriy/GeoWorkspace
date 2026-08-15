@@ -1,0 +1,80 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { useAuth } from '../auth/AuthContext.jsx'
+import { fetchAdminUser, fetchAdminUsers, readApiError, updateUserRole, updateUserStatus } from '../services/api.js'
+import UserDetailPanel from '../components/admin/UserDetailPanel.jsx'
+import UserManagementList from '../components/admin/UserManagementList.jsx'
+import './AdminPage.css'
+
+const conflictMessage = 'Sistemde en az bir aktif Admin bulunmalıdır. Son aktif yönetici User yapılamaz veya pasifleştirilemez.'
+
+export default function AdminPage() {
+  const { userId } = useAuth()
+  const [users, setUsers] = useState([])
+  const [selectedId, setSelectedId] = useState(null)
+  const [detail, setDetail] = useState(null)
+  const [search, setSearch] = useState('')
+  const [roleFilter, setRoleFilter] = useState('All')
+  const [statusFilter, setStatusFilter] = useState('All')
+  const [loading, setLoading] = useState(true)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [mutating, setMutating] = useState(false)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState(null)
+  const mutationInFlight = useRef(false)
+
+  const loadUsers = useCallback(async () => {
+    setLoading(true); setError('')
+    try {
+      const res = await fetchAdminUsers()
+      if (!res.ok) throw new Error(res.status === 403 ? 'Bu işlem için yetkiniz bulunmuyor. Yönetici oturumunuzda MFA doğrulaması gerekli olabilir.' : await readApiError(res, 'Kullanıcılar yüklenemedi.'))
+      setUsers(await res.json())
+    } catch (err) { setError(err.message || 'Kullanıcılar yüklenemedi.') }
+    finally { setLoading(false) }
+  }, [])
+  useEffect(() => { loadUsers() }, [loadUsers])
+
+  const openDetail = useCallback(async (id) => {
+    setSelectedId(id); setDetail(null); setDetailLoading(true); setError('')
+    try {
+      const res = await fetchAdminUser(id)
+      if (!res.ok) throw new Error(res.status === 403 ? 'Bu işlem için yetkiniz bulunmuyor.' : await readApiError(res, 'Kullanıcı detayı yüklenemedi.'))
+      setDetail(await res.json())
+    } catch (err) { setError(err.message || 'Kullanıcı detayı yüklenemedi.'); setSelectedId(null) }
+    finally { setDetailLoading(false) }
+  }, [])
+
+  const filteredUsers = useMemo(() => {
+    const term = search.trim().toLocaleLowerCase('tr-TR')
+    return users.filter((u) => (!term || u.username.toLocaleLowerCase('tr-TR').includes(term) || (u.email || '').toLocaleLowerCase('tr-TR').includes(term)) && (roleFilter === 'All' || u.role === roleFilter) && (statusFilter === 'All' || u.isActive === (statusFilter === 'Active')))
+  }, [users, search, roleFilter, statusFilter])
+
+  const mutate = async (kind, value) => {
+    if (!detail || mutationInFlight.current) return
+    mutationInFlight.current = true
+    setMutating(true)
+    try {
+      const res = kind === 'role' ? await updateUserRole(detail.id, value) : await updateUserStatus(detail.id, value)
+      if (!res.ok) throw new Error(res.status === 409 ? conflictMessage : res.status === 403 ? 'Bu işlem için yetkiniz bulunmuyor.' : await readApiError(res, 'İşlem tamamlanamadı.'))
+      const updated = await res.json()
+      setDetail(updated); setUsers((all) => all.map((u) => u.id === updated.id ? updated : u))
+      const message = kind === 'role' ? (value === 'Admin' ? `Rol Admin olarak değiştirildi.${updated.twoFactorEnabled ? '' : ' Kullanıcı bir sonraki girişinde zorunlu 2FA kurulumuna yönlendirilecektir.'}` : 'Rol User olarak değiştirildi. Mevcut 2FA ayarı korunmuştur.') : (value ? 'Hesap aktifleştirildi.' : 'Hesap pasifleştirildi. Kullanıcının çizimleri korunmuştur.')
+      setNotice({ type: 'success', message })
+    } catch (err) { setNotice({ type: 'error', message: err.message || 'İşlem tamamlanamadı.' }) }
+    finally { mutationInFlight.current = false; setMutating(false) }
+  }
+
+  const emptyMessage = search.trim() ? 'Aramanızla eşleşen kullanıcı bulunamadı.' : roleFilter !== 'All' || statusFilter !== 'All' ? 'Seçili filtrelerle eşleşen kullanıcı bulunamadı.' : 'Henüz kullanıcı bulunmuyor.'
+  return <main className="admin-users-page">
+    <header className="admin-users-header"><div><Link className="admin-back-link" to="/map">← Haritaya dön</Link><h1>Kullanıcı Yönetimi</h1><p>Sistemdeki kullanıcıları, rollerini ve hesap durumlarını yönetin.</p></div></header>
+    {notice && <div className={`admin-notice is-${notice.type}`} role="status">{notice.message}<button type="button" onClick={() => setNotice(null)} aria-label="Bildirimi kapat">×</button></div>}
+    <section className="admin-toolbar" aria-label="Kullanıcı filtreleri">
+      <label className="admin-search"><span className="sr-only">Kullanıcı ara</span><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Kullanıcı veya e-posta ara..." /></label>
+      <label>Rol<select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}><option value="All">Tümü</option><option value="Admin">Admin</option><option value="User">User</option></select></label>
+      <label>Durum<select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}><option value="All">Tümü</option><option value="Active">Aktif</option><option value="Inactive">Pasif</option></select></label>
+    </section>
+    {error && <div className="admin-error" role="alert"><span>{error}</span><button type="button" onClick={loadUsers}>Tekrar dene</button></div>}
+    <UserManagementList users={filteredUsers} currentUserId={userId} loading={loading} selectedId={selectedId} onSelect={openDetail} emptyMessage={emptyMessage} />
+    {(selectedId || detailLoading) && <UserDetailPanel user={detail} currentUserId={userId} loading={detailLoading} mutating={mutating} onClose={() => { setSelectedId(null); setDetail(null) }} onChangeRole={(role) => mutate('role', role)} onChangeStatus={(active) => mutate('status', active)} />}
+  </main>
+}

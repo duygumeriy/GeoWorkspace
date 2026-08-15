@@ -1,0 +1,59 @@
+.quick-actions {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.quick-action {
+  /* 44x44 touch target. */
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  backdrop-filter: blur(var(--blur-glass));
+  -webkit-backdrop-filter: blur(var(--blur-glass));
+  border: 1px solid var(--border-soft);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), transform var(--transition-fast);
+}
+
+.quick-action:hover {
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .quick-action:hover {
+    transform: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .quick-actions {
+    top: 0.6rem;
+    left: 0.6rem;
+    /* Horizontal row keeps the narrow viewport free for the map. */
+    flex-direction: row;
+  }
+}
+
+/* Landscape phones: the row would collide with the toolbar, keep it compact. */
+@media (max-height: 480px) and (orientation: landscape) {
+  .quick-actions {
+    top: 0.5rem;
+    left: 0.5rem;
+    flex-direction: row;
+  }
+
+  .quick-action {
+    width: 40px;
+    height: 40px;
+  }
+}

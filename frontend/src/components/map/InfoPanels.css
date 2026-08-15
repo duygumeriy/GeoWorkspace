@@ -1,0 +1,88 @@
+.info-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.info-heading {
+  margin: 0;
+  font-size: var(--font-small);
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: 0.02em;
+}
+
+.info-note {
+  margin: 0;
+  font-size: var(--font-small);
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.info-rows {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.info-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: var(--font-small);
+  color: var(--text-secondary);
+}
+
+.info-row:last-child {
+  border-bottom: none;
+}
+
+.info-row dt {
+  color: var(--text-secondary);
+}
+
+.info-row dd {
+  margin: 0;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-align: right;
+}
+
+.info-shortcuts {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.info-shortcut {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: var(--font-small);
+}
+
+.info-shortcut dt {
+  flex-shrink: 0;
+  min-width: 92px;
+}
+
+.info-shortcut dd {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.info-shortcut kbd {
+  display: inline-block;
+  padding: 0.15rem 0.4rem;
+  border-radius: 5px;
+  border: 1px solid var(--border-soft);
+  background: var(--surface-soft);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+}

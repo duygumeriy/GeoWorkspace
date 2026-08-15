@@ -1,0 +1,218 @@
+.style-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.style-field-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.style-field-label {
+  font-size: var(--font-small);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.style-field-value {
+  font-size: var(--font-small);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* ------------------------------------------------------------ swatches */
+
+.style-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.style-swatch {
+  position: relative;
+  /* 44x44 hit area with a 28px visible dot inside. */
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-full);
+  color: #ffffff;
+}
+
+.style-swatch::before {
+  content: '';
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-full);
+  background: var(--swatch);
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  transition: transform var(--transition-fast);
+}
+
+.style-swatch:hover::before {
+  transform: scale(1.12);
+}
+
+/* Selected state = ring + checkmark, so it is not conveyed by colour alone. */
+.style-swatch.is-active::after {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border-radius: var(--radius-full);
+  border: 2px solid var(--text-primary);
+}
+
+.style-swatch-check {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  color: #ffffff;
+  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.6));
+}
+
+.style-swatch--custom {
+  cursor: pointer;
+}
+
+.style-swatch--custom::before {
+  background: var(--surface-soft);
+  border: 1px dashed var(--border-strong);
+}
+
+.style-swatch-plus {
+  position: relative;
+  font-size: 1.1rem;
+  line-height: 1;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.style-swatch--custom input[type='color'] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ------------------------------------------------------------ slider */
+
+.style-slider {
+  width: 100%;
+  height: 44px; /* touch target; the visible track is drawn by the thumb rules */
+  margin: 0;
+  background: none;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+}
+
+.style-slider::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--border-soft);
+  border: 1px solid var(--border-soft);
+}
+
+.style-slider::-moz-range-track {
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--border-soft);
+  border: 1px solid var(--border-soft);
+}
+
+.style-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  margin-top: -8px;
+  border-radius: var(--radius-full);
+  background: var(--primary-light);
+  border: 2px solid var(--surface-solid);
+  box-shadow: var(--shadow-glow-soft);
+}
+
+.style-slider::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-full);
+  background: var(--primary-light);
+  border: 2px solid var(--surface-solid);
+}
+
+/* ------------------------------------------------------------ line types */
+
+.style-linestyles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.style-linestyle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  min-height: 48px;
+  padding: 0.45rem 0.4rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-soft);
+  background: var(--surface-soft);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.style-linestyle:hover {
+  border-color: var(--border-strong);
+}
+
+.style-linestyle.is-active {
+  border-color: var(--primary-light);
+  background: color-mix(in srgb, var(--primary-light) 14%, transparent);
+  color: var(--text-primary);
+}
+
+.style-linestyle-preview {
+  width: 100%;
+  height: 12px;
+  color: var(--text-primary);
+}
+
+.style-linestyle-label {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+@media (max-width: 640px) {
+  .style-linestyles {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .style-linestyle-label {
+    font-size: 10px;
+  }
+}

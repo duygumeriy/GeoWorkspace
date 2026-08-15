@@ -1,0 +1,12 @@
+# Build çıktıları
+bin/
+obj/
+
+# Development e-posta sink'i: doğrulama ve şifre sıfırlama TOKEN'LARI içerir.
+# Kaynak kontrolüne asla girmemelidir.
+dev-emails/
+
+# Secret'lar zaten user-secrets/ortam değişkeninde tutulur (bkz. README-SECRETS.md);
+# yine de yanlışlıkla oluşturulmuş yerel override dosyalarını dışarıda tut.
+appsettings.Local.json
+*.user

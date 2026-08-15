@@ -1,0 +1,13 @@
+/* Global safety net: collapses any CSS animation/transition regardless of component.
+   Components with multi-stage JS timelines additionally short-circuit via useReducedMotion. */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

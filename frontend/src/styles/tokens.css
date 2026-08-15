@@ -1,0 +1,125 @@
+/* Design tokens. Components must consume these variables only — never raw hex. */
+
+:root {
+  /* Dark palette (default) */
+  --bg-primary: #060914;
+  --bg-secondary: #0b1020;
+  --surface: #10172b;
+  --surface-soft: rgba(16, 23, 43, 0.6);
+  --surface-solid: #131a30;
+  --border-soft: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(139, 92, 246, 0.4);
+
+  --primary: #6c3ce7;
+  --primary-light: #8b5cf6;
+  --cyan: #00d1ff;
+  --success: #00e6a8;
+  --danger: #ff6b6b;
+  --danger-soft: rgba(255, 107, 107, 0.12);
+
+  --text-primary: #ffffff;
+  --text-secondary: #94a3b8;
+  --text-tertiary: #64748b;
+
+  --gradient-primary: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+  --gradient-primary-cyan: linear-gradient(135deg, var(--primary) 0%, var(--cyan) 100%);
+
+  --shadow-glow: 0 0 40px rgba(108, 60, 231, 0.25);
+  --shadow-glow-soft: 0 0 20px rgba(108, 60, 231, 0.15);
+  --shadow-panel: 0 20px 60px -20px rgba(0, 0, 0, 0.6);
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+  --radius-xl: 26px;
+  --radius-full: 999px;
+
+  --blur-glass: 20px;
+
+  --transition-fast: 150ms ease;
+  --transition-base: 250ms ease;
+  --transition-slow: 400ms ease;
+
+  /* Motion system: shared durations/easings for entrances, exits and the
+     app-level login -> map transition. Prefer these over ad-hoc values for
+     any new premium/entrance motion. */
+  --motion-fast: 140ms;
+  --motion-normal: 220ms;
+  --motion-slow: 420ms;
+  --motion-enter: 520ms;
+
+  --ease-out-premium: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+
+  --font-display: 42px;
+  --font-h1: 30px;
+  --font-h2: 24px;
+  --font-body: 15px;
+  --font-small: 13px;
+}
+
+/* System preference: light, only when the user hasn't made an explicit choice */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg-primary: #f4f4fb;
+    --bg-secondary: #eceafc;
+    --surface: rgba(255, 255, 255, 0.72);
+    --surface-soft: rgba(255, 255, 255, 0.55);
+    --surface-solid: #ffffff;
+    --border-soft: rgba(76, 29, 149, 0.1);
+    --border-strong: rgba(108, 60, 231, 0.35);
+
+    --text-primary: #1e1b4b;
+    --text-secondary: #475569;
+    --text-tertiary: #64748b;
+
+    --shadow-glow: 0 0 32px rgba(108, 60, 231, 0.12);
+    --shadow-glow-soft: 0 0 16px rgba(108, 60, 231, 0.08);
+    --shadow-panel: 0 20px 45px -20px rgba(76, 29, 149, 0.2);
+  }
+}
+
+/* Explicit dark theme choice */
+:root[data-theme="dark"] {
+  --bg-primary: #060914;
+  --bg-secondary: #0b1020;
+  --surface: #10172b;
+  --surface-soft: rgba(16, 23, 43, 0.6);
+  --surface-solid: #131a30;
+  --border-soft: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(139, 92, 246, 0.4);
+
+  --text-primary: #ffffff;
+  --text-secondary: #94a3b8;
+  --text-tertiary: #64748b;
+
+  --shadow-glow: 0 0 40px rgba(108, 60, 231, 0.25);
+  --shadow-glow-soft: 0 0 20px rgba(108, 60, 231, 0.15);
+  --shadow-panel: 0 20px 60px -20px rgba(0, 0, 0, 0.6);
+}
+
+/* Explicit light theme choice */
+:root[data-theme="light"] {
+  --bg-primary: #f4f4fb;
+  --bg-secondary: #eceafc;
+  --surface: rgba(255, 255, 255, 0.72);
+  --surface-soft: rgba(255, 255, 255, 0.55);
+  --surface-solid: #ffffff;
+  --border-soft: rgba(76, 29, 149, 0.1);
+  --border-strong: rgba(108, 60, 231, 0.35);
+
+  --text-primary: #1e1b4b;
+  --text-secondary: #475569;
+  --text-tertiary: #64748b;
+
+  --shadow-glow: 0 0 32px rgba(108, 60, 231, 0.12);
+  --shadow-glow-soft: 0 0 16px rgba(108, 60, 231, 0.08);
+  --shadow-panel: 0 20px 45px -20px rgba(76, 29, 149, 0.2);
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  :root {
+    --surface-soft: var(--surface-solid);
+  }
+}

@@ -1,0 +1,239 @@
+/* Two-factor screens. The same markup is used on the login shell (dark glass
+   card) and inside the map's settings sheet, so everything here is sized in
+   relative units and coloured from the shared tokens — no second design
+   system, no fixed widths that could overflow the narrower sheet. */
+
+.two-factor-setup {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.two-factor-lead {
+  margin: 0;
+  font-size: var(--font-small);
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+.two-factor-steps {
+  margin: 0;
+  padding-left: 1.15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: var(--font-small);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+/* The quiet zone must stay white for scanners, in both themes. */
+.two-factor-qr {
+  align-self: center;
+  padding: 0.65rem;
+  background: #ffffff;
+  border-radius: var(--radius-md);
+  line-height: 0;
+  /* Never wider than the panel it sits in. */
+  max-width: 100%;
+}
+
+.two-factor-qr svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-width: 168px;
+}
+
+.two-factor-manual {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  align-items: flex-start;
+  font-size: var(--font-small);
+}
+
+.two-factor-key {
+  align-self: stretch;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  color: var(--text-primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  /* Long keys wrap instead of pushing the panel sideways. */
+  overflow-wrap: anywhere;
+}
+
+.two-factor-hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-tertiary);
+}
+
+.two-factor-code-field .text-field-input {
+  letter-spacing: 0.4em;
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.two-factor-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid rgba(255, 176, 32, 0.3);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 176, 32, 0.1);
+  color: #ffcc66;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.two-factor-warning svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+/* --- Recovery codes ------------------------------------------------------- */
+
+.recovery-codes {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.recovery-codes-grid {
+  display: grid;
+  /* Two columns where there is room, one where there is not — no media query
+     needed and no horizontal scrolling on a phone. */
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.recovery-codes-grid code {
+  display: block;
+  padding: 0.45rem 0.5rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  color: var(--text-primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  letter-spacing: 0.05em;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.recovery-codes-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.recovery-codes-actions .ui-button {
+  flex: 1 1 8rem;
+}
+
+/* --- Settings → Güvenlik -------------------------------------------------- */
+
+.two-factor-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.two-factor-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  font-size: var(--font-small);
+  color: var(--text-secondary);
+}
+
+.two-factor-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.18rem 0.55rem;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-soft);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.two-factor-badge--on {
+  color: var(--success);
+  border-color: rgba(0, 230, 168, 0.35);
+  background: rgba(0, 230, 168, 0.1);
+}
+
+.two-factor-badge--off {
+  color: var(--text-secondary);
+  background: var(--surface-soft);
+}
+
+.two-factor-badge--required {
+  color: var(--primary-light);
+  border-color: var(--border-strong);
+  background: rgba(139, 92, 246, 0.12);
+}
+
+.two-factor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.two-factor-actions .ui-button {
+  flex: 1 1 11rem;
+}
+
+.two-factor-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.85rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface-soft);
+}
+
+.two-factor-feedback {
+  margin: 0;
+  font-size: var(--font-small);
+  line-height: 1.5;
+}
+
+.two-factor-feedback--error {
+  color: var(--danger);
+}
+
+.two-factor-feedback--success {
+  color: var(--success);
+}
+
+/* On the login shell the card already sets a dark palette; keep the QR panel
+   from inheriting a transparent background there. */
+.login-card .two-factor-qr {
+  background: #ffffff;
+}
+
+@media (max-width: 480px) {
+  .two-factor-qr svg {
+    max-width: 148px;
+  }
+
+  .two-factor-actions .ui-button,
+  .recovery-codes-actions .ui-button {
+    flex-basis: 100%;
+  }
+}
