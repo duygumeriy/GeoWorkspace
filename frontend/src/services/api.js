@@ -236,6 +236,25 @@ export function fetchDrawings(type) {
   return authFetch(DRAWING_TYPES[type].listPath)
 }
 
+/**
+ * PUT: the detail popup's "Kaydet". Updates name, style (colour) and geometry
+ * in one request.
+ *
+ * Only the fields present are sent, and the backend preserves anything it does
+ * not receive — so editing just the name never risks rewriting the geometry
+ * with a stale copy. The WKT is already EPSG:4326 (`geometryToWkt4326` does the
+ * reprojection); ownership is decided server-side from the token, never here.
+ *
+ * @param {{ name?: string, style?: object, wkt?: string }} changes
+ */
+export function updateDrawing(type, id, changes) {
+  return authFetch(drawingItemPath(type, id), {
+    method: 'PUT',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(changes),
+  })
+}
+
 /** PATCH: style only. The geometry is never touched by this endpoint. */
 export function updateDrawingStyle(type, id, style) {
   return authFetch(`${drawingItemPath(type, id)}/style`, {

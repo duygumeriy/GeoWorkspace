@@ -138,3 +138,130 @@
   font-size: var(--font-small);
   line-height: 1.45;
 }
+
+/* --- Renk satırı (salt okunur) ------------------------------------------- */
+
+.selected-color {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.selected-color-dot {
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 999px;
+  background: var(--dot);
+  border: 1px solid var(--border-soft);
+  flex: 0 0 auto;
+}
+
+/* --- Düzenleme oturumu ----------------------------------------------------
+   Ad + renk formu. Geometry haritada düzenlenir, burada değil; bu yüzden
+   form yalnızca iki alan taşır ve panel dar ekranda da taşmaz. */
+
+.selected-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  margin-top: 0.75rem;
+}
+
+.selected-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.selected-field-label {
+  color: var(--text-secondary);
+  font-size: var(--font-small);
+}
+
+.selected-input {
+  width: 100%;
+  /* Dolgu genişliği artırmasın: dar panelde yatay taşmayı önler. */
+  box-sizing: border-box;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--surface-solid);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--font-small);
+}
+
+.selected-input:focus-visible {
+  outline: none;
+  border-color: var(--border-strong);
+}
+
+.selected-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.selected-swatch {
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background: var(--swatch);
+  cursor: pointer;
+  /* Dokunmatikte hedef alanı yeterli kalsın diye küçültülmez. */
+  flex: 0 0 auto;
+  box-shadow: 0 0 0 1px var(--border-soft) inset;
+}
+
+.selected-swatch.is-active {
+  border-color: var(--text-primary);
+}
+
+.selected-swatch--custom {
+  position: relative;
+  overflow: hidden;
+  background: conic-gradient(#ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000);
+  display: inline-flex;
+}
+
+/* Native renk seçici tıklanabilir kalır ama görünmez: yuvarlak swatch
+   görünümü korunur. */
+.selected-swatch--custom input[type='color'] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.selected-edit-hint {
+  margin: 0;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  color: var(--text-secondary);
+  font-size: var(--font-small);
+  line-height: 1.45;
+}
+
+.selected-edit-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--font-small);
+}
+
+/* Kaydet/İptal yan yana: iki aksiyonlu bir karar tek satırda okunur. */
+.selected-actions--edit {
+  flex-direction: row;
+}
+
+.selected-actions--edit .selected-action {
+  flex: 1 1 0;
+}
