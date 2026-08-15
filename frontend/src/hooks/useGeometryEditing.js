@@ -1,109 +1,73 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import Collection from 'ol/Collection'
 import Modify from 'ol/interaction/Modify'
 import Translate from 'ol/interaction/Translate'
 
+/** The two ways the map itself can reshape a drawing. */
+export const GEOMETRY_EDIT_MODES = Object.freeze({
+  /** Drag individual vertices — precise reshaping. */
+  vertex: 'vertex',
+  /** Drag the whole shape without deforming it. */
+  translate: 'translate',
+})
+
 /**
- * Geometry editing for exactly one already-saved feature.
+ * The map half of an edit session: the OpenLayers interactions, nothing else.
  *
- * Uses OpenLayers' native interactions rather than a hand-rolled vertex editor:
+ *   - `Modify`    drags vertices, and adds an intermediate one when a segment is
+ *                 dragged — the native behaviour is kept because it is the
+ *                 fastest way to add a point where the user is already looking.
+ *   - `Translate` drags the shape as a whole, leaving its form untouched.
  *
- *   - `Modify`    drags vertices — the whole story for a line or a polygon, and
- *                 the way a point is moved precisely.
- *   - `Translate` drags the shape as a whole, which is what "move this pin"
- *                 means for a point.
+ * Exactly one is live at a time, chosen by `mode`, so a drag can never be
+ * ambiguous: in "Köşeleri Düzenle" a drag always means a vertex, in "Tüm
+ * Geometriyi Taşı" it always means the whole shape. Both are built over a
+ * one-element `Collection` rather than the layer's source, so only the record
+ * under edit can be reshaped — a stray drag near a neighbour cannot silently
+ * modify a different drawing.
  *
- * Both are built over a one-element `Collection` rather than the layer's source,
- * so only the record under edit can be reshaped: a stray drag near a neighbour
- * cannot silently modify a different drawing.
+ * ## No state of its own
  *
- * ## Cancelling
- *
- * The original geometry is cloned the moment editing starts and restored by
- * `cancel()`. `Modify` mutates the feature's geometry in place, so without that
- * snapshot "İptal" could only be honoured by refetching from the server — this
- * way it is instant and works offline too.
- *
- * The hook never talks to the API. Saving is the caller's job; this hook only
- * owns the interactions and the undo snapshot.
+ * This hook holds no geometry snapshot and no dirty flag. When a gesture ends it
+ * calls `onCommit`, and the edit session reads the new geometry, converts it to
+ * EPSG:4326 and puts it on the same undo stack as every manual operation. That
+ * is what keeps map editing and the coordinate editor working on ONE geometry
+ * rather than two that have to be kept in step. Cancelling and resetting belong
+ * to the session for the same reason.
  *
  * @param {import('ol/Map').default | null} map
- * @param {{ active: boolean, feature: import('ol/Feature').default | null,
- *           onChange?: () => void }} options
+ * @param {{ active: boolean,
+ *           feature: import('ol/Feature').default | null,
+ *           mode?: string,
+ *           onCommit?: () => void }} options
  */
-export default function useGeometryEditing(map, { active, feature, onChange = null }) {
-  /** Geometry as it was when editing began; the input to "İptal". */
-  const originalRef = useRef(null)
-  /** True once the user has actually moved something. */
-  const dirtyRef = useRef(false)
-  const onChangeRef = useRef(onChange)
-  onChangeRef.current = onChange
+export default function useGeometryEditing(map, { active, feature, mode = GEOMETRY_EDIT_MODES.vertex, onCommit = null }) {
+  // Read at gesture-end time, so changing the handler never rebuilds the
+  // interaction — doing that mid-drag would abort the drag.
+  const onCommitRef = useRef(onCommit)
+  onCommitRef.current = onCommit
 
   useEffect(() => {
-    if (!map || !active || !feature) return undefined
-
-    const geometry = feature.getGeometry()
-    if (!geometry) return undefined
-
-    // Snapshot BEFORE any interaction can touch it.
-    originalRef.current = geometry.clone()
-    dirtyRef.current = false
+    if (!map || !active || !feature?.getGeometry()) return undefined
 
     const features = new Collection([feature])
-    const markDirty = () => {
-      dirtyRef.current = true
-      onChangeRef.current?.()
-    }
+    const commit = () => onCommitRef.current?.()
 
-    const modify = new Modify({ features })
-    modify.on('modifyend', markDirty)
-    map.addInteraction(modify)
+    /* One interaction per mode. Adding both and toggling `setActive` would leave
+       two objects competing for the same pointer events; building only the one
+       the mode asks for keeps the exclusivity structural. */
+    const interaction =
+      mode === GEOMETRY_EDIT_MODES.translate ? new Translate({ features }) : new Modify({ features })
 
-    /* Translate is added for points only. On a line or polygon it would let a
-       drag move the entire shape when the user was aiming for a vertex, which
-       reads as the edit going wrong; there, Modify alone is the precise tool. */
-    const isPoint = geometry.getType() === 'Point'
-    let translate = null
+    const endEvent = mode === GEOMETRY_EDIT_MODES.translate ? 'translateend' : 'modifyend'
 
-    if (isPoint) {
-      translate = new Translate({ features })
-      translate.on('translateend', markDirty)
-      map.addInteraction(translate)
-    }
+    interaction.on(endEvent, commit)
+    map.addInteraction(interaction)
 
     return () => {
-      modify.un('modifyend', markDirty)
-      map.removeInteraction(modify)
-      modify.dispose?.()
-
-      if (translate) {
-        translate.un('translateend', markDirty)
-        map.removeInteraction(translate)
-        translate.dispose?.()
-      }
+      interaction.un(endEvent, commit)
+      map.removeInteraction(interaction)
+      interaction.dispose?.()
     }
-  }, [map, active, feature])
-
-  /**
-   * Puts the geometry back the way it was when editing started.
-   * Safe to call when nothing was moved — it is then a no-op.
-   */
-  const cancel = useCallback(() => {
-    const original = originalRef.current
-    if (original && feature && dirtyRef.current) {
-      // setCoordinates keeps the same geometry instance the layer already
-      // renders, so the map updates without re-adding the feature.
-      feature.getGeometry()?.setCoordinates(original.getCoordinates())
-    }
-    originalRef.current = null
-    dirtyRef.current = false
-  }, [feature])
-
-  /** Drops the snapshot after a successful save — the new shape is now current. */
-  const commit = useCallback(() => {
-    originalRef.current = null
-    dirtyRef.current = false
-  }, [])
-
-  return { cancel, commit }
+  }, [map, active, feature, mode])
 }

@@ -265,3 +265,109 @@
 .selected-actions--edit .selected-action {
   flex: 1 1 0;
 }
+
+/* --- Metadata display ------------------------------------------------------ */
+
+.selected-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  justify-content: flex-end;
+}
+
+.selected-tag {
+  padding: 0.1rem 0.4rem;
+  border-radius: var(--radius-full);
+  background: rgba(139, 92, 246, 0.14);
+  border: 1px solid var(--border-strong);
+  font-size: 11px;
+  color: var(--text-primary);
+}
+
+/* --- Edit tabs -------------------------------------------------------------
+   Bilgiler / Geometri. Switching neither commits nor discards — both tabs edit
+   the one session, so the tab is a view, not a step. */
+
+.selected-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.3rem;
+  padding: 0.2rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  border: 1px solid var(--border-soft);
+}
+
+.selected-tab {
+  padding: 0.45rem 0.5rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--font-small);
+  font-family: inherit;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.selected-tab:hover {
+  color: var(--text-primary);
+}
+
+.selected-tab.is-active {
+  background: rgba(139, 92, 246, 0.18);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.selected-info-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.selected-textarea {
+  resize: vertical;
+  min-height: 3.5rem;
+  line-height: 1.5;
+  font-family: inherit;
+}
+
+/* --- Session history -------------------------------------------------------
+   Undo / redo / reset act on the whole session, so they sit outside the tabs
+   and stay reachable from either one. */
+
+.selected-history {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--border-soft);
+}
+
+.selected-history-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  flex: 1 1 auto;
+  padding: 0.4rem 0.55rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-soft);
+  background: var(--surface-soft);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.selected-history-btn:hover:not(:disabled) {
+  background: rgba(139, 92, 246, 0.12);
+  color: var(--text-primary);
+}
+
+.selected-history-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}

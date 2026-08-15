@@ -1,8 +1,17 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import MapSheet from './MapSheet.jsx'
 import Button from '../ui/Button.jsx'
+import TagInput from './TagInput.jsx'
+import GeometryEditor from './GeometryEditor.jsx'
 import useMediaQuery from '../../hooks/useMediaQuery.js'
-import { COLOR_PRESETS, DRAWING_TYPES, normalizeHex, primaryColorOf } from '../../map/drawingTypes.js'
+import {
+  COLOR_PRESETS,
+  DRAWING_CATEGORIES,
+  DRAWING_TYPES,
+  MAX_DESCRIPTION_LENGTH,
+  normalizeHex,
+  primaryColorOf,
+} from '../../map/drawingTypes.js'
 import {
   formatArea,
   formatLength,
@@ -12,7 +21,16 @@ import {
   measurePerimeter,
 } from '../../map/measure.js'
 import { toLonLat } from 'ol/proj'
-import { FocusIcon, PaletteIcon, TrashIcon, ChevronIcon, CheckIcon, CloseIcon } from '../ui/icons/index.js'
+import {
+  FocusIcon,
+  PaletteIcon,
+  TrashIcon,
+  ChevronIcon,
+  CheckIcon,
+  CloseIcon,
+  UndoIcon,
+  RedoIcon,
+} from '../ui/icons/index.js'
 import './SelectedFeaturePanel.css'
 
 /** dd.MM.yyyy HH:mm, or an em dash when the API sent nothing. */
@@ -47,11 +65,18 @@ function Row({ label, value }) {
  *
  * ## Edit mode
  *
- * "Düzenle" turns the read-only rows into a small form (name + colour) and asks
- * the map to enter geometry-edit mode, so all three edits are part of ONE
- * session ending in a single "Kaydet". Nothing is written until then: "İptal"
- * restores the old name, the old colour and — via the map's snapshot — the old
- * geometry.
+ * "Düzenle" opens an edit session and splits the panel in two tabs:
+ *
+ *   Bilgiler — name, description, category, tags, colour
+ *   Geometri — manual coordinates, vertex tools, live metrics, line tools
+ *
+ * Both tabs write into the SAME session, and so does the map: dragging a vertex,
+ * typing a longitude and pressing "Uzat" are one geometry with one undo stack.
+ * Nothing reaches the database until "Kaydet"; "İptal" restores the opening
+ * snapshot without a request.
+ *
+ * The tabs are presentation only — switching between them neither commits nor
+ * discards anything, so a user can move back and forth mid-edit freely.
  */
 export default function SelectedFeaturePanel({
   open,
@@ -68,6 +93,13 @@ export default function SelectedFeaturePanel({
   onStartEdit,
   onSaveEdit,
   onCancelEdit,
+  /** The `useEditSession` value; non-null exactly while editing. */
+  session = null,
+  editMode,
+  onEditModeChange,
+  onZoomToVertex,
+  onCopyText,
+  onNotify,
   // False for drawings owned by someone else. Viewing, zooming and analysing
   // stay available — only mutation is withheld.
   canManage = true,
@@ -77,39 +109,20 @@ export default function SelectedFeaturePanel({
   // everything at once, so it is always expanded there.
   const isPhone = useMediaQuery('(max-width: 640px)')
   const [expanded, setExpanded] = useState(false)
-
-  /** Draft values, live only while editing. */
-  const [draftName, setDraftName] = useState('')
-  const [draftColor, setDraftColor] = useState('')
+  const [tab, setTab] = useState('info')
 
   // Collapse again whenever the selection changes on a phone.
   useEffect(() => {
     setExpanded(!isPhone)
   }, [isPhone, feature?.key])
 
-  /* Seeds the form from the record when an edit session opens.
-
-     The guard is what makes this safe to run on every `feature` change: the
-     descriptor is a fresh object on each sync (dragging a vertex re-renders
-     it), and re-seeding then would overwrite whatever the user had typed.
-     Keying the seed to the record identity means it happens exactly once per
-     session, and selecting a different drawing mid-edit re-seeds correctly
-     instead of leaving the previous record's name in the inputs. */
-  const seededKeyRef = useRef(null)
-
+  // Every new edit session starts on "Bilgiler" and expanded: the form is
+  // useless collapsed, and the geometry tab is the deeper of the two.
   useEffect(() => {
-    if (!editing || !feature) {
-      seededKeyRef.current = null
-      return
-    }
-    if (seededKeyRef.current === feature.key) return
-
-    seededKeyRef.current = feature.key
-    setDraftName(feature.name ?? '')
-    setDraftColor(primaryColorOf(feature.style))
-    // The form is useless collapsed, so editing always expands the sheet.
+    if (!editing) return
+    setTab('info')
     setExpanded(true)
-  }, [editing, feature])
+  }, [editing, feature?.key])
 
   if (!open || !feature) return null
 
@@ -128,25 +141,23 @@ export default function SelectedFeaturePanel({
     )
   }
 
-  const trimmedName = draftName.trim()
-  // Same rule the backend enforces, checked here only to keep the user from
-  // making a request that is certain to fail.
-  const canSave = trimmedName.length > 0 && trimmedName.length <= 200 && !saving
-
-  const handleSave = () => {
-    if (!canSave) return
-    onSaveEdit?.({ name: trimmedName, color: normalizeHex(draftColor) ?? primaryColorOf(feature.style) })
-  }
+  const draft = session?.draft ?? null
+  /* The session is created by an effect, so it is still null on the first
+     render after "Düzenle". `editing` therefore drives which SIDE is shown and
+     `draft` only gates the form itself: for that one frame the panel shows just
+     its summary rather than flashing the read-only actions the user has already
+     left behind. */
+  const isEditing = editing && Boolean(draft)
 
   return (
     <MapSheet
       open={open}
-      title={editing ? 'Çizimi Düzenle' : 'Seçili Çizim'}
-      onClose={editing ? onCancelEdit : onClose}
+      title={isEditing ? 'Çizimi Düzenle' : 'Seçili Çizim'}
+      onClose={isEditing ? onCancelEdit : onClose}
       className="selected-panel"
     >
       {/* The always-visible summary. On a phone it doubles as the expander. */}
-      {isPhone && !editing ? (
+      {isPhone && !isEditing ? (
         <button
           type="button"
           className="selected-summary selected-summary--toggle"
@@ -173,6 +184,22 @@ export default function SelectedFeaturePanel({
           <dl className="selected-rows">
             <Row label="Ad" value={feature.name || '—'} />
             <Row label="Tür" value={config.label} />
+            {feature.description && <Row label="Açıklama" value={feature.description} />}
+            {feature.category && <Row label="Kategori" value={feature.category} />}
+            {feature.tags?.length > 0 && (
+              <Row
+                label="Etiketler"
+                value={
+                  <span className="selected-tags">
+                    {feature.tags.map((tag) => (
+                      <span key={tag} className="selected-tag">
+                        {tag}
+                      </span>
+                    ))}
+                  </span>
+                }
+              />
+            )}
             <Row
               label="Renk"
               value={
@@ -228,71 +255,105 @@ export default function SelectedFeaturePanel({
         </>
       )}
 
-      {editing && (
+      {isEditing && (
         <div className="selected-edit">
-          <label className="selected-field">
-            <span className="selected-field-label">Ad</span>
-            <input
-              className="selected-input"
-              type="text"
-              value={draftName}
-              maxLength={200}
-              autoFocus
-              placeholder="Çizim adı"
-              onChange={(event) => setDraftName(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') handleSave()
-              }}
-            />
-          </label>
-
-          <div className="selected-field">
-            <span className="selected-field-label">Renk</span>
-            <div className="selected-swatches" role="group" aria-label="Renk seçimi">
-              {COLOR_PRESETS.map((preset) => {
-                const isActive = normalizeHex(draftColor) === preset.value
-                return (
-                  <button
-                    key={preset.id}
-                    type="button"
-                    className={`selected-swatch ${isActive ? 'is-active' : ''}`}
-                    style={{ '--swatch': preset.value }}
-                    aria-label={preset.label}
-                    aria-pressed={isActive}
-                    onClick={() => setDraftColor(preset.value)}
-                  />
-                )
-              })}
-              <label className="selected-swatch selected-swatch--custom" title="Özel renk">
-                <input
-                  type="color"
-                  value={normalizeHex(draftColor) ?? '#6D4AFF'}
-                  aria-label="Özel renk seç"
-                  onChange={(event) => setDraftColor(event.target.value)}
-                />
-              </label>
-            </div>
+          <div className="selected-tabs" role="tablist" aria-label="Düzenleme bölümleri">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === 'info'}
+              className={`selected-tab ${tab === 'info' ? 'is-active' : ''}`}
+              onClick={() => setTab('info')}
+            >
+              Bilgiler
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === 'geometry'}
+              className={`selected-tab ${tab === 'geometry' ? 'is-active' : ''}`}
+              onClick={() => setTab('geometry')}
+            >
+              Geometri
+            </button>
           </div>
 
-          {/* Geometry is edited on the map itself, not in this form. */}
-          <p className="selected-edit-hint" role="note">
-            {feature.type === 'point'
-              ? 'Konumu değiştirmek için haritadaki noktayı sürükleyin.'
-              : 'Şekli değiştirmek için haritadaki köşe noktalarını sürükleyin.'}
-          </p>
+          {tab === 'info' ? (
+            <InfoTab draft={draft} onChange={session.setDraftField} />
+          ) : (
+            <GeometryEditor
+              type={session.type}
+              coords={session.coords}
+              metrics={session.metrics}
+              validity={session.validity}
+              editMode={editMode}
+              onEditModeChange={onEditModeChange}
+              onSetVertex={session.setVertex}
+              onAddVertex={session.addVertex}
+              onRemoveVertex={session.removeVertex}
+              onMoveVertex={session.moveVertex}
+              onExtend={session.extend}
+              onShorten={session.shorten}
+              onTargetLength={session.setTargetLength}
+              onZoomToVertex={onZoomToVertex}
+              onCopy={onCopyText}
+              onNotify={onNotify}
+            />
+          )}
+
+          {/* History spans BOTH tabs: it is the session's geometry stack, not
+              the geometry tab's, so an undo works from wherever the user is. */}
+          <div className="selected-history">
+            <button
+              type="button"
+              className="selected-history-btn"
+              disabled={!session.canUndo}
+              title={session.canUndo ? 'Geri Al' : 'Geri alınacak işlem yok'}
+              aria-label="Geri Al"
+              onClick={session.undo}
+            >
+              <UndoIcon size={14} />
+              Geri Al
+            </button>
+            <button
+              type="button"
+              className="selected-history-btn"
+              disabled={!session.canRedo}
+              title={session.canRedo ? 'Yinele' : 'Yinelenecek işlem yok'}
+              aria-label="Yinele"
+              onClick={session.redo}
+            >
+              <RedoIcon size={14} />
+              Yinele
+            </button>
+            <button
+              type="button"
+              className="selected-history-btn"
+              disabled={!session.isDirty}
+              title={session.isDirty ? 'Düzenleme başındaki hâline dön' : 'Değişiklik yok'}
+              onClick={session.reset}
+            >
+              Orijinale Döndür
+            </button>
+          </div>
 
           <div className="selected-actions selected-actions--edit">
             <Button variant="ghost" className="selected-action" onClick={onCancelEdit} disabled={saving}>
               <CloseIcon size={16} />
               İptal
             </Button>
-            <Button className="selected-action" onClick={handleSave} disabled={!canSave}>
+            <Button
+              className="selected-action"
+              onClick={onSaveEdit}
+              disabled={!session.canSave || saving}
+              title={session.canSave ? undefined : 'Ad ve koordinatlar geçerli olmalıdır'}
+            >
               <CheckIcon size={16} />
               {saving ? 'Kaydediliyor...' : 'Kaydet'}
             </Button>
           </div>
 
-          {trimmedName.length === 0 && (
+          {draft.name.trim().length === 0 && (
             <p className="selected-edit-error" role="alert">
               Ad boş olamaz.
             </p>
@@ -300,5 +361,88 @@ export default function SelectedFeaturePanel({
         </div>
       )}
     </MapSheet>
+  )
+}
+
+/** Name, description, category, tags and colour — the "Bilgiler" tab. */
+function InfoTab({ draft, onChange }) {
+  return (
+    <div className="selected-info-tab">
+      <label className="selected-field">
+        <span className="selected-field-label">Ad</span>
+        <input
+          className="selected-input"
+          type="text"
+          value={draft.name}
+          maxLength={200}
+          autoFocus
+          placeholder="Çizim adı"
+          onChange={(event) => onChange('name', event.target.value)}
+        />
+      </label>
+
+      <label className="selected-field">
+        <span className="selected-field-label">Açıklama</span>
+        <textarea
+          className="selected-input selected-textarea"
+          value={draft.description}
+          rows={3}
+          maxLength={MAX_DESCRIPTION_LENGTH}
+          placeholder="İsteğe bağlı açıklama"
+          onChange={(event) => onChange('description', event.target.value)}
+        />
+      </label>
+
+      <label className="selected-field">
+        <span className="selected-field-label">Kategori</span>
+        <select
+          className="selected-input"
+          value={draft.category}
+          onChange={(event) => onChange('category', event.target.value)}
+        >
+          <option value="">Kategori yok</option>
+          {DRAWING_CATEGORIES.map((item) => (
+            <option key={item} value={item}>
+              {item}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <div className="selected-field">
+        <span className="selected-field-label" id="selected-tags-label">
+          Etiketler
+        </span>
+        <TagInput id="selected-tags" value={draft.tags} onChange={(tags) => onChange('tags', tags)} />
+      </div>
+
+      <div className="selected-field">
+        <span className="selected-field-label">Renk</span>
+        <div className="selected-swatches" role="group" aria-label="Renk seçimi">
+          {COLOR_PRESETS.map((preset) => {
+            const isActive = normalizeHex(draft.color) === preset.value
+            return (
+              <button
+                key={preset.id}
+                type="button"
+                className={`selected-swatch ${isActive ? 'is-active' : ''}`}
+                style={{ '--swatch': preset.value }}
+                aria-label={preset.label}
+                aria-pressed={isActive}
+                onClick={() => onChange('color', preset.value)}
+              />
+            )
+          })}
+          <label className="selected-swatch selected-swatch--custom" title="Özel renk">
+            <input
+              type="color"
+              value={normalizeHex(draft.color) ?? '#6D4AFF'}
+              aria-label="Özel renk seç"
+              onChange={(event) => onChange('color', event.target.value)}
+            />
+          </label>
+        </div>
+      </div>
+    </div>
   )
 }

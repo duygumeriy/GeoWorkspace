@@ -42,9 +42,9 @@ import useMeasurement from '../hooks/useMeasurement.js'
 import useFeatureInteraction from '../hooks/useFeatureInteraction.js'
 import useSelectionTools from '../hooks/useSelectionTools.js'
 import useKeyboardShortcuts from '../hooks/useKeyboardShortcuts.js'
-import useGeometryEditing from '../hooks/useGeometryEditing.js'
-import { DRAWING_TYPES, DRAWING_TYPE_LIST, colorPatchFor } from '../map/drawingTypes.js'
-import { geometryToWkt4326 } from '../map/drawing.js'
+import useGeometryEditing, { GEOMETRY_EDIT_MODES } from '../hooks/useGeometryEditing.js'
+import useEditSession from '../hooks/useEditSession.js'
+import { DRAWING_TYPES, DRAWING_TYPE_LIST, colorPatchFor, normalizeTags } from '../map/drawingTypes.js'
 import './MapPage.css'
 
 const MAP_READY_FALLBACK_MS = 2500
@@ -311,53 +311,126 @@ export default function MapPage() {
     ? featureByKey(selectedFeature.key)
     : null
 
-  const geometryEditing = useGeometryEditing(mapInstance, {
-    active: workspaceMode.isEditing,
+  /** Which gesture the map performs: drag a vertex, or drag the whole shape. */
+  const [geometryEditMode, setGeometryEditMode] = useState(GEOMETRY_EDIT_MODES.vertex)
+
+  /* THE edit state. Every editing surface — the two panel tabs, the coordinate
+     inputs, the line tools and the map interactions below — reads and writes
+     this one session, so there is a single geometry rather than several copies
+     to reconcile. */
+  const editSession = useEditSession({
     feature: editingFeature,
+    descriptor: selectedFeature,
+    active: workspaceMode.isEditing,
   })
 
-  const { cancel: revertGeometry, commit: commitGeometry } = geometryEditing
+  // The map's gestures feed the same session: `commitFromMap` reads the geometry
+  // OpenLayers just changed and puts it on the session's undo stack, exactly as
+  // a typed coordinate would.
+  useGeometryEditing(mapInstance, {
+    active: workspaceMode.isEditing,
+    feature: editingFeature,
+    mode: geometryEditMode,
+    onCommit: editSession.commitFromMap,
+  })
+
   const { startEditing, stopEditing } = workspaceMode
   const { updateFeature } = workspace
+  const { revertGeometry, isDirty: hasUnsavedEdits } = editSession
+
+  /** Non-null while the unsaved-changes dialog is asking; holds what to do next. */
+  const [pendingDiscard, setPendingDiscard] = useState(null)
 
   const startEdit = useCallback(() => {
     if (!canManageSelected) return
+    // Every session starts on vertex editing; translate is an explicit choice.
+    setGeometryEditMode(GEOMETRY_EDIT_MODES.vertex)
     startEditing()
   }, [canManageSelected, startEditing])
 
-  /** "İptal": geometry snapshot is restored; name/colour drafts simply die. */
-  const cancelEdit = useCallback(() => {
+  /** Closes the session, putting the map geometry back as it was. */
+  const discardEdit = useCallback(() => {
     revertGeometry()
     stopEditing()
   }, [revertGeometry, stopEditing])
 
   /**
-   * "Kaydet": name, colour and geometry travel in ONE request, so the record
-   * can never end up half-updated. Colour is expanded into the style columns
-   * the type actually has (stroke always, fill where supported) by the same
-   * helper the attribute popup uses.
+   * "İptal" / panel close / navigating away mid-edit.
+   *
+   * With unsaved work the user is asked first, through the app's own dialog —
+   * never `window.confirm`, which cannot be styled, cannot be dismissed with the
+   * app's Escape handling and looks like a browser error rather than a choice.
+   * With nothing to lose the session simply closes; a confirmation that always
+   * appears is one people learn to click through.
    */
-  const saveEdit = useCallback(
-    async ({ name, color }) => {
-      const feature = selectedFeature ? featureByKey(selectedFeature.key) : null
-      if (!feature) return
-
-      const ok = await updateFeature(selectedFeature.key, {
-        name,
-        style: colorPatchFor(selectedFeature.type, color),
-        wkt: geometryToWkt4326(feature.getGeometry()),
-      })
-
-      if (ok) {
-        // The new shape is now the persisted one; drop the undo snapshot so a
-        // later cancel cannot reinstate a geometry the database no longer has.
-        commitGeometry()
-        stopEditing()
+  const cancelEdit = useCallback(
+    (afterDiscard = null) => {
+      if (hasUnsavedEdits) {
+        setPendingDiscard(() => afterDiscard ?? (() => {}))
+        return
       }
-      // On failure the session stays open with the user's edits intact.
+      discardEdit()
+      afterDiscard?.()
     },
-    [selectedFeature, featureByKey, updateFeature, commitGeometry, stopEditing],
+    [hasUnsavedEdits, discardEdit],
   )
+
+  const confirmDiscard = useCallback(() => {
+    const next = pendingDiscard
+    setPendingDiscard(null)
+    discardEdit()
+    next?.()
+  }, [pendingDiscard, discardEdit])
+
+  /**
+   * "Kaydet": metadata, colour and geometry travel in ONE request, so the
+   * record can never end up half-updated. Colour is expanded into the style
+   * columns the type actually has (stroke always, fill where supported) by the
+   * same helper the attribute popup uses, and the geometry is written from the
+   * SESSION's vertex list rather than read back off the map — the session is
+   * the source of truth, and a manual coordinate that has not yet round-tripped
+   * through the map would otherwise be lost.
+   */
+  const saveEdit = useCallback(async () => {
+    const draft = editSession.draft
+    const wkt = editSession.toWkt()
+    if (!draft || !wkt || !selectedFeature || !editSession.canSave) return
+
+    const ok = await updateFeature(selectedFeature.key, {
+      name: draft.name.trim(),
+      // Empty strings are meaningful here: they clear the field server-side.
+      description: draft.description.trim(),
+      category: draft.category,
+      tags: normalizeTags(draft.tags),
+      style: colorPatchFor(selectedFeature.type, draft.color),
+      wkt,
+    })
+
+    // On failure the session stays open with the user's edits intact.
+    if (ok) stopEditing()
+  }, [editSession, selectedFeature, updateFeature, stopEditing])
+
+  /** Copy helper shared by the point and "all coordinates" actions. */
+  const copyText = useCallback(
+    async (text, successMessage) => {
+      try {
+        await navigator.clipboard.writeText(text)
+        showToast('success', successMessage)
+      } catch {
+        // Clipboard access can be denied (insecure origin, permission); saying
+        // so beats a button that silently does nothing.
+        showToast('error', 'Panoya kopyalanamadı.')
+      }
+    },
+    [showToast],
+  )
+
+  /** "Bu Konuma Git": frames the point being edited without leaving the session. */
+  const zoomToEditedVertex = useCallback(() => {
+    if (!selectedFeature) return
+    const extent = extentOf(selectedFeature.key)
+    if (extent) fitExtent(extent)
+  }, [selectedFeature, extentOf, fitExtent])
 
   // Losing the selection mid-edit (delete, deselect) must not strand the map in
   // edit mode with nothing to edit.
@@ -370,28 +443,55 @@ export default function MapPage() {
      drawing first, then the shared edit / delete flow takes over. That is what
      keeps the sidebar and the map showing one selection rather than two. */
 
-  const editFromList = useCallback(
-    (key) => {
-      selectAndZoom(key)
-      // The panel is covering the map it is about to edit; close it so the
-      // Modify handles are actually reachable.
-      setActivePanel(null)
-      startEditing()
+  /* Leaving an open edit session by picking a different drawing has to go
+     through the same unsaved-changes guard as closing the panel; otherwise the
+     list becomes a side door that silently discards work. `cancelEdit` runs the
+     follow-up action itself once it is safe to, so the guarded and unguarded
+     paths stay one code path.
+
+     Clicking the MAP cannot reach here: selection is disabled outside select
+     mode, and edit is its own mode — that door is already closed. */
+  const guardEdit = useCallback(
+    (action) => {
+      if (workspaceMode.isEditing) cancelEdit(action)
+      else action()
     },
-    [selectAndZoom, startEditing],
+    [workspaceMode.isEditing, cancelEdit],
+  )
+
+  const selectFromList = useCallback((key) => guardEdit(() => selectAndZoom(key)), [guardEdit, selectAndZoom])
+
+  const editFromList = useCallback(
+    (key) =>
+      guardEdit(() => {
+        selectAndZoom(key)
+        // The panel is covering the map it is about to edit; close it so the
+        // Modify handles are actually reachable.
+        setActivePanel(null)
+        setGeometryEditMode(GEOMETRY_EDIT_MODES.vertex)
+        startEditing()
+      }),
+    [guardEdit, selectAndZoom, startEditing],
   )
 
   const deleteFromList = useCallback(
-    (key) => {
-      const item = workspace.drawings.find((drawing) => drawing.key === key)
-      // Same confirmation dialog as the map's own delete — one flow, so soft
-      // delete can never happen without a confirmation step.
-      if (item) setPendingDelete([item])
-    },
-    [workspace.drawings],
+    (key) =>
+      guardEdit(() => {
+        const item = workspace.drawings.find((drawing) => drawing.key === key)
+        // Same confirmation dialog as the map's own delete — one flow, so soft
+        // delete can never happen without a confirmation step.
+        if (item) setPendingDelete([item])
+      }),
+    [guardEdit, workspace.drawings],
   )
   /** Esc: abort drawing first, then close whatever is open. */
   const handleEscape = useCallback(() => {
+    // The unsaved-changes dialog is the most modal thing on screen; Esc there
+    // means "go back to editing", which is its safe answer.
+    if (pendingDiscard) {
+      setPendingDiscard(null)
+      return
+    }
     if (pendingDelete) {
       setPendingDelete(null)
       return
@@ -405,6 +505,7 @@ export default function MapPage() {
     // An open edit session is the next most modal: Esc abandons the edit and
     // puts the geometry back, rather than dropping the selection under it.
     if (workspaceMode.isEditing) {
+      // Asks first when there is unsaved work; closes straight away when not.
       cancelEdit()
       return
     }
@@ -434,7 +535,7 @@ export default function MapPage() {
       return
     }
     if (selectionCount > 0) workspace.clearSelection()
-  }, [pendingDelete, workspaceMode, styleTarget, activePanel, selectionCount, workspace, cancelEdit])
+  }, [pendingDiscard, pendingDelete, workspaceMode, styleTarget, activePanel, selectionCount, workspace, cancelEdit])
 
   const handleMeasureShortcut = useCallback(
     () => workspaceMode.selectMeasureTool(workspaceMode.activeMeasureTool ?? 'distance'),
@@ -609,7 +710,13 @@ export default function MapPage() {
                 saving={workspace.isSaving}
                 onStartEdit={startEdit}
                 onSaveEdit={saveEdit}
-                onCancelEdit={cancelEdit}
+                onCancelEdit={() => cancelEdit()}
+                session={editSession}
+                editMode={geometryEditMode}
+                onEditModeChange={setGeometryEditMode}
+                onZoomToVertex={zoomToEditedVertex}
+                onCopyText={copyText}
+                onNotify={showToast}
                 canManage={canManageSelected}
               />
 
@@ -636,7 +743,7 @@ export default function MapPage() {
                 loading={workspace.loadingDrawings}
                 error={workspace.loadError}
                 onRetry={workspace.reloadDrawings}
-                onSelect={selectAndZoom}
+                onSelect={selectFromList}
                 onToggleSelect={workspace.toggleSelection}
                 onSelectAllVisible={() => {
                   const count = workspace.selectAllVisible()
@@ -702,6 +809,21 @@ export default function MapPage() {
                 confirmLabel={pendingDelete?.length > 1 ? `${pendingDelete.length} Çizimi Sil` : 'Sil'}
                 onConfirm={confirmDelete}
                 onCancel={() => setPendingDelete(null)}
+              />
+
+              {/* Unsaved edits. The same dialog component as the delete
+                  confirmation, so both destructive moments look and behave
+                  alike — and neither is a browser `confirm()`. Cancelling is
+                  the safe answer, so it is the one that returns to editing. */}
+              <ConfirmDialog
+                open={Boolean(pendingDiscard)}
+                title="Kaydedilmemiş değişiklikler"
+                message="Kaydedilmemiş değişiklikleriniz var."
+                description="Şimdi çıkarsanız bu düzenlemeler kaybolur. Çizim veritabanında olduğu gibi kalır."
+                confirmLabel="Değişiklikleri At"
+                cancelLabel="Düzenlemeye Dön"
+                onConfirm={confirmDiscard}
+                onCancel={() => setPendingDiscard(null)}
               />
             </>
           )}
