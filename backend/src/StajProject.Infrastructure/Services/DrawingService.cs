@@ -76,6 +76,17 @@ public class DrawingService : IDrawingService
             _ => UpdateStyleAsync<PolygonFeature, Polygon>(kind, id, style, cancellationToken)
         };
 
+    public Task<ServiceResult<DrawingResponse>> UpdateAsync(
+        DrawingKind kind,
+        int id,
+        UpdateDrawingRequest request,
+        CancellationToken cancellationToken) => kind switch
+        {
+            DrawingKind.Point => UpdateAsync<PointFeature, Point>(kind, id, request, cancellationToken),
+            DrawingKind.Line => UpdateAsync<LineFeature, LineString>(kind, id, request, cancellationToken),
+            _ => UpdateAsync<PolygonFeature, Polygon>(kind, id, request, cancellationToken)
+        };
+
     public Task<ServiceResult<int>> DeleteAsync(DrawingKind kind, int id, CancellationToken cancellationToken) => kind switch
     {
         DrawingKind.Point => DeleteAsync<PointFeature>(kind, id, cancellationToken),
@@ -340,6 +351,10 @@ public class DrawingService : IDrawingService
                sahiplik bu yüzden hiçbir client girdisine ihtiyaç duymadan
                kendiliğinden korunur. */
             entity.IsDeleted = false;
+            // Silme her iki işareti birden düşürdüğü için geri alma da
+            // ikisini birden geri açar; aksi hâlde kayıt "silinmemiş ama
+            // pasif" kalır ve query filter onu yine gizlerdi.
+            entity.IsActive = true;
             entity.DeletedAt = null;
             entity.DeletedByUserId = null;
 
@@ -586,13 +601,31 @@ public class DrawingService : IDrawingService
         where TEntity : class, IDrawingFeature<TGeometry>
         where TGeometry : Geometry
     {
-        /* Sahip kullanıcı adı ilişkiden türetilir (legacy CreatedBy string'i
-           değil). Include tek sorguda join yapar; kullanıcı başına ek sorgu
-           oluşmaz. Okuma HERKESE açıktır — sahiplik yalnızca mutation'ı
-           kısıtlar, görünürlüğü değil; bu yüzden burada filtre yoktur. */
+        /* Veri izolasyonu: harita ve "Çizimlerim" yalnızca ÇAĞIRAN kullanıcının
+           kendi çizimlerini görür. Filtre role bakmaz — Admin de bu ekranda
+           yalnızca kendi kayıtlarını görür; yönetim yetkisi mutation tarafında
+           (DrawingAuthorization) korunur, görünürlükte değil.
+
+           Filtre LINQ üzerinden SQL'e iner; tablo belleğe çekilip sonra
+           süzülmez. IsDeleted/IsActive koşulunu global query filter ekler.
+
+           Kimlik yoksa (yapılandırma hatası) boş liste döner: kimliği
+           belirlenemeyen bir istek başkasının verisini görmektense hiçbir şey
+           görmemelidir.
+
+           Sahip kullanıcı adı ilişkiden türetilir (legacy CreatedBy string'i
+           değil); Include tek sorguda join yapar. */
+        var currentUserId = _currentUser.UserId;
+
+        if (currentUserId is null)
+        {
+            return [];
+        }
+
         var entities = await _dbContext.Set<TEntity>()
             .AsNoTracking()
             .Include(entity => entity.CreatedByUser)
+            .Where(entity => EF.Property<int>(entity, nameof(IStyledDrawingFeature.CreatedByUserId)) == currentUserId.Value)
             .OrderBy(entity => EF.Property<int>(entity, nameof(IStyledDrawingFeature.Id)))
             .ToListAsync(cancellationToken);
 
@@ -638,6 +671,91 @@ public class DrawingService : IDrawingService
         return ServiceResult<DrawingResponse>.Success(ToResponse<TEntity, TGeometry>(entity, kind));
     }
 
+    /// <summary>
+    /// Ad + stil + geometry güncellemesi. Doğrulamaların TAMAMI kayda tek bir
+    /// yazma yapılmadan önce biter: yarı uygulanmış bir güncelleme (adı değişip
+    /// geometry'si reddedilen kayıt) oluşamaz.
+    /// </summary>
+    private async Task<ServiceResult<DrawingResponse>> UpdateAsync<TEntity, TGeometry>(
+        DrawingKind kind,
+        int id,
+        UpdateDrawingRequest request,
+        CancellationToken cancellationToken)
+        where TEntity : class, IDrawingFeature<TGeometry>
+        where TGeometry : Geometry
+    {
+        /* Global query filter burada bilerek AKTİFTİR: silinmiş veya pasif bir
+           kayıt bulunamaz, dolayısıyla güncellenemez de. */
+        var entity = await _dbContext.Set<TEntity>().FindAsync([id], cancellationToken);
+
+        if (entity is null)
+        {
+            return NotFound<DrawingResponse>(kind, id);
+        }
+
+        // IDOR koruması: kayıt DEĞİŞTİRİLMEDEN önce sahiplik doğrulanır.
+        // Başka kullanıcının id'sini elle gönderen istek burada durur.
+        if (!await _drawingAuthorization.CanManageAsync(entity))
+        {
+            return ServiceResult<DrawingResponse>.Forbidden(ForbiddenMessage);
+        }
+
+        // Ad: gönderilmediyse korunur, gönderildiyse create ile aynı kurala tabi.
+        var name = entity.Name;
+
+        if (request.Name is not null)
+        {
+            var validatedName = DrawingAttributeValidator.ValidateNameForCreate(request.Name);
+
+            if (!validatedName.IsSuccess)
+            {
+                return ServiceResult<DrawingResponse>.Failure(validatedName.Error!);
+            }
+
+            name = validatedName.Value!;
+        }
+
+        // Stil: gönderilmeyen alanlar kaydın mevcut stilinden korunur.
+        var merged = DrawingStyleValidator.ValidateForUpdate(request.Style, ReadStyle(entity, kind), kind);
+
+        if (!merged.IsSuccess)
+        {
+            return ServiceResult<DrawingResponse>.Failure(merged.Error!);
+        }
+
+        /* Geometry: create yolundaki parser'ın aynısı kullanılır — tip
+           uyumu, boş geometry reddi, SRID ve koordinat aralığı kontrolleri
+           tek bir yerde tanımlıdır, burada kopyalanmaz. */
+        TGeometry? geometry = null;
+
+        if (request.Wkt is not null)
+        {
+            var parsed = WktGeometryParser.Parse<TGeometry>(request.Wkt);
+
+            if (!parsed.IsSuccess)
+            {
+                return ServiceResult<DrawingResponse>.Failure(parsed.Error!);
+            }
+
+            geometry = parsed.Value!;
+        }
+
+        // Buradan sonrası yazma: her girdi doğrulanmış durumda.
+        entity.Name = name;
+        ApplyStyle(entity, merged.Value!);
+
+        if (geometry is not null)
+        {
+            entity.Geometry = geometry;
+        }
+
+        // ModifiedDate SaveChanges içinde UTC damgalanır; CreatedDate ve
+        // sahiplik alanları değişmez.
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return ServiceResult<DrawingResponse>.Success(ToResponse<TEntity, TGeometry>(entity, kind));
+    }
+
     private async Task<ServiceResult<int>> DeleteAsync<TEntity>(DrawingKind kind, int id, CancellationToken cancellationToken)
         where TEntity : class, IStyledDrawingFeature
     {
@@ -668,8 +786,12 @@ public class DrawingService : IDrawingService
     private void MarkDeleted(IStyledDrawingFeature entity)
     {
         entity.IsDeleted = true;
+        // Silinen kayıt aynı anda pasife de düşer; normal sorgular ikisini
+        // birden şart koştuğu için kayıt hiçbir listede görünmez.
+        entity.IsActive = false;
         entity.DeletedAt = DateTime.UtcNow;
         entity.DeletedByUserId = _currentUser.UserId;
+        // ModifiedDate SaveChanges içinde UTC damgalanır.
     }
 
     private static ServiceResult<T> NotFound<T>(DrawingKind kind, int id) =>
