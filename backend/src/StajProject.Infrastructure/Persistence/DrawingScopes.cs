@@ -4,75 +4,55 @@ using StajProject.Domain.Common;
 namespace StajProject.Infrastructure.Persistence;
 
 /// <summary>
-/// Çizim tablolarının <b>iki ayrı okuma kapsamı</b>. Bu dosyanın tek amacı bu
-/// ayrımı isimlendirmek ve tek bir yerde tutmaktır.
+/// Çizim tablolarının okuma kapsamı. Tek bir sahiplik yüklemi burada tanımlanır
+/// ve kullanıcıya veri gösteren her yol onu kullanır.
 /// <para>
-/// AUTH-4 ile harita ve "Çizimlerim" yalnızca çağıran kullanıcının kayıtlarını
-/// göstermeye başladı. Bu doğru davranıştır ve korunur. Ancak envanter/kesişim
-/// analizi <b>aynı sorguyu kullanmaz</b>: analiz, ödevin baştan beri tanımladığı
-/// paylaşılan envanter kümesi üzerinde çalışır. İki kavram şudur:
+/// Proje kuralı tektir: <b>her kullanıcı yalnızca kendi çizimlerine erişir</b> —
+/// görüntüleme, düzenleme, silme ve <b>analiz</b> dahil. Harita, "Çizimlerim" ve
+/// envanter/kesişim analizi bu yüzden aynı veri kümesine bakar.
 /// </para>
-/// <list type="table">
-/// <item>
-///   <term><see cref="UserMapScope"/></term>
-///   <description>Harita + Çizimlerim. <c>inserted_user_id == currentUserId</c>,
-///   silinmemiş ve aktif. Kullanıcıya <b>satır</b> döndüren her yol bunu kullanır.</description>
-/// </item>
-/// <item>
-///   <term><see cref="InventoryScope"/></term>
-///   <description>Mekânsal analiz. Sahiplikten <b>bağımsız</b>, silinmemiş ve
-///   aktif paylaşılan envanter kümesi. Yalnızca <b>toplam/sayı</b> üretir;
-///   hiçbir çağrı yolu buradan client'a ham çizim satırı döndürmez.</description>
-/// </item>
-/// </list>
 /// <para>
-/// <b>Neden ayrı bir uzantı metodu?</b> Bugün <see cref="InventoryScope"/> ek bir
-/// predicate eklemez — silinmiş/pasif kayıtları zaten global query filter düşürür.
-/// Ayrım bu hâliyle bile gerçektir, ama <i>isimsiz</i> olduğu sürece kazayla
-/// bozulabilir: ownership filtresi ileride global query filter'a taşınırsa analiz
-/// sessizce kullanıcı bazlı hâle gelir ve önceki ödevin anlamı kaybolurdu. Kapsam
-/// burada adlandırıldığı için hangi sorgunun hangi veri kümesine baktığı okunur,
-/// aranabilir ve test edilebilir durumdadır (bkz.
-/// <c>InventoryAnalysisScopeTests</c>).
+/// <b>Önceki davranış ve neden değişti.</b> Analiz bir dönem sahiplikten bağımsız
+/// "paylaşılan envanter" kümesini sayıyordu. Bu, ekranda 1 çizgi ve 1 poligonu
+/// olan bir kullanıcıya "2 çizgi, 3 poligon" gibi bir sonuç gösteriyordu:
+/// sayıların karşılığı haritada yoktu ve fark başka kullanıcıların kayıtlarından
+/// geliyordu. Sayı da bir bilgidir — kullanıcı, başkalarının kaç kaydının o
+/// alana değdiğini öğrenmemelidir. Kapsam artık görünürlükle aynı sınırdadır.
 /// </para>
 /// </summary>
 public static class DrawingScopes
 {
     /// <summary>
-    /// Harita veri kümesi: yalnızca verilen kullanıcının kendi çizimleri.
+    /// Sahiplik yüklemi. Projedeki <b>tek</b> tanımı budur; kopyalanmaz.
     /// </summary>
     /// <remarks>
-    /// Filtre role bakmaz — Admin de bu kapsamda yalnızca kendi kayıtlarını görür;
-    /// yönetim yetkisi mutation tarafında (<c>DrawingAuthorization</c>) korunur,
-    /// görünürlükte değil. Predicate LINQ üzerinden SQL'e iner; tablo belleğe
-    /// çekilip sonra süzülmez.
+    /// Filtre role bakmaz — Admin de bu kapsamda yalnızca kendi kayıtlarını görür
+    /// ve yalnızca kendi envanterini analiz eder; yönetim yetkisi mutation
+    /// tarafında (<c>DrawingAuthorization</c>) korunur, görünürlükte değil.
+    /// Predicate LINQ üzerinden SQL'e iner; tablo belleğe çekilip sonra
+    /// süzülmez. Silinmiş/pasif kayıtları global query filter
+    /// (<c>!IsDeleted &amp;&amp; IsActive</c>) düşürdüğü için burada tekrarlanmaz.
     /// </remarks>
-    public static IQueryable<TEntity> UserMapScope<TEntity>(this IQueryable<TEntity> query, int currentUserId)
+    public static IQueryable<TEntity> OwnedBy<TEntity>(this IQueryable<TEntity> query, int userId)
         where TEntity : class, IStyledDrawingFeature =>
         query.Where(entity =>
-            EF.Property<int>(entity, nameof(IStyledDrawingFeature.CreatedByUserId)) == currentUserId);
+            EF.Property<int>(entity, nameof(IStyledDrawingFeature.CreatedByUserId)) == userId);
 
     /// <summary>
-    /// Envanter analizi veri kümesi: sahiplikten bağımsız paylaşılan envanter.
+    /// Harita + "Çizimlerim" veri kümesi: yalnızca çağıran kullanıcının çizimleri.
+    /// </summary>
+    public static IQueryable<TEntity> UserMapScope<TEntity>(this IQueryable<TEntity> query, int currentUserId)
+        where TEntity : class, IStyledDrawingFeature => query.OwnedBy(currentUserId);
+
+    /// <summary>
+    /// Envanter analizi veri kümesi: çağıran kullanıcının kendi envanteri.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// Bilinçli olarak <see cref="UserMapScope"/> uygulanmaz. Kesişim analizi
-    /// "bu alan kaç envanter kaydına değiyor" sorusunu yanıtlar; cevabın yalnızca
-    /// çağıranın kendi çizimlerini sayması ödevin önceki davranışını bozardı.
-    /// </para>
-    /// <para>
-    /// Silinmiş ve pasif kayıtlar burada da düşer: bunu entity configuration'daki
-    /// global query filter (<c>!IsDeleted &amp;&amp; IsActive</c>) sağlar, bu yüzden
-    /// burada tekrar edilmez.
-    /// </para>
-    /// <para>
-    /// <b>Güvenlik sınırı:</b> bu kapsam yalnızca <c>Count</c> gibi toplam üreten
-    /// ifadelerle kullanılır. Buradan dönen <c>IQueryable</c> asla
-    /// <c>DrawingResponse</c>'a çevrilip client'a verilmez — aksi hâlde kullanıcı
-    /// başkalarının çizim listesini görürdü.
-    /// </para>
+    /// <see cref="UserMapScope"/> ile <b>aynı</b> kümedir ve ayrı bir isim taşıması
+    /// niyeti okunur kılmak içindir: analiz sorgusunun sahiplik filtresi taşıdığı
+    /// çağrı yerinde görünür. Parametre zorunludur — kimliksiz çağrı derlenmez,
+    /// böylece kapsam "unutularak" tüm tabloya genişleyemez.
     /// </remarks>
-    public static IQueryable<TEntity> InventoryScope<TEntity>(this IQueryable<TEntity> query)
-        where TEntity : class, IStyledDrawingFeature => query;
+    public static IQueryable<TEntity> InventoryScope<TEntity>(this IQueryable<TEntity> query, int currentUserId)
+        where TEntity : class, IStyledDrawingFeature => query.OwnedBy(currentUserId);
 }
