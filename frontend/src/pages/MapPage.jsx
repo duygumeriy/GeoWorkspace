@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import 'ol/ol.css'
 import Map from 'ol/Map'
@@ -6,7 +6,7 @@ import View from 'ol/View'
 import TileLayer from 'ol/layer/Tile'
 import OSM from 'ol/source/OSM'
 import { defaults as defaultControls, ScaleLine } from 'ol/control'
-import { fromLonLat } from 'ol/proj'
+import { fromLonLat, toLonLat } from 'ol/proj'
 import { useAuth } from '../auth/AuthContext'
 import { canManageAll, canManageDrawing } from '../auth/permissions.js'
 import { useTransition } from '../transition/TransitionContext.jsx'
@@ -24,9 +24,9 @@ import LayersPanel from '../components/map/LayersPanel.jsx'
 import DrawingsPanel from '../components/map/DrawingsPanel.jsx'
 import ConfirmDialog from '../components/map/ConfirmDialog.jsx'
 import AttributePopup from '../components/map/AttributePopup.jsx'
+import AnalysisPanel from '../components/map/AnalysisPanel.jsx'
 import { SettingsPanel, AboutPanel } from '../components/map/InfoPanels.jsx'
 import {
-  AnalysisReadout,
   DrawingHint,
   HoverTooltip,
   MeasurementReadout,
@@ -45,7 +45,16 @@ import useKeyboardShortcuts from '../hooks/useKeyboardShortcuts.js'
 import useGeometryEditing, { GEOMETRY_EDIT_MODES } from '../hooks/useGeometryEditing.js'
 import useEditSession from '../hooks/useEditSession.js'
 import useVertexOverlay from '../hooks/useVertexOverlay.js'
+import useAnalysisHighlight from '../hooks/useAnalysisHighlight.js'
 import { DRAWING_TYPES, DRAWING_TYPE_LIST, colorPatchFor, normalizeTags } from '../map/drawingTypes.js'
+import {
+  formatArea,
+  formatLength,
+  formatLonLat,
+  measureArea,
+  measureLength,
+  measurePerimeter,
+} from '../map/measure.js'
 import './MapPage.css'
 
 const MAP_READY_FALLBACK_MS = 2500
@@ -428,6 +437,110 @@ export default function MapPage() {
     if (ok) stopEditing()
   }, [editSession, selectedFeature, updateFeature, stopEditing])
 
+  /* --- Analysis results -> the map -----------------------------------------
+     Every match the analysis returns is, by definition, one of the caller's own
+     drawings — the backend scopes the query to them — so it is already on the
+     map. That is what lets the result list carry only identity and metadata:
+     the geometry is looked up here rather than sent twice. */
+
+  /** The map feature behind a matched record, or null if it is not loaded. */
+  const analysisFeature = useCallback(
+    (item) => {
+      if (!item) return null
+      const match = workspace.drawings.find(
+        (drawing) => drawing.type === item.drawingType && drawing.databaseId === item.id,
+      )
+      return match ? featureByKey(match.key) : null
+    },
+    [workspace.drawings, featureByKey],
+  )
+
+  /** The geometry the highlight layer draws, derived from the shared selection. */
+  const highlightedGeometry = useMemo(() => {
+    const selected = analysis.selectedKey
+    if (!selected) return null
+
+    const [type, rawId] = selected.split(':')
+    const feature = analysisFeature({ drawingType: type, id: Number(rawId) })
+    return feature?.getGeometry() ?? null
+  }, [analysis.selectedKey, analysisFeature])
+
+  useAnalysisHighlight(mapInstance, { geometry: highlightedGeometry })
+
+  /**
+   * Geometry-derived detail for one match, measured with the app's own helpers.
+   *
+   * Computed from the feature on the map rather than returned by the API so a
+   * length shown here and in the drawing panel are the same number produced by
+   * the same code, not two answers that could drift apart.
+   */
+  const analysisMetrics = useCallback(
+    (item) => {
+      const geometry = analysisFeature(item)?.getGeometry()
+      if (!geometry) return []
+
+      if (item.drawingType === 'point') {
+        const { lon, lat } = formatLonLat(toLonLat(geometry.getCoordinates()))
+        return [
+          { label: 'Boylam', value: lon },
+          { label: 'Enlem', value: lat },
+        ]
+      }
+
+      if (item.drawingType === 'line') {
+        return [
+          { label: 'Toplam Uzunluk', value: formatLength(measureLength(geometry)) },
+          { label: 'Nokta Sayısı', value: `${geometry.getCoordinates().length}` },
+        ]
+      }
+
+      return [
+        { label: 'Alan', value: formatArea(measureArea(geometry)) },
+        { label: 'Çevre', value: formatLength(measurePerimeter(geometry)) },
+        // The ring repeats its first vertex to close; the user counts corners.
+        { label: 'Köşe Sayısı', value: `${Math.max(0, (geometry.getCoordinates()?.[0]?.length ?? 1) - 1)}` },
+      ]
+    },
+    [analysisFeature],
+  )
+
+  /** "Haritada Göster": frames the match without disturbing the analysis. */
+  const showAnalysisItemOnMap = useCallback(
+    (item) => {
+      const feature = analysisFeature(item)
+      if (!feature) {
+        showToast('info', 'Bu çizim haritada bulunamadı.')
+        return
+      }
+      /* The selection is deliberately left alone. This button only exists inside
+         an already-expanded result, so the record is selected and its highlight
+         is already lit; re-running the row's toggle would switch it back OFF and
+         the user would watch the highlight vanish as the map flew to it.
+         Only the camera moves — the analysis area, the result and the panel all
+         stay exactly as they were. */
+      fitExtent(feature.getGeometry()?.getExtent())
+    },
+    [analysisFeature, fitExtent, showToast],
+  )
+
+  /**
+   * "Çizimi Aç": hands the record to the ORDINARY drawing detail panel rather
+   * than growing a second one inside the analysis results.
+   */
+  const openAnalysisItemDrawing = useCallback(
+    (item) => {
+      const match = workspace.drawings.find(
+        (drawing) => drawing.type === item.drawingType && drawing.databaseId === item.id,
+      )
+      if (!match) {
+        showToast('info', 'Bu çizim haritada bulunamadı.')
+        return
+      }
+      selectAndZoom(match.key)
+    },
+    [workspace.drawings, selectAndZoom, showToast],
+  )
+
   /** Copy helper shared by the point and "all coordinates" actions. */
   const copyText = useCallback(
     async (text, successMessage) => {
@@ -706,10 +819,15 @@ export default function MapPage() {
 
               {/* One readout for both analysis entry points: the temporary tool
                   and the run that follows a saved polygon. */}
-              <AnalysisReadout
+              <AnalysisPanel
                 loading={analysis.isLoading}
                 result={analysis.result}
                 error={analysis.error}
+                selectedKey={analysis.selectedKey}
+                onSelectItem={analysis.selectItem}
+                onShowOnMap={showAnalysisItemOnMap}
+                onOpenDrawing={openAnalysisItemDrawing}
+                metricsFor={analysisMetrics}
                 onClear={analysis.clear}
                 onClose={analysis.clear}
               />

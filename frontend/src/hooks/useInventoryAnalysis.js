@@ -43,6 +43,16 @@ export default function useInventoryAnalysis(map, { active, showToast }) {
   const [result, setResult] = useState(null)
   const [error, setError] = useState('')
 
+  /**
+   * Which matched record the user is looking at, as `"line:70"`.
+   *
+   * ONE piece of state serves both the panel's expanded row and the map's
+   * highlight, so the two cannot disagree about what is selected. It is a
+   * composite key rather than an object because a database id is only unique
+   * within its own type.
+   */
+  const [selectedKey, setSelectedKey] = useState(null)
+
   // Only the newest request may write the result: clearing or re-drawing while
   // a request is in flight must not be overwritten by the stale answer.
   const requestIdRef = useRef(0)
@@ -94,6 +104,9 @@ export default function useInventoryAnalysis(map, { active, showToast }) {
 
       setStatus('loading')
       setError('')
+      // A previous result's selection must not survive into a new one: the ids
+      // it refers to may not be in the new answer at all.
+      setSelectedKey(null)
 
       try {
         const res = await analyzeIntersections(wkt, { excludePolygonId })
@@ -103,6 +116,10 @@ export default function useInventoryAnalysis(map, { active, showToast }) {
         // A newer request (or a clear) has taken over in the meantime.
         if (requestId !== requestIdRef.current) return null
 
+        /* Counts come from the server and are NOT recomputed here. The backend
+           is the authority on which records intersect — a second opinion
+           computed in the browser could only ever disagree with it, and it is
+           the one that enforces the ownership boundary. */
         setResult({
           label,
           temporary,
@@ -110,6 +127,11 @@ export default function useInventoryAnalysis(map, { active, showToast }) {
           point: body.pointCount,
           line: body.lineCount,
           polygon: body.polygonCount,
+          items: {
+            point: body.points ?? [],
+            line: body.lines ?? [],
+            polygon: body.polygons ?? [],
+          },
         })
         setStatus('done')
         return body
@@ -144,6 +166,7 @@ export default function useInventoryAnalysis(map, { active, showToast }) {
       source.clear()
       requestIdRef.current += 1
       setResult(null)
+      setSelectedKey(null)
       setError('')
       setStatus('idle')
     })
@@ -185,14 +208,20 @@ export default function useInventoryAnalysis(map, { active, showToast }) {
     [runAnalysis],
   )
 
-  /** "Temizle": drops the temporary geometry and the result together. */
+  /** "Temizle": drops the temporary geometry, the result and the highlight. */
   const clear = useCallback(() => {
     sourceRef.current?.clear()
     // Invalidates any in-flight request so a late answer cannot repopulate.
     requestIdRef.current += 1
     setResult(null)
+    setSelectedKey(null)
     setError('')
     setStatus('idle')
+  }, [])
+
+  /** Selects a matched record, or clears the selection when given the same one. */
+  const selectItem = useCallback((key) => {
+    setSelectedKey((current) => (current === key ? null : key))
   }, [])
 
   return {
@@ -201,7 +230,15 @@ export default function useInventoryAnalysis(map, { active, showToast }) {
     isLoading: status === 'loading',
     result,
     error,
+    /** `"line:70"` — shared by the panel row and the map highlight. */
+    selectedKey,
+    selectItem,
     analyzeSaved,
     clear,
   }
+}
+
+/** The composite key a matched record is addressed by, in both surfaces. */
+export function analysisItemKey(item) {
+  return `${item.drawingType}:${item.id}`
 }

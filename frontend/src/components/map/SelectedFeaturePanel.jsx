@@ -21,6 +21,7 @@ import {
   measurePerimeter,
 } from '../../map/measure.js'
 import { toLonLat } from 'ol/proj'
+import { formatDateTime } from '../../map/datetime.js'
 import {
   FocusIcon,
   PaletteIcon,
@@ -32,20 +33,6 @@ import {
   RedoIcon,
 } from '../ui/icons/index.js'
 import './SelectedFeaturePanel.css'
-
-/** dd.MM.yyyy HH:mm, or an em dash when the API sent nothing. */
-function formatDate(value) {
-  if (!value) return '—'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '—'
-  return date.toLocaleString('tr-TR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
 
 function Row({ label, value }) {
   return (
@@ -223,8 +210,8 @@ export default function SelectedFeaturePanel({
             {measurements.map((item) => (
               <Row key={item.label} label={item.label} value={item.value} />
             ))}
-            <Row label="Oluşturma" value={formatDate(feature.createdDate)} />
-            <Row label="Güncelleme" value={formatDate(feature.modifiedDate)} />
+            <Row label="Oluşturma" value={formatDateTime(feature.createdDate)} />
+            <Row label="Güncelleme" value={formatDateTime(feature.modifiedDate)} />
             <Row label="Oluşturan" value={feature.createdBy || '—'} />
             <Row label="Koordinat Sistemi" value="EPSG:4326" />
           </dl>
