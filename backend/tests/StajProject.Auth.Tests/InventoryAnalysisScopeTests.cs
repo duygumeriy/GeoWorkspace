@@ -11,20 +11,20 @@ using StajProject.Infrastructure.Services;
 namespace StajProject.Auth.Tests;
 
 /// <summary>
-/// Harita veri kümesi ile envanter analizi veri kümesinin ayrı kaldığını
-/// doğrular (bkz. <see cref="DrawingScopes"/>).
+/// Envanter analizinin <b>çağıran kullanıcının kendi envanteriyle</b> sınırlı
+/// kaldığını doğrular (bkz. <see cref="DrawingScopes"/>).
 /// </summary>
 /// <remarks>
 /// <para>
-/// Bu testler bir <b>regresyon kilidi</b>dir. Kullanıcı bazlı görünürlük
-/// (AUTH-4) doğru davranıştır ve korunmalıdır; ancak aynı filtrenin analiz
-/// tarafına da sızması ödevin önceki davranışını sessizce bozar — örneğin
-/// ownership filtresi ileride global query filter'a taşınırsa. O durumda
-/// aşağıdaki testler kırmızıya döner.
+/// <b>Davranış değişikliği.</b> Analiz bir dönem sahiplikten bağımsız "paylaşılan
+/// envanter" kümesini sayıyordu ve bu testler o ayrımı kilitliyordu. Proje kuralı
+/// tektir — her kullanıcı yalnızca kendi çizimlerine erişir, analiz dahil — ve
+/// eski davranış onu ihlal ediyordu: haritasında 1 çizgi 1 poligon olan kullanıcı
+/// "2 çizgi 3 poligon" görüyordu. Testler artık yeni kuralı kilitler.
 /// </para>
 /// <para>
-/// Güvenlik tarafı da burada sabitlenir: analiz paylaşılan kümeye baksa bile
-/// uçtan yalnızca sayılar döner, ham çizim satırı dönmez.
+/// Sayı da bir bilgidir: bir kullanıcı, başkalarının kaç kaydının bir alana
+/// değdiğini sayı üzerinden bile öğrenmemelidir.
 /// </para>
 /// </remarks>
 public class InventoryAnalysisScopeTests
@@ -35,7 +35,7 @@ public class InventoryAnalysisScopeTests
     /// <summary>Her iki kullanıcının çizimlerini de kapsayan analiz alanı.</summary>
     private const string AnalysisArea = "POLYGON ((27 37, 34 37, 34 43, 27 43, 27 37))";
 
-    /* --- Harita: kullanıcı bazlı ------------------------------------------- */
+    /* --- Harita ve analiz aynı sınırda -------------------------------------- */
 
     [Fact]
     public async Task Map_query_returns_only_the_calling_users_drawings()
@@ -54,73 +54,231 @@ public class InventoryAnalysisScopeTests
         Assert.Equal("B-Line", Assert.Single(await userB.GetLinesAsync(default)).Name);
     }
 
-    /* --- Analiz: paylaşılan envanter --------------------------------------- */
+    [Fact]
+    public async Task Analysis_returns_only_current_users_points()
+    {
+        var result = await AnalyseAsAsync(UserAId);
+
+        Assert.Equal(1, result.PointCount);
+        Assert.Equal("A-Point", Assert.Single(result.Points).Name);
+    }
 
     [Fact]
-    public async Task Inventory_analysis_counts_the_shared_dataset_not_just_the_callers_drawings()
+    public async Task Analysis_returns_only_current_users_lines()
+    {
+        var result = await AnalyseAsAsync(UserAId);
+
+        Assert.Equal(1, result.LineCount);
+        Assert.Equal("A-Line", Assert.Single(result.Lines).Name);
+    }
+
+    [Fact]
+    public async Task Analysis_returns_only_current_users_polygons()
+    {
+        var result = await AnalyseAsAsync(UserAId);
+
+        Assert.Equal(1, result.PolygonCount);
+        Assert.Equal("A-Polygon", Assert.Single(result.Polygons).Name);
+    }
+
+    [Fact]
+    public async Task Analysis_result_differs_per_user()
     {
         await using var db = NewDb();
         await SeedUsersAsync(db);
         await SeedTwoUsersDrawingsAsync(db);
 
-        // Analiz servisi kimlik almaz: kapsamı çağırana göre daralmaz.
-        var analysis = new SpatialAnalysisService(db);
+        var forUserA = await AnalysisFor(db, UserAId)
+            .CountIntersectionsAsync(new IntersectionAnalysisRequest { Wkt = AnalysisArea }, default);
+        var forUserB = await AnalysisFor(db, UserBId)
+            .CountIntersectionsAsync(new IntersectionAnalysisRequest { Wkt = AnalysisArea }, default);
 
-        var result = await analysis.CountIntersectionsAsync(
-            new IntersectionAnalysisRequest { Wkt = AnalysisArea }, default);
-
-        Assert.True(result.IsSuccess);
-        // İki kullanıcının kayıtlarının TOPLAMI; A'nın haritada gördüğü 2 değil.
-        Assert.Equal(2, result.Value!.PointCount);
-        Assert.Equal(2, result.Value.LineCount);
-        Assert.Equal(2, result.Value.PolygonCount);
-        Assert.Equal(6, result.Value.TotalCount);
+        /* Aynı alanın analizi artık kimin çalıştırdığına GÖRE değişir. Eskiden
+           tersini iddia eden bir test vardı; kural değiştiği için iddia da
+           tersine döndü. */
+        Assert.Equal(3, forUserA.Value!.TotalCount);
+        Assert.Equal(3, forUserB.Value!.TotalCount);
+        Assert.DoesNotContain(forUserA.Value.Points, item => item.Name.StartsWith("B-"));
+        Assert.DoesNotContain(forUserB.Value.Points, item => item.Name.StartsWith("A-"));
     }
 
     [Fact]
-    public async Task Inventory_analysis_result_is_identical_for_both_users()
+    public async Task Analysis_does_not_expose_other_users_inventory()
+    {
+        var result = await AnalyseAsAsync(UserAId);
+
+        var everyItem = result.Points.Concat(result.Lines).Concat(result.Polygons).ToList();
+
+        Assert.Equal(3, everyItem.Count);
+        // Ne satır, ne isim, ne kimlik: B'ye ait hiçbir iz olmamalı.
+        Assert.All(everyItem, item => Assert.StartsWith("A-", item.Name));
+    }
+
+    [Fact]
+    public async Task Analysis_scope_comes_from_the_identity_not_the_request()
     {
         await using var db = NewDb();
         await SeedUsersAsync(db);
         await SeedTwoUsersDrawingsAsync(db);
 
-        /* Aynı alanın analizi kimin çalıştırdığına göre DEĞİŞMEMELİDİR.
-           Bu, "analiz kullanıcı bazlı hâle geldi" regresyonunu yakalayan en
-           doğrudan iddiadır: kullanıcı bazlı olsaydı A ile B farklı sayı görürdü. */
-        var forUserA = await new SpatialAnalysisService(db)
+        /* İstek gövdesinde sahiplik alanı YOKTUR: kapsamı değiştirmek isteyen bir
+           client'ın tutunacağı bir alan bulunmaması, sözleşmenin kendisidir. */
+        var ownership = typeof(IntersectionAnalysisRequest)
+            .GetProperties()
+            .Where(property => property.Name.Contains("User", StringComparison.OrdinalIgnoreCase)
+                || property.Name.Contains("Owner", StringComparison.OrdinalIgnoreCase));
+
+        Assert.Empty(ownership);
+
+        // Kimliksiz istek hiçbir şey saymaz — başkasının envanterini saymaktansa.
+        var anonymous = await AnalysisFor(db, null)
             .CountIntersectionsAsync(new IntersectionAnalysisRequest { Wkt = AnalysisArea }, default);
 
-        var forUserB = await new SpatialAnalysisService(db)
-            .CountIntersectionsAsync(new IntersectionAnalysisRequest { Wkt = AnalysisArea }, default);
-
-        Assert.True(forUserA.IsSuccess);
-        Assert.True(forUserB.IsSuccess);
-        Assert.Equal(forUserA.Value!.TotalCount, forUserB.Value!.TotalCount);
-        Assert.Equal(6, forUserA.Value.TotalCount);
+        Assert.True(anonymous.IsSuccess);
+        Assert.Equal(0, anonymous.Value!.TotalCount);
+        Assert.Empty(anonymous.Value.Points);
     }
 
     [Fact]
-    public async Task Inventory_analysis_never_returns_raw_drawings()
+    public async Task Analysis_items_carry_no_ownership_or_geometry()
+    {
+        var result = await AnalyseAsAsync(UserAId);
+
+        /* Dar DTO sözleşmesi: sahiplik, soft-delete izi ve geometry taşınmaz.
+           Response tipine ileride bunlardan biri eklenirse bu test kırılır. */
+        var fields = typeof(InventoryAnalysisItemResponse).GetProperties().Select(property => property.Name).ToList();
+
+        Assert.DoesNotContain("CreatedByUserId", fields);
+        Assert.DoesNotContain("CreatedBy", fields);
+        Assert.DoesNotContain("Wkt", fields);
+        Assert.DoesNotContain("Geometry", fields);
+        Assert.DoesNotContain("IsDeleted", fields);
+
+        // Ama kullanıcıya sonucu açıklayan alanlar var.
+        var item = Assert.Single(result.Lines);
+        Assert.Equal("line", item.DrawingType);
+        Assert.Equal("Rota", item.Category);
+        Assert.Equal("#3366FF", item.Style.StrokeColor);
+    }
+
+    /* --- İki kullanıcı izolasyonu (asimetrik kurulum) ----------------------- */
+
+    [Fact]
+    public async Task Two_user_isolation_gives_each_user_only_their_own_matches()
     {
         await using var db = NewDb();
         await SeedUsersAsync(db);
-        await SeedTwoUsersDrawingsAsync(db);
 
-        var result = await new SpatialAnalysisService(db)
-            .CountIntersectionsAsync(new IntersectionAnalysisRequest { Wkt = AnalysisArea }, default);
+        // A: 1 çizgi + 1 poligon. B: 2 çizgi + 3 poligon. Hepsi aynı alanla keser.
+        var userA = ServiceFor(db, UserAId, "user-a");
+        await userA.CreateLineAsync(Create("LINESTRING (29 39, 31 41)", "A-Line"), default);
+        await userA.CreatePolygonAsync(Create("POLYGON ((29 39, 31 39, 31 41, 29 41, 29 39))", "A-Polygon"), default);
 
-        Assert.True(result.IsSuccess);
+        var userB = ServiceFor(db, UserBId, "user-b");
+        await userB.CreateLineAsync(Create("LINESTRING (28 38, 30 40)", "B-Line-1"), default);
+        await userB.CreateLineAsync(Create("LINESTRING (32 41, 33 42)", "B-Line-2"), default);
+        await userB.CreatePolygonAsync(Create("POLYGON ((28 38, 29 38, 29 39, 28 39, 28 38))", "B-Polygon-1"), default);
+        await userB.CreatePolygonAsync(Create("POLYGON ((31 40, 32 40, 32 41, 31 41, 31 40))", "B-Polygon-2"), default);
+        await userB.CreatePolygonAsync(Create("POLYGON ((32 41, 33 41, 33 42, 32 42, 32 41))", "B-Polygon-3"), default);
 
-        /* Sözleşme kontrolü: yanıt yalnızca sayı taşır. Paylaşılan veri kümesine
-           bakmak, o kümeyi kullanıcıya AÇMAK anlamına gelmez — response tipine
-           ileride bir çizim listesi eklenirse bu test kırılır. */
-        var properties = typeof(IntersectionAnalysisResponse).GetProperties();
-        Assert.All(properties, property => Assert.Equal(typeof(int), property.PropertyType));
-        Assert.Equal(4, properties.Length);
+        var forA = (await AnalysisFor(db, UserAId)
+            .CountIntersectionsAsync(new IntersectionAnalysisRequest { Wkt = AnalysisArea }, default)).Value!;
+
+        Assert.Equal(0, forA.PointCount);
+        Assert.Equal(1, forA.LineCount);
+        Assert.Equal(1, forA.PolygonCount);
+        Assert.Equal(2, forA.TotalCount);
+        Assert.Equal("A-Line", Assert.Single(forA.Lines).Name);
+        Assert.Equal("A-Polygon", Assert.Single(forA.Polygons).Name);
+
+        var forB = (await AnalysisFor(db, UserBId)
+            .CountIntersectionsAsync(new IntersectionAnalysisRequest { Wkt = AnalysisArea }, default)).Value!;
+
+        Assert.Equal(2, forB.LineCount);
+        Assert.Equal(3, forB.PolygonCount);
+        Assert.Equal(5, forB.TotalCount);
+        Assert.All(forB.Lines.Concat(forB.Polygons), item => Assert.StartsWith("B-", item.Name));
+    }
+
+    /* --- Kesişim anlamı ------------------------------------------------------ */
+
+    [Fact]
+    public async Task Partial_line_intersection_is_counted()
+    {
+        await using var db = NewDb();
+        await SeedUsersAsync(db);
+
+        // Yalnızca bir ucu alanın içinde: "tamamen kapsanma" aranmaz.
+        await ServiceFor(db, UserAId, "user-a")
+            .CreateLineAsync(Create("LINESTRING (33 42, 40 42)", "Yarı-Çizgi"), default);
+
+        var result = await RunAsync(db, UserAId);
+
+        Assert.Equal(1, result.LineCount);
+        Assert.Equal(IntersectionTypes.Partial, Assert.Single(result.Lines).IntersectionType);
     }
 
     [Fact]
-    public async Task Soft_deleted_drawings_leave_the_inventory_analysis_too()
+    public async Task Partial_polygon_intersection_is_counted()
+    {
+        await using var db = NewDb();
+        await SeedUsersAsync(db);
+
+        await ServiceFor(db, UserAId, "user-a")
+            .CreatePolygonAsync(Create("POLYGON ((33 42, 40 42, 40 45, 33 45, 33 42))", "Yarı-Alan"), default);
+
+        var result = await RunAsync(db, UserAId);
+
+        Assert.Equal(1, result.PolygonCount);
+        Assert.Equal(IntersectionTypes.Partial, Assert.Single(result.Polygons).IntersectionType);
+    }
+
+    [Fact]
+    public async Task Point_inside_the_analysis_area_is_counted_as_fully_inside()
+    {
+        await using var db = NewDb();
+        await SeedUsersAsync(db);
+
+        await ServiceFor(db, UserAId, "user-a").CreatePointAsync(Create("POINT (30 40)", "İç-Nokta"), default);
+
+        var result = await RunAsync(db, UserAId);
+
+        Assert.Equal(1, result.PointCount);
+        Assert.Equal(IntersectionTypes.FullyInside, Assert.Single(result.Points).IntersectionType);
+    }
+
+    [Fact]
+    public async Task Point_on_the_analysis_boundary_is_counted()
+    {
+        await using var db = NewDb();
+        await SeedUsersAsync(db);
+
+        // Tam sınırın üzerinde: ST_Intersects sınırı da kesişim sayar.
+        await ServiceFor(db, UserAId, "user-a").CreatePointAsync(Create("POINT (27 40)", "Sınır-Nokta"), default);
+
+        var result = await RunAsync(db, UserAId);
+
+        Assert.Equal(1, result.PointCount);
+    }
+
+    [Fact]
+    public async Task Non_intersecting_inventory_is_not_counted()
+    {
+        await using var db = NewDb();
+        await SeedUsersAsync(db);
+
+        await ServiceFor(db, UserAId, "user-a").CreatePointAsync(Create("POINT (10 10)", "Uzak-Nokta"), default);
+
+        var result = await RunAsync(db, UserAId);
+
+        Assert.Equal(0, result.TotalCount);
+        Assert.Empty(result.Points);
+    }
+
+    /* --- Soft delete / aktiflik --------------------------------------------- */
+
+    [Fact]
+    public async Task Deleted_inventory_is_not_counted()
     {
         await using var db = NewDb();
         await SeedUsersAsync(db);
@@ -130,34 +288,102 @@ public class InventoryAnalysisScopeTests
         var point = Assert.Single(await userA.GetPointsAsync(default));
         Assert.True((await userA.DeleteAsync(DrawingKind.Point, point.Id, default)).IsSuccess);
 
-        var result = await new SpatialAnalysisService(db)
-            .CountIntersectionsAsync(new IntersectionAnalysisRequest { Wkt = AnalysisArea }, default);
+        var result = await RunAsync(db, UserAId);
 
-        Assert.True(result.IsSuccess);
-        // Paylaşılan küme "silinmişleri de sayar" demek değildir: global query
-        // filter analiz yolunda da geçerlidir.
-        Assert.Equal(1, result.Value!.PointCount);
-        Assert.Equal(5, result.Value.TotalCount);
+        Assert.Equal(0, result.PointCount);
+        Assert.Equal(2, result.TotalCount);
     }
 
     [Fact]
-    public async Task Excluded_polygon_is_not_counted_as_its_own_match()
+    public async Task Inactive_inventory_is_not_counted()
     {
         await using var db = NewDb();
         await SeedUsersAsync(db);
         await SeedTwoUsersDrawingsAsync(db);
 
-        var ownPolygon = Assert.Single(await ServiceFor(db, UserAId, "user-a").GetPolygonsAsync(default));
+        // IsDeleted'a dokunmadan yalnızca pasifleştir: global query filter
+        // ikisini birden şart koşar.
+        var stored = await db.Points.IgnoreQueryFilters()
+            .SingleAsync(entity => entity.CreatedByUserId == UserAId);
+        stored.IsActive = false;
+        await db.SaveChangesAsync();
 
-        var result = await new SpatialAnalysisService(db).CountIntersectionsAsync(
-            new IntersectionAnalysisRequest { Wkt = AnalysisArea, ExcludePolygonId = ownPolygon.Id },
-            default);
+        var result = await RunAsync(db, UserAId);
 
-        Assert.True(result.IsSuccess);
-        Assert.Equal(1, result.Value!.PolygonCount);
+        Assert.Equal(0, result.PointCount);
+    }
+
+    /* --- Kendi kendini sayma ------------------------------------------------- */
+
+    [Fact]
+    public async Task Saved_subject_polygon_does_not_count_itself()
+    {
+        await using var db = NewDb();
+        await SeedUsersAsync(db);
+
+        var userA = ServiceFor(db, UserAId, "user-a");
+        await userA.CreateLineAsync(Create("LINESTRING (29 39, 31 41)", "Mevcut-Çizgi"), default);
+        await userA.CreatePolygonAsync(
+            Create("POLYGON ((28 38, 30 38, 30 40, 28 40, 28 38))", "Mevcut-Alan"), default);
+
+        // Sonradan kaydedilen ve ikisiyle de kesişen ÖZNE poligon.
+        var subject = (await userA.CreatePolygonAsync(
+            Create("POLYGON ((29 39, 32 39, 32 42, 29 42, 29 39))", "Yeni-Alan"), default)).Value!;
+
+        var result = (await AnalysisFor(db, UserAId).CountIntersectionsAsync(
+            new IntersectionAnalysisRequest { Wkt = subject.Wkt, ExcludePolygonId = subject.Id },
+            default)).Value!;
+
+        // Özne kendini saymaz: 2 değil 1 poligon.
+        Assert.Equal(1, result.LineCount);
+        Assert.Equal(1, result.PolygonCount);
+        Assert.Equal("Mevcut-Alan", Assert.Single(result.Polygons).Name);
+        Assert.DoesNotContain(result.Polygons, item => item.Id == subject.Id);
+    }
+
+    /* --- Sayı / liste tutarlılığı -------------------------------------------- */
+
+    [Fact]
+    public async Task Counts_match_detail_list_lengths_and_total()
+    {
+        await using var db = NewDb();
+        await SeedUsersAsync(db);
+        await SeedTwoUsersDrawingsAsync(db);
+
+        var result = await RunAsync(db, UserAId);
+
+        Assert.Equal(result.Points.Count, result.PointCount);
+        Assert.Equal(result.Lines.Count, result.LineCount);
+        Assert.Equal(result.Polygons.Count, result.PolygonCount);
+        Assert.Equal(result.PointCount + result.LineCount + result.PolygonCount, result.TotalCount);
     }
 
     /* --- Yardımcılar --------------------------------------------------------- */
+
+    /// <summary>Standart iki kullanıcılı kurulum üzerinde tek analiz çalıştırır.</summary>
+    private static async Task<IntersectionAnalysisResponse> AnalyseAsAsync(int userId)
+    {
+        await using var db = NewDb();
+        await SeedUsersAsync(db);
+        await SeedTwoUsersDrawingsAsync(db);
+        return await RunAsync(db, userId);
+    }
+
+    private static async Task<IntersectionAnalysisResponse> RunAsync(AppDbContext db, int userId)
+    {
+        var result = await AnalysisFor(db, userId)
+            .CountIntersectionsAsync(new IntersectionAnalysisRequest { Wkt = AnalysisArea }, default);
+
+        Assert.True(result.IsSuccess);
+        return result.Value!;
+    }
+
+    private static SpatialAnalysisService AnalysisFor(AppDbContext db, int? userId)
+    {
+        var currentUser = Substitute.For<ICurrentUserService>();
+        currentUser.UserId.Returns(userId);
+        return new SpatialAnalysisService(db, currentUser);
+    }
 
     private static AppDbContext NewDb()
     {
@@ -178,7 +404,7 @@ public class InventoryAnalysisScopeTests
 
     /// <summary>
     /// İki kullanıcıya, analiz alanının içinde kalan birer nokta/çizgi/poligon
-    /// oluşturur. Toplam 6 kayıt; harita başına 3.
+    /// oluşturur. Toplam 6 kayıt; kullanıcı başına 3.
     /// </summary>
     private static async Task SeedTwoUsersDrawingsAsync(AppDbContext db)
     {
@@ -216,6 +442,7 @@ public class InventoryAnalysisScopeTests
     {
         Wkt = wkt,
         Name = name,
+        Category = DrawingCategories.Route,
         Style = new DrawingStyleDto { StrokeColor = "#3366FF" }
     };
 }
