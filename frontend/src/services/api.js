@@ -224,16 +224,50 @@ export async function readApiError(res, fallback) {
   return body?.message || `${fallback} (HTTP ${res.status})`
 }
 
-export function createDrawing(type, wkt, { name = '', style = null } = {}) {
+/**
+ * POST: creates a record from a finished shape.
+ *
+ * Metadata (description / category / tags) is optional on both sides — the
+ * attribute popup keeps it behind "Daha fazla seçenek", and the backend accepts
+ * a record without any of it.
+ *
+ * @param {{ name?: string, style?: object, description?: string,
+ *           category?: string, tags?: string[] }} attributes
+ */
+export function createDrawing(type, wkt, { name = '', style = null, description = '', category = '', tags = [] } = {}) {
   return authFetch(DRAWING_TYPES[type].createPath, {
     method: 'POST',
     headers: JSON_HEADERS,
-    body: JSON.stringify({ wkt, name, style }),
+    body: JSON.stringify({ wkt, name, style, description, category, tags }),
   })
 }
 
 export function fetchDrawings(type) {
   return authFetch(DRAWING_TYPES[type].listPath)
+}
+
+/**
+ * PUT: the detail popup's "Kaydet". Updates name, style (colour) and geometry
+ * in one request.
+ *
+ * Only the fields present are sent, and the backend preserves anything it does
+ * not receive — so editing just the name never risks rewriting the geometry
+ * with a stale copy. The WKT is already EPSG:4326 (`geometryToWkt4326` does the
+ * reprojection); ownership is decided server-side from the token, never here.
+ *
+ * Metadata follows the same rule with one addition: an empty string (or an
+ * empty tag array) means "clear this field", while omitting it means "leave it
+ * alone". That is what lets a description be removed as well as changed.
+ *
+ * @param {{ name?: string, style?: object, wkt?: string, description?: string,
+ *           category?: string, tags?: string[] }} changes
+ */
+export function updateDrawing(type, id, changes) {
+  return authFetch(drawingItemPath(type, id), {
+    method: 'PUT',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(changes),
+  })
 }
 
 /** PATCH: style only. The geometry is never touched by this endpoint. */

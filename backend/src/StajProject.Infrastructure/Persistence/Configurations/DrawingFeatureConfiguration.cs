@@ -19,6 +19,33 @@ internal static class DrawingFeatureConfiguration
             .IsRequired()
             .HasMaxLength(200);
 
+        /* --- Kullanıcı metadata'sı ------------------------------------------
+           Üçü de nullable/boş olabilir; kayıt metadata olmadan da geçerlidir.
+
+           Tags PostgreSQL'in yerel `text[]` tipine düşer: Npgsql List<string>'i
+           doğrudan dizi kolonuna eşler, ek bir tablo veya JSON serileştirme
+           gerekmez. Etiketler yalnızca kendi kayıtlarıyla birlikte okunup
+           yazıldığı için ayrı bir ilişkisel alt sistem (tags + drawing_tags
+           tabloları) buradaki tek fayda olan "etiket başına sorgulama"yı
+           getirmez, buna karşılık üç tabloya birden join maliyeti eklerdi. */
+
+        builder.Property(x => x.Description)
+            .HasColumnName("description")
+            .HasMaxLength(2000);
+
+        builder.Property(x => x.Category)
+            .HasColumnName("category")
+            .HasMaxLength(DrawingCategories.MaxLength);
+
+        /* Kolon NOT NULL'dır (etiketsiz kayıtta boş dizi durur, NULL değil), bu
+           yüzden veritabanı seviyesinde bir varsayılan ŞARTTIR: migration
+           uygulandığında halihazırdaki satırların hepsi boş diziye düşer.
+           Varsayılan olmadan NOT NULL kolon eklemek dolu bir tabloda hata verirdi. */
+        builder.Property(x => x.Tags)
+            .HasColumnName("tags")
+            .IsRequired()
+            .HasDefaultValueSql("'{}'::text[]");
+
         builder.Property(x => x.StrokeColor)
             .IsRequired()
             .HasMaxLength(7);
@@ -34,11 +61,25 @@ internal static class DrawingFeatureConfiguration
         builder.Property(x => x.LineStyle)
             .HasMaxLength(16);
 
+        /* Audit kolonlarının FİZİKSEL adları ödev şartnamesindeki snake_case
+           isimlerdir. C# property adları (CreatedDate, CreatedByUserId …)
+           bilinçli olarak korunur: servis, test ve DTO katmanları bu adlara
+           bağlıdır ve onları yeniden adlandırmak çalışan kodu gereksiz yere
+           kırardı. Eşleştirme tek yerde, burada tanımlıdır:
+
+             CreatedByUserId -> inserted_user_id
+             CreatedDate     -> inserted_date
+             ModifiedDate    -> modified_date
+             IsDeleted       -> is_deleted
+             IsActive        -> is_active                                  */
+
         builder.Property(x => x.CreatedDate)
+            .HasColumnName("inserted_date")
             .IsRequired()
             .HasColumnType("timestamp with time zone");
 
         builder.Property(x => x.ModifiedDate)
+            .HasColumnName("modified_date")
             .IsRequired()
             .HasColumnType("timestamp with time zone");
 
@@ -58,6 +99,7 @@ internal static class DrawingFeatureConfiguration
            kullanılır: lambda ifadesi interface member'ına çözülürdü ve EF
            entity'nin CLR property'sini bekler. */
         builder.Property(nameof(IStyledDrawingFeature.CreatedByUserId))
+            .HasColumnName("inserted_user_id")
             .IsRequired();
 
         builder
@@ -75,8 +117,16 @@ internal static class DrawingFeatureConfiguration
            yalnızca foreign key kısıtı kurulur. Restrict: silme işlemini yapmış
            bir kullanıcının hesabı silinmeye çalışıldığında kayıt korunur. */
         builder.Property(nameof(IStyledDrawingFeature.IsDeleted))
+            .HasColumnName("is_deleted")
             .IsRequired()
             .HasDefaultValue(false);
+
+        /* Mevcut satırlar için varsayılan true: migration uygulandığında
+           halihazırdaki çizimler aktif kalır, hiçbiri görünmez olmaz. */
+        builder.Property(nameof(IStyledDrawingFeature.IsActive))
+            .HasColumnName("is_active")
+            .IsRequired()
+            .HasDefaultValue(true);
 
         builder.Property(nameof(IStyledDrawingFeature.DeletedAt))
             .HasColumnType("timestamp with time zone");

@@ -1,4 +1,4 @@
-import { DRAWING_TYPES, DRAWING_TYPE_LIST } from '../../map/drawingTypes.js'
+import { DRAWING_TYPES } from '../../map/drawingTypes.js'
 import { MEASURE_MODES } from '../../hooks/useMeasurement.js'
 import { ANALYSIS_TOOL_INFO, SELECTION_TOOLS } from '../../hooks/useWorkspaceMode.js'
 import './MapOverlays.css'
@@ -89,64 +89,6 @@ export function MeasurementReadout({ mode, liveLabel, results, onSelectMode, onC
       )}
 
       <p className="measure-note">Ölçümler veritabanına kaydedilmez.</p>
-    </div>
-  )
-}
-
-/**
- * Result of a spatial inventory analysis.
- *
- * One readout serves both entry points — the temporary "Envanter Analizi" tool
- * and the automatic run after a polygon is saved — because they answer the same
- * question and only one of them can be the latest. The wording states which one
- * produced the number, and "Temizle" only appears for the temporary area, since
- * a saved polygon's own record is not this panel's to remove.
- */
-export function AnalysisReadout({ loading, result, error, onClear, onClose }) {
-  if (!loading && !result && !error) return null
-
-  return (
-    <div className="analysis-readout" role="status" aria-live="polite" aria-label="Envanter analizi">
-      <div className="analysis-readout-head">
-        <span className="analysis-readout-title">Analiz Sonucu</span>
-        <button type="button" className="analysis-readout-close" aria-label="Analiz sonucunu kapat" onClick={onClose}>
-          ×
-        </button>
-      </div>
-
-      {loading && <p className="analysis-readout-state">Kesişim analizi yapılıyor...</p>}
-
-      {!loading && error && <p className="analysis-readout-state analysis-readout-state--error">{error}</p>}
-
-      {!loading && !error && result && (
-        <>
-          <p className="analysis-readout-total">
-            {result.total > 0
-              ? `Bu poligon ${result.total} envanter ile kesişiyor.`
-              : 'Bu poligon hiçbir envanterle kesişmiyor.'}
-          </p>
-          <p className="analysis-readout-source">{result.label}</p>
-
-          {result.total > 0 && (
-            <ul className="analysis-readout-breakdown">
-              {DRAWING_TYPE_LIST.map((type) => (
-                <li key={type.id} className="analysis-readout-item">
-                  <span className="analysis-readout-item-label">{type.plural}</span>
-                  <span className="analysis-readout-item-value">{result[type.id]}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </>
-      )}
-
-      {result?.temporary && (
-        <button type="button" className="analysis-readout-clear" onClick={onClear}>
-          Analiz alanını temizle
-        </button>
-      )}
-
-      <p className="analysis-readout-note">Analiz alanı veritabanına kaydedilmez.</p>
     </div>
   )
 }

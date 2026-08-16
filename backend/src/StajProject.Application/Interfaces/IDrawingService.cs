@@ -21,6 +21,17 @@ public interface IDrawingService
     /// <summary>Yalnızca stil kolonlarını günceller; geometry'e dokunmaz.</summary>
     Task<ServiceResult<DrawingResponse>> UpdateStyleAsync(DrawingKind kind, int id, DrawingStyleDto? style, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Detay popup'ının düzenleme akışı: ad, stil (renk) ve geometry'yi tek
+    /// çağrıda günceller. Gönderilmeyen alanlar korunur.
+    /// </summary>
+    /// <remarks>
+    /// Kayıt bulunamazsa NotFound, çağıran sahip değilse Forbidden döner;
+    /// silinmiş/pasif kayıtlar global query filter nedeniyle zaten bulunamaz.
+    /// Geometry doğrulaması create ile aynı kurallara tabidir.
+    /// </remarks>
+    Task<ServiceResult<DrawingResponse>> UpdateAsync(DrawingKind kind, int id, UpdateDrawingRequest request, CancellationToken cancellationToken);
+
     /// <summary>Kaydı tablodan siler. Bulunamazsa NotFound döner.</summary>
     Task<ServiceResult<int>> DeleteAsync(DrawingKind kind, int id, CancellationToken cancellationToken);
 

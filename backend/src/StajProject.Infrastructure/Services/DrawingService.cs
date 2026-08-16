@@ -76,6 +76,17 @@ public class DrawingService : IDrawingService
             _ => UpdateStyleAsync<PolygonFeature, Polygon>(kind, id, style, cancellationToken)
         };
 
+    public Task<ServiceResult<DrawingResponse>> UpdateAsync(
+        DrawingKind kind,
+        int id,
+        UpdateDrawingRequest request,
+        CancellationToken cancellationToken) => kind switch
+        {
+            DrawingKind.Point => UpdateAsync<PointFeature, Point>(kind, id, request, cancellationToken),
+            DrawingKind.Line => UpdateAsync<LineFeature, LineString>(kind, id, request, cancellationToken),
+            _ => UpdateAsync<PolygonFeature, Polygon>(kind, id, request, cancellationToken)
+        };
+
     public Task<ServiceResult<int>> DeleteAsync(DrawingKind kind, int id, CancellationToken cancellationToken) => kind switch
     {
         DrawingKind.Point => DeleteAsync<PointFeature>(kind, id, cancellationToken),
@@ -340,6 +351,10 @@ public class DrawingService : IDrawingService
                sahiplik bu yüzden hiçbir client girdisine ihtiyaç duymadan
                kendiliğinden korunur. */
             entity.IsDeleted = false;
+            // Silme her iki işareti birden düşürdüğü için geri alma da
+            // ikisini birden geri açar; aksi hâlde kayıt "silinmemiş ama
+            // pasif" kalır ve query filter onu yine gizlerdi.
+            entity.IsActive = true;
             entity.DeletedAt = null;
             entity.DeletedByUserId = null;
 
@@ -457,6 +472,28 @@ public class DrawingService : IDrawingService
             return ServiceResult<Func<DrawingResponse>>.Failure(style.Error!);
         }
 
+        // Metadata tekil create ile aynı doğrulamadan geçer.
+        var description = DrawingMetadataValidator.ValidateDescription(target.Description);
+
+        if (!description.IsSuccess)
+        {
+            return ServiceResult<Func<DrawingResponse>>.Failure(description.Error!);
+        }
+
+        var category = DrawingMetadataValidator.ValidateCategory(target.Category);
+
+        if (!category.IsSuccess)
+        {
+            return ServiceResult<Func<DrawingResponse>>.Failure(category.Error!);
+        }
+
+        var tags = DrawingMetadataValidator.ValidateTags(target.Tags);
+
+        if (!tags.IsSuccess)
+        {
+            return ServiceResult<Func<DrawingResponse>>.Failure(tags.Error!);
+        }
+
         var owner = RequireOwnerId<Func<DrawingResponse>>();
 
         if (!owner.IsSuccess)
@@ -472,6 +509,9 @@ public class DrawingService : IDrawingService
         var entity = new TEntity
         {
             Name = name.Value!,
+            Description = description.Value,
+            Category = category.Value,
+            Tags = tags.Value!,
             Geometry = parsed.Value!,
             CreatedByUserId = owner.Value,
             CreatedBy = _currentUser.UserName
@@ -552,6 +592,29 @@ public class DrawingService : IDrawingService
             return ServiceResult<DrawingResponse>.Failure(style.Error!);
         }
 
+        /* Metadata: üçü de opsiyoneldir, ama gönderildiyse kayıt oluşmadan ÖNCE
+           doğrulanır — geçersiz bir kategori yüzünden yarım kayıt kalmasın. */
+        var description = DrawingMetadataValidator.ValidateDescription(request.Description);
+
+        if (!description.IsSuccess)
+        {
+            return ServiceResult<DrawingResponse>.Failure(description.Error!);
+        }
+
+        var category = DrawingMetadataValidator.ValidateCategory(request.Category);
+
+        if (!category.IsSuccess)
+        {
+            return ServiceResult<DrawingResponse>.Failure(category.Error!);
+        }
+
+        var tags = DrawingMetadataValidator.ValidateTags(request.Tags);
+
+        if (!tags.IsSuccess)
+        {
+            return ServiceResult<DrawingResponse>.Failure(tags.Error!);
+        }
+
         var owner = RequireOwnerId<DrawingResponse>();
 
         if (!owner.IsSuccess)
@@ -562,6 +625,9 @@ public class DrawingService : IDrawingService
         var entity = new TEntity
         {
             Name = name.Value!,
+            Description = description.Value,
+            Category = category.Value,
+            Tags = tags.Value!,
             Geometry = parsed.Value!,
             // Sahiplik client'tan DEĞİL, doğrulanmış JWT kimliğinden gelir.
             // İstek gövdesindeki createdByUserId/createdBy/ownerId alanları
@@ -586,13 +652,30 @@ public class DrawingService : IDrawingService
         where TEntity : class, IDrawingFeature<TGeometry>
         where TGeometry : Geometry
     {
-        /* Sahip kullanıcı adı ilişkiden türetilir (legacy CreatedBy string'i
-           değil). Include tek sorguda join yapar; kullanıcı başına ek sorgu
-           oluşmaz. Okuma HERKESE açıktır — sahiplik yalnızca mutation'ı
-           kısıtlar, görünürlüğü değil; bu yüzden burada filtre yoktur. */
+        /* Veri izolasyonu: harita ve "Çizimlerim" yalnızca ÇAĞIRAN kullanıcının
+           kendi çizimlerini görür. Kapsam DrawingScopes.UserMapScope içinde
+           adlandırılmıştır — envanter analizinin kullandığı paylaşılan kümeden
+           (DrawingScopes.InventoryScope) ayrıldığı yer orasıdır.
+
+           IsDeleted/IsActive koşulunu global query filter ekler.
+
+           Kimlik yoksa (yapılandırma hatası) boş liste döner: kimliği
+           belirlenemeyen bir istek başkasının verisini görmektense hiçbir şey
+           görmemelidir.
+
+           Sahip kullanıcı adı ilişkiden türetilir (legacy CreatedBy string'i
+           değil); Include tek sorguda join yapar. */
+        var currentUserId = _currentUser.UserId;
+
+        if (currentUserId is null)
+        {
+            return [];
+        }
+
         var entities = await _dbContext.Set<TEntity>()
             .AsNoTracking()
             .Include(entity => entity.CreatedByUser)
+            .UserMapScope(currentUserId.Value)
             .OrderBy(entity => EF.Property<int>(entity, nameof(IStyledDrawingFeature.Id)))
             .ToListAsync(cancellationToken);
 
@@ -607,7 +690,7 @@ public class DrawingService : IDrawingService
         where TEntity : class, IDrawingFeature<TGeometry>
         where TGeometry : Geometry
     {
-        var entity = await _dbContext.Set<TEntity>().FindAsync([id], cancellationToken);
+        var entity = await SingleOrDefaultAsync<TEntity>(id, cancellationToken);
 
         if (entity is null)
         {
@@ -638,10 +721,143 @@ public class DrawingService : IDrawingService
         return ServiceResult<DrawingResponse>.Success(ToResponse<TEntity, TGeometry>(entity, kind));
     }
 
+    /// <summary>
+    /// Ad + stil + geometry güncellemesi. Doğrulamaların TAMAMI kayda tek bir
+    /// yazma yapılmadan önce biter: yarı uygulanmış bir güncelleme (adı değişip
+    /// geometry'si reddedilen kayıt) oluşamaz.
+    /// </summary>
+    private async Task<ServiceResult<DrawingResponse>> UpdateAsync<TEntity, TGeometry>(
+        DrawingKind kind,
+        int id,
+        UpdateDrawingRequest request,
+        CancellationToken cancellationToken)
+        where TEntity : class, IDrawingFeature<TGeometry>
+        where TGeometry : Geometry
+    {
+        /* Global query filter burada bilerek AKTİFTİR: silinmiş veya pasif bir
+           kayıt bulunamaz, dolayısıyla güncellenemez de. */
+        var entity = await SingleOrDefaultAsync<TEntity>(id, cancellationToken);
+
+        if (entity is null)
+        {
+            return NotFound<DrawingResponse>(kind, id);
+        }
+
+        // IDOR koruması: kayıt DEĞİŞTİRİLMEDEN önce sahiplik doğrulanır.
+        // Başka kullanıcının id'sini elle gönderen istek burada durur.
+        if (!await _drawingAuthorization.CanManageAsync(entity))
+        {
+            return ServiceResult<DrawingResponse>.Forbidden(ForbiddenMessage);
+        }
+
+        // Ad: gönderilmediyse korunur, gönderildiyse create ile aynı kurala tabi.
+        var name = entity.Name;
+
+        if (request.Name is not null)
+        {
+            var validatedName = DrawingAttributeValidator.ValidateNameForCreate(request.Name);
+
+            if (!validatedName.IsSuccess)
+            {
+                return ServiceResult<DrawingResponse>.Failure(validatedName.Error!);
+            }
+
+            name = validatedName.Value!;
+        }
+
+        /* Metadata: her biri gönderilmediyse (null) korunur, gönderildiyse
+           doğrulanır. Boş metin / boş liste "temizle" demektir ve geçerlidir —
+           ayrım DTO'da açıklanmıştır. */
+        var description = entity.Description;
+
+        if (request.Description is not null)
+        {
+            var validatedDescription = DrawingMetadataValidator.ValidateDescription(request.Description);
+
+            if (!validatedDescription.IsSuccess)
+            {
+                return ServiceResult<DrawingResponse>.Failure(validatedDescription.Error!);
+            }
+
+            description = validatedDescription.Value;
+        }
+
+        var category = entity.Category;
+
+        if (request.Category is not null)
+        {
+            var validatedCategory = DrawingMetadataValidator.ValidateCategory(request.Category);
+
+            if (!validatedCategory.IsSuccess)
+            {
+                return ServiceResult<DrawingResponse>.Failure(validatedCategory.Error!);
+            }
+
+            category = validatedCategory.Value;
+        }
+
+        var tags = entity.Tags;
+
+        if (request.Tags is not null)
+        {
+            var validatedTags = DrawingMetadataValidator.ValidateTags(request.Tags);
+
+            if (!validatedTags.IsSuccess)
+            {
+                return ServiceResult<DrawingResponse>.Failure(validatedTags.Error!);
+            }
+
+            tags = validatedTags.Value!;
+        }
+
+        // Stil: gönderilmeyen alanlar kaydın mevcut stilinden korunur.
+        var merged = DrawingStyleValidator.ValidateForUpdate(request.Style, ReadStyle(entity, kind), kind);
+
+        if (!merged.IsSuccess)
+        {
+            return ServiceResult<DrawingResponse>.Failure(merged.Error!);
+        }
+
+        /* Geometry: create yolundaki parser'ın aynısı kullanılır — tip
+           uyumu, boş geometry reddi, SRID ve koordinat aralığı kontrolleri
+           tek bir yerde tanımlıdır, burada kopyalanmaz. */
+        TGeometry? geometry = null;
+
+        if (request.Wkt is not null)
+        {
+            var parsed = WktGeometryParser.Parse<TGeometry>(request.Wkt);
+
+            if (!parsed.IsSuccess)
+            {
+                return ServiceResult<DrawingResponse>.Failure(parsed.Error!);
+            }
+
+            geometry = parsed.Value!;
+        }
+
+        // Buradan sonrası yazma: her girdi doğrulanmış durumda.
+        entity.Name = name;
+        entity.Description = description;
+        entity.Category = category;
+        entity.Tags = tags;
+        ApplyStyle(entity, merged.Value!);
+
+        if (geometry is not null)
+        {
+            entity.Geometry = geometry;
+        }
+
+        // ModifiedDate SaveChanges içinde UTC damgalanır; CreatedDate ve
+        // sahiplik alanları değişmez.
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return ServiceResult<DrawingResponse>.Success(ToResponse<TEntity, TGeometry>(entity, kind));
+    }
+
     private async Task<ServiceResult<int>> DeleteAsync<TEntity>(DrawingKind kind, int id, CancellationToken cancellationToken)
         where TEntity : class, IStyledDrawingFeature
     {
-        var entity = await _dbContext.Set<TEntity>().FindAsync([id], cancellationToken);
+        var entity = await SingleOrDefaultAsync<TEntity>(id, cancellationToken);
 
         if (entity is null)
         {
@@ -668,12 +884,33 @@ public class DrawingService : IDrawingService
     private void MarkDeleted(IStyledDrawingFeature entity)
     {
         entity.IsDeleted = true;
+        // Silinen kayıt aynı anda pasife de düşer; normal sorgular ikisini
+        // birden şart koştuğu için kayıt hiçbir listede görünmez.
+        entity.IsActive = false;
         entity.DeletedAt = DateTime.UtcNow;
         entity.DeletedByUserId = _currentUser.UserId;
+        // ModifiedDate SaveChanges içinde UTC damgalanır.
     }
 
     private static ServiceResult<T> NotFound<T>(DrawingKind kind, int id) =>
         ServiceResult<T>.NotFound($"{kind} kaydı bulunamadı (id: {id}).");
+
+    /// <summary>
+    /// Tek kaydı id ile yükler; <b>global query filter uygulanır</b>, yani
+    /// silinmiş veya pasif kayıt bulunamaz.
+    /// </summary>
+    /// <remarks>
+    /// <c>FindAsync</c> burada bilerek KULLANILMAZ: change tracker'da zaten
+    /// izlenen bir entity varsa Find sorgu çalıştırmaz ve onu doğrudan
+    /// döndürür — bu durumda query filter atlanır ve aynı context içinde
+    /// silinmiş bir kayıt hâlâ güncellenebilir hâle gelirdi. Açık sorgu
+    /// filtrenin her koşulda uygulanmasını garanti eder.
+    /// </remarks>
+    private Task<TEntity?> SingleOrDefaultAsync<TEntity>(int id, CancellationToken cancellationToken)
+        where TEntity : class, IStyledDrawingFeature =>
+        _dbContext.Set<TEntity>()
+            .Where(entity => EF.Property<int>(entity, nameof(IStyledDrawingFeature.Id)) == id)
+            .FirstOrDefaultAsync(cancellationToken);
 
     /// <summary>Entity kolonlarını doğrulanmış stile göre yazar.</summary>
     private static void ApplyStyle(IStyledDrawingFeature entity, DrawingStyle style)
@@ -690,19 +927,13 @@ public class DrawingService : IDrawingService
         }
     }
 
-    /// <summary>Entity kolonlarından mevcut stili okur (PATCH merge tabanı).</summary>
-    private static DrawingStyle ReadStyle(IStyledDrawingFeature entity, DrawingKind kind)
-    {
-        var defaults = DrawingStyleDefaults.For(kind);
-
-        return new DrawingStyle(
-            string.IsNullOrWhiteSpace(entity.StrokeColor) ? defaults.StrokeColor : entity.StrokeColor,
-            entity.StrokeWidth == 0 ? defaults.StrokeWidth : entity.StrokeWidth,
-            entity.FillColor ?? defaults.FillColor,
-            entity.FillOpacity ?? defaults.FillOpacity,
-            (entity as IPointStyledFeature)?.PointRadius ?? defaults.PointRadius,
-            entity.LineStyle ?? defaults.LineStyle);
-    }
+    /// <summary>
+    /// Entity kolonlarından mevcut stili okur (PATCH merge tabanı).
+    /// Okuma <see cref="DrawingStyleReader"/> içindedir: envanter analizi sonucu
+    /// da aynı yerden okur, böylece bir kayıt iki ekranda farklı renkte görünemez.
+    /// </summary>
+    private static DrawingStyle ReadStyle(IStyledDrawingFeature entity, DrawingKind kind) =>
+        DrawingStyleReader.Read(entity, kind);
 
     private static DrawingResponse ToResponse<TEntity, TGeometry>(TEntity entity, DrawingKind kind)
         where TEntity : class, IDrawingFeature<TGeometry>
@@ -715,6 +946,11 @@ public class DrawingService : IDrawingService
             Id = entity.Id,
             Wkt = WktWriter.Write(entity.Geometry),
             Name = entity.Name,
+            Description = entity.Description,
+            Category = entity.Category,
+            // Kopyalanır: response nesnesi entity'nin listesini paylaşmamalı.
+            // Null gelen bir kolon (migration öncesi satır) boş diziye düşer.
+            Tags = [.. entity.Tags ?? []],
             Style = new DrawingStyleDto
             {
                 StrokeColor = style.StrokeColor,

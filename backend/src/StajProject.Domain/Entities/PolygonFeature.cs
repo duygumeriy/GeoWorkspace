@@ -12,6 +12,15 @@ public class PolygonFeature : IDrawingFeature<Polygon>
 
     public Polygon Geometry { get; set; } = null!;
 
+    /// <summary>Opsiyonel açıklama; soft delete sırasında korunur.</summary>
+    public string? Description { get; set; }
+
+    /// <summary>Opsiyonel kategori (<see cref="DrawingCategories"/>).</summary>
+    public string? Category { get; set; }
+
+    /// <summary>Etiketler; etiketsiz kayıtta boş liste durur.</summary>
+    public List<string> Tags { get; set; } = [];
+
     public string StrokeColor { get; set; } = DrawingStyleDefaults.StrokeColor;
 
     public int StrokeWidth { get; set; } = DrawingStyleDefaults.StrokeWidth;
@@ -36,6 +45,9 @@ public class PolygonFeature : IDrawingFeature<Polygon>
 
     /// <summary>Soft delete işareti; silinen satır korunur, gizlenir.</summary>
     public bool IsDeleted { get; set; }
+
+    /// <summary>Kayıt kullanımdayken true; silindiğinde false olur.</summary>
+    public bool IsActive { get; set; } = true;
 
     public DateTime? DeletedAt { get; set; }
 

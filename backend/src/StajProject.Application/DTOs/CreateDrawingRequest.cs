@@ -20,4 +20,26 @@ public class CreateDrawingRequest
     /// stili uygular (<c>DrawingStyleDefaults</c>).
     /// </summary>
     public DrawingStyleDto? Style { get; set; }
+
+    /* --- Opsiyonel metadata --------------------------------------------------
+       Üçü de popup'ın "Daha fazla seçenek" bölümünden gelir ve gönderilmemesi
+       tamamen normaldir: metadata olmadan da kayıt oluşur. */
+
+    /// <summary>
+    /// Serbest metin açıklama. En fazla 2000 karakter
+    /// (<c>DrawingMetadataValidator</c>).
+    /// </summary>
+    public string? Description { get; set; }
+
+    /// <summary>
+    /// Kategori. <c>DrawingCategories</c> kümesinden bir değer olmalıdır;
+    /// bilinmeyen bir değer 400 ile reddedilir.
+    /// </summary>
+    public string? Category { get; set; }
+
+    /// <summary>
+    /// Etiketler. Backend kırpar, boşları atar, büyük/küçük harf duyarsız
+    /// tekilleştirir; en fazla 10 etiket, her biri en fazla 40 karakter.
+    /// </summary>
+    public List<string>? Tags { get; set; }
 }

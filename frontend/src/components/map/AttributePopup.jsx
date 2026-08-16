@@ -1,7 +1,16 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import Button from '../ui/Button.jsx'
 import TextField from '../ui/TextField.jsx'
-import { COLOR_PRESETS, DRAWING_TYPES, normalizeHex, primaryColorOf } from '../../map/drawingTypes.js'
+import TagInput from './TagInput.jsx'
+import { ChevronIcon } from '../ui/icons/index.js'
+import {
+  COLOR_PRESETS,
+  DRAWING_CATEGORIES,
+  DRAWING_TYPES,
+  MAX_DESCRIPTION_LENGTH,
+  normalizeHex,
+  primaryColorOf,
+} from '../../map/drawingTypes.js'
 import './AttributePopup.css'
 
 /** Backend limit (DrawingAttributeValidator.MaxNameLength / EF HasMaxLength). */
@@ -18,6 +27,15 @@ const MAX_NAME_LENGTH = 200
  * The colour offered here is the same preset row the style panel uses, plus a
  * native picker for anything else — one required colour, with the detailed
  * stroke/fill/width controls staying in the style panel where they belong.
+ *
+ * ## Why metadata is collapsed
+ *
+ * Name, description and colour are always visible; category and tags sit behind
+ * "Daha fazla seçenek". Drawing a shape should not turn into filling in a form,
+ * and the two hidden fields are the ones a casual user has no answer for. They
+ * are one click away for the user who does, and the section opens already
+ * expanded when the fields carry values, so re-opening the popup never hides
+ * data that is actually set.
  */
 export default function AttributePopup({
   open,
@@ -35,6 +53,10 @@ export default function AttributePopup({
   const [name, setName] = useState('')
   const [color, setColor] = useState(COLOR_PRESETS[0].value)
   const [nameError, setNameError] = useState('')
+  const [description, setDescription] = useState('')
+  const [category, setCategory] = useState('')
+  const [tags, setTags] = useState([])
+  const [showMore, setShowMore] = useState(false)
 
   const typeId = pending?.type ?? null
 
@@ -45,6 +67,12 @@ export default function AttributePopup({
     setName('')
     setNameError('')
     setColor(primaryColorOf(pending.style))
+    setDescription('')
+    setCategory('')
+    setTags([])
+    // Collapsed again for the next shape: the previous drawing's category is
+    // not a reason to show the section, since the fields themselves are reset.
+    setShowMore(false)
     // Focus goes to the name field: it is the one required free-text input.
     nameInputRef.current?.focus()
   }, [open, pending])
@@ -70,7 +98,7 @@ export default function AttributePopup({
       return
     }
 
-    onSave?.({ name: trimmed, color })
+    onSave?.({ name: trimmed, color, description: description.trim(), category, tags })
   }
 
   return (
@@ -111,6 +139,21 @@ export default function AttributePopup({
             {nameError}
           </p>
         )}
+
+        <div className="attribute-field">
+          <label className="attribute-field-label" htmlFor={`${fieldId}-description`}>
+            Açıklama
+          </label>
+          <textarea
+            id={`${fieldId}-description`}
+            className="attribute-textarea"
+            value={description}
+            rows={2}
+            maxLength={MAX_DESCRIPTION_LENGTH}
+            placeholder="İsteğe bağlı kısa açıklama"
+            onChange={(event) => setDescription(event.target.value)}
+          />
+        </div>
 
         <div className="attribute-color">
           <span className="attribute-color-label" id={`${fieldId}-color-label`}>
@@ -162,6 +205,50 @@ export default function AttributePopup({
 
             <output className="attribute-color-value">{color}</output>
           </div>
+        </div>
+
+        {/* Category and tags: available, but not in the way of a quick save. */}
+        <div className="attribute-more">
+          <button
+            type="button"
+            className="attribute-more-toggle"
+            aria-expanded={showMore}
+            aria-controls={`${fieldId}-more`}
+            onClick={() => setShowMore((value) => !value)}
+          >
+            <ChevronIcon size={14} className={`attribute-more-chevron ${showMore ? 'is-open' : ''}`} />
+            Daha fazla seçenek
+          </button>
+
+          {showMore && (
+            <div className="attribute-more-body" id={`${fieldId}-more`}>
+              <div className="attribute-field">
+                <label className="attribute-field-label" htmlFor={`${fieldId}-category`}>
+                  Kategori
+                </label>
+                <select
+                  id={`${fieldId}-category`}
+                  className="attribute-select"
+                  value={category}
+                  onChange={(event) => setCategory(event.target.value)}
+                >
+                  <option value="">Kategori yok</option>
+                  {DRAWING_CATEGORIES.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="attribute-field">
+                <label className="attribute-field-label" htmlFor={`${fieldId}-tags`}>
+                  Etiketler
+                </label>
+                <TagInput id={`${fieldId}-tags`} value={tags} onChange={setTags} />
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="attribute-popup-actions">

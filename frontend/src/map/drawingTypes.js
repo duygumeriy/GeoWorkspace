@@ -45,6 +45,56 @@ export const COLOR_PRESETS = Object.freeze([
   { id: 'red', label: 'Kırmızı', value: '#DC2626' },
 ])
 
+/**
+ * Drawing categories. Mirrors `DrawingCategories` on the backend, which is the
+ * authority: an unknown value is rejected there with a 400. The two languages
+ * cannot share a literal, so — as with the default style above — each side has
+ * exactly one place where the list is written down.
+ *
+ * The order is the one the backend declares, so the dropdown and any
+ * server-rendered list agree.
+ */
+export const DRAWING_CATEGORIES = Object.freeze([
+  'Genel',
+  'Envanter',
+  'Çalışma Alanı',
+  'Sınır',
+  'Rota',
+  'Referans Noktası',
+  'Diğer',
+])
+
+/** Tag rules the backend enforces (DrawingMetadataValidator). */
+export const TAG_LIMITS = Object.freeze({ maxCount: 10, maxLength: 40 })
+
+/** Description limit the backend enforces (DrawingMetadataValidator). */
+export const MAX_DESCRIPTION_LENGTH = 2000
+
+/**
+ * Cleans a tag list the way the backend will: trims, drops empties and removes
+ * case-insensitive duplicates keeping the first spelling.
+ *
+ * Doing it client-side too means the chips the user sees are already the chips
+ * that will be stored, rather than a list that quietly changes on save.
+ */
+export function normalizeTags(tags) {
+  const seen = new Set()
+  const result = []
+
+  for (const tag of tags ?? []) {
+    const trimmed = typeof tag === 'string' ? tag.trim() : ''
+    if (!trimmed) continue
+
+    const key = trimmed.toLocaleLowerCase('tr')
+    if (seen.has(key)) continue
+
+    seen.add(key)
+    result.push(trimmed)
+  }
+
+  return result
+}
+
 export const DRAWING_TYPES = Object.freeze({
   point: {
     id: 'point',

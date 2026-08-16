@@ -8,7 +8,14 @@ namespace StajProject.Application.Bulk;
 public sealed record BulkTarget(DrawingKind Kind, int Id, DrawingStyleDto? Style);
 
 /// <summary>Doğrulanmış tek bir toplu-oluşturma girdisi.</summary>
-public sealed record BulkCreateTarget(DrawingKind Kind, string Wkt, string? Name, DrawingStyleDto? Style);
+public sealed record BulkCreateTarget(
+    DrawingKind Kind,
+    string Wkt,
+    string? Name,
+    DrawingStyleDto? Style,
+    string? Description,
+    string? Category,
+    List<string>? Tags);
 
 /// <summary>
 /// Toplu işlem isteklerinin gövdesini servise girmeden önce doğrular.
@@ -104,7 +111,11 @@ public static class BulkRequestValidator
                 return ServiceResult<IReadOnlyList<BulkCreateTarget>>.Failure("wkt boş olamaz.");
             }
 
-            targets.Add(new BulkCreateTarget(kind, item.Wkt, item.Name, item.Style));
+            // Metadata'nın İÇERİK doğrulaması (kategori kümesi, etiket sayısı)
+            // servis katmanındaki DrawingMetadataValidator'a bırakılır; burada
+            // yalnızca taşınır, böylece kural tek yerde kalır.
+            targets.Add(new BulkCreateTarget(
+                kind, item.Wkt, item.Name, item.Style, item.Description, item.Category, item.Tags));
         }
 
         return ServiceResult<IReadOnlyList<BulkCreateTarget>>.Success(targets);

@@ -24,6 +24,29 @@ public interface IStyledDrawingFeature
 
     string Name { get; set; }
 
+    /* --- Kullanıcı metadata'sı -----------------------------------------------
+       Üçü de OPSİYONELDİR ve stil kolonlarından ayrı durur: stil kaydın nasıl
+       göründüğünü, bunlar kaydın ne olduğunu anlatır. Soft delete bu alanlara
+       DOKUNMAZ, dolayısıyla geri alınan (restore) bir kayıt metadata'sıyla
+       birlikte geri gelir. */
+
+    /// <summary>Serbest metin açıklama. Boş bırakılabilir.</summary>
+    string? Description { get; set; }
+
+    /// <summary>
+    /// <see cref="DrawingCategories"/> kümesinden bir değer, ya da "kategori yok"
+    /// için <c>null</c>. Kanonik yazımla saklanır.
+    /// </summary>
+    string? Category { get; set; }
+
+    /// <summary>
+    /// Kullanıcı etiketleri. Kırpılmış, boşları atılmış ve büyük/küçük harf
+    /// duyarsız tekilleştirilmiş hâlde saklanır (bkz. <c>DrawingMetadataValidator</c>).
+    /// Etiketi olmayan kayıtta boş liste durur, <c>null</c> değil — okuyan kodun
+    /// her seferinde null kontrolü yapması gerekmesin diye.
+    /// </summary>
+    List<string> Tags { get; set; }
+
     /// <summary>#RRGGBB. Her türde zorunlu.</summary>
     string StrokeColor { get; set; }
 
@@ -76,6 +99,14 @@ public interface IStyledDrawingFeature
        düşer; her sorguya elle filtre eklenmez. */
 
     bool IsDeleted { get; set; }
+
+    /// <summary>
+    /// Kaydın kullanımda olup olmadığı. Soft delete ile birlikte
+    /// <c>false</c> olur, geri alma (undo) ile yeniden <c>true</c> yapılır.
+    /// <see cref="IsDeleted"/> "silindi mi", bu alan "kullanımda mı"
+    /// sorusunu yanıtlar; normal sorgular ikisini birden şart koşar.
+    /// </summary>
+    bool IsActive { get; set; }
 
     /// <summary>UTC. Yalnızca silme anında yazılır.</summary>
     DateTime? DeletedAt { get; set; }

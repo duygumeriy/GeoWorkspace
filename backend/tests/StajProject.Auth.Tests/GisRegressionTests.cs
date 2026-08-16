@@ -74,7 +74,8 @@ public class GisRegressionTests
         Assert.Equal(11, restored.Value!.Items.Single().Drawing.CreatedByUserId);
         Assert.Single(await drawings.GetPointsAsync(CancellationToken.None));
 
-        var analysis = new SpatialAnalysisService(db);
+        // Analiz kapsamı doğrulanmış kimlikten gelir: sahibin kendi envanteri.
+        var analysis = new SpatialAnalysisService(db, owner);
         var counts = await analysis.CountIntersectionsAsync(new IntersectionAnalysisRequest
         {
             Wkt = "POLYGON ((27 37, 33 37, 33 43, 27 43, 27 37))",

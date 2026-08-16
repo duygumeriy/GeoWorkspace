@@ -1,0 +1,551 @@
+/* The "Geometri" tab of the selected-drawing panel: manual coordinates, vertex
+   list, live metrics and the line length tools.
+
+   The whole editor is built to survive a long vertex list inside a narrow docked
+   panel — nothing here may cause horizontal overflow, on any width. */
+
+.geometry-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  /* Contains its own children rather than letting a wide row push the panel. */
+  min-width: 0;
+}
+
+.geometry-projection {
+  margin: 0;
+  padding: 0.4rem 0.55rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  border: 1px solid var(--border-soft);
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+/* --- Map edit mode --------------------------------------------------------- */
+
+/* Stacked, not side by side: each option carries a sentence explaining what a
+   drag will do in that mode, which two narrow columns cannot hold legibly. */
+.geometry-modes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.geometry-mode {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-soft);
+  background: var(--surface-soft);
+  color: var(--text-secondary);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast),
+    border-color var(--transition-fast);
+}
+
+.geometry-mode:hover {
+  color: var(--text-primary);
+}
+
+/* The active mode is marked three ways — fill, border and a left bar — so it
+   does not rely on one low-contrast cue to say which gesture is armed. */
+.geometry-mode.is-active {
+  background: rgba(139, 92, 246, 0.16);
+  border-color: var(--border-strong);
+  border-left: 3px solid var(--accent, #8b5cf6);
+  color: var(--text-primary);
+}
+
+.geometry-mode-title {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.geometry-mode.is-active .geometry-mode-title {
+  color: var(--text-primary);
+}
+
+.geometry-mode-description {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--text-tertiary);
+}
+
+/* --- Line sub-sections -----------------------------------------------------
+   A LineString has two unrelated jobs — placing points and setting a length —
+   and showing both at once made the panel a wall of controls. */
+
+.geometry-subtabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.25rem;
+  padding: 0.2rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  border: 1px solid var(--border-soft);
+}
+
+.geometry-subtab {
+  padding: 0.4rem 0.5rem;
+  border: none;
+  border-radius: calc(var(--radius-sm) - 2px);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.geometry-subtab.is-active {
+  background: var(--surface-solid, rgba(139, 92, 246, 0.2));
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* --- Live metrics ---------------------------------------------------------- */
+
+.geometry-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0;
+}
+
+.geometry-metric {
+  flex: 1 1 auto;
+  min-width: 5.5rem;
+  padding: 0.45rem 0.55rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  border: 1px solid var(--border-soft);
+}
+
+.geometry-metric dt {
+  margin: 0;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+}
+
+.geometry-metric dd {
+  margin: 0.15rem 0 0;
+  font-size: var(--font-small);
+  font-weight: 600;
+  color: var(--text-primary);
+  /* Tabular figures keep the numbers from jittering as they update live. */
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Sections and actions -------------------------------------------------- */
+
+.geometry-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.geometry-section-title {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+}
+
+.geometry-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.geometry-secondary-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  flex: 1 1 auto;
+  padding: 0.45rem 0.6rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-soft);
+  background: var(--surface-soft);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.geometry-secondary-action:hover:not(:disabled) {
+  background: rgba(139, 92, 246, 0.12);
+  color: var(--text-primary);
+}
+
+.geometry-secondary-action:disabled {
+  cursor: not-allowed;
+  /* Still readable: several disabled buttons here carry their own reason as
+     their label, which a heavier fade would hide. */
+  opacity: 0.6;
+}
+
+/* "Tüm Koordinatları Kopyala" — useful, but not one of the shape-editing
+   actions, so it is quieter than the buttons that change the geometry. */
+.geometry-tertiary-action {
+  align-self: flex-start;
+  padding: 0.3rem 0.1rem;
+  border: none;
+  background: none;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-family: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.geometry-tertiary-action:hover {
+  color: var(--text-primary);
+}
+
+.geometry-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  line-height: 1.45;
+}
+
+.geometry-invalid {
+  margin: 0;
+  padding: 0.45rem 0.55rem;
+  border-radius: var(--radius-sm);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+/* --- Coordinate inputs ------------------------------------------------------
+   Two columns where there is room, stacked where there is not. The stacked
+   fallback is what keeps a vertex row usable on a phone instead of forcing a
+   sideways scroll. */
+
+.coord-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.coord-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.coord-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+}
+
+.coord-input {
+  width: 100%;
+  min-width: 0;
+  padding: 0.4rem 0.5rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-soft);
+  background: var(--surface-soft);
+  color: var(--text-primary);
+  /* Monospace so digits line up down the column and a changed decimal is easy
+     to spot; tabular figures keep the width steady while typing. */
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+}
+
+.coord-input:focus {
+  outline: none;
+  border-color: var(--border-strong);
+}
+
+.coord-input.is-invalid {
+  border-color: var(--danger);
+}
+
+.coord-error {
+  font-size: 10px;
+  color: var(--danger);
+  line-height: 1.3;
+}
+
+/* --- Vertex list ----------------------------------------------------------- */
+
+.vertex-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  /* A long geometry scrolls inside its own box rather than pushing the save
+     button off the bottom of the panel. */
+  max-height: 22rem;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.vertex-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.5rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  border: 1px solid var(--border-soft);
+  min-width: 0;
+}
+
+/* The selected row is marked with the same amber the map marker uses, so the
+   panel and the map visibly agree on which vertex is in hand. */
+.vertex-row.is-selected {
+  border-color: #f59e0b;
+  box-shadow: inset 3px 0 0 #f59e0b;
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.vertex-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+/* The vertex's own name is the selection control: clicking "Köşe 3" is what
+   lights up marker 3 on the map. */
+.vertex-name {
+  padding: 0.15rem 0;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.vertex-row.is-selected .vertex-name {
+  color: var(--text-primary);
+}
+
+.vertex-locate {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.2rem 0.35rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.vertex-locate:hover {
+  background: rgba(139, 92, 246, 0.12);
+  color: var(--text-primary);
+}
+
+/* --- Row actions -----------------------------------------------------------
+   Text, not icons. Each button names the segment it will act on, so the old
+   "what does this arrow do / where does this + put the point" guesswork is
+   answered by the label itself. */
+
+.vertex-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.vertex-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  flex: 1 1 auto;
+  /* Comfortably tappable without a second, denser layout for touch. */
+  min-height: 30px;
+  padding: 0.35rem 0.5rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-soft);
+  background: var(--surface-solid, transparent);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-family: inherit;
+  line-height: 1.25;
+  text-align: center;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.vertex-action:hover:not(:disabled) {
+  background: rgba(139, 92, 246, 0.14);
+  color: var(--text-primary);
+}
+
+.vertex-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.vertex-action--danger {
+  flex: 0 1 auto;
+}
+
+.vertex-action--danger:hover:not(:disabled) {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+/* Reordering a line re-routes it, so it sits one disclosure below the everyday
+   actions rather than beside them. Polygons do not get it at all. */
+.vertex-advanced {
+  flex: 1 1 100%;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.vertex-advanced > summary {
+  padding: 0.25rem 0;
+  cursor: pointer;
+  list-style: revert;
+}
+
+.vertex-advanced-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  padding-top: 0.3rem;
+}
+
+/* ChevronIcon points down by default; the "move earlier" control flips it. */
+.vertex-arrow-up {
+  transform: rotate(180deg);
+}
+
+/* --- Polygon edge picker ---------------------------------------------------- */
+
+.edge-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--border-soft);
+}
+
+/* --- Line tools ------------------------------------------------------------ */
+
+.line-tools {
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-soft);
+}
+
+.line-tool-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.line-tool-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  /* Grows to share the row, wraps to its own line when there is no room. */
+  flex: 1 1 6rem;
+  min-width: 0;
+}
+
+.line-tool-field--unit {
+  flex: 1 1 5rem;
+}
+
+.line-tool-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+}
+
+.line-tool-field input,
+.line-tool-field select {
+  width: 100%;
+  min-width: 0;
+  padding: 0.4rem 0.5rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-soft);
+  background: var(--surface-soft);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.line-tool-field input {
+  font-variant-numeric: tabular-nums;
+}
+
+.line-tool-field input:focus,
+.line-tool-field select:focus {
+  outline: none;
+  border-color: var(--border-strong);
+}
+
+/* --- Narrow screens --------------------------------------------------------
+   Below this width two coordinate columns leave each input too small to edit
+   comfortably, so longitude and latitude stack. */
+
+@media (max-width: 420px) {
+  .coord-fields {
+    grid-template-columns: 1fr;
+  }
+
+  /* One action per line. Squeezing several onto a row is what produced the
+     unreadable strip of tiny icons this editor replaced, and it is worst
+     exactly where the target is a fingertip. */
+  .vertex-row-actions,
+  .vertex-advanced-actions,
+  .geometry-actions {
+    flex-direction: column;
+  }
+
+  .vertex-action,
+  .vertex-action--danger,
+  .geometry-secondary-action {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+
+  .line-tool-field {
+    flex: 1 1 100%;
+  }
+
+  /* The sheet already scrolls on a phone; a second scroll region inside it
+     traps the list and is easy to get stuck in. */
+  .vertex-list {
+    max-height: none;
+  }
+}

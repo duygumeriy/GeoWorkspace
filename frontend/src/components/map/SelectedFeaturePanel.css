@@ -138,3 +138,258 @@
   font-size: var(--font-small);
   line-height: 1.45;
 }
+
+/* --- Renk satırı (salt okunur) ------------------------------------------- */
+
+.selected-color {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.selected-color-dot {
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 999px;
+  background: var(--dot);
+  border: 1px solid var(--border-soft);
+  flex: 0 0 auto;
+}
+
+/* --- Düzenleme oturumu ----------------------------------------------------
+   Ad + renk formu. Geometry haritada düzenlenir, burada değil; bu yüzden
+   form yalnızca iki alan taşır ve panel dar ekranda da taşmaz. */
+
+.selected-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  margin-top: 0.75rem;
+}
+
+.selected-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.selected-field-label {
+  color: var(--text-secondary);
+  font-size: var(--font-small);
+}
+
+.selected-input {
+  width: 100%;
+  /* Dolgu genişliği artırmasın: dar panelde yatay taşmayı önler. */
+  box-sizing: border-box;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--surface-solid);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--font-small);
+}
+
+.selected-input:focus-visible {
+  outline: none;
+  border-color: var(--border-strong);
+}
+
+.selected-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.selected-swatch {
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background: var(--swatch);
+  cursor: pointer;
+  /* Dokunmatikte hedef alanı yeterli kalsın diye küçültülmez. */
+  flex: 0 0 auto;
+  box-shadow: 0 0 0 1px var(--border-soft) inset;
+}
+
+.selected-swatch.is-active {
+  border-color: var(--text-primary);
+}
+
+.selected-swatch--custom {
+  position: relative;
+  overflow: hidden;
+  background: conic-gradient(#ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000);
+  display: inline-flex;
+}
+
+/* Native renk seçici tıklanabilir kalır ama görünmez: yuvarlak swatch
+   görünümü korunur. */
+.selected-swatch--custom input[type='color'] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.selected-edit-hint {
+  margin: 0;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  color: var(--text-secondary);
+  font-size: var(--font-small);
+  line-height: 1.45;
+}
+
+.selected-edit-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--font-small);
+}
+
+/* Kaydet/İptal yan yana: iki aksiyonlu bir karar tek satırda okunur. */
+.selected-actions--edit {
+  flex-direction: row;
+}
+
+.selected-actions--edit .selected-action {
+  flex: 1 1 0;
+}
+
+/* --- Metadata display ------------------------------------------------------ */
+
+.selected-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  justify-content: flex-end;
+}
+
+.selected-tag {
+  padding: 0.1rem 0.4rem;
+  border-radius: var(--radius-full);
+  background: rgba(139, 92, 246, 0.14);
+  border: 1px solid var(--border-strong);
+  font-size: 11px;
+  color: var(--text-primary);
+}
+
+/* --- Edit tabs -------------------------------------------------------------
+   Bilgiler / Geometri. Switching neither commits nor discards — both tabs edit
+   the one session, so the tab is a view, not a step. */
+
+.selected-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.3rem;
+  padding: 0.2rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  border: 1px solid var(--border-soft);
+}
+
+.selected-tab {
+  padding: 0.45rem 0.5rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--font-small);
+  font-family: inherit;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.selected-tab:hover {
+  color: var(--text-primary);
+}
+
+.selected-tab.is-active {
+  background: rgba(139, 92, 246, 0.18);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.selected-info-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.selected-textarea {
+  resize: vertical;
+  min-height: 3.5rem;
+  line-height: 1.5;
+  font-family: inherit;
+}
+
+/* --- Session history -------------------------------------------------------
+   Undo / redo / reset act on the whole session, so they sit outside the tabs
+   and stay reachable from either one. */
+
+.selected-history {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--border-soft);
+}
+
+.selected-history-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  flex: 1 1 auto;
+  padding: 0.4rem 0.55rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-soft);
+  background: var(--surface-soft);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.selected-history-btn:hover:not(:disabled) {
+  background: rgba(139, 92, 246, 0.12);
+  color: var(--text-primary);
+}
+
+/* Unavailable, not invisible. At 0.4 these read as decoration rather than as
+   controls that will come back, and "Geri Al" is the one thing a user hunts for
+   the moment an edit goes wrong — it has to stay findable while it is disabled. */
+.selected-history-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+  border-style: dashed;
+}
+
+/* --- Editing panel width ---------------------------------------------------
+   The coordinate rows carry full-text actions ("Köşe 3–4 Arasına Ekle"), which
+   wrap into unreadable slivers at the read-only panel's width. The panel widens
+   only while a session is open, and still leaves most of the map visible. */
+
+@media (min-width: 641px) {
+  .selected-panel.is-editing {
+    width: min(400px, calc(100% - 2rem));
+  }
+}
+
+/* Tablets have less room to give, so the widening is smaller there. */
+@media (min-width: 641px) and (max-width: 1024px) {
+  .selected-panel.is-editing {
+    width: min(360px, calc(100% - 1.5rem));
+  }
+}

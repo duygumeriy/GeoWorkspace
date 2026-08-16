@@ -14,12 +14,12 @@ public class PointFeatureConfiguration : IEntityTypeConfiguration<PointFeature>
 
         DrawingFeatureConfiguration.ConfigureNameStyleAndAudit(builder);
 
-        /* Soft-delete edilen kayıtlar TÜM sorgulardan otomatik olarak düşer:
-           listeleme, tekil okuma, toplu işlemler ve spatial analiz (analiz de
-           EF üzerinden çalıştığı için filtre oraya da uygulanır). Filtreyi
-           bilerek atlamak gerektiğinde — yalnızca restore yolunda —
-           IgnoreQueryFilters() kullanılır. */
-        builder.HasQueryFilter(x => !x.IsDeleted);
+        /* Soft-delete edilen VEYA pasifleştirilen kayıtlar TÜM sorgulardan
+           otomatik olarak düşer: listeleme, tekil okuma, toplu işlemler ve
+           spatial analiz (analiz de EF üzerinden çalıştığı için filtre oraya
+           da uygulanır). Filtreyi bilerek atlamak gerektiğinde — yalnızca
+           restore yolunda — IgnoreQueryFilters() kullanılır. */
+        builder.HasQueryFilter(x => !x.IsDeleted && x.IsActive);
 
         // PointRadius yalnızca bu tabloda vardır (IPointStyledFeature).
         builder.Property(x => x.PointRadius);

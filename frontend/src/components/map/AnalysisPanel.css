@@ -1,0 +1,409 @@
+/* The inventory analysis readout.
+   Amber throughout, matching the analysis area drawn on the map — the panel and
+   the polygon it describes read as one thing. The purple accent stays reserved
+   for drawings, and neither palette is redefined here. */
+
+.analysis-panel {
+  --analysis-accent: #f59e0b;
+
+  position: absolute;
+  top: 1rem;
+  left: 4.25rem;
+  z-index: 26;
+  width: min(330px, calc(100% - 5.25rem));
+  /* Never taller than the map: the results list scrolls inside the panel
+     instead of running off the bottom of the viewport. */
+  max-height: calc(100% - 2rem);
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-md);
+  background: var(--surface-solid);
+  border: 1px solid var(--analysis-accent);
+  box-shadow: var(--shadow-panel);
+}
+
+.analysis-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.6rem 0.75rem 0.35rem;
+}
+
+.analysis-title {
+  font-size: var(--font-small);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--analysis-accent);
+  text-transform: uppercase;
+}
+
+.analysis-close {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-secondary);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.analysis-close:hover {
+  color: var(--text-primary);
+  background: var(--surface-soft);
+}
+
+/* The only scrolling region; head and foot stay put so "Temizle" is always
+   reachable however long the result list is. */
+.analysis-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.analysis-foot {
+  padding: 0.5rem 0.75rem 0.6rem;
+  border-top: 1px solid var(--border-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+/* --- States ---------------------------------------------------------------- */
+
+.analysis-state {
+  margin: 0;
+  font-size: var(--font-small);
+  color: var(--text-secondary);
+}
+
+.analysis-state--error {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.analysis-error-title {
+  margin: 0;
+  font-weight: 600;
+  color: var(--danger);
+}
+
+.analysis-error-detail,
+.analysis-error-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  line-height: 1.4;
+}
+
+/* --- Summary --------------------------------------------------------------- */
+
+.analysis-total {
+  margin: 0;
+  font-size: var(--font-body);
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.35;
+}
+
+.analysis-source {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.analysis-summary {
+  display: flex;
+  gap: 0.35rem;
+  margin: 0;
+}
+
+.analysis-summary-item {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0.35rem 0.4rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  border: 1px solid var(--border-soft);
+  text-align: center;
+}
+
+.analysis-summary-item dt {
+  margin: 0;
+  font-size: 10px;
+  color: var(--text-tertiary);
+}
+
+.analysis-summary-item dd {
+  margin: 0.1rem 0 0;
+  font-size: var(--font-small);
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Accordion ------------------------------------------------------------- */
+
+.analysis-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.analysis-section {
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.analysis-section-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  /* A real tap target on touch, not a hover-only affordance. */
+  min-height: 38px;
+  padding: 0.4rem 0.5rem;
+  border: none;
+  background: var(--surface-soft);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--font-small);
+  text-align: left;
+  cursor: pointer;
+}
+
+.analysis-section-head:hover:not(:disabled) {
+  background: rgba(245, 158, 11, 0.12);
+}
+
+/* An empty group is still shown — "Noktalar (0)" is an answer — but it has
+   nothing to open, and says so by being inert. */
+.analysis-section.is-empty .analysis-section-head {
+  cursor: default;
+  color: var(--text-tertiary);
+}
+
+.analysis-section-chevron {
+  flex-shrink: 0;
+  transform: rotate(-90deg);
+  transition: transform var(--transition-fast);
+}
+
+.analysis-section-chevron.is-open {
+  transform: rotate(0deg);
+}
+
+.analysis-section-title {
+  font-weight: 600;
+}
+
+/* --- Result items ---------------------------------------------------------- */
+
+.analysis-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.analysis-item {
+  border-top: 1px solid var(--border-soft);
+}
+
+.analysis-item.is-selected {
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.analysis-item-head {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  min-height: 40px;
+  padding: 0.4rem 0.5rem;
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.analysis-item-head:hover {
+  background: var(--surface-soft);
+}
+
+.analysis-item-dot {
+  width: 0.7rem;
+  height: 0.7rem;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: var(--dot);
+  border: 1px solid var(--border-soft);
+}
+
+.analysis-item-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.analysis-item-name {
+  font-size: var(--font-small);
+  font-weight: 600;
+  /* A long name shortens rather than widening the panel. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.analysis-item-meta {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+/* --- Item detail ----------------------------------------------------------- */
+
+.analysis-detail {
+  padding: 0.15rem 0.5rem 0.55rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.analysis-detail-rows {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.analysis-detail-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  font-size: 11px;
+}
+
+.analysis-detail-row dt {
+  flex: 0 0 7.5rem;
+  color: var(--text-tertiary);
+}
+
+.analysis-detail-row dd {
+  margin: 0;
+  min-width: 0;
+  color: var(--text-primary);
+  /* Descriptions can be long; wrapping beats a horizontal scrollbar. */
+  overflow-wrap: anywhere;
+}
+
+.analysis-tags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.2rem;
+}
+
+.analysis-tag {
+  padding: 0.05rem 0.3rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  border: 1px solid var(--border-soft);
+  font-size: 10px;
+}
+
+.analysis-color {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.analysis-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.analysis-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  flex: 1 1 auto;
+  min-height: 32px;
+  padding: 0.35rem 0.5rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-soft);
+  background: var(--surface-soft);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.analysis-action:hover {
+  background: rgba(245, 158, 11, 0.14);
+  color: var(--text-primary);
+}
+
+/* --- Footer ---------------------------------------------------------------- */
+
+.analysis-clear {
+  width: 100%;
+  min-height: 32px;
+  padding: 0.35rem 0.5rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--analysis-accent);
+  background: transparent;
+  color: var(--analysis-accent);
+  font-family: inherit;
+  font-size: var(--font-small);
+  cursor: pointer;
+}
+
+.analysis-clear:hover {
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.analysis-note {
+  margin: 0;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  line-height: 1.4;
+}
+
+/* --- Narrow screens --------------------------------------------------------
+   On a phone the panel docks to the bottom so the map above it stays usable,
+   and it never takes more than half the height. */
+
+@media (max-width: 640px) {
+  .analysis-panel {
+    top: auto;
+    bottom: 5.5rem;
+    left: 0.75rem;
+    right: 0.75rem;
+    width: auto;
+    max-height: 50%;
+  }
+
+  .analysis-detail-row {
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .analysis-detail-row dt {
+    flex: none;
+  }
+}

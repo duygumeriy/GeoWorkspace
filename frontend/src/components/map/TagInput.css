@@ -1,0 +1,98 @@
+/* Chip-style tag editor. Shares the surface/border language of the other map
+   form controls so it reads as one system with the name and colour fields. */
+
+.tag-input {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.tag-input-chips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.3rem 0.2rem 0.55rem;
+  border-radius: var(--radius-full);
+  background: rgba(139, 92, 246, 0.14);
+  border: 1px solid var(--border-strong);
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.4;
+  /* A long tag shrinks rather than pushing the panel sideways. */
+  max-width: 100%;
+}
+
+.tag-chip-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag-chip-remove {
+  display: inline-grid;
+  place-items: center;
+  /* 20px is small on screen but the chip's padding keeps the real tap target
+     comfortable; the control is always present rather than hover-revealed. */
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.tag-chip-remove:hover:not(:disabled),
+.tag-chip-remove:focus-visible {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.tag-chip-remove:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.tag-input-field {
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-soft);
+  background: var(--surface-soft);
+  color: var(--text-primary);
+  font-size: var(--font-small);
+  font-family: inherit;
+}
+
+.tag-input-field::placeholder {
+  color: var(--text-tertiary);
+}
+
+.tag-input-field:focus {
+  outline: none;
+  border-color: var(--border-strong);
+}
+
+.tag-input-field:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.tag-input-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  line-height: 1.4;
+}

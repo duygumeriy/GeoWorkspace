@@ -17,6 +17,13 @@ import { useCallback, useMemo, useState } from 'react'
  *   mode: 'select'   -> activeSelectionTool single | box | polygon
  *   mode: 'measure'  -> activeMeasureTool   distance | area
  *   mode: 'analysis' -> activeAnalysisTool  polygon
+ *   mode: 'edit'     -> isEditing           (geometry of the selected record)
+ *
+ * `edit` is a mode for the same reason the others are: while the user is
+ * dragging the vertices of an existing record, a click must not start a new
+ * drawing, a measurement or a box selection. Because every interaction is
+ * created from a derived `active*` value that is null outside its own mode,
+ * entering edit tears all of them down without any call site remembering to.
  *
  * The remembered (inactive) values are kept so leaving and re-entering a mode
  * returns to the tool the user last used, and so the style panel knows which
@@ -34,6 +41,7 @@ export const WORKSPACE_MODES = Object.freeze({
   select: 'select',
   measure: 'measure',
   analysis: 'analysis',
+  edit: 'edit',
 })
 
 /** Selection tools, in toolbar order. */
@@ -159,6 +167,23 @@ export default function useWorkspaceMode() {
     )
   }, [])
 
+  /* --- Edit ---------------------------------------------------------------- */
+
+  /**
+   * Enters geometry-edit mode. Selection is deliberately NOT cleared: the
+   * record being edited is the selected one, and the detail panel stays open
+   * to offer "Kaydet" / "İptal".
+   */
+  const startEditing = useCallback(() => {
+    setState((current) => ({ ...current, mode: WORKSPACE_MODES.edit }))
+  }, [])
+
+  const stopEditing = useCallback(() => {
+    setState((current) =>
+      current.mode === WORKSPACE_MODES.edit ? { ...current, mode: WORKSPACE_MODES.select } : current,
+    )
+  }, [])
+
   return useMemo(
     () => ({
       mode: state.mode,
@@ -177,6 +202,7 @@ export default function useWorkspaceMode() {
       isMeasuring: state.mode === WORKSPACE_MODES.measure,
       isSelecting: state.mode === WORKSPACE_MODES.select,
       isAnalyzing: state.mode === WORKSPACE_MODES.analysis,
+      isEditing: state.mode === WORKSPACE_MODES.edit,
       selectDrawTool,
       setDrawTool,
       stopDrawing,
@@ -185,6 +211,8 @@ export default function useWorkspaceMode() {
       stopMeasuring,
       toggleAnalysisTool,
       stopAnalysis,
+      startEditing,
+      stopEditing,
     }),
     [
       state,
@@ -196,6 +224,8 @@ export default function useWorkspaceMode() {
       stopMeasuring,
       toggleAnalysisTool,
       stopAnalysis,
+      startEditing,
+      stopEditing,
     ],
   )
 }

@@ -9,6 +9,7 @@ import {
   fetchDrawings,
   readApiError,
   restoreDrawings,
+  updateDrawing,
   updateDrawingStyle,
 } from '../services/api.js'
 import {
@@ -19,6 +20,7 @@ import {
   nextClientKey,
   recordToFeature,
   tagFeature,
+  wkt4326ToFeature,
 } from '../map/drawing.js'
 import {
   DRAWING_TYPES,
@@ -75,6 +77,8 @@ export default function useDrawingWorkspace(map, { showToast, activeDrawTool = n
   const [selectedKeys, setSelectedKeys] = useState(EMPTY_SELECTION)
   const [visibility, setVisibility] = useState(ALL_VISIBLE)
   const [loadingDrawings, setLoadingDrawings] = useState(false)
+  /** Non-null when the last load failed; drives the panel's error state. */
+  const [loadError, setLoadError] = useState(null)
   const [savingCount, setSavingCount] = useState(0)
 
   /**
@@ -157,48 +161,64 @@ export default function useDrawingWorkspace(map, { showToast, activeDrawTool = n
     refreshLayer()
   }, [selectedKeys, visibility, refreshLayer])
 
-  /* --- Initial load ------------------------------------------------------- */
+  /* --- Load ----------------------------------------------------------------
+     The backend returns ONLY the current user's active, non-deleted records,
+     so what lands on the map is already the right set — there is no ownership
+     filtering to redo here.
+
+     Extracted into a callback (rather than living inside the effect) so the
+     "Tekrar Dene" button in the Çizimlerim panel can re-run exactly the same
+     load after a failure, instead of the user having to reload the page. */
+
+  const loadDrawings = useCallback(async () => {
+    setLoadingDrawings(true)
+    setLoadError(null)
+
+    try {
+      const groups = await Promise.all(
+        DRAWING_TYPE_IDS.map(async (type) => {
+          const res = await fetchDrawings(type)
+          if (!res.ok) throw new Error(await readApiError(res, `${DRAWING_TYPES[type].plural} yüklenemedi`))
+          return { type, items: await res.json() }
+        }),
+      )
+
+      const source = sourceRef.current
+      if (!source) return false
+
+      source.clear()
+      for (const { type, items } of groups) {
+        for (const item of items) {
+          const feature = recordToFeature(type, item)
+          if (feature) source.addFeature(feature)
+        }
+      }
+      syncDrawings()
+      return true
+    } catch (error) {
+      // A failed load must not take the map down; drawing still works.
+      setLoadError(error?.message || 'Kayıtlı çizimler yüklenemedi.')
+      showToast('error', 'Kayıtlı çizimler yüklenemedi. Harita kullanılabilir durumda.')
+      return false
+    } finally {
+      setLoadingDrawings(false)
+    }
+  }, [showToast, syncDrawings])
 
   useEffect(() => {
     if (!map) return undefined
 
     let cancelled = false
-    setLoadingDrawings(true)
-
-    Promise.all(
-      DRAWING_TYPE_IDS.map(async (type) => {
-        const res = await fetchDrawings(type)
-        if (!res.ok) throw new Error(await readApiError(res, `${DRAWING_TYPES[type].plural} yüklenemedi`))
-        return { type, items: await res.json() }
-      }),
-    )
-      .then((groups) => {
-        const source = sourceRef.current
-        if (cancelled || !source) return
-
-        source.clear()
-        for (const { type, items } of groups) {
-          for (const item of items) {
-            const feature = recordToFeature(type, item)
-            if (feature) source.addFeature(feature)
-          }
-        }
-        syncDrawings()
-      })
-      .catch(() => {
-        // A failed load must not take the map down; drawing still works.
-        if (!cancelled) {
-          showToast('error', 'Kayıtlı çizimler yüklenemedi. Harita kullanılabilir durumda.')
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingDrawings(false)
-      })
+    loadDrawings().then(() => {
+      // The source is cleared on unmount anyway; this only avoids a state
+      // update on a torn-down map.
+      if (cancelled) return
+    })
 
     return () => {
       cancelled = true
     }
-  }, [map, showToast, syncDrawings])
+  }, [map, loadDrawings])
 
   /* --- Selection ---------------------------------------------------------- */
 
@@ -290,8 +310,8 @@ export default function useDrawingWorkspace(map, { showToast, activeDrawTool = n
    * create — all three hand over the same shape of snapshot.
    */
   const persistCreate = useCallback(
-    async ({ type, wkt, style, name, clientKey }) => {
-      const res = await createDrawing(type, wkt, { name, style })
+    async ({ type, wkt, style, name, description, category, tags, clientKey }) => {
+      const res = await createDrawing(type, wkt, { name, style, description, category, tags })
       if (!res.ok) throw new Error(await readApiError(res, 'Çizim kaydedilemedi'))
 
       const saved = await res.json()
@@ -352,6 +372,51 @@ export default function useDrawingWorkspace(map, { showToast, activeDrawTool = n
       feature.set('style', normalizeStyle(type, saved.style))
       feature.set('modifiedDate', saved.modifiedDate)
       feature.unset('previewStyle')
+      refreshLayer()
+      syncDrawings()
+      return true
+    },
+    [featureByKey, refreshLayer, syncDrawings],
+  )
+
+  /**
+   * The detail popup's "Kaydet": name, colour and geometry in ONE request.
+   *
+   * The feature is then rebuilt from the server's answer rather than from what
+   * was sent, so anything the backend normalised or rejected-and-kept (a
+   * trimmed name, a clamped stroke width, the stored geometry) is what ends up
+   * on the map. That is also why the geometry is re-read from the returned WKT
+   * even though `Modify` already moved it locally — map and database cannot
+   * drift apart.
+   *
+   * @param {{ name?: string, style?: object, wkt?: string }} changes
+   */
+  const persistUpdate = useCallback(
+    async (clientKey, changes) => {
+      const feature = featureByKey(clientKey)
+      if (!feature) return false
+
+      const type = feature.get('drawingType')
+      const res = await updateDrawing(type, feature.get('databaseId'), changes)
+      if (!res.ok) throw new Error(await readApiError(res, 'Çizim güncellenemedi'))
+
+      const saved = await res.json()
+
+      // Geometry comes back reprojected to the map's 3857 by wkt4326ToFeature.
+      const savedGeometry = wkt4326ToFeature(saved.wkt)?.getGeometry()
+      if (savedGeometry) feature.setGeometry(savedGeometry)
+
+      feature.set('name', saved.name ?? '')
+      // Metadata comes back from the server for the same reason the geometry
+      // does: what the database normalised (trimmed description, canonical
+      // category, de-duplicated tags) is what the map must show.
+      feature.set('description', saved.description ?? '')
+      feature.set('category', saved.category ?? '')
+      feature.set('tags', Array.isArray(saved.tags) ? saved.tags : [])
+      feature.set('style', normalizeStyle(type, saved.style))
+      feature.set('modifiedDate', saved.modifiedDate)
+      feature.unset('previewStyle')
+
       refreshLayer()
       syncDrawings()
       return true
@@ -555,12 +620,15 @@ export default function useDrawingWorkspace(map, { showToast, activeDrawTool = n
    * "Kaydet" in the attribute popup: this is the only place a drawn shape
    * becomes a record. Name and colour travel with the geometry in one POST.
    *
-   * @param {{ name: string, color: string }} attributes
+   * @param {{ name: string, color: string, description?: string,
+   *           category?: string, tags?: string[] }} attributes
+   *   Metadata is optional: the popup keeps it behind "Daha fazla seçenek", so
+   *   the common case still sends only a name and a colour.
    * @returns {Promise<boolean>} false leaves the popup open so the user can fix
    *   the input instead of losing the shape they just drew.
    */
   const savePendingDrawing = useCallback(
-    async ({ name, color }) => {
+    async ({ name, color, description = '', category = '', tags = [] }) => {
       const pending = pendingDrawing
       if (!pending) return false
 
@@ -579,7 +647,16 @@ export default function useDrawingWorkspace(map, { showToast, activeDrawTool = n
       const style = applyStylePatch(pending.type, pending.style, patch)
       const type = DRAWING_TYPES[pending.type]
       const { wkt, clientKey } = pending
-      const snapshot = { type: pending.type, wkt, style, name: trimmedName, clientKey }
+      const snapshot = {
+        type: pending.type,
+        wkt,
+        style,
+        name: trimmedName,
+        description,
+        category,
+        tags,
+        clientKey,
+      }
 
       setSavingCount((count) => count + 1)
 
@@ -725,6 +802,57 @@ export default function useDrawingWorkspace(map, { showToast, activeDrawTool = n
       }
     },
     [featuresByKeys, persistBulkStyle, previewStylePatch, pushHistory, guarded, showToast],
+  )
+
+  /**
+   * The detail popup's "Kaydet": persists name, colour and geometry together.
+   *
+   * The previous values are snapshotted first so the change joins the same
+   * undo/redo stack as everything else — an edit is no less reversible than a
+   * style change or a delete. The snapshot is taken from the live feature
+   * (including its current geometry as WKT), which is exactly what a later
+   * `persistUpdate` needs to put things back.
+   *
+   * @param {{ name?: string, style?: object, wkt?: string }} changes
+   */
+  const updateFeature = useCallback(
+    async (key, changes) => {
+      const feature = featureByKey(key)
+      if (!feature) return false
+
+      const type = feature.get('drawingType')
+      /* The snapshot has to cover EVERY field the update can change. Leaving
+         metadata out would make undo a partial restore: the name and geometry
+         would go back while the new description silently stayed. Sending the
+         old values explicitly (including empty strings and an empty tag list)
+         is also what lets undo *clear* a field the edit had filled in. */
+      const before = {
+        name: feature.get('name') ?? '',
+        description: feature.get('description') ?? '',
+        category: feature.get('category') ?? '',
+        tags: [...(feature.get('tags') ?? [])],
+        style: feature.get('style'),
+        wkt: geometryToWkt4326(feature.getGeometry()),
+      }
+
+      setSavingCount((count) => count + 1)
+      try {
+        await persistUpdate(key, changes)
+        showToast('success', `${DRAWING_TYPES[type].label} güncellendi.`)
+        pushHistory({
+          label: `${DRAWING_TYPES[type].label} düzenleme`,
+          undo: guarded(() => persistUpdate(key, before), 'Geri alınamadı.'),
+          redo: guarded(() => persistUpdate(key, changes), 'İleri alınamadı.'),
+        })
+        return true
+      } catch (error) {
+        showToast('error', error?.message || 'Çizim güncellenemedi.')
+        return false
+      } finally {
+        setSavingCount((count) => Math.max(0, count - 1))
+      }
+    },
+    [featureByKey, persistUpdate, pushHistory, guarded, showToast],
   )
 
   /** Deletes a feature, keeping a full snapshot so undo can recreate it. */
@@ -896,6 +1024,8 @@ export default function useDrawingWorkspace(map, { showToast, activeDrawTool = n
     visibility,
     visibleCount,
     loadingDrawings,
+    loadError,
+    reloadDrawings: loadDrawings,
     isSaving: savingCount > 0,
     toolStyles,
     pendingDrawing,
@@ -915,6 +1045,7 @@ export default function useDrawingWorkspace(map, { showToast, activeDrawTool = n
     previewStylePatch,
     applyStyle,
     applyStylePatchToSelection,
+    updateFeature,
     removeFeature,
     removeFeatures,
     setToolStyle,

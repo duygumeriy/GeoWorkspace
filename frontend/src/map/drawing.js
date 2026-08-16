@@ -125,6 +125,13 @@ export function tagFeature(feature, type, record, clientKey) {
   feature.set('databaseId', record.id)
   feature.set('style', normalizeStyle(type, record.style ?? defaultStyleFor(type)))
   feature.set('name', record.name ?? '')
+  /* Metadata. Description and category may legitimately be absent, so they are
+     normalised to '' rather than left undefined — the panels and the filter
+     pipeline then never have to distinguish "missing" from "empty". Tags are
+     always an array for the same reason; the API also guarantees one. */
+  feature.set('description', record.description ?? '')
+  feature.set('category', record.category ?? '')
+  feature.set('tags', Array.isArray(record.tags) ? record.tags : [])
   feature.set('createdDate', record.createdDate ?? null)
   feature.set('modifiedDate', record.modifiedDate ?? null)
   feature.set('createdBy', record.createdBy ?? '')
@@ -148,6 +155,9 @@ export function featureToDescriptor(feature) {
     type: feature.get('drawingType'),
     databaseId: feature.get('databaseId'),
     name: feature.get('name') ?? '',
+    description: feature.get('description') ?? '',
+    category: feature.get('category') ?? '',
+    tags: feature.get('tags') ?? [],
     style: feature.get('style'),
     createdDate: feature.get('createdDate'),
     modifiedDate: feature.get('modifiedDate'),

@@ -65,6 +65,16 @@ public class BulkCreateItem
     public string? Name { get; set; }
 
     public DrawingStyleDto? Style { get; set; }
+
+    /* Metadata tekil create ile aynı kurallara tabidir. Burada da taşınır ki
+       toplu yeniden oluşturma, kaydın açıklamasını/kategorisini/etiketlerini
+       sessizce düşürmesin. */
+
+    public string? Description { get; set; }
+
+    public string? Category { get; set; }
+
+    public List<string>? Tags { get; set; }
 }
 
 /// <summary>POST /api/drawings/bulk-create gövdesi.</summary>

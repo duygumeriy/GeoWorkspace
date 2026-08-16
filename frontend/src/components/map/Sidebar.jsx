@@ -62,7 +62,7 @@ export default function Sidebar({
 
   const items = [
     { id: null, label: 'Harita', Icon: MapIcon },
-    { id: 'drawings', label: 'Çizimler', Icon: ListIcon },
+    { id: 'drawings', label: 'Çizimlerim', Icon: ListIcon },
     { id: 'layers', label: 'Katmanlar', Icon: LayersIcon },
     ...(isAdmin ? [{ id: 'admin-users', label: 'Kullanıcı Yönetimi', Icon: ShieldIcon }] : []),
     { id: 'settings', label: 'Ayarlar', Icon: SettingsIcon },
