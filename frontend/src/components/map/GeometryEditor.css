@@ -25,20 +25,25 @@
 
 /* --- Map edit mode --------------------------------------------------------- */
 
+/* Stacked, not side by side: each option carries a sentence explaining what a
+   drag will do in that mode, which two narrow columns cannot hold legibly. */
 .geometry-modes {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  display: flex;
+  flex-direction: column;
   gap: 0.35rem;
 }
 
 .geometry-mode {
-  padding: 0.45rem 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.5rem 0.6rem;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-soft);
   background: var(--surface-soft);
   color: var(--text-secondary);
-  font-size: 12px;
   font-family: inherit;
+  text-align: left;
   cursor: pointer;
   transition: background var(--transition-fast), color var(--transition-fast),
     border-color var(--transition-fast);
@@ -48,10 +53,60 @@
   color: var(--text-primary);
 }
 
+/* The active mode is marked three ways — fill, border and a left bar — so it
+   does not rely on one low-contrast cue to say which gesture is armed. */
 .geometry-mode.is-active {
   background: rgba(139, 92, 246, 0.16);
   border-color: var(--border-strong);
+  border-left: 3px solid var(--accent, #8b5cf6);
   color: var(--text-primary);
+}
+
+.geometry-mode-title {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.geometry-mode.is-active .geometry-mode-title {
+  color: var(--text-primary);
+}
+
+.geometry-mode-description {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--text-tertiary);
+}
+
+/* --- Line sub-sections -----------------------------------------------------
+   A LineString has two unrelated jobs — placing points and setting a length —
+   and showing both at once made the panel a wall of controls. */
+
+.geometry-subtabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.25rem;
+  padding: 0.2rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  border: 1px solid var(--border-soft);
+}
+
+.geometry-subtab {
+  padding: 0.4rem 0.5rem;
+  border: none;
+  border-radius: calc(var(--radius-sm) - 2px);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.geometry-subtab.is-active {
+  background: var(--surface-solid, rgba(139, 92, 246, 0.2));
+  color: var(--text-primary);
+  font-weight: 600;
 }
 
 /* --- Live metrics ---------------------------------------------------------- */
@@ -137,7 +192,28 @@
 
 .geometry-secondary-action:disabled {
   cursor: not-allowed;
-  opacity: 0.45;
+  /* Still readable: several disabled buttons here carry their own reason as
+     their label, which a heavier fade would hide. */
+  opacity: 0.6;
+}
+
+/* "Tüm Koordinatları Kopyala" — useful, but not one of the shape-editing
+   actions, so it is quieter than the buttons that change the geometry. */
+.geometry-tertiary-action {
+  align-self: flex-start;
+  padding: 0.3rem 0.1rem;
+  border: none;
+  background: none;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-family: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.geometry-tertiary-action:hover {
+  color: var(--text-primary);
 }
 
 .geometry-hint {
@@ -240,62 +316,146 @@
   min-width: 0;
 }
 
+/* The selected row is marked with the same amber the map marker uses, so the
+   panel and the map visibly agree on which vertex is in hand. */
+.vertex-row.is-selected {
+  border-color: #f59e0b;
+  box-shadow: inset 3px 0 0 #f59e0b;
+  background: rgba(245, 158, 11, 0.08);
+}
+
 .vertex-row-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.4rem;
+  flex-wrap: wrap;
 }
 
-.vertex-index {
-  font-size: 11px;
+/* The vertex's own name is the selection control: clicking "Köşe 3" is what
+   lights up marker 3 on the map. */
+.vertex-name {
+  padding: 0.15rem 0;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 12px;
   font-weight: 600;
-  color: var(--text-secondary);
-  font-variant-numeric: tabular-nums;
-}
-
-.vertex-tools {
-  display: inline-flex;
-  gap: 0.2rem;
-}
-
-.vertex-tool {
-  display: inline-grid;
-  place-items: center;
-  /* 26px keeps four controls on one line in a narrow panel while staying an
-     honest touch target next to the row's own padding. */
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border-soft);
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 13px;
   font-family: inherit;
-  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.vertex-row.is-selected .vertex-name {
+  color: var(--text-primary);
+}
+
+.vertex-locate {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.2rem 0.35rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-family: inherit;
   cursor: pointer;
   transition: background var(--transition-fast), color var(--transition-fast);
 }
 
-.vertex-tool:hover:not(:disabled) {
+.vertex-locate:hover {
+  background: rgba(139, 92, 246, 0.12);
+  color: var(--text-primary);
+}
+
+/* --- Row actions -----------------------------------------------------------
+   Text, not icons. Each button names the segment it will act on, so the old
+   "what does this arrow do / where does this + put the point" guesswork is
+   answered by the label itself. */
+
+.vertex-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.vertex-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  flex: 1 1 auto;
+  /* Comfortably tappable without a second, denser layout for touch. */
+  min-height: 30px;
+  padding: 0.35rem 0.5rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-soft);
+  background: var(--surface-solid, transparent);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-family: inherit;
+  line-height: 1.25;
+  text-align: center;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.vertex-action:hover:not(:disabled) {
   background: rgba(139, 92, 246, 0.14);
   color: var(--text-primary);
 }
 
-.vertex-tool:disabled {
+.vertex-action:disabled {
   cursor: not-allowed;
-  opacity: 0.35;
+  opacity: 0.45;
 }
 
-.vertex-tool--danger:hover:not(:disabled) {
+.vertex-action--danger {
+  flex: 0 1 auto;
+}
+
+.vertex-action--danger:hover:not(:disabled) {
   background: var(--danger-soft);
+  border-color: var(--danger);
   color: var(--danger);
 }
 
-/* ChevronIcon points down by default; the "move up" control flips it. */
-.vertex-tool-up {
+/* Reordering a line re-routes it, so it sits one disclosure below the everyday
+   actions rather than beside them. Polygons do not get it at all. */
+.vertex-advanced {
+  flex: 1 1 100%;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.vertex-advanced > summary {
+  padding: 0.25rem 0;
+  cursor: pointer;
+  list-style: revert;
+}
+
+.vertex-advanced-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  padding-top: 0.3rem;
+}
+
+/* ChevronIcon points down by default; the "move earlier" control flips it. */
+.vertex-arrow-up {
   transform: rotate(180deg);
+}
+
+/* --- Polygon edge picker ---------------------------------------------------- */
+
+.edge-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--border-soft);
 }
 
 /* --- Line tools ------------------------------------------------------------ */
@@ -363,10 +523,28 @@
     grid-template-columns: 1fr;
   }
 
-  .geometry-modes {
-    grid-template-columns: 1fr;
+  /* One action per line. Squeezing several onto a row is what produced the
+     unreadable strip of tiny icons this editor replaced, and it is worst
+     exactly where the target is a fingertip. */
+  .vertex-row-actions,
+  .vertex-advanced-actions,
+  .geometry-actions {
+    flex-direction: column;
   }
 
+  .vertex-action,
+  .vertex-action--danger,
+  .geometry-secondary-action {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+
+  .line-tool-field {
+    flex: 1 1 100%;
+  }
+
+  /* The sheet already scrolls on a phone; a second scroll region inside it
+     traps the list and is easy to get stuck in. */
   .vertex-list {
     max-height: none;
   }

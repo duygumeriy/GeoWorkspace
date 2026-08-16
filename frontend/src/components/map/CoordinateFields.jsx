@@ -42,19 +42,31 @@ export default function CoordinateFields({ vertex, onChange, idPrefix, disabled 
   const latOk = latText.trim() !== '' && isValidLat(latValue)
 
   const push = (nextLon, nextLat) => {
+    // A half-typed value ("-", "3.", "") is not a number yet and must not reach
+    // the session — pushing NaN would put a broken geometry on the map
+    // mid-keystroke.
+    if (nextLon.trim() === '' || nextLat.trim() === '') return
+
     const lon = Number(nextLon)
     const lat = Number(nextLat)
-    // Only complete, in-range pairs reach the session: pushing NaN would put a
-    // broken geometry on the map mid-keystroke.
-    if (!isValidLon(lon) || !isValidLat(lat)) return
+    if (!Number.isFinite(lon) || !Number.isFinite(lat)) return
+
+    /* An out-of-RANGE number, though, is a real edit and does reach the session.
+       Holding it back here would leave the panel showing "999" with an error
+       while the session still held a perfectly valid coordinate — so "Kaydet"
+       would stay enabled and would save a value the user cannot see. Stored,
+       it fails `validateCoords`, which disables the save AND stops the bad
+       coordinate from being pushed onto the map geometry. */
     onChange([lon, lat])
   }
 
   return (
     <div className={`coord-fields ${compact ? 'coord-fields--compact' : ''}`}>
       <div className="coord-field">
+        {/* The axis letter is spelled out because the two are easy to transpose,
+            and a pasted coordinate pair is as often "X, Y" as "lon, lat". */}
         <label className="coord-label" htmlFor={`${idPrefix}-lon`}>
-          Boylam
+          Boylam (X)
         </label>
         <input
           id={`${idPrefix}-lon`}
@@ -87,7 +99,7 @@ export default function CoordinateFields({ vertex, onChange, idPrefix, disabled 
 
       <div className="coord-field">
         <label className="coord-label" htmlFor={`${idPrefix}-lat`}>
-          Enlem
+          Enlem (Y)
         </label>
         <input
           id={`${idPrefix}-lat`}

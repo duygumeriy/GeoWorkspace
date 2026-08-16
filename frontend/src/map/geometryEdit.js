@@ -174,29 +174,119 @@ export function setVertex(coords, index, vertex) {
 }
 
 /**
- * Inserts a vertex after `index`, placed at the midpoint of the segment it
- * splits, so a new point appears exactly on the existing line rather than at an
- * arbitrary spot the user then has to hunt for.
+ * The segments a vertex list is made of, in the order the UI numbers them.
+ *
+ * A polygon's list is open, but the shape is not: the edge from the last vertex
+ * back to the first is as real as any other and a user has to be able to pick
+ * it. Producing the closing edge here — once — is what stops every caller from
+ * having to remember that a polygon has N edges where a line has N-1.
+ *
+ * @returns {{ index: number, from: number, to: number, start: number[], end: number[] }[]}
  */
-export function addVertex(coords, index) {
-  if (coords.length === 0) return coords
+export function segmentsOf(type, coords) {
+  if (!Array.isArray(coords) || coords.length < 2) return []
 
-  const position = Math.min(Math.max(index, 0), coords.length - 1)
-  const current = coords[position]
-  // After the last vertex there is no following one to average with, so the new
-  // vertex extends past the end along the previous segment instead.
-  const next = coords[position + 1] ?? extrapolate(coords, position)
+  const isRing = type === 'polygon'
+  const count = isRing ? coords.length : coords.length - 1
 
-  const inserted = [(current[0] + next[0]) / 2, (current[1] + next[1]) / 2]
-  return [...coords.slice(0, position + 1), inserted, ...coords.slice(position + 1)]
+  return Array.from({ length: count }, (_, index) => {
+    const to = isRing ? (index + 1) % coords.length : index + 1
+    return { index, from: index, to, start: coords[index], end: coords[to] }
+  })
 }
 
-/** A point just beyond the end of the line, used when appending a vertex. */
-function extrapolate(coords, lastIndex) {
-  const last = coords[lastIndex]
-  const previous = coords[lastIndex - 1]
-  if (!previous) return [last[0] + 0.01, last[1]]
-  return [last[0] + (last[0] - previous[0]), last[1] + (last[1] - previous[1])]
+/** Plain average of two vertices — where a split point goes. */
+export function midpointOf(a, b) {
+  return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]
+}
+
+/**
+ * Splits segment `index` at its midpoint.
+ *
+ * This is the one insertion primitive; "after this vertex", "before this vertex"
+ * and "on the selected edge" all reduce to it, which is what makes the answer to
+ * *"where did the new point go?"* the same in every case: on the segment the
+ * button named, halfway along it.
+ *
+ * @returns {{ coords: Array, index: number }} the new list and the inserted
+ *   vertex's position in it, so the caller can select what it just created.
+ */
+export function splitSegment(type, coords, index) {
+  const segments = segmentsOf(type, coords)
+  const segment = segments[index]
+  if (!segment) return { coords, index: -1 }
+
+  const position = segment.from + 1
+  const inserted = midpointOf(segment.start, segment.end)
+
+  return {
+    coords: [...coords.slice(0, position), inserted, ...coords.slice(position)],
+    index: position,
+  }
+}
+
+/**
+ * Inserts a vertex directly after `index`.
+ *
+ * For a polygon the following vertex always exists — the ring wraps — so the new
+ * point lands on a real edge even after the last vertex. A line has no such edge
+ * past its end, so the point is extrapolated along the final segment's
+ * direction: the line grows the way it was already heading, which is the only
+ * placement a user can predict without being told.
+ *
+ * @returns {{ coords: Array, index: number }}
+ */
+export function addVertexAfter(type, coords, index) {
+  if (coords.length === 0) return { coords, index: -1 }
+
+  const position = clampIndex(index, coords.length)
+  const isLast = position === coords.length - 1
+
+  if (type === 'polygon' || !isLast) return splitSegment(type, coords, position)
+
+  const inserted = extrapolate(coords, position, -1)
+  return { coords: [...coords, inserted], index: coords.length }
+}
+
+/**
+ * Inserts a vertex directly before `index` — the mirror of `addVertexAfter`, and
+ * what "Öncesine Nokta Ekle" / "Başlangıca Nokta Ekle" run.
+ *
+ * @returns {{ coords: Array, index: number }}
+ */
+export function addVertexBefore(type, coords, index) {
+  if (coords.length === 0) return { coords, index: -1 }
+
+  const position = clampIndex(index, coords.length)
+  const isFirst = position === 0
+
+  if (type === 'polygon' || !isFirst) {
+    // The segment ENDING at `position` is the one numbered `position - 1`, and
+    // for a ring the segment before vertex 0 is the closing one.
+    const segment = position === 0 ? coords.length - 1 : position - 1
+    return splitSegment(type, coords, segment)
+  }
+
+  const inserted = extrapolate(coords, 0, 1)
+  return { coords: [inserted, ...coords], index: 0 }
+}
+
+function clampIndex(index, length) {
+  return Math.min(Math.max(index, 0), length - 1)
+}
+
+/**
+ * A point just beyond one end of an open line, mirroring the terminal segment.
+ *
+ * @param {number} neighbourOffset +1 to reflect past the start, -1 past the end
+ */
+function extrapolate(coords, endIndex, neighbourOffset) {
+  const end = coords[endIndex]
+  const neighbour = coords[endIndex + neighbourOffset]
+  // A one-vertex list has no direction to continue in; a small eastward step is
+  // at least somewhere the user can see and then drag.
+  if (!neighbour) return [end[0] + 0.01, end[1]]
+  return [end[0] + (end[0] - neighbour[0]), end[1] + (end[1] - neighbour[1])]
 }
 
 /**

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  addVertex as addVertexAt,
+  addVertexAfter as addVertexAfterAt,
+  addVertexBefore as addVertexBeforeAt,
   areaOf,
   buildMapGeometry,
   extendLine,
@@ -10,9 +11,11 @@ import {
   moveVertex as moveVertexBy,
   perimeterOf,
   removeVertex as removeVertexAt,
+  segmentsOf,
   setLineTargetLength,
   setVertex as setVertexAt,
   shortenLine,
+  splitSegment as splitSegmentAt,
   toMapCoordinates,
   validateCoords,
 } from '../map/geometryEdit.js'
@@ -100,6 +103,14 @@ export default function useEditSession({ feature, descriptor, active }) {
         coords,
         past: [],
         future: [],
+        /* Which vertex / which edge the user is working on. Selection lives in
+           the session, next to the list it indexes, so the panel row and the
+           marker on the map cannot disagree about what "Köşe 3" means — there
+           is one number, read by both. Only ever one of the two is set: a
+           vertex and the edge beside it are different targets and offer
+           different actions. */
+        selectedVertex: null,
+        selectedEdge: null,
       }
     })
   }, [active, feature, descriptor, recordKey])
@@ -134,10 +145,19 @@ export default function useEditSession({ feature, descriptor, active }) {
      putting every keystroke on an undo stack would bury the geometry operations
      the user actually wants to step back through. */
 
-  /** Applies a coords transform and records the previous list for undo. */
-  const commitCoords = useCallback((next, { record = true } = {}) => {
+  /**
+   * Applies a coords transform and records the previous list for undo.
+   *
+   * @param {{ record?: boolean, select?: number|null }} options `select` pins the
+   *   vertex selection to a known position — an insertion passes the index it
+   *   just created, so the new point is the one highlighted and the coordinate
+   *   boxes underneath already belong to it.
+   */
+  const commitCoords = useCallback((next, { record = true, select } = {}) => {
     setState((current) => {
       if (!current || !next || isSameCoords(current.coords, next)) return current
+
+      const countChanged = next.length !== current.coords.length
 
       return {
         ...current,
@@ -145,6 +165,12 @@ export default function useEditSession({ feature, descriptor, active }) {
         past: record ? [...current.past, current.coords] : current.past,
         // Any new edit invalidates the redo branch.
         future: record ? [] : current.future,
+        selectedVertex:
+          select === undefined ? clampSelection(current.selectedVertex, next.length) : select,
+        /* Inserting or deleting a vertex renumbers every segment after it, so an
+           edge picked before the change would now highlight a different edge
+           than the one the user chose. Dropping it is the honest answer. */
+        selectedEdge: countChanged ? null : current.selectedEdge,
       }
     })
   }, [])
@@ -163,11 +189,13 @@ export default function useEditSession({ feature, descriptor, active }) {
   const undo = useCallback(() => {
     setState((current) => {
       if (!current?.past.length) return current
+      const coords = current.past.at(-1)
       return {
         ...current,
-        coords: current.past.at(-1),
+        coords,
         past: current.past.slice(0, -1),
         future: [...current.future, current.coords],
+        ...selectionForLength(current, coords.length),
       }
     })
   }, [])
@@ -175,11 +203,13 @@ export default function useEditSession({ feature, descriptor, active }) {
   const redo = useCallback(() => {
     setState((current) => {
       if (!current?.future.length) return current
+      const coords = current.future.at(-1)
       return {
         ...current,
-        coords: current.future.at(-1),
+        coords,
         past: [...current.past, current.coords],
         future: current.future.slice(0, -1),
+        ...selectionForLength(current, coords.length),
       }
     })
   }, [])
@@ -200,6 +230,7 @@ export default function useEditSession({ feature, descriptor, active }) {
           ? current.past
           : [...current.past, current.coords],
         future: [],
+        ...selectionForLength(current, current.original.coords.length),
       }
     })
   }, [])
@@ -248,25 +279,79 @@ export default function useEditSession({ feature, descriptor, active }) {
     [commitCoords],
   )
 
-  const addVertex = useCallback(
-    (index) => commitCoords(addVertexAt(coordsRef.current ?? [], index)),
-    [commitCoords],
+  /* Insertions all report the position they created and select it, so the new
+     vertex is the highlighted one on the map and the one the coordinate boxes
+     are editing. "Where did the point go?" is answered before it is asked. */
+
+  const addVertexAfter = useCallback(
+    (index) => {
+      const result = addVertexAfterAt(type, coordsRef.current ?? [], index)
+      commitCoords(result.coords, { select: result.index })
+    },
+    [type, commitCoords],
   )
+
+  const addVertexBefore = useCallback(
+    (index) => {
+      const result = addVertexBeforeAt(type, coordsRef.current ?? [], index)
+      commitCoords(result.coords, { select: result.index })
+    },
+    [type, commitCoords],
+  )
+
+  /** Splits the currently highlighted edge — "Seçili Kenara Köşe Ekle". */
+  const splitSelectedEdge = useCallback(() => {
+    const edge = state?.selectedEdge
+    if (edge == null) return
+    const result = splitSegmentAt(type, coordsRef.current ?? [], edge)
+    commitCoords(result.coords, { select: result.index })
+  }, [type, state?.selectedEdge, commitCoords])
 
   /** @returns {string|null} the reason when the minimum blocks the removal. */
   const removeVertex = useCallback(
     (index) => {
       const result = removeVertexAt(type, coordsRef.current ?? [], index)
-      if (result.removed) commitCoords(result.coords)
+      // The neighbour that slid into the deleted position takes the selection,
+      // so the list does not jump back to nothing after every removal.
+      if (result.removed) {
+        commitCoords(result.coords, { select: clampSelection(index, result.coords.length) })
+      }
       return result.reason
     },
     [type, commitCoords],
   )
 
   const moveVertex = useCallback(
-    (index, direction) => commitCoords(moveVertexBy(coordsRef.current ?? [], index, direction)),
+    (index, direction) => {
+      const next = moveVertexBy(coordsRef.current ?? [], index, direction)
+      // The selection follows the vertex, not the row: the point the user was
+      // holding stays highlighted after it swaps places.
+      commitCoords(next, { select: clampSelection(index + direction, next.length) })
+    },
     [commitCoords],
   )
+
+  /* --- Selection ------------------------------------------------------------
+     Setting one clears the other: a vertex and an edge offer different actions,
+     and having both lit would leave "add a point here" ambiguous again. */
+
+  const selectVertex = useCallback((index) => {
+    setState((current) =>
+      current ? { ...current, selectedVertex: index, selectedEdge: null } : current,
+    )
+  }, [])
+
+  const selectEdge = useCallback((index) => {
+    setState((current) =>
+      current ? { ...current, selectedEdge: index, selectedVertex: null } : current,
+    )
+  }, [])
+
+  const clearSelection = useCallback(() => {
+    setState((current) =>
+      current ? { ...current, selectedVertex: null, selectedEdge: null } : current,
+    )
+  }, [])
 
   /* --- Line length tools ----------------------------------------------------
      Each returns the failure reason (or null), so the panel can explain why an
@@ -298,24 +383,37 @@ export default function useEditSession({ feature, descriptor, active }) {
 
   /* --- Derived -------------------------------------------------------------- */
 
+  /* All three derive from the vertex list ALONE, never from the whole session:
+     selecting a row must not make the area, the length or the vertex count
+     flicker through a recomputation the user can see. */
+
   /** Live measurements, recomputed from the canonical vertex list. */
   const metrics = useMemo(() => {
-    if (!state) return null
-    const { type: geometryType, coords: current } = state
+    if (!coords || !type) return null
 
-    if (geometryType === 'line') {
-      return { length: lengthOf(current), vertexCount: current.length }
+    if (type === 'line') return { length: lengthOf(coords), vertexCount: coords.length }
+    if (type === 'polygon') {
+      return { area: areaOf(coords), perimeter: perimeterOf(coords), vertexCount: coords.length }
     }
-    if (geometryType === 'polygon') {
-      return { area: areaOf(current), perimeter: perimeterOf(current), vertexCount: current.length }
-    }
-    return { vertexCount: current.length }
-  }, [state])
+    return { vertexCount: coords.length }
+  }, [type, coords])
 
   const validity = useMemo(
-    () => (state ? validateCoords(state.type, state.coords) : { ok: false, reason: null }),
-    [state],
+    () => (coords && type ? validateCoords(type, coords) : { ok: false, reason: null }),
+    [type, coords],
   )
+
+  /** The editable segments, numbered as the panel and the map both label them. */
+  const segments = useMemo(
+    () => (coords && type ? segmentsOf(type, coords) : []),
+    [type, coords],
+  )
+
+  /* Read back through the current list rather than trusted as stored: a stale
+     index must render as "nothing selected", never as a highlight on the wrong
+     vertex. */
+  const selectedVertex = clampSelection(state?.selectedVertex ?? null, state?.coords.length ?? 0)
+  const selectedEdge = clampSelection(state?.selectedEdge ?? null, segments.length)
 
   /** Anything at all changed since the session opened? Drives the unsaved guard. */
   const isDirty = useMemo(() => {
@@ -345,6 +443,7 @@ export default function useEditSession({ feature, descriptor, active }) {
     session: state,
     type,
     coords,
+    segments,
     draft: state?.draft ?? null,
     metrics,
     validity,
@@ -355,12 +454,20 @@ export default function useEditSession({ feature, descriptor, active }) {
     // geometry operations — all of them land in the same coords array
     commitFromMap,
     setVertex,
-    addVertex,
+    addVertexAfter,
+    addVertexBefore,
+    splitSelectedEdge,
     removeVertex,
     moveVertex,
     extend,
     shorten,
     setTargetLength,
+    // shared selection — the panel and the map read and write these
+    selectedVertex,
+    selectedEdge,
+    selectVertex,
+    selectEdge,
+    clearSelection,
     // session controls
     setDraftField,
     undo,
@@ -368,5 +475,26 @@ export default function useEditSession({ feature, descriptor, active }) {
     reset,
     revertGeometry,
     toWkt,
+  }
+}
+
+/**
+ * Keeps a selection index inside a list that may have shrunk.
+ *
+ * Returns `null` for an empty list and pins to the last position otherwise, so
+ * deleting the final vertex leaves the new final vertex selected rather than
+ * pointing one past the end.
+ */
+function clampSelection(index, length) {
+  if (index == null || length === 0) return null
+  return Math.min(Math.max(index, 0), length - 1)
+}
+
+/** Selection after a history jump: keep the vertex if it still exists, drop the
+ *  edge, whose numbering the jump may have changed entirely. */
+function selectionForLength(current, length) {
+  return {
+    selectedVertex: clampSelection(current.selectedVertex, length),
+    selectedEdge: null,
   }
 }

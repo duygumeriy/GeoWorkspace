@@ -367,7 +367,29 @@
   color: var(--text-primary);
 }
 
+/* Unavailable, not invisible. At 0.4 these read as decoration rather than as
+   controls that will come back, and "Geri Al" is the one thing a user hunts for
+   the moment an edit goes wrong — it has to stay findable while it is disabled. */
 .selected-history-btn:disabled {
   cursor: not-allowed;
-  opacity: 0.4;
+  opacity: 0.62;
+  border-style: dashed;
+}
+
+/* --- Editing panel width ---------------------------------------------------
+   The coordinate rows carry full-text actions ("Köşe 3–4 Arasına Ekle"), which
+   wrap into unreadable slivers at the read-only panel's width. The panel widens
+   only while a session is open, and still leaves most of the map visible. */
+
+@media (min-width: 641px) {
+  .selected-panel.is-editing {
+    width: min(400px, calc(100% - 2rem));
+  }
+}
+
+/* Tablets have less room to give, so the widening is smaller there. */
+@media (min-width: 641px) and (max-width: 1024px) {
+  .selected-panel.is-editing {
+    width: min(360px, calc(100% - 1.5rem));
+  }
 }

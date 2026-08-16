@@ -97,7 +97,10 @@ export default function SelectedFeaturePanel({
   session = null,
   editMode,
   onEditModeChange,
-  onZoomToVertex,
+  /** Selects a vertex from the panel and nudges the map to it if it is off screen. */
+  onSelectVertex,
+  /** "Haritada Göster": centres the map on one vertex, keeping the zoom. */
+  onFocusVertex,
   onCopyText,
   onNotify,
   // False for drawings owned by someone else. Viewing, zooming and analysing
@@ -154,7 +157,10 @@ export default function SelectedFeaturePanel({
       open={open}
       title={isEditing ? 'Çizimi Düzenle' : 'Seçili Çizim'}
       onClose={isEditing ? onCancelEdit : onClose}
-      className="selected-panel"
+      // The coordinate rows carry full-text actions, which need more room than
+      // the read-only detail list; the panel widens for the session and shrinks
+      // back afterwards rather than permanently covering more of the map.
+      className={`selected-panel ${isEditing ? 'is-editing' : ''}`}
     >
       {/* The always-visible summary. On a phone it doubles as the expander. */}
       {isPhone && !isEditing ? (
@@ -284,18 +290,26 @@ export default function SelectedFeaturePanel({
             <GeometryEditor
               type={session.type}
               coords={session.coords}
+              segments={session.segments}
               metrics={session.metrics}
               validity={session.validity}
               editMode={editMode}
               onEditModeChange={onEditModeChange}
+              // Selection is the session's, shared with the map overlay — the
+              // row and the numbered marker are two views of one index.
+              selectedVertex={session.selectedVertex}
+              selectedEdge={session.selectedEdge}
+              onSelectVertex={onSelectVertex}
               onSetVertex={session.setVertex}
-              onAddVertex={session.addVertex}
+              onAddVertexAfter={session.addVertexAfter}
+              onAddVertexBefore={session.addVertexBefore}
+              onSplitSelectedEdge={session.splitSelectedEdge}
               onRemoveVertex={session.removeVertex}
               onMoveVertex={session.moveVertex}
               onExtend={session.extend}
               onShorten={session.shorten}
               onTargetLength={session.setTargetLength}
-              onZoomToVertex={onZoomToVertex}
+              onFocusVertex={onFocusVertex}
               onCopy={onCopyText}
               onNotify={onNotify}
             />
