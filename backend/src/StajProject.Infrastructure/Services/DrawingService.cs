@@ -927,19 +927,13 @@ public class DrawingService : IDrawingService
         }
     }
 
-    /// <summary>Entity kolonlarından mevcut stili okur (PATCH merge tabanı).</summary>
-    private static DrawingStyle ReadStyle(IStyledDrawingFeature entity, DrawingKind kind)
-    {
-        var defaults = DrawingStyleDefaults.For(kind);
-
-        return new DrawingStyle(
-            string.IsNullOrWhiteSpace(entity.StrokeColor) ? defaults.StrokeColor : entity.StrokeColor,
-            entity.StrokeWidth == 0 ? defaults.StrokeWidth : entity.StrokeWidth,
-            entity.FillColor ?? defaults.FillColor,
-            entity.FillOpacity ?? defaults.FillOpacity,
-            (entity as IPointStyledFeature)?.PointRadius ?? defaults.PointRadius,
-            entity.LineStyle ?? defaults.LineStyle);
-    }
+    /// <summary>
+    /// Entity kolonlarından mevcut stili okur (PATCH merge tabanı).
+    /// Okuma <see cref="DrawingStyleReader"/> içindedir: envanter analizi sonucu
+    /// da aynı yerden okur, böylece bir kayıt iki ekranda farklı renkte görünemez.
+    /// </summary>
+    private static DrawingStyle ReadStyle(IStyledDrawingFeature entity, DrawingKind kind) =>
+        DrawingStyleReader.Read(entity, kind);
 
     private static DrawingResponse ToResponse<TEntity, TGeometry>(TEntity entity, DrawingKind kind)
         where TEntity : class, IDrawingFeature<TGeometry>
