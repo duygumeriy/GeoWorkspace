@@ -61,6 +61,53 @@ export default function useMapView(map, { showToast } = {}) {
     [map, duration],
   )
 
+  /**
+   * Centres on a coordinate **without changing the zoom** — "Haritada Göster"
+   * for a single vertex.
+   *
+   * Deliberately not a `fit`: zooming in on one vertex would throw the rest of
+   * the shape off screen, and the user has just been shown a number whose whole
+   * purpose is to be located within the shape. The panel's "Haritada Ortala"
+   * is still there for framing the whole drawing.
+   */
+  const panTo = useCallback(
+    (coordinate) => {
+      const view = map?.getView()
+      if (!view || !coordinate) return
+      view.animate({ center: coordinate, duration: duration() })
+    },
+    [map, duration],
+  )
+
+  /**
+   * Pans only if the coordinate is off screen (or crowded against an edge).
+   *
+   * Used when a selection is made from the PANEL: moving the map every time a
+   * row is clicked would be motion sickness for a vertex that was already in
+   * plain sight. A selection made on the map never calls this — the user is
+   * looking straight at it.
+   */
+  const ensureVisible = useCallback(
+    (coordinate) => {
+      const view = map?.getView()
+      const size = map?.getSize()
+      if (!view || !size || !coordinate) return
+
+      const pixel = map.getPixelFromCoordinate(coordinate)
+      // Keeps the target clear of the docked panel and the map's own controls.
+      const margin = 72
+      const isVisible =
+        pixel &&
+        pixel[0] >= margin &&
+        pixel[1] >= margin &&
+        pixel[0] <= size[0] - margin &&
+        pixel[1] <= size[1] - margin
+
+      if (!isVisible) view.animate({ center: coordinate, duration: duration() })
+    },
+    [map, duration],
+  )
+
   /** Temporary "you are here" marker; never written to the database. */
   const showLocationMarker = useCallback(
     (coordinate) => {
@@ -128,5 +175,5 @@ export default function useMapView(map, { showToast } = {}) {
     [map],
   )
 
-  return { goToTurkey, fitExtent, goToMyLocation, reducedMotion }
+  return { goToTurkey, fitExtent, panTo, ensureVisible, goToMyLocation, reducedMotion }
 }

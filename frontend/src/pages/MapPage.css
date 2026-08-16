@@ -87,6 +87,7 @@
 [data-theme='dark'] .map-container .drawing-layer canvas,
 [data-theme='dark'] .map-container .measure-layer canvas,
 [data-theme='dark'] .map-container .analysis-layer canvas,
+[data-theme='dark'] .map-container .vertex-layer canvas,
 [data-theme='dark'] .map-container .location-layer canvas {
   filter: none;
 }

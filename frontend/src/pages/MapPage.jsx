@@ -44,6 +44,7 @@ import useSelectionTools from '../hooks/useSelectionTools.js'
 import useKeyboardShortcuts from '../hooks/useKeyboardShortcuts.js'
 import useGeometryEditing, { GEOMETRY_EDIT_MODES } from '../hooks/useGeometryEditing.js'
 import useEditSession from '../hooks/useEditSession.js'
+import useVertexOverlay from '../hooks/useVertexOverlay.js'
 import { DRAWING_TYPES, DRAWING_TYPE_LIST, colorPatchFor, normalizeTags } from '../map/drawingTypes.js'
 import './MapPage.css'
 
@@ -218,7 +219,7 @@ export default function MapPage() {
     navigate('/login', { replace: true })
   }
 
-  const { fitExtent } = mapView
+  const { fitExtent, panTo, ensureVisible } = mapView
   const { selectionCount, selectionCounts, selectedFeatures } = workspace
 
   /** Selecting from the drawings list also frames the geometry. */
@@ -334,6 +335,23 @@ export default function MapPage() {
     onCommit: editSession.commitFromMap,
   })
 
+  /* Numbered vertex markers over the drawing being edited, and clicks on them.
+     The overlay renders the SAME session — it holds no geometry and no second
+     selection — so the "Köşe 3" in the panel and the "3" on the map are one
+     index that both surfaces read and write. */
+  useVertexOverlay(mapInstance, {
+    active: workspaceMode.isEditing,
+    type: editSession.type ?? null,
+    coords: editSession.coords ?? null,
+    selectedVertex: editSession.selectedVertex,
+    selectedEdge: editSession.selectedEdge,
+    // A selection made ON the map needs no camera move: the user is looking
+    // right at what they clicked.
+    onSelectVertex: editSession.selectVertex,
+    onSelectEdge: editSession.selectEdge,
+    onClearSelection: editSession.clearSelection,
+  })
+
   const { startEditing, stopEditing } = workspaceMode
   const { updateFeature } = workspace
   const { revertGeometry, isDirty: hasUnsavedEdits } = editSession
@@ -425,12 +443,50 @@ export default function MapPage() {
     [showToast],
   )
 
-  /** "Bu Konuma Git": frames the point being edited without leaving the session. */
-  const zoomToEditedVertex = useCallback(() => {
-    if (!selectedFeature) return
-    const extent = extentOf(selectedFeature.key)
-    if (extent) fitExtent(extent)
-  }, [selectedFeature, extentOf, fitExtent])
+  /* --- Panel -> map vertex selection ---------------------------------------
+     The mirror of the overlay's map -> panel direction. Both write the session's
+     one `selectedVertex`, so neither surface can be showing a different vertex
+     than the other. */
+
+  /** The vertex under `index`, in map coordinates, or null. */
+  const { coords: editCoords } = editSession
+  const vertexCoordinate = useCallback(
+    (index) => {
+      const vertex = editCoords?.[index]
+      return vertex ? fromLonLat(vertex) : null
+    },
+    [editCoords],
+  )
+
+  /**
+   * Clicking a row: select it, and move the map only if the vertex is not
+   * already on screen. Panning on every click would jolt the map for a marker
+   * the user can already see.
+   */
+  const selectEditedVertex = useCallback(
+    (index) => {
+      editSession.selectVertex(index)
+      const coordinate = vertexCoordinate(index)
+      if (coordinate) ensureVisible(coordinate)
+    },
+    [editSession, vertexCoordinate, ensureVisible],
+  )
+
+  /**
+   * "Haritada Göster": centres on one vertex at the CURRENT zoom.
+   *
+   * Deliberately not a zoom-in — the number the user just read only means
+   * anything in the context of the shape around it, and framing a single vertex
+   * would push the rest of the geometry off screen.
+   */
+  const focusEditedVertex = useCallback(
+    (index) => {
+      editSession.selectVertex(index)
+      const coordinate = vertexCoordinate(index)
+      if (coordinate) panTo(coordinate)
+    },
+    [editSession, vertexCoordinate, panTo],
+  )
 
   // Losing the selection mid-edit (delete, deselect) must not strand the map in
   // edit mode with nothing to edit.
@@ -714,7 +770,8 @@ export default function MapPage() {
                 session={editSession}
                 editMode={geometryEditMode}
                 onEditModeChange={setGeometryEditMode}
-                onZoomToVertex={zoomToEditedVertex}
+                onSelectVertex={selectEditedVertex}
+                onFocusVertex={focusEditedVertex}
                 onCopyText={copyText}
                 onNotify={showToast}
                 canManage={canManageSelected}
