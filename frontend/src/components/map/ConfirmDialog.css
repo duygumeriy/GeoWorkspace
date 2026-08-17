@@ -75,6 +75,17 @@
   filter: brightness(1.08);
 }
 
+/* Recoverable confirmations (restoring from the trash) keep the app's primary
+   accent. Red here would read as "this destroys something", which is the
+   opposite of what the button does. */
+.confirm-dialog--primary {
+  border-color: var(--border-strong);
+}
+
+.confirm-button--primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
 @media (max-width: 640px) {
   .confirm-actions {
     flex-direction: column-reverse;

@@ -14,6 +14,7 @@ import {
   LogoutIcon,
   ClockIcon,
   ShieldIcon,
+  TrashIcon,
 } from '../ui/icons/index.js'
 import './Sidebar.css'
 
@@ -64,6 +65,9 @@ export default function Sidebar({
     { id: null, label: 'Harita', Icon: MapIcon },
     { id: 'drawings', label: 'Çizimlerim', Icon: ListIcon },
     { id: 'layers', label: 'Katmanlar', Icon: LayersIcon },
+    // Right after "Çizimlerim"/"Katmanlar" because it is the same subject seen
+    // from the other side: the drawings that are no longer on the map.
+    { id: 'trash', label: 'Çöp Kutusu', Icon: TrashIcon },
     ...(isAdmin ? [{ id: 'admin-users', label: 'Kullanıcı Yönetimi', Icon: ShieldIcon }] : []),
     { id: 'settings', label: 'Ayarlar', Icon: SettingsIcon },
     { id: 'about', label: 'Hakkında', Icon: InfoIcon },

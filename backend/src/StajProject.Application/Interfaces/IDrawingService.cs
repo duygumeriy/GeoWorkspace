@@ -18,6 +18,19 @@ public interface IDrawingService
 
     Task<IReadOnlyList<DrawingResponse>> GetPolygonsAsync(CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Çöp Kutusu: çağıran kullanıcının soft-delete edilmiş çizimleri, üç tür
+    /// tek listede ve en son silinen başta olacak şekilde.
+    /// </summary>
+    /// <remarks>
+    /// Normal listeleme uçlarının aksine bu sorgu global query filter'ı bilerek
+    /// atlar — aradığı kayıtlar zaten "silinmiş" işaretlidir. Filtre atlandığı
+    /// için sahiplik yüklemi açıkça uygulanır: başka bir kullanıcının silinmiş
+    /// kaydı bu listede <b>hiçbir koşulda</b> yer almaz. Kimlik belirlenemezse
+    /// boş liste döner.
+    /// </remarks>
+    Task<IReadOnlyList<DeletedDrawingResponse>> GetDeletedAsync(CancellationToken cancellationToken);
+
     /// <summary>Yalnızca stil kolonlarını günceller; geometry'e dokunmaz.</summary>
     Task<ServiceResult<DrawingResponse>> UpdateStyleAsync(DrawingKind kind, int id, DrawingStyleDto? style, CancellationToken cancellationToken);
 

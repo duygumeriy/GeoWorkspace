@@ -177,6 +177,24 @@ public class ControllerExceptionBoundaryTests
         AssertStandardServerError((await controller.GetPoints(default)).Result);
     }
 
+    /// <summary>
+    /// Çöp Kutusu ucu da aynı sınırdadır: silinmiş kayıtları okuyan sorgu
+    /// patlarsa istemci yine tek tip 500 alır, sorgu detayı sızmaz.
+    /// </summary>
+    [Fact]
+    public async Task Drawings_deleted_list_maps_unexpected_service_failure_to_standard_500()
+    {
+        var drawingService = Substitute.For<IDrawingService>();
+        drawingService
+            .GetDeletedAsync(Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException(LeakyMessage));
+
+        var controller = WithHttpContext(
+            new DrawingsController(drawingService, NullLogger<DrawingsController>.Instance));
+
+        AssertStandardServerError((await controller.GetDeleted(default)).Result);
+    }
+
     /* --- Yardımcılar --------------------------------------------------------- */
 
     private static AuthController AuthControllerWith(

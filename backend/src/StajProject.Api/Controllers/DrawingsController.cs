@@ -70,6 +70,19 @@ public class DrawingsController : ApiControllerBase
     public Task<ActionResult<IReadOnlyList<DrawingResponse>>> GetPolygons(CancellationToken cancellationToken) =>
         GuardList(nameof(GetPolygons), () => _drawingService.GetPolygonsAsync(cancellationToken));
 
+    /// <summary>
+    /// Çöp Kutusu: çağıran kullanıcının silinmiş çizimleri (üç tür tek listede).
+    /// </summary>
+    /// <remarks>
+    /// Silinmiş kayıtları bulma işi tamamen <see cref="IDrawingService"/>
+    /// içindedir; burada ne <c>DbContext</c> sorgusu, ne
+    /// <c>IgnoreQueryFilters</c>, ne de sahiplik kararı vardır. Uç yalnızca
+    /// HTTP sınırıdır ve diğer okuma uçlarıyla aynı hata sınırını kullanır.
+    /// </remarks>
+    [HttpGet("deleted")]
+    public Task<ActionResult<IReadOnlyList<DeletedDrawingResponse>>> GetDeleted(CancellationToken cancellationToken) =>
+        GuardList(nameof(GetDeleted), () => _drawingService.GetDeletedAsync(cancellationToken));
+
     /* --- Detay düzenleme: ad + renk + geometry ------------------------------
        Detay popup'ının "Kaydet" aksiyonu buraya gelir. Gönderilmeyen alanlar
        korunur, sahiplik istek gövdesinden DEĞİL veritabanından okunur. */
@@ -202,9 +215,14 @@ public class DrawingsController : ApiControllerBase
         }
     }
 
-    private async Task<ActionResult<IReadOnlyList<DrawingResponse>>> GuardList(
+    /// <summary>
+    /// <see cref="ServiceResult{T}"/> döndürmeyen okuma uçlarının sınırı. Eleman
+    /// tipi generic'tir: çizim listesi de Çöp Kutusu listesi de aynı tek tanımı
+    /// kullanır, ikinci bir kopya oluşmaz.
+    /// </summary>
+    private async Task<ActionResult<IReadOnlyList<TValue>>> GuardList<TValue>(
         string endpoint,
-        Func<Task<IReadOnlyList<DrawingResponse>>> action)
+        Func<Task<IReadOnlyList<TValue>>> action)
     {
         try
         {

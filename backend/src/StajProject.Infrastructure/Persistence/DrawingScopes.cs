@@ -55,4 +55,28 @@ public static class DrawingScopes
     /// </remarks>
     public static IQueryable<TEntity> InventoryScope<TEntity>(this IQueryable<TEntity> query, int currentUserId)
         where TEntity : class, IStyledDrawingFeature => query.OwnedBy(currentUserId);
+
+    /// <summary>
+    /// Çöp Kutusu veri kümesi: çağıran kullanıcının <b>silinmiş</b> çizimleri.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Çağıranın sorguya <c>IgnoreQueryFilters()</c> eklemesi ZORUNLUDUR — global
+    /// query filter (<c>!IsDeleted &amp;&amp; IsActive</c>) aksi hâlde aranan
+    /// kayıtların tamamını daha en baştan düşürür ve liste her zaman boş döner.
+    /// </para>
+    /// <para>
+    /// Filtre atlandığı için sahiplik yüklemi burada <b>açıkça</b> tekrar
+    /// uygulanır: silinmiş kayıtlar üzerinde çalışan tek yol budur ve
+    /// <see cref="OwnedBy"/> ile aynı tanımı kullanır, böylece bir kullanıcı
+    /// başkasının sildiği çizimi göremez. Kapsam role bakmaz —
+    /// <see cref="UserMapScope"/> ile aynı sınırdadır, Admin de yalnızca kendi
+    /// çöp kutusunu görür.
+    /// </para>
+    /// </remarks>
+    public static IQueryable<TEntity> DeletedScope<TEntity>(this IQueryable<TEntity> query, int currentUserId)
+        where TEntity : class, IStyledDrawingFeature =>
+        query
+            .Where(entity => EF.Property<bool>(entity, nameof(IStyledDrawingFeature.IsDeleted)))
+            .OwnedBy(currentUserId);
 }

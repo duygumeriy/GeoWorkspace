@@ -247,6 +247,23 @@ export function fetchDrawings(type) {
 }
 
 /**
+ * The Çöp Kutusu list: the caller's own soft-deleted drawings, all three types
+ * in ONE response, newest deletion first.
+ *
+ * There is no `type` parameter on purpose — the trash is a single screen, not
+ * three, and asking the server three times would only give the client three
+ * lists to merge. The scoping is the server's: it returns records that are both
+ * deleted AND owned by the caller, so another user's deleted drawing cannot
+ * appear here no matter what the UI does with the answer.
+ *
+ * Each entry is `{ type, deletedAt, drawing }`, where `drawing` is the same
+ * body the normal list endpoints return.
+ */
+export function fetchDeletedDrawings() {
+  return authFetch('/api/drawings/deleted')
+}
+
+/**
  * PUT: the detail popup's "Kaydet". Updates name, style (colour) and geometry
  * in one request.
  *

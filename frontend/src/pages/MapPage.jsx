@@ -22,6 +22,7 @@ import SelectedFeaturePanel from '../components/map/SelectedFeaturePanel.jsx'
 import MultiSelectionPanel from '../components/map/MultiSelectionPanel.jsx'
 import LayersPanel from '../components/map/LayersPanel.jsx'
 import DrawingsPanel from '../components/map/DrawingsPanel.jsx'
+import TrashPanel from '../components/map/TrashPanel.jsx'
 import ConfirmDialog from '../components/map/ConfirmDialog.jsx'
 import AttributePopup from '../components/map/AttributePopup.jsx'
 import AnalysisPanel from '../components/map/AnalysisPanel.jsx'
@@ -35,6 +36,7 @@ import {
 import useMediaQuery from '../hooks/useMediaQuery.js'
 import useToasts from '../hooks/useToasts.js'
 import useDrawingWorkspace from '../hooks/useDrawingWorkspace.js'
+import useTrash from '../hooks/useTrash.js'
 import useInventoryAnalysis from '../hooks/useInventoryAnalysis.js'
 import useWorkspaceMode, { STYLE_PANEL_MODES } from '../hooks/useWorkspaceMode.js'
 import useMapView, { TURKEY_CENTER_LON_LAT, TURKEY_ZOOM } from '../hooks/useMapView.js'
@@ -89,6 +91,8 @@ export default function MapPage() {
   /** What the style panel is editing: null | 'tool' | 'feature' | 'bulk'. */
   const [styleTarget, setStyleTarget] = useState(null)
   const [pendingDelete, setPendingDelete] = useState(null)
+  /** Non-null while the trash is asking whether to reopen a deleted drawing. */
+  const [pendingRestore, setPendingRestore] = useState(null)
 
   // Hover tooltips and letter shortcuts only make sense with a real pointer
   // and a physical keyboard; on touch devices tap-to-select is the interaction.
@@ -115,6 +119,16 @@ export default function MapPage() {
     activeDrawTool: workspaceMode.activeDrawTool,
     onPolygonSaved: analyzeSaved,
   })
+  /* The trash is fetched only while its panel is open, and a successful restore
+     reloads the map through the workspace's own loader — the record has to come
+     back where the user deleted it from, not only leave this list. That is also
+     why there is no second "add it to the map" code path here. */
+  const trash = useTrash({
+    active: activePanel === 'trash',
+    showToast,
+    onRestored: workspace.reloadDrawings,
+  })
+
   const mapView = useMapView(mapInstance, { showToast })
   const measurement = useMeasurement(mapInstance, workspaceMode.activeMeasureTool)
 
@@ -295,6 +309,18 @@ export default function MapPage() {
     if (targets.length === 1) await workspace.removeFeature(targets[0].key)
     else await workspace.removeFeatures(targets.map((item) => item.key))
   }, [pendingDelete, workspace])
+
+  /* Restoring goes through the same confirmation step deleting does, using the
+     app's own dialog rather than `window.confirm`. Reopening a drawing is
+     recoverable — it can simply be deleted again — so the dialog asks in the
+     primary tone instead of the destructive red. */
+  const requestRestore = useCallback((item) => setPendingRestore(item), [])
+
+  const confirmRestore = useCallback(async () => {
+    const target = pendingRestore
+    setPendingRestore(null)
+    if (target) await trash.restore(target)
+  }, [pendingRestore, trash])
 
   const handleSelectPanel = useCallback((panelId) => {
     setActivePanel((current) => (current === panelId ? null : panelId))
@@ -665,6 +691,10 @@ export default function MapPage() {
       setPendingDelete(null)
       return
     }
+    if (pendingRestore) {
+      setPendingRestore(null)
+      return
+    }
     // The attribute popup is the most modal thing on screen: Esc there means
     // "discard this shape", not "leave the tool".
     if (workspace.pendingDrawing) {
@@ -704,7 +734,17 @@ export default function MapPage() {
       return
     }
     if (selectionCount > 0) workspace.clearSelection()
-  }, [pendingDiscard, pendingDelete, workspaceMode, styleTarget, activePanel, selectionCount, workspace, cancelEdit])
+  }, [
+    pendingDiscard,
+    pendingDelete,
+    pendingRestore,
+    workspaceMode,
+    styleTarget,
+    activePanel,
+    selectionCount,
+    workspace,
+    cancelEdit,
+  ])
 
   const handleMeasureShortcut = useCallback(
     () => workspaceMode.selectMeasureTool(workspaceMode.activeMeasureTool ?? 'distance'),
@@ -930,6 +970,19 @@ export default function MapPage() {
                 canManage={(item) => canManageDrawing({ isAdmin, userId }, item)}
               />
 
+              {/* Soft delete made visible: the rows the database kept, with
+                  the one action that puts them back. No permanent delete. */}
+              <TrashPanel
+                open={activePanel === 'trash'}
+                onClose={() => setActivePanel(null)}
+                items={trash.items}
+                loading={trash.loading}
+                error={trash.error}
+                restoringKey={trash.restoringKey}
+                onRetry={trash.reload}
+                onRestore={requestRestore}
+              />
+
               <LayersPanel
                 open={activePanel === 'layers'}
                 onClose={() => setActivePanel(null)}
@@ -984,6 +1037,26 @@ export default function MapPage() {
                 confirmLabel={pendingDelete?.length > 1 ? `${pendingDelete.length} Çizimi Sil` : 'Sil'}
                 onConfirm={confirmDelete}
                 onCancel={() => setPendingDelete(null)}
+              />
+
+              {/* Restore confirmation. Same dialog component as the delete one,
+                  in the primary tone: the record is coming back, and the row
+                  it comes back into is the very one that was deleted. */}
+              <ConfirmDialog
+                open={Boolean(pendingRestore)}
+                tone="primary"
+                title="Çizimi geri yükle"
+                message={
+                  !pendingRestore
+                    ? ''
+                    : // Naming the drawing makes the dialog specific enough to
+                      // catch a mis-tap on the neighbouring row.
+                      `“${pendingRestore.drawing?.name || DRAWING_TYPES[pendingRestore.type]?.label || 'Çizim'}” çizimini geri yüklemek istiyor musunuz?`
+                }
+                description="Çizim aynı kayıt olarak haritaya ve Çizimlerim listesine geri döner, Çöp Kutusu'ndan kalkar."
+                confirmLabel="Geri Yükle"
+                onConfirm={confirmRestore}
+                onCancel={() => setPendingRestore(null)}
               />
 
               {/* Unsaved edits. The same dialog component as the delete

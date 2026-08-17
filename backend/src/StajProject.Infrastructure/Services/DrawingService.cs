@@ -65,6 +65,44 @@ public class DrawingService : IDrawingService
     public Task<IReadOnlyList<DrawingResponse>> GetPolygonsAsync(CancellationToken cancellationToken) =>
         GetAllAsync<PolygonFeature, Polygon>(DrawingKind.Polygon, cancellationToken);
 
+    /// <summary>
+    /// Çöp Kutusu listesi: üç türün silinmiş kayıtları tek listede birleşir.
+    /// </summary>
+    /// <remarks>
+    /// Üç ayrı tablo olduğu için tek bir SQL sorgusu mümkün değildir; birleştirme
+    /// servis katmanında yapılır ki controller ve frontend tek bir liste görsün.
+    /// Sıralama en son silinen başta olacak şekilde burada yapılır — istemci
+    /// tarafındaki sıralama seçeneği bunun üzerine gelen bir tercihtir, veri
+    /// kümesinin varsayılan düzeni değil.
+    /// </remarks>
+    public async Task<IReadOnlyList<DeletedDrawingResponse>> GetDeletedAsync(CancellationToken cancellationToken)
+    {
+        /* Kimlik yoksa (yapılandırma hatası) boş liste döner: kimliği
+           belirlenemeyen bir istek başkasının silinmiş verisini görmektense
+           hiçbir şey görmemelidir — GetAllAsync ile aynı kural. */
+        var currentUserId = _currentUser.UserId;
+
+        if (currentUserId is null)
+        {
+            return [];
+        }
+
+        var points = await GetDeletedAsync<PointFeature, Point>(DrawingKind.Point, currentUserId.Value, cancellationToken);
+        var lines = await GetDeletedAsync<LineFeature, LineString>(DrawingKind.Line, currentUserId.Value, cancellationToken);
+        var polygons = await GetDeletedAsync<PolygonFeature, Polygon>(DrawingKind.Polygon, currentUserId.Value, cancellationToken);
+
+        return
+        [
+            .. points
+                .Concat(lines)
+                .Concat(polygons)
+                // DeletedAt'i olmayan (kural öncesi işaretlenmiş) bir kayıt
+                // listenin sonuna düşer, sıranın ortasına değil.
+                .OrderByDescending(item => item.DeletedAt ?? DateTime.MinValue)
+                .ThenByDescending(item => item.Drawing.Id)
+        ];
+    }
+
     public Task<ServiceResult<DrawingResponse>> UpdateStyleAsync(
         DrawingKind kind,
         int id,
@@ -680,6 +718,48 @@ public class DrawingService : IDrawingService
             .ToListAsync(cancellationToken);
 
         return entities.Select(entity => ToResponse<TEntity, TGeometry>(entity, kind)).ToList();
+    }
+
+    /// <summary>
+    /// Bir türün silinmiş kayıtlarını Çöp Kutusu gövdesine çevirir.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="IgnoreQueryFilters"/> burada zorunludur — aranan kayıtlar
+    /// "silinmiş" işaretli olduğu için global query filter onları normal
+    /// sorgularda tamamen gizler. Filtre atlandığı anda sahiplik korumasını da
+    /// atlamış olmamak için kapsam hemen ardından <c>DeletedScope</c> ile
+    /// <b>açıkça</b> daraltılır: <c>IsDeleted &amp;&amp; CreatedByUserId == çağıran</c>.
+    /// </para>
+    /// <para>
+    /// Yüklem LINQ üzerinden SQL'e iner; tablo belleğe çekilip sonra süzülmez.
+    /// Sahip kullanıcı adı, normal listede olduğu gibi ilişkiden türetilir.
+    /// </para>
+    /// </remarks>
+    private async Task<List<DeletedDrawingResponse>> GetDeletedAsync<TEntity, TGeometry>(
+        DrawingKind kind,
+        int currentUserId,
+        CancellationToken cancellationToken)
+        where TEntity : class, IDrawingFeature<TGeometry>
+        where TGeometry : Geometry
+    {
+        var entities = await _dbContext.Set<TEntity>()
+            .AsNoTracking()
+            .IgnoreQueryFilters()
+            .Include(entity => entity.CreatedByUser)
+            .DeletedScope(currentUserId)
+            .ToListAsync(cancellationToken);
+
+        return entities
+            .Select(entity => new DeletedDrawingResponse
+            {
+                // Tür adı, geri yükleme isteğinin beklediği yazımın TEK kaynağından
+                // okunur; "point"/"line"/"polygon" burada tekrar yazılmaz.
+                Type = BulkRequestValidator.NameOf(kind),
+                DeletedAt = entity.DeletedAt,
+                Drawing = ToResponse<TEntity, TGeometry>(entity, kind)
+            })
+            .ToList();
     }
 
     private async Task<ServiceResult<DrawingResponse>> UpdateStyleAsync<TEntity, TGeometry>(

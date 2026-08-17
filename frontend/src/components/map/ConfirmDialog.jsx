@@ -3,9 +3,15 @@ import Button from '../ui/Button.jsx'
 import './ConfirmDialog.css'
 
 /**
- * Modal confirmation, used before destructive actions such as deleting a
- * drawing. Focus moves to the confirm button on open and Escape cancels, so a
- * mis-tap can always be backed out of.
+ * Modal confirmation, used before actions worth a second look — deleting a
+ * drawing, discarding unsaved edits, restoring one from the trash. Focus moves
+ * to the confirm button on open and Escape cancels, so a mis-tap can always be
+ * backed out of.
+ *
+ * `tone` styles both the dialog and its confirm button, and defaults to
+ * `danger`: an unspecified confirmation is a destructive one, which is the
+ * safer default to get wrong. A recoverable action (`primary`) says so instead
+ * of borrowing the red of a deletion it is actually undoing.
  */
 export default function ConfirmDialog({
   open,
@@ -58,7 +64,7 @@ export default function ConfirmDialog({
           </Button>
           {/* Focus lands on the confirm button so the dialog is operable from
               the keyboard the moment it opens. */}
-          <Button autoFocus onClick={onConfirm} className="confirm-button confirm-button--danger">
+          <Button autoFocus onClick={onConfirm} className={`confirm-button confirm-button--${tone}`}>
             {confirmLabel}
           </Button>
         </div>

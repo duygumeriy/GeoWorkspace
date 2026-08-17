@@ -1,0 +1,291 @@
+/* Çöp Kutusu.
+   Deliberately built from the same tokens and the same shapes as
+   DrawingsPanel.css — the pill-shaped search field, the chip row, the 44px
+   rows — so the trash reads as another view of the drawings the user already
+   knows, not as a second design. Everything below is theme-driven (var(--…)),
+   so light and dark both work without a second rule set. */
+
+/* --- Arama / filtre / sıralama -------------------------------------------
+   Wraps rather than scrolls: every control stays reachable inside a 320px-wide
+   bottom sheet without producing horizontal scroll. */
+
+.trash-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.trash-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.trash-search-input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 40px;
+  /* Room on the right for the clear button. */
+  padding: 0.4rem 2rem 0.4rem 0.7rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-full);
+  background: var(--surface-soft);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--font-small);
+}
+
+.trash-search-input:focus-visible {
+  outline: none;
+  border-color: var(--border-strong);
+}
+
+.trash-search-input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.trash-search-clear {
+  position: absolute;
+  right: 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-full);
+  background: var(--surface);
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.trash-search-clear:hover {
+  color: var(--text-primary);
+}
+
+.trash-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.trash-chip {
+  min-height: 34px;
+  padding: 0.25rem 0.65rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-full);
+  background: var(--surface-soft);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.trash-chip:hover {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+/* Filled pill + aria-pressed: the active state is never carried by colour alone. */
+.trash-chip.is-active {
+  background: var(--gradient-primary);
+  border-color: transparent;
+  color: #ffffff;
+}
+
+.trash-select {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.trash-select-label {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.trash-select select {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 36px;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--surface-solid);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.trash-select select:focus-visible {
+  outline: none;
+  border-color: var(--border-strong);
+}
+
+/* --- Durum blokları ------------------------------------------------------ */
+
+.trash-status {
+  margin: 0;
+  padding: 1rem 0.5rem;
+  text-align: center;
+  font-size: var(--font-small);
+  color: var(--text-secondary);
+}
+
+.trash-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 1rem 0.5rem;
+  text-align: center;
+  font-size: var(--font-small);
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* The second line explains what the panel is for; it must not compete with
+   the first for attention. */
+.trash-empty-hint {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.trash-error,
+.trash-empty-filtered {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 0.5rem;
+}
+
+.trash-error-text {
+  margin: 0;
+  font-size: var(--font-small);
+  color: var(--danger);
+}
+
+.trash-retry {
+  min-height: 36px;
+  padding: 0.3rem 0.85rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-full);
+  background: var(--surface-soft);
+  color: var(--text-primary);
+  font-size: var(--font-small);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.trash-retry:hover {
+  border-color: var(--border-strong);
+}
+
+/* --- Liste ----------------------------------------------------------------
+   A row is not a button here: unlike "Çizimlerim", a deleted record has nothing
+   to select or frame on the map. The only action is the explicit one. */
+
+.trash-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.trash-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-height: 44px;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  color: var(--text-secondary);
+  min-width: 0;
+}
+
+.trash-item-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-full);
+  background: var(--dot);
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  flex-shrink: 0;
+}
+
+.trash-item-icon {
+  display: inline-flex;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.trash-item-text {
+  display: flex;
+  flex-direction: column;
+  /* Long names must not push the restore button off the panel. */
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.trash-item-title {
+  font-size: var(--font-small);
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trash-item-meta {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+/* Always visible, never hover-revealed: on a phone there is no hover to
+   reveal it with, and this is the panel's only action. */
+.trash-restore {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+  min-height: 36px;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-full);
+  background: var(--surface-solid);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.trash-restore:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+
+.trash-restore:disabled {
+  opacity: 0.55;
+  cursor: progress;
+}
+
+/* On a narrow bottom sheet the button drops under the text instead of
+   squeezing the name into an ellipsis two characters wide. */
+@media (max-width: 420px) {
+  .trash-row {
+    flex-wrap: wrap;
+  }
+
+  .trash-restore {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
+}
