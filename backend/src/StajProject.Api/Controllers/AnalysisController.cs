@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using StajProject.Api.Common;
 using StajProject.Application.Common;
 using StajProject.Application.DTOs;
 using StajProject.Application.Interfaces;
@@ -10,14 +11,21 @@ namespace StajProject.Api.Controllers;
 /// Mekânsal analiz uçları. Çizim uçlarıyla aynı güvenlik modelini kullanır
 /// (<c>[Authorize]</c> + JWT) ve hiçbiri veritabanına kayıt yazmaz.
 /// </summary>
+/// <remarks>
+/// Uç <see cref="ApiControllerBase.Guard{TValue}"/> ile sarılıdır: kesişim
+/// sorgusu beklenmedik şekilde patlarsa istemci stack trace değil tek tip 500
+/// alır. Sorgunun kendisi (PostGIS/EF) <see cref="ISpatialAnalysisService"/>
+/// içindedir; controller yalnızca HTTP sınırıdır.
+/// </remarks>
 [ApiController]
 [Authorize]
 [Route("api/analysis")]
-public class AnalysisController : ControllerBase
+public class AnalysisController : ApiControllerBase
 {
     private readonly ISpatialAnalysisService _spatialAnalysisService;
 
-    public AnalysisController(ISpatialAnalysisService spatialAnalysisService)
+    public AnalysisController(ISpatialAnalysisService spatialAnalysisService, ILogger<AnalysisController> logger)
+        : base(logger)
     {
         _spatialAnalysisService = spatialAnalysisService;
     }
@@ -27,19 +35,20 @@ public class AnalysisController : ControllerBase
     /// yalnızca sorgu parametresidir; hiçbir tabloya yazılmaz.
     /// </summary>
     [HttpPost("intersections")]
-    public async Task<ActionResult<IntersectionAnalysisResponse>> CountIntersections(
+    public Task<ActionResult<IntersectionAnalysisResponse>> CountIntersections(
         [FromBody] IntersectionAnalysisRequest request,
-        CancellationToken cancellationToken)
-    {
-        var result = await _spatialAnalysisService.CountIntersectionsAsync(request, cancellationToken);
-
-        if (result.IsSuccess)
+        CancellationToken cancellationToken) =>
+        Guard<IntersectionAnalysisResponse>(nameof(CountIntersections), async () =>
         {
-            return Ok(result.Value);
-        }
+            var result = await _spatialAnalysisService.CountIntersectionsAsync(request, cancellationToken);
 
-        return result.ErrorKind == ServiceErrorKind.NotFound
-            ? NotFound(new { message = result.Error })
-            : BadRequest(new { message = result.Error });
-    }
+            if (result.IsSuccess)
+            {
+                return Ok(result.Value);
+            }
+
+            return result.ErrorKind == ServiceErrorKind.NotFound
+                ? NotFound(new { message = result.Error })
+                : BadRequest(new { message = result.Error });
+        });
 }

@@ -24,6 +24,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Controller'ların hata sınırını doğrulayan testler için (bkz.
+         ControllerExceptionBoundaryTests). Yeni paket bağımlılığı değildir. -->
+    <ProjectReference Include="..\..\src\StajProject.Api\StajProject.Api.csproj" />
     <ProjectReference Include="..\..\src\StajProject.Application\StajProject.Application.csproj" />
     <ProjectReference Include="..\..\src\StajProject.Domain\StajProject.Domain.csproj" />
     <ProjectReference Include="..\..\src\StajProject.Infrastructure\StajProject.Infrastructure.csproj" />

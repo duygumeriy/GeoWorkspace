@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using StajProject.Api.Common;
 using StajProject.Application.Common;
 using StajProject.Application.DTOs;
 using StajProject.Application.Interfaces;
@@ -22,42 +23,68 @@ namespace StajProject.Api.Controllers;
 /// durum kuralları <see cref="IUserManagementService"/> içindedir.
 /// AUTH-6'daki admin UI bu uçları tüketecek.
 /// </para>
+/// <para>
+/// <b>Hata yönetimi.</b> Tüm uçlar <see cref="ApiControllerBase"/> üzerinden
+/// aynı try-catch sınırındadır. Yetkilendirme kararı sınırın <i>dışındadır</i>:
+/// policy MVC filtresi olarak çalışır, dolayısıyla 401/403 buradaki catch'e
+/// hiç uğramaz ve beklenmeyen bir hata yetki kontrolünü maskeleyemez.
+/// </para>
 /// </remarks>
 [ApiController]
 [Authorize(Policy = AuthorizationPolicies.AdminMfaRequired)]
 [Route("api/admin/users")]
-public class AdminUsersController : ControllerBase
+public class AdminUsersController : ApiControllerBase
 {
     private readonly IUserManagementService _userManagement;
     private readonly ICurrentUserService _currentUser;
 
-    public AdminUsersController(IUserManagementService userManagement, ICurrentUserService currentUser)
+    public AdminUsersController(
+        IUserManagementService userManagement,
+        ICurrentUserService currentUser,
+        ILogger<AdminUsersController> logger)
+        : base(logger)
     {
         _userManagement = userManagement;
         _currentUser = currentUser;
     }
 
     [HttpGet]
-    public async Task<ActionResult<IReadOnlyList<AdminUserListItem>>> GetUsers(CancellationToken cancellationToken) =>
-        Ok(await _userManagement.GetUsersAsync(cancellationToken));
+    public Task<ActionResult<IReadOnlyList<AdminUserListItem>>> GetUsers(CancellationToken cancellationToken) =>
+        Guard<IReadOnlyList<AdminUserListItem>>(
+            nameof(GetUsers),
+            async () => Ok(await _userManagement.GetUsersAsync(cancellationToken)));
 
     [HttpGet("{id:int}")]
-    public async Task<ActionResult<AdminUserDetail>> GetUser(int id, CancellationToken cancellationToken) =>
-        Respond(await _userManagement.GetUserAsync(id, cancellationToken));
+    public Task<ActionResult<AdminUserDetail>> GetUser(int id, CancellationToken cancellationToken) =>
+        GuardUser(nameof(GetUser), () => _userManagement.GetUserAsync(id, cancellationToken));
 
     [HttpPatch("{id:int}/role")]
-    public async Task<ActionResult<AdminUserDetail>> ChangeRole(
+    public Task<ActionResult<AdminUserDetail>> ChangeRole(
         int id,
         [FromBody] UpdateUserRoleRequest request,
         CancellationToken cancellationToken) =>
-        Respond(await _userManagement.ChangeRoleAsync(id, request, ActingUserId, cancellationToken));
+        GuardUser(
+            nameof(ChangeRole),
+            () => _userManagement.ChangeRoleAsync(id, request, ActingUserId, cancellationToken));
 
     [HttpPatch("{id:int}/status")]
-    public async Task<ActionResult<AdminUserDetail>> ChangeStatus(
+    public Task<ActionResult<AdminUserDetail>> ChangeStatus(
         int id,
         [FromBody] UpdateUserStatusRequest request,
         CancellationToken cancellationToken) =>
-        Respond(await _userManagement.ChangeStatusAsync(id, request, ActingUserId, cancellationToken));
+        GuardUser(
+            nameof(ChangeStatus),
+            () => _userManagement.ChangeStatusAsync(id, request, ActingUserId, cancellationToken));
+
+    /// <summary>
+    /// Kullanıcı döndüren uçların ortak sarmalayıcısı: hata sınırı + mevcut
+    /// <see cref="Respond"/> eşlemesi. İş kuralı sonuçları (404/409/400) burada
+    /// değişmez; catch yalnızca beklenmeyen hatalar içindir.
+    /// </summary>
+    private Task<ActionResult<AdminUserDetail>> GuardUser(
+        string endpoint,
+        Func<Task<ServiceResult<AdminUserDetail>>> operation) =>
+        Guard<AdminUserDetail>(endpoint, async () => Respond(await operation()));
 
     /// <summary>
     /// İşlemi yapan Admin'in kimliği. Policy sayesinde buraya yalnızca

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using StajProject.Api.Common;
 using StajProject.Application.Common;
 using StajProject.Application.DTOs;
 using StajProject.Application.Interfaces;
@@ -10,9 +11,25 @@ namespace StajProject.Api.Controllers;
 /// Kimlik ve hesap uçları. Controller kasıtlı olarak incedir: doğrulama,
 /// token üretimi ve e-posta gönderimi servis katmanındadır.
 /// </summary>
+/// <remarks>
+/// <para>
+/// <b>Hata yönetimi.</b> Her uç <see cref="ApiControllerBase"/> üzerinden aynı
+/// try-catch sınırındadır. Başarısız login, yanlış TOTP veya geçersiz bilet
+/// birer <i>exception değil</i> servis sonucudur; mevcut 400/401/404/409
+/// eşlemeleri aynen korunur. Catch yalnızca beklenmeyen hatalar (ör. veritabanı
+/// veya SMTP arızası) içindir.
+/// </para>
+/// <para>
+/// <b>Kimlik uçlarında sızıntı yasağı.</b> Beklenmeyen hata gövdesi sabittir:
+/// exception mesajı, iç exception, SQL/bağlantı ayrıntısı veya token bilgisi
+/// istemciye ASLA yazılmaz. Hata gövdesi hangi hesap için istek geldiğine göre
+/// de değişmez — aksi hâlde 500'ler üzerinden kullanıcı numaralandırması
+/// (user enumeration) mümkün olurdu.
+/// </para>
+/// </remarks>
 [ApiController]
 [Route("api/auth")]
-public class AuthController : ControllerBase
+public class AuthController : ApiControllerBase
 {
     private readonly IAuthService _authService;
     private readonly IAccountService _accountService;
@@ -23,7 +40,9 @@ public class AuthController : ControllerBase
         IAuthService authService,
         IAccountService accountService,
         ITwoFactorService twoFactorService,
-        ICurrentUserService currentUser)
+        ICurrentUserService currentUser,
+        ILogger<AuthController> logger)
+        : base(logger)
     {
         _authService = authService;
         _accountService = accountService;
@@ -34,21 +53,22 @@ public class AuthController : ControllerBase
     /* --- Oturum -------------------------------------------------------------- */
 
     [HttpPost("login")]
-    public async Task<ActionResult<LoginResponse>> Login([FromBody] LoginRequest request, CancellationToken cancellationToken)
-    {
-        var result = await _authService.LoginAsync(request, cancellationToken);
-
-        if (!result.IsSuccess)
+    public Task<ActionResult<LoginResponse>> Login([FromBody] LoginRequest request, CancellationToken cancellationToken) =>
+        Guard<LoginResponse>(nameof(Login), async () =>
         {
-            return Unauthorized(new
-            {
-                message = result.ErrorMessage,
-                requiresEmailConfirmation = result.RequiresEmailConfirmation
-            });
-        }
+            var result = await _authService.LoginAsync(request, cancellationToken);
 
-        return Ok(result.Response);
-    }
+            if (!result.IsSuccess)
+            {
+                return Unauthorized(new
+                {
+                    message = result.ErrorMessage,
+                    requiresEmailConfirmation = result.RequiresEmailConfirmation
+                });
+            }
+
+            return Ok(result.Response);
+        });
 
     /* --- Login'in ikinci adımı ------------------------------------------------
        Bu uçlar [Authorize] DEĞİLDİR ve olamaz: çağıran henüz oturum açmamıştır.
@@ -57,16 +77,20 @@ public class AuthController : ControllerBase
        gönderemez. */
 
     [HttpPost("login/2fa")]
-    public async Task<ActionResult<LoginResponse>> LoginTwoFactor(
+    public Task<ActionResult<LoginResponse>> LoginTwoFactor(
         [FromBody] TwoFactorLoginRequest request,
         CancellationToken cancellationToken) =>
-        TwoFactorResponse(await _twoFactorService.CompleteLoginAsync(request, cancellationToken));
+        GuardTwoFactor(
+            nameof(LoginTwoFactor),
+            () => _twoFactorService.CompleteLoginAsync(request, cancellationToken));
 
     [HttpPost("login/2fa/recovery")]
-    public async Task<ActionResult<LoginResponse>> LoginTwoFactorRecovery(
+    public Task<ActionResult<LoginResponse>> LoginTwoFactorRecovery(
         [FromBody] TwoFactorRecoveryLoginRequest request,
         CancellationToken cancellationToken) =>
-        TwoFactorResponse(await _twoFactorService.CompleteLoginWithRecoveryCodeAsync(request, cancellationToken));
+        GuardTwoFactor(
+            nameof(LoginTwoFactorRecovery),
+            () => _twoFactorService.CompleteLoginWithRecoveryCodeAsync(request, cancellationToken));
 
     /* --- Zorunlu (bootstrap) 2FA kurulumu -------------------------------------
        Yalnızca Setup amaçlı bilet kabul edilir. Bu bilet ne drawing ne admin
@@ -74,113 +98,121 @@ public class AuthController : ControllerBase
        doğrulama ucunda bile çözülemez. */
 
     [HttpPost("login/2fa/setup")]
-    public async Task<ActionResult<AuthenticatorSetupResponse>> StartMandatorySetup(
+    public Task<ActionResult<AuthenticatorSetupResponse>> StartMandatorySetup(
         [FromBody] TwoFactorSetupChallengeRequest request,
         CancellationToken cancellationToken) =>
-        TwoFactorResponse(await _twoFactorService.StartBootstrapSetupAsync(request, cancellationToken));
+        GuardTwoFactor(
+            nameof(StartMandatorySetup),
+            () => _twoFactorService.StartBootstrapSetupAsync(request, cancellationToken));
 
     [HttpPost("login/2fa/setup/verify")]
-    public async Task<ActionResult<TwoFactorSetupCompletedResponse>> CompleteMandatorySetup(
+    public Task<ActionResult<TwoFactorSetupCompletedResponse>> CompleteMandatorySetup(
         [FromBody] TwoFactorLoginRequest request,
         CancellationToken cancellationToken) =>
-        TwoFactorResponse(await _twoFactorService.CompleteBootstrapSetupAsync(request, cancellationToken));
+        GuardTwoFactor(
+            nameof(CompleteMandatorySetup),
+            () => _twoFactorService.CompleteBootstrapSetupAsync(request, cancellationToken));
 
     /* --- Oturum açmış kullanıcının 2FA ayarları ------------------------------- */
 
     [Authorize]
     [HttpGet("2fa")]
     public Task<ActionResult<TwoFactorStatusResponse>> TwoFactorStatus(CancellationToken cancellationToken) =>
-        WithUserId(userId => _twoFactorService.GetStatusAsync(userId, cancellationToken));
+        WithUserId(nameof(TwoFactorStatus), userId => _twoFactorService.GetStatusAsync(userId, cancellationToken));
 
     [Authorize]
     [HttpPost("2fa/setup")]
     public Task<ActionResult<AuthenticatorSetupResponse>> StartSetup(
         [FromBody] TwoFactorSetupRequest request,
         CancellationToken cancellationToken) =>
-        WithUserId(userId => _twoFactorService.StartSetupAsync(userId, request, cancellationToken));
+        WithUserId(nameof(StartSetup), userId => _twoFactorService.StartSetupAsync(userId, request, cancellationToken));
 
     [Authorize]
     [HttpPost("2fa/enable")]
     public Task<ActionResult<RecoveryCodesResponse>> Enable(
         [FromBody] TwoFactorEnableRequest request,
         CancellationToken cancellationToken) =>
-        WithUserId(userId => _twoFactorService.EnableAsync(userId, request, cancellationToken));
+        WithUserId(nameof(Enable), userId => _twoFactorService.EnableAsync(userId, request, cancellationToken));
 
     [Authorize]
     [HttpPost("2fa/disable")]
     public Task<ActionResult<AccountResult>> Disable(
         [FromBody] TwoFactorDisableRequest request,
         CancellationToken cancellationToken) =>
-        WithUserId(userId => _twoFactorService.DisableAsync(userId, request, cancellationToken));
+        WithUserId(nameof(Disable), userId => _twoFactorService.DisableAsync(userId, request, cancellationToken));
 
     [Authorize]
     [HttpPost("2fa/recovery-codes/regenerate")]
     public Task<ActionResult<RecoveryCodesResponse>> RegenerateRecoveryCodes(
         [FromBody] RegenerateRecoveryCodesRequest request,
         CancellationToken cancellationToken) =>
-        WithUserId(userId => _twoFactorService.RegenerateRecoveryCodesAsync(userId, request, cancellationToken));
+        WithUserId(
+            nameof(RegenerateRecoveryCodes),
+            userId => _twoFactorService.RegenerateRecoveryCodesAsync(userId, request, cancellationToken));
 
     [Authorize]
     [HttpGet("me")]
-    public async Task<ActionResult<CurrentUserResponse>> Me(CancellationToken cancellationToken)
-    {
-        // Kimlik istek gövdesinden değil, doğrulanmış token'dan okunur.
-        var userId = _currentUser.UserId;
-
-        if (userId is null)
+    public Task<ActionResult<CurrentUserResponse>> Me(CancellationToken cancellationToken) =>
+        Guard<CurrentUserResponse>(nameof(Me), async () =>
         {
-            return Unauthorized(new { message = "Geçersiz oturum." });
-        }
+            // Kimlik istek gövdesinden değil, doğrulanmış token'dan okunur.
+            var userId = _currentUser.UserId;
 
-        var user = await _authService.GetCurrentUserAsync(userId.Value, cancellationToken);
+            if (userId is null)
+            {
+                return Unauthorized(new { message = "Geçersiz oturum." });
+            }
 
-        if (user is null)
-        {
-            return Unauthorized(new { message = "Kullanıcı bulunamadı veya pasif." });
-        }
+            var user = await _authService.GetCurrentUserAsync(userId.Value, cancellationToken);
 
-        return Ok(user);
-    }
+            if (user is null)
+            {
+                return Unauthorized(new { message = "Kullanıcı bulunamadı veya pasif." });
+            }
+
+            return Ok(user);
+        });
 
     /* --- Kayıt ve e-posta doğrulama ------------------------------------------ */
 
     [HttpPost("register")]
-    public async Task<IActionResult> Register([FromBody] RegisterRequest request, CancellationToken cancellationToken) =>
-        Respond(await _accountService.RegisterAsync(request, cancellationToken));
+    public Task<IActionResult> Register([FromBody] RegisterRequest request, CancellationToken cancellationToken) =>
+        GuardAccount(nameof(Register), () => _accountService.RegisterAsync(request, cancellationToken));
 
     [HttpPost("confirm-email")]
-    public async Task<IActionResult> ConfirmEmail([FromBody] ConfirmEmailRequest request, CancellationToken cancellationToken) =>
-        Respond(await _accountService.ConfirmEmailAsync(request, cancellationToken));
+    public Task<IActionResult> ConfirmEmail([FromBody] ConfirmEmailRequest request, CancellationToken cancellationToken) =>
+        GuardAccount(nameof(ConfirmEmail), () => _accountService.ConfirmEmailAsync(request, cancellationToken));
 
     [HttpPost("resend-confirmation")]
-    public async Task<IActionResult> ResendConfirmation([FromBody] ResendConfirmationRequest request, CancellationToken cancellationToken) =>
-        Respond(await _accountService.ResendConfirmationAsync(request, cancellationToken));
+    public Task<IActionResult> ResendConfirmation([FromBody] ResendConfirmationRequest request, CancellationToken cancellationToken) =>
+        GuardAccount(nameof(ResendConfirmation), () => _accountService.ResendConfirmationAsync(request, cancellationToken));
 
     /* --- Şifre --------------------------------------------------------------- */
 
     [HttpPost("forgot-password")]
-    public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest request, CancellationToken cancellationToken) =>
-        Respond(await _accountService.ForgotPasswordAsync(request, cancellationToken));
+    public Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest request, CancellationToken cancellationToken) =>
+        GuardAccount(nameof(ForgotPassword), () => _accountService.ForgotPasswordAsync(request, cancellationToken));
 
     [HttpPost("reset-password")]
-    public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest request, CancellationToken cancellationToken) =>
-        Respond(await _accountService.ResetPasswordAsync(request, cancellationToken));
+    public Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest request, CancellationToken cancellationToken) =>
+        GuardAccount(nameof(ResetPassword), () => _accountService.ResetPasswordAsync(request, cancellationToken));
 
     [Authorize]
     [HttpPost("change-password")]
-    public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request, CancellationToken cancellationToken)
-    {
-        // Hangi hesabın şifresinin değişeceği request'ten DEĞİL, doğrulanmış
-        // JWT'den belirlenir.
-        var userId = _currentUser.UserId;
-
-        if (userId is null)
+    public Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request, CancellationToken cancellationToken) =>
+        GuardAction(nameof(ChangePassword), async () =>
         {
-            return Unauthorized(new { message = "Geçersiz oturum." });
-        }
+            // Hangi hesabın şifresinin değişeceği request'ten DEĞİL, doğrulanmış
+            // JWT'den belirlenir.
+            var userId = _currentUser.UserId;
 
-        return Respond(await _accountService.ChangePasswordAsync(userId.Value, request, cancellationToken));
-    }
+            if (userId is null)
+            {
+                return Unauthorized(new { message = "Geçersiz oturum." });
+            }
+
+            return Respond(await _accountService.ChangePasswordAsync(userId.Value, request, cancellationToken));
+        });
 
     /// <summary>
     /// Hesap işlemlerinin ortak HTTP karşılığı: başarı 200, doğrulama hatası 400.
@@ -191,23 +223,32 @@ public class AuthController : ControllerBase
             ? Ok(new { message = result.Message })
             : BadRequest(new { message = result.Message, errors = result.Errors });
 
+    /// <summary>Hesap uçlarının hata sınırı + mevcut <see cref="Respond"/> eşlemesi.</summary>
+    private Task<IActionResult> GuardAccount(string endpoint, Func<Task<AccountResult>> operation) =>
+        GuardAction(endpoint, async () => Respond(await operation()));
+
     /* --- 2FA uçlarının ortak HTTP çevirisi ------------------------------------ */
+
+    /// <summary>2FA uçlarının hata sınırı + mevcut <see cref="TwoFactorResponse"/> eşlemesi.</summary>
+    private Task<ActionResult<T>> GuardTwoFactor<T>(string endpoint, Func<Task<ServiceResult<T>>> operation) =>
+        Guard<T>(endpoint, async () => TwoFactorResponse(await operation()));
 
     /// <summary>
     /// Oturum açmış kullanıcının 2FA işlemleri için kimliği token'dan çözer.
     /// Hedef hesap request gövdesinden ASLA okunmaz.
     /// </summary>
-    private async Task<ActionResult<T>> WithUserId<T>(Func<int, Task<ServiceResult<T>>> operation)
-    {
-        var userId = _currentUser.UserId;
-
-        if (userId is null)
+    private Task<ActionResult<T>> WithUserId<T>(string endpoint, Func<int, Task<ServiceResult<T>>> operation) =>
+        Guard<T>(endpoint, async () =>
         {
-            return Unauthorized(new { message = "Geçersiz oturum." });
-        }
+            var userId = _currentUser.UserId;
 
-        return TwoFactorResponse(await operation(userId.Value));
-    }
+            if (userId is null)
+            {
+                return Unauthorized(new { message = "Geçersiz oturum." });
+            }
+
+            return TwoFactorResponse(await operation(userId.Value));
+        });
 
     /// <summary>
     /// <see cref="ServiceResult{T}"/>'in HTTP karşılığı.

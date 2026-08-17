@@ -18,7 +18,8 @@ namespace StajProject.Api.Controllers;
 /// (doğrulama, bulunamadı, yetkisiz) exception değildir — servis katmanı onları
 /// <see cref="ServiceResult{T}"/> ile döndürür ve <c>Problem</c> uygun HTTP
 /// koduna çevirir. Catch blokları yalnızca <i>beklenmeyen</i> hatalar içindir:
-/// loglanır ve istemciye stack trace sızdırmayan tek tip 500 gövdesi döner.
+/// <see cref="ApiControllerBase.Unexpected"/> tarafından loglanır ve istemciye
+/// stack trace sızdırmayan tek tip 500 gövdesi döner.
 /// </para>
 /// <para>
 /// <b>İş mantığı controller'a taşınmaz.</b> Buradaki hiçbir metot veritabanına
@@ -29,15 +30,14 @@ namespace StajProject.Api.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/drawings")]
-public class DrawingsController : ControllerBase
+public class DrawingsController : ApiControllerBase
 {
     private readonly IDrawingService _drawingService;
-    private readonly ILogger<DrawingsController> _logger;
 
     public DrawingsController(IDrawingService drawingService, ILogger<DrawingsController> logger)
+        : base(logger)
     {
         _drawingService = drawingService;
-        _logger = logger;
     }
 
     /* --- Create ------------------------------------------------------------- */
@@ -149,10 +149,12 @@ public class DrawingsController : ControllerBase
         GuardCreated(nameof(BulkCreate), () => _drawingService.BulkCreateAsync(request, cancellationToken));
 
     /* --- Ortak hata sınırı ---------------------------------------------------
-       Aşağıdaki Guard* yardımcıları hocanın istediği try-catch standardını tek
-       yerde uygular. Her endpoint'e aynı bloğu elle kopyalamak yerine tek bir
-       tanım kullanılır: eklenen her yeni uç aynı davranışı otomatik alır ve
-       hiçbirinde blok yazmayı unutma riski kalmaz. */
+       Aşağıdaki Guard* yardımcıları try-catch standardını tek yerde uygular.
+       Her endpoint'e aynı bloğu elle kopyalamak yerine tek bir tanım kullanılır:
+       eklenen her yeni uç aynı davranışı otomatik alır ve hiçbirinde blok
+       yazmayı unutma riski kalmaz. Buradaki Guard*'lar çizimlere özgü
+       ServiceResult -> HTTP eşlemesini yapar; 500 gövdesi ve loglama tüm
+       controller'larda ortak olsun diye ApiControllerBase.Unexpected'tedir. */
 
     private async Task<ActionResult<DrawingResponse>> GuardCreate(
         string endpoint,
@@ -168,7 +170,7 @@ public class DrawingsController : ControllerBase
         }
         catch (Exception exception)
         {
-            return Unexpected<DrawingResponse>(endpoint, exception);
+            return Unexpected(endpoint, exception);
         }
     }
 
@@ -183,7 +185,7 @@ public class DrawingsController : ControllerBase
         }
         catch (Exception exception)
         {
-            return Unexpected<DrawingResponse>(endpoint, exception);
+            return Unexpected(endpoint, exception);
         }
     }
 
@@ -196,7 +198,7 @@ public class DrawingsController : ControllerBase
         }
         catch (Exception exception)
         {
-            return Unexpected<int>(endpoint, exception).Result!;
+            return Unexpected(endpoint, exception);
         }
     }
 
@@ -210,7 +212,7 @@ public class DrawingsController : ControllerBase
         }
         catch (Exception exception)
         {
-            return Unexpected<IReadOnlyList<DrawingResponse>>(endpoint, exception);
+            return Unexpected(endpoint, exception);
         }
     }
 
@@ -225,7 +227,7 @@ public class DrawingsController : ControllerBase
         }
         catch (Exception exception)
         {
-            return Unexpected<TValue>(endpoint, exception);
+            return Unexpected(endpoint, exception);
         }
     }
 
@@ -243,28 +245,8 @@ public class DrawingsController : ControllerBase
         }
         catch (Exception exception)
         {
-            return Unexpected<TValue>(endpoint, exception);
+            return Unexpected(endpoint, exception);
         }
-    }
-
-    /// <summary>
-    /// Beklenmeyen hata: sunucuda tam detayıyla loglanır, istemciye yalnızca
-    /// izlenebilir bir traceId ile genel mesaj döner. Stack trace, exception
-    /// tipi ve iç mesaj dışarı ÇIKMAZ.
-    /// </summary>
-    private ActionResult<TValue> Unexpected<TValue>(string endpoint, Exception exception)
-    {
-        var traceId = HttpContext.TraceIdentifier;
-
-        _logger.LogError(
-            exception,
-            "Çizim ucunda beklenmeyen hata. Endpoint: {Endpoint}, TraceId: {TraceId}",
-            endpoint,
-            traceId);
-
-        return StatusCode(
-            StatusCodes.Status500InternalServerError,
-            ApiError.Create(StatusCodes.Status500InternalServerError, "Beklenmeyen bir hata oluştu. Lütfen tekrar deneyin.", traceId));
     }
 
     /// <summary>NotFound -> 404, yetkisiz -> 403, doğrulama hatası -> 400.</summary>
