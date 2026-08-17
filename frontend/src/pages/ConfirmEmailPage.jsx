@@ -72,8 +72,12 @@ export default function ConfirmEmailPage() {
               {message}
             </p>
           </div>
+          {/* Verifying the address is no longer the last step — an
+              administrator still has to approve the account — so this cannot
+              promise a sign-in. The server's message says which state the
+              account actually reached; the button only offers the way back. */}
           <Button className="login-submit" onClick={() => navigate('/login')}>
-            Giriş Yap
+            Giriş ekranına dön
           </Button>
         </>
       )}
