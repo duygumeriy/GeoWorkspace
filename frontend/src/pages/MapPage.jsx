@@ -3,8 +3,6 @@ import { useNavigate } from 'react-router-dom'
 import 'ol/ol.css'
 import Map from 'ol/Map'
 import View from 'ol/View'
-import TileLayer from 'ol/layer/Tile'
-import OSM from 'ol/source/OSM'
 import { defaults as defaultControls, ScaleLine } from 'ol/control'
 import { fromLonLat, toLonLat } from 'ol/proj'
 import { useAuth } from '../auth/AuthContext'
@@ -23,6 +21,7 @@ import MultiSelectionPanel from '../components/map/MultiSelectionPanel.jsx'
 import LayersPanel from '../components/map/LayersPanel.jsx'
 import DrawingsPanel from '../components/map/DrawingsPanel.jsx'
 import TrashPanel from '../components/map/TrashPanel.jsx'
+import BasemapSelector from '../components/map/BasemapSelector.jsx'
 import ConfirmDialog from '../components/map/ConfirmDialog.jsx'
 import AttributePopup from '../components/map/AttributePopup.jsx'
 import AnalysisPanel from '../components/map/AnalysisPanel.jsx'
@@ -37,6 +36,7 @@ import useMediaQuery from '../hooks/useMediaQuery.js'
 import useToasts from '../hooks/useToasts.js'
 import useDrawingWorkspace from '../hooks/useDrawingWorkspace.js'
 import useTrash from '../hooks/useTrash.js'
+import useBasemap from '../hooks/useBasemap.js'
 import useInventoryAnalysis from '../hooks/useInventoryAnalysis.js'
 import useWorkspaceMode, { STYLE_PANEL_MODES } from '../hooks/useWorkspaceMode.js'
 import useMapView, { TURKEY_CENTER_LON_LAT, TURKEY_ZOOM } from '../hooks/useMapView.js'
@@ -129,6 +129,11 @@ export default function MapPage() {
     onRestored: workspace.reloadDrawings,
   })
 
+  /* The one owner of the selected basemap. It is independent of the UI theme in
+     both directions: nothing here reads `useTheme`, and the theme never picks a
+     basemap — every light/dark × standard/uydu combination is valid. */
+  const basemap = useBasemap(mapInstance)
+
   const mapView = useMapView(mapInstance, { showToast })
   const measurement = useMeasurement(mapInstance, workspaceMode.activeMeasureTool)
 
@@ -170,14 +175,13 @@ export default function MapPage() {
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return
 
+    /* No base layer here any more: the basemaps are owned by `useBasemap`,
+       which adds all of them below the overlays and shows one. The Map, its
+       View and this effect are otherwise unchanged — the map instance is
+       created exactly once and a basemap change never reaches it. */
     const map = new Map({
       target: mapContainerRef.current,
       controls: defaultControls().extend([new ScaleLine({ units: 'metric' })]),
-      layers: [
-        new TileLayer({
-          source: new OSM(),
-        }),
-      ],
       view: new View({
         center: fromLonLat(TURKEY_CENTER_LON_LAT),
         zoom: TURKEY_ZOOM,
@@ -830,7 +834,15 @@ export default function MapPage() {
                 onGoTurkey={mapView.goToTurkey}
                 onGoMyLocation={mapView.goToMyLocation}
                 onFocusAll={focusAllDrawings}
-              />
+              >
+                {/* Background imagery. Not the "Katmanlar" panel, which toggles
+                    the data overlays drawn on top of whatever is chosen here. */}
+                <BasemapSelector
+                  value={basemap.basemapId}
+                  options={basemap.basemaps}
+                  onChange={basemap.selectBasemap}
+                />
+              </QuickActions>
 
               {/* Everything below renders straight from the canonical mode —
                   no component keeps its own idea of the active tool. */}
