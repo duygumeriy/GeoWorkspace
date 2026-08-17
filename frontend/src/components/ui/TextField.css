@@ -1,3 +1,8 @@
+/* Field colours come from the --field-* tokens (styles/tokens.css) so light and
+   dark each get a palette that suits them. The rule this file used to break:
+   never hardcode a raw colour here — a dark literal is what made an editable
+   light-mode field look disabled. */
+
 .text-field {
   display: flex;
   flex-direction: column;
@@ -8,7 +13,7 @@
 .text-field-label {
   font-size: 15px;
   font-weight: 500;
-  color: #f2f2f6;
+  color: var(--field-label);
 }
 
 .text-field-control {
@@ -18,15 +23,23 @@
   min-height: clamp(50px, 3.4vw, 54px);
   padding: 0 1.05rem;
   border-radius: var(--radius-md);
-  border: 1px solid rgba(135, 145, 175, 0.27);
-  background: rgba(5, 8, 18, 0.45);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--field-border);
+  background: var(--field-bg);
+  box-shadow: inset 0 1px 0 var(--field-highlight);
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background var(--transition-fast);
 }
 
+/* Hover is a quiet invitation, not a state change: the border firms up and the
+   surface stays put, so it never reads as "selected". */
+.text-field:not(.text-field--disabled) .text-field-control:hover {
+  border-color: var(--field-border-hover);
+  background: var(--field-bg-hover);
+}
+
+/* A restrained ring — enough to locate the caret at a glance, not a neon glow. */
 .text-field-control:focus-within {
-  border-color: #8752ff;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 0 0 2px rgba(135, 82, 255, 0.15);
+  border-color: var(--field-focus-border);
+  box-shadow: inset 0 1px 0 var(--field-highlight), 0 0 0 3px var(--field-focus-ring);
 }
 
 .text-field--error .text-field-control {
@@ -37,11 +50,32 @@
   box-shadow: 0 0 0 3px var(--danger-soft);
 }
 
+/* The ONLY muted treatment in this file. Everything above stays fully legible,
+   which is what keeps "editable" and "disabled" telling different stories. */
+.text-field--disabled .text-field-control {
+  border-color: var(--field-disabled-border);
+  background: var(--field-disabled-bg);
+  box-shadow: none;
+}
+
+.text-field--disabled .text-field-label,
+.text-field--disabled .text-field-icon,
+.text-field--disabled .text-field-input {
+  color: var(--field-disabled-text);
+}
+
+.text-field--disabled .text-field-input {
+  /* Safari otherwise fades disabled text further, below the contrast the token
+     was chosen for. */
+  -webkit-text-fill-color: var(--field-disabled-text);
+  cursor: not-allowed;
+}
+
 .text-field-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-secondary);
+  color: var(--field-icon);
   flex-shrink: 0;
 }
 
@@ -59,17 +93,20 @@
 }
 
 .text-field-input::placeholder {
-  color: rgba(210, 215, 235, 0.45);
+  color: var(--field-placeholder);
 }
 
-/* Chrome/Edge autofill otherwise paints a white input background — force it
-   to stay the same dark surface tone as a normal (non-autofilled) field. */
+/* Chrome/Edge autofill otherwise paints its own background over the field —
+   force it back to the themed surface so an autofilled field looks like a
+   normal one in both themes. */
 .text-field-input:-webkit-autofill,
 .text-field-input:-webkit-autofill:hover,
 .text-field-input:-webkit-autofill:focus,
 .text-field-input:-webkit-autofill:active {
   -webkit-text-fill-color: var(--text-primary);
   caret-color: var(--text-primary);
+  /* Must be an OPAQUE colour: a translucent one would let Chrome's yellow
+     autofill background show through. --surface-solid is opaque in both themes. */
   -webkit-box-shadow: 0 0 0 1000px var(--surface-solid) inset;
   box-shadow: 0 0 0 1000px var(--surface-solid) inset;
   transition: background-color 9999s ease-in-out 0s, color 9999s ease-in-out 0s;
@@ -78,4 +115,16 @@
 .text-field-trailing {
   display: inline-flex;
   flex-shrink: 0;
+}
+
+/* Hint / error text under the field, close enough to read as belonging to it. */
+.text-field-message {
+  margin: 0;
+  font-size: var(--font-small);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.text-field-message--error {
+  color: var(--danger);
 }

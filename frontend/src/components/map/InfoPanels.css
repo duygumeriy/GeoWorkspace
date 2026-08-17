@@ -1,15 +1,36 @@
+/* Sections are separated by space and a hairline rather than by boxes inside
+   boxes: the panel is already a card, and nesting cards is what makes a
+   settings drawer feel heavy. */
 .info-section {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
 }
 
+.info-section + .info-section {
+  margin-top: 0.35rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-soft);
+}
+
 .info-heading {
   margin: 0;
-  font-size: var(--font-small);
+  /* Uppercase eyebrow: it separates the sections at a glance without needing a
+     larger type size, which would make the panel taller for no information. */
+  font-size: 11px;
   font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+}
+
+/* One step below a section heading — labels a single control group, such as the
+   password form under Güvenlik. */
+.info-subheading {
+  margin: 0.15rem 0 0;
+  font-size: var(--font-small);
+  font-weight: 600;
   color: var(--text-primary);
-  letter-spacing: 0.02em;
 }
 
 .info-note {

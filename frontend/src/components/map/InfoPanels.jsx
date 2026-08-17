@@ -34,7 +34,9 @@ export function SettingsPanel({ open, onClose, shortcutsEnabled }) {
       {/* Account security: password and two-factor authentication. */}
       <section className="info-section">
         <h3 className="info-heading">Güvenlik</h3>
-        <p className="info-note">Şifre Değiştir</p>
+        {/* A real subheading rather than a note: it labels the form below it,
+            so it should sit in the heading order instead of reading as prose. */}
+        <h4 className="info-subheading">Şifre Değiştir</h4>
         <ChangePasswordForm />
       </section>
 

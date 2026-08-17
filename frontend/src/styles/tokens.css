@@ -57,6 +57,29 @@
   --font-h2: 24px;
   --font-body: 15px;
   --font-small: 13px;
+
+  /* --- Form fields -------------------------------------------------------
+     Inputs used to hardcode this dark palette inside TextField.css, which is
+     why an EDITABLE field in light mode rendered as a grey box with an
+     invisible label — indistinguishable from a disabled control. The colours
+     live here instead so each theme states its own, and so "disabled" is the
+     only thing that ever looks muted.
+
+     The dark values below are exactly the ones TextField.css used before, so
+     the auth screens (which are pinned dark) are unchanged. */
+  --field-bg: rgba(5, 8, 18, 0.45);
+  --field-bg-hover: rgba(5, 8, 18, 0.6);
+  --field-border: rgba(135, 145, 175, 0.27);
+  --field-border-hover: rgba(135, 145, 175, 0.45);
+  --field-highlight: rgba(255, 255, 255, 0.05);
+  --field-label: #f2f2f6;
+  --field-placeholder: rgba(210, 215, 235, 0.45);
+  --field-icon: var(--text-secondary);
+  --field-focus-border: #8752ff;
+  --field-focus-ring: rgba(135, 82, 255, 0.15);
+  --field-disabled-bg: rgba(5, 8, 18, 0.22);
+  --field-disabled-border: rgba(135, 145, 175, 0.14);
+  --field-disabled-text: var(--text-tertiary);
 }
 
 /* System preference: light, only when the user hasn't made an explicit choice */
@@ -77,6 +100,20 @@
     --shadow-glow: 0 0 32px rgba(108, 60, 231, 0.12);
     --shadow-glow-soft: 0 0 16px rgba(108, 60, 231, 0.08);
     --shadow-panel: 0 20px 45px -20px rgba(76, 29, 149, 0.2);
+
+    --field-bg: #ffffff;
+    --field-bg-hover: #ffffff;
+    --field-border: rgba(30, 27, 75, 0.16);
+    --field-border-hover: rgba(30, 27, 75, 0.3);
+    --field-highlight: transparent;
+    --field-label: #241f52;
+    --field-placeholder: rgba(71, 85, 105, 0.62);
+    --field-icon: #5b6478;
+    --field-focus-border: var(--primary);
+    --field-focus-ring: rgba(108, 60, 231, 0.16);
+    --field-disabled-bg: #f1f1f7;
+    --field-disabled-border: rgba(30, 27, 75, 0.1);
+    --field-disabled-text: #9aa0b5;
   }
 }
 
@@ -97,6 +134,20 @@
   --shadow-glow: 0 0 40px rgba(108, 60, 231, 0.25);
   --shadow-glow-soft: 0 0 20px rgba(108, 60, 231, 0.15);
   --shadow-panel: 0 20px 60px -20px rgba(0, 0, 0, 0.6);
+
+  --field-bg: rgba(5, 8, 18, 0.45);
+  --field-bg-hover: rgba(5, 8, 18, 0.6);
+  --field-border: rgba(135, 145, 175, 0.27);
+  --field-border-hover: rgba(135, 145, 175, 0.45);
+  --field-highlight: rgba(255, 255, 255, 0.05);
+  --field-label: #f2f2f6;
+  --field-placeholder: rgba(210, 215, 235, 0.45);
+  --field-icon: var(--text-secondary);
+  --field-focus-border: #8752ff;
+  --field-focus-ring: rgba(135, 82, 255, 0.15);
+  --field-disabled-bg: rgba(5, 8, 18, 0.22);
+  --field-disabled-border: rgba(135, 145, 175, 0.14);
+  --field-disabled-text: var(--text-tertiary);
 }
 
 /* Explicit light theme choice */
@@ -116,6 +167,20 @@
   --shadow-glow: 0 0 32px rgba(108, 60, 231, 0.12);
   --shadow-glow-soft: 0 0 16px rgba(108, 60, 231, 0.08);
   --shadow-panel: 0 20px 45px -20px rgba(76, 29, 149, 0.2);
+
+  --field-bg: #ffffff;
+  --field-bg-hover: #ffffff;
+  --field-border: rgba(30, 27, 75, 0.16);
+  --field-border-hover: rgba(30, 27, 75, 0.3);
+  --field-highlight: transparent;
+  --field-label: #241f52;
+  --field-placeholder: rgba(71, 85, 105, 0.62);
+  --field-icon: #5b6478;
+  --field-focus-border: var(--primary);
+  --field-focus-ring: rgba(108, 60, 231, 0.16);
+  --field-disabled-bg: #f1f1f7;
+  --field-disabled-border: rgba(30, 27, 75, 0.1);
+  --field-disabled-text: #9aa0b5;
 }
 
 @supports not (backdrop-filter: blur(1px)) {
