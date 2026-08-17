@@ -58,6 +58,17 @@ public class AdminUsersController : ApiControllerBase
     public Task<ActionResult<AdminUserDetail>> GetUser(int id, CancellationToken cancellationToken) =>
         GuardUser(nameof(GetUser), () => _userManagement.GetUserAsync(id, cancellationToken));
 
+    /// <summary>
+    /// Onay ekranında atanabilecek roller. Rota <c>{id:int}</c> kısıtı
+    /// sayesinde kullanıcı detayı ucuyla çakışmaz.
+    /// </summary>
+    [HttpGet("roles")]
+    public Task<ActionResult<IReadOnlyList<AssignableRole>>> GetAssignableRoles() =>
+        Guard<IReadOnlyList<AssignableRole>>(
+            nameof(GetAssignableRoles),
+            () => Task.FromResult<ActionResult<IReadOnlyList<AssignableRole>>>(
+                Ok(_userManagement.GetAssignableRoles())));
+
     [HttpPatch("{id:int}/role")]
     public Task<ActionResult<AdminUserDetail>> ChangeRole(
         int id,
@@ -75,6 +86,29 @@ public class AdminUsersController : ApiControllerBase
         GuardUser(
             nameof(ChangeStatus),
             () => _userManagement.ChangeStatusAsync(id, request, ActingUserId, cancellationToken));
+
+    /* --- Onay akışı -----------------------------------------------------------
+       Gövde yalnızca rol/gerekçe taşır. Aktiflik, onay zamanı ve onaylayan
+       kimliği istemciden OKUNMAZ; sunucunun kendi kararlarıdır ve
+       ActingUserId doğrulanmış yönetici token'ından gelir. */
+
+    [HttpPost("{id:int}/approve")]
+    public Task<ActionResult<AdminUserDetail>> Approve(
+        int id,
+        [FromBody] ApproveUserRequest request,
+        CancellationToken cancellationToken) =>
+        GuardUser(
+            nameof(Approve),
+            () => _userManagement.ApproveAsync(id, request, ActingUserId, cancellationToken));
+
+    [HttpPost("{id:int}/reject")]
+    public Task<ActionResult<AdminUserDetail>> Reject(
+        int id,
+        [FromBody] RejectUserRequest request,
+        CancellationToken cancellationToken) =>
+        GuardUser(
+            nameof(Reject),
+            () => _userManagement.RejectAsync(id, request, ActingUserId, cancellationToken));
 
     /// <summary>
     /// Kullanıcı döndüren uçların ortak sarmalayıcısı: hata sınırı + mevcut

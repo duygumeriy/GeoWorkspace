@@ -31,4 +31,33 @@ public interface IUserManagementService
         UpdateUserStatusRequest request,
         int actingUserId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>Onay ekranında seçilebilecek roller.</summary>
+    IReadOnlyList<AssignableRole> GetAssignableRoles();
+
+    /// <summary>
+    /// Onay bekleyen hesabı, seçilen rolü atayarak aktifleştirir ve
+    /// kullanıcıya bilgilendirme e-postası gönderir.
+    /// </summary>
+    /// <remarks>
+    /// Rol ataması ile aktifleştirme <b>tek transaction</b> içindedir: hesap
+    /// hiçbir koşulda "aktif ama rolsüz" kalmaz. E-posta gönderimi transaction
+    /// dışındadır ve başarısız olması aktifleştirmeyi geri almaz.
+    /// </remarks>
+    /// <param name="actingUserId">Onaylayan yönetici; audit alanına yazılır.</param>
+    Task<ServiceResult<AdminUserDetail>> ApproveAsync(
+        int userId,
+        ApproveUserRequest request,
+        int actingUserId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Onay bekleyen başvuruyu reddeder. Reddedilen hesap uygulama token'ı
+    /// alamaz ve rol kazanmaz.
+    /// </summary>
+    Task<ServiceResult<AdminUserDetail>> RejectAsync(
+        int userId,
+        RejectUserRequest request,
+        int actingUserId,
+        CancellationToken cancellationToken = default);
 }
