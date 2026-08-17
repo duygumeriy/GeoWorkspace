@@ -1,8 +1,15 @@
 import { HomeIcon, CrosshairIcon, FocusIcon } from '../ui/icons/index.js'
 import './QuickActions.css'
 
-/** Camera shortcuts, stacked at the top-right corner of the map viewport. */
-export default function QuickActions({ onGoTurkey, onGoMyLocation, onFocusAll }) {
+/**
+ * Camera shortcuts, stacked at the top-left corner of the map viewport.
+ *
+ * `children` extends the same stack with controls that are more than a plain
+ * button — the basemap picker owns a popover, so it renders itself here rather
+ * than being flattened into the `actions` list. Sharing the stack is what keeps
+ * every map control one column at one size.
+ */
+export default function QuickActions({ onGoTurkey, onGoMyLocation, onFocusAll, children }) {
   const actions = [
     { id: 'turkey', label: "Türkiye'ye Dön", Icon: HomeIcon, onClick: onGoTurkey },
     { id: 'location', label: 'Konumuma Git', Icon: CrosshairIcon, onClick: onGoMyLocation },
@@ -16,6 +23,7 @@ export default function QuickActions({ onGoTurkey, onGoMyLocation, onFocusAll })
           <Icon size={18} />
         </button>
       ))}
+      {children}
     </div>
   )
 }

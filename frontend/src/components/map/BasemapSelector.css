@@ -1,0 +1,222 @@
+/* The trigger reuses .quick-action from QuickActions.css so it is the same
+   44px control as Home / Konumum / Odaklan — same size, radius, surface, border
+   and hover. Only the open state is added here. */
+
+.basemap-control {
+  position: relative;
+  display: inline-flex;
+}
+
+.basemap-trigger.is-open {
+  border-color: var(--border-strong);
+  color: var(--primary-light);
+}
+
+.basemap-trigger:focus-visible {
+  outline: 2px solid var(--primary-light);
+  outline-offset: 2px;
+}
+
+/* --- Desktop / tablet: popover anchored to the button --------------------- */
+
+.basemap-popover {
+  position: absolute;
+  top: 0;
+  /* Opens to the right of the control stack, which sits at the top-left. */
+  left: calc(100% + 0.5rem);
+  z-index: 40;
+  width: 268px;
+  padding: 0.7rem;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-soft);
+  background: var(--surface-solid);
+  box-shadow: var(--shadow-panel);
+  animation: basemap-popover-enter var(--motion-fast) var(--ease-out-premium);
+}
+
+@keyframes basemap-popover-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.basemap-popover-title {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+}
+
+.basemap-scrim {
+  display: none;
+}
+
+.basemap-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.basemap-option {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  min-height: 48px;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.basemap-option:hover {
+  background: var(--surface-soft);
+  color: var(--text-primary);
+}
+
+.basemap-option:focus-visible {
+  outline: 2px solid var(--primary-light);
+  outline-offset: -2px;
+}
+
+/* Selected state carries three signals — accent border, tinted surface and the
+   tick below — so it never depends on colour alone. aria-checked carries it to
+   assistive technology. */
+.basemap-option.is-selected {
+  border-color: var(--border-strong);
+  background: color-mix(in srgb, var(--primary-light) 12%, transparent);
+  color: var(--text-primary);
+}
+
+.basemap-option-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.basemap-option-label {
+  font-size: var(--font-small);
+  font-weight: 600;
+}
+
+.basemap-option-description {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.basemap-option-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  flex-shrink: 0;
+  color: var(--primary-light);
+}
+
+/* --- Previews -------------------------------------------------------------
+   Abstract, drawn entirely in CSS: no tile requests, no third-party imagery,
+   no licensing question, and nothing to slow the first paint. Each one evokes
+   its basemap rather than depicting it. */
+
+.basemap-preview {
+  width: 46px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  border: 1px solid var(--border-soft);
+  background-color: #dfe4ea;
+  background-repeat: no-repeat;
+}
+
+/* Street map: pale land with two road lines crossing it. */
+.basemap-preview--standard {
+  background-image: linear-gradient(90deg, transparent 42%, #b9c3cf 42%, #b9c3cf 52%, transparent 52%),
+    linear-gradient(0deg, transparent 55%, #c8d0da 55%, #c8d0da 65%, transparent 65%);
+  background-color: #eef1f4;
+}
+
+/* Satellite: terrain greens and browns with a hint of water. */
+.basemap-preview--satellite {
+  background-image: radial-gradient(circle at 72% 28%, #2f5d3a 0 32%, transparent 33%),
+    radial-gradient(circle at 26% 68%, #6c7b46 0 30%, transparent 31%),
+    linear-gradient(140deg, #1f3d5c 0 28%, #3c5a34 28% 70%, #7a6c44 70%);
+}
+
+/* Hybrid: the same imagery with a label stroke over it. */
+.basemap-preview--hybrid {
+  background-image: linear-gradient(90deg, transparent 20%, rgba(255, 255, 255, 0.92) 20%, rgba(255, 255, 255, 0.92) 74%, transparent 74%),
+    radial-gradient(circle at 72% 28%, #2f5d3a 0 32%, transparent 33%),
+    linear-gradient(140deg, #1f3d5c 0 28%, #3c5a34 28% 70%, #7a6c44 70%);
+  background-size: 100% 3px, 100% 100%, 100% 100%;
+  background-position: 50% 62%, 0 0, 0 0;
+}
+
+/* --- Phones: bottom sheet -------------------------------------------------
+   Anchoring a popover to a 44px button at the top-left would put it off-screen
+   or over the map controls on a narrow viewport, so below 640px the same markup
+   becomes a sheet. */
+
+@media (max-width: 640px) {
+  .basemap-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 45;
+    background: rgba(6, 9, 20, 0.45);
+  }
+
+  .basemap-popover {
+    position: fixed;
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 46;
+    width: auto;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    padding: 0.9rem 0.9rem calc(0.9rem + env(safe-area-inset-bottom, 0px));
+    animation: basemap-sheet-enter var(--motion-normal) var(--ease-out-premium);
+  }
+
+  @keyframes basemap-sheet-enter {
+    from {
+      transform: translateY(12px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  /* Comfortable touch rows on a surface where there is room for them. */
+  .basemap-option {
+    min-height: 56px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .basemap-popover {
+    animation: none;
+  }
+}
