@@ -8,8 +8,8 @@ import GlassPanel from '../components/ui/GlassPanel.jsx'
 import TextField from '../components/ui/TextField.jsx'
 import Button from '../components/ui/Button.jsx'
 import IconButton from '../components/ui/IconButton.jsx'
-import ThemeToggle from '../components/ui/ThemeToggle.jsx'
 import LanguagePill from '../components/ui/LanguagePill.jsx'
+import { useFixedThemePresentation } from '../styles/theme.jsx'
 import {
   UserIcon,
   LockIcon,
@@ -25,6 +25,12 @@ import './LoginPage.css'
 import './AuthShell.css'
 
 export default function LoginPage() {
+  /* The login screen has one fixed look — the dark hero this file's CSS paints.
+     It is deliberately NOT themeable, so the map's light/dark preference never
+     reaches it. The preference itself is left untouched and the map restores it
+     on the next sign-in. */
+  useFixedThemePresentation('dark')
+
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -95,8 +101,9 @@ export default function LoginPage() {
 
       <LoginVisualPane />
 
+      {/* No theme control here: the theme belongs to the authenticated map
+          workspace, not to the sign-in screen. */}
       <div className="login-page-top-controls">
-        <ThemeToggle />
         <LanguagePill />
       </div>
 

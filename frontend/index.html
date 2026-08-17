@@ -5,6 +5,35 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>frontend</title>
+    <script>
+      /*
+        Paints the saved theme onto <html> before the first frame.
+
+        Without this the document starts with no data-theme, which resolves to
+        the dark palette in tokens.css, so a user whose map preference is light
+        saw one dark frame on every hard load. React cannot do this itself: it
+        only runs once the bundle has been fetched and parsed.
+
+        This mirrors ThemeProvider's own resolution and nothing more — it never
+        writes to storage, and screens that pin their presentation (the auth
+        screens) still override it in a layout effect, before paint.
+      */
+      (function () {
+        try {
+          var stored = localStorage.getItem('staj-map-theme')
+          var theme =
+            stored === 'dark' || stored === 'light'
+              ? stored
+              : window.matchMedia('(prefers-color-scheme: dark)').matches
+                ? 'dark'
+                : 'light'
+          document.documentElement.setAttribute('data-theme', theme)
+        } catch (error) {
+          /* Storage can throw (private mode, blocked cookies). The stylesheet's
+             own default then applies — a missing attribute is a valid state. */
+        }
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

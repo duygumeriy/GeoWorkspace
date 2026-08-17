@@ -13,8 +13,8 @@ import LoginVisualPane from './LoginVisualPane.jsx'
 import GlassPanel from '../components/ui/GlassPanel.jsx'
 import TextField from '../components/ui/TextField.jsx'
 import Button from '../components/ui/Button.jsx'
-import ThemeToggle from '../components/ui/ThemeToggle.jsx'
 import LanguagePill from '../components/ui/LanguagePill.jsx'
+import { useFixedThemePresentation } from '../styles/theme.jsx'
 import AuthenticatorSetup from '../components/security/AuthenticatorSetup.jsx'
 import RecoveryCodes from '../components/security/RecoveryCodes.jsx'
 import { ShieldIcon, AlertIcon, KeyIcon } from '../components/ui/icons/index.js'
@@ -33,6 +33,9 @@ import '../components/security/TwoFactor.css'
  * a completed second factor.
  */
 export default function TwoFactorPage() {
+  // Second login step: still an auth screen, so the same fixed presentation.
+  useFixedThemePresentation('dark')
+
   const { challenge, login, updateChallengeToken, cancelTwoFactor } = useAuth()
   const { beginLoginToMapTransition } = useTransition()
   const navigate = useNavigate()
@@ -148,7 +151,6 @@ export default function TwoFactorPage() {
       <LoginVisualPane />
 
       <div className="login-page-top-controls">
-        <ThemeToggle />
         <LanguagePill />
       </div>
 

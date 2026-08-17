@@ -1,7 +1,7 @@
 import LoginVisualPane from './LoginVisualPane.jsx'
 import GlassPanel from '../components/ui/GlassPanel.jsx'
-import ThemeToggle from '../components/ui/ThemeToggle.jsx'
 import LanguagePill from '../components/ui/LanguagePill.jsx'
+import { useFixedThemePresentation } from '../styles/theme.jsx'
 import './LoginPage.css'
 import './AuthShell.css'
 
@@ -16,6 +16,10 @@ import './AuthShell.css'
  * these forms are shorter and would otherwise float in an oversized card.
  */
 export default function AuthShell({ eyebrow, title, children }) {
+  // Same fixed presentation as the login screen this shell borrows its design
+  // from; see LoginPage for why these screens are not themeable.
+  useFixedThemePresentation('dark')
+
   return (
     <div className="login-page">
       <div className="login-page-stars" aria-hidden="true" />
@@ -23,7 +27,6 @@ export default function AuthShell({ eyebrow, title, children }) {
       <LoginVisualPane />
 
       <div className="login-page-top-controls">
-        <ThemeToggle />
         <LanguagePill />
       </div>
 
