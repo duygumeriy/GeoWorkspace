@@ -302,11 +302,15 @@ public class IdentityTwoFactorFlowTests
             Assert.True((await roles.CreateAsync(new IdentityRole<int>(role))).Succeeded);
         }
 
+        /* Bu testler onay akışının ÖTESİNDEKİ davranışı (2FA) doğrular, bu
+           yüzden kullanıcı doğrudan onaylanmış hâlde kurulur — aksi hâlde her
+           senaryo login kapısında, ikinci faktöre hiç gelmeden dururdu. */
         var user = new User
         {
             UserName = username,
             Email = $"{username}@example.invalid",
             EmailConfirmed = true,
+            AccountStatus = AccountStatus.Active,
             IsActive = true
         };
         Assert.True((await users.CreateAsync(user, InitialPassword)).Succeeded);

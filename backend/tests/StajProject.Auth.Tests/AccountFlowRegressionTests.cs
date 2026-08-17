@@ -43,7 +43,10 @@ public class AccountFlowRegressionTests
         await email.Received(1).SendAsync(Arg.Any<EmailMessage>(), Arg.Any<CancellationToken>());
         var user = (await users.FindByNameAsync("account-regression"))!;
         Assert.False(user.EmailConfirmed);
-        Assert.True(await users.IsInRoleAsync(user, ApplicationRoles.User));
+        /* Kayıt artık rol ATAMAZ ve hesabı aktifleştirmez: erişim yönetici
+           onayında verilir (bkz. AccountApprovalTests). */
+        Assert.Empty(await users.GetRolesAsync(user));
+        Assert.Equal(AccountStatus.PendingEmailVerification, user.AccountStatus);
 
         var confirmationToken = await users.GenerateEmailConfirmationTokenAsync(user);
         var confirmed = await account.ConfirmEmailAsync(new ConfirmEmailRequest
@@ -52,7 +55,9 @@ public class AccountFlowRegressionTests
             Token = Encode(confirmationToken)
         });
         Assert.True(confirmed.Succeeded);
-        Assert.True((await users.FindByIdAsync(user.Id.ToString()))!.EmailConfirmed);
+        var afterConfirmation = (await users.FindByIdAsync(user.Id.ToString()))!;
+        Assert.True(afterConfirmation.EmailConfirmed);
+        Assert.Equal(AccountStatus.PendingApproval, afterConfirmation.AccountStatus);
 
         var forgot = await account.ForgotPasswordAsync(new ForgotPasswordRequest { Email = user.Email! });
         Assert.True(forgot.Succeeded);
