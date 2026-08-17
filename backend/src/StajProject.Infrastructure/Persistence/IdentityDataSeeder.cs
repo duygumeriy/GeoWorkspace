@@ -155,6 +155,12 @@ public static class IdentityDataSeeder
             // Bootstrap hesabı e-posta doğrulama akışından geçemez (gidecek bir
             // gelen kutusu yoktur), bu yüzden doğrulanmış kabul edilir.
             EmailConfirmed = true,
+            /* Aynı gerekçe onay akışı için de geçerlidir ve klasik kilitlenmeyi
+               önler: herkes yönetici onayı beklerken onaylayacak yönetici
+               bulunmaması. İlk yönetici onay sırasına girmez, doğrudan Active
+               provision edilir. ApprovedAt/ApprovedByUserId null bırakılır —
+               bu hesap onaylanmadı, sağlandı. */
+            AccountStatus = AccountStatus.Active,
             IsActive = true,
             IsDeleted = false
         };
@@ -258,12 +264,15 @@ public static class IdentityDataSeeder
 
         // Kurtarmanın işe yaraması için hesabın aktif olması gerekir; pasifse
         // bu YALNIZCA kurtarma yolunda ve açıkça loglanarak geri açılır.
-        if (!target.IsActive)
+        // Onay durumu da birlikte yükseltilir: is_active tek başına true
+        // olsaydı login kapısı hesabı yine reddeder, kurtarma işe yaramazdı.
+        if (!target.IsActive || target.AccountStatus != AccountStatus.Active)
         {
             target.IsActive = true;
+            target.AccountStatus = AccountStatus.Active;
             await userManager.UpdateAsync(target);
             logger.LogWarning(
-                "KURTARMA: '{Username}' pasif durumdaydı, erişim sağlanabilmesi için aktifleştirildi.",
+                "KURTARMA: '{Username}' giriş yapabilir durumda değildi, erişim sağlanabilmesi için aktifleştirildi.",
                 options.Username);
         }
 
@@ -277,9 +286,16 @@ public static class IdentityDataSeeder
     /// rolüne taşır (AUTH-3 öncesinden devralınan kayıtlar için).
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Körlemesine toplu güncelleme yapılmaz: zaten bir application role'ü olan
     /// hesaplara dokunulmaz ve silinmiş kayıtlar kapsam dışıdır. Bu sayede
     /// bilinçli olarak Admin yapılmış bir hesabın User'a düşürülmesi imkânsızdır.
+    /// </para>
+    /// <para>
+    /// Kapsam yalnızca <see cref="AccountStatus.Active"/> hesaplardır. Onay
+    /// akışında rol, onay anında atanır; henüz onaylanmamış bir hesaba burada
+    /// rol vermek, yöneticinin kararını startup'ta önceden almak olurdu.
+    /// </para>
     /// </remarks>
     private static async Task AssignDefaultRoleToRolelessUsersAsync(
         UserManager<User> userManager,
@@ -287,7 +303,7 @@ public static class IdentityDataSeeder
         CancellationToken cancellationToken)
     {
         var candidates = await userManager.Users
-            .Where(u => !u.IsDeleted)
+            .Where(u => !u.IsDeleted && u.AccountStatus == AccountStatus.Active)
             .ToListAsync(cancellationToken);
 
         foreach (var user in candidates)

@@ -626,6 +626,17 @@ public class TwoFactorService : ITwoFactorService
             return ServiceResult<LoginResponse>.Failure("E-posta adresinizi doğrulamanız gerekiyor.");
         }
 
+        /* Onay kapısı burada bir kez daha uygulanır. AuthService onaylanmamış
+           bir hesaba zaten challenge bileti vermez, dolayısıyla buraya normalde
+           gelinmez; ama access token üreten HER yol kendi kontrolünü yapmalıdır
+           — aksi hâlde tek bir regresyon ikinci faktörü onay kapısının etrafından
+           dolaşan bir yola çevirirdi. */
+        if (user.AccountStatus != AccountStatus.Active || !user.IsActive)
+        {
+            return ServiceResult<LoginResponse>.Failure(
+                "Hesabınız şu anda giriş yapmaya uygun değil. Lütfen yöneticinizle iletişime geçin.");
+        }
+
         // Roller daima veritabanından okunur; biletin içinde rol taşınmaz.
         var roles = await _userManager.GetRolesAsync(user);
 

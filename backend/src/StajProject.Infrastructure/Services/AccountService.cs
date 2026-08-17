@@ -71,14 +71,16 @@ public class AccountService : IAccountService
             return AccountResult.Failure("Kayıt tamamlanamadı.", "Şifreler eşleşmiyor.");
         }
 
-        // Server-owned alanlar burada sabittir; request'ten HİÇBİRİ okunmaz.
-        // Rol ataması yapılmaz — roller AUTH-3 kapsamındadır.
+        /* Server-owned alanlar burada sabittir; request'ten HİÇBİRİ okunmaz.
+           Kayıt yalnızca KİMLİK oluşturur — uygulamaya erişim hakkı vermez:
+           hesap doğrulanmamış, pasif ve onay bekleyen durumda başlar. */
         var user = new User
         {
             UserName = username,
             Email = email,
             EmailConfirmed = false,
-            IsActive = true,
+            AccountStatus = AccountStatus.PendingEmailVerification,
+            IsActive = false,
             IsDeleted = false
         };
 
@@ -91,37 +93,23 @@ public class AccountService : IAccountService
             return AccountResult.Failure("Kayıt tamamlanamadı.", TranslateErrors(result.Errors));
         }
 
-        /* Rol SERVER tarafında atanır; istemci rol seçemez. Kayıt olan herkes
-           User rolünü alır (AUTH-3).
+        /* Kayıtta rol ATANMAZ.
 
-           Atama başarısız olursa yeni oluşturulan hesap silinir: rolsüz yarım
-           bir kullanıcı bırakmak, sonradan hiçbir authorization kuralına
-           uymayan "yetim" hesaplar demek olurdu. Identity UserManager kendi
-           transaction'ını yönetmediği için telafi (compensating delete)
-           yaklaşımı kullanılır; kullanıcı henüz bu istekte oluşturulduğundan
-           silmek güvenlidir. */
-        var roleAssignment = await _userManager.AddToRoleAsync(user, ApplicationRoles.User);
-
-        if (!roleAssignment.Succeeded)
-        {
-            await _userManager.DeleteAsync(user);
-
-            _logger.LogError(
-                "Kayıt geri alındı: rol ataması başarısız. {Errors}",
-                string.Join("; ", roleAssignment.Errors.Select(e => e.Description)));
-
-            return AccountResult.Failure(
-                "Kayıt tamamlanamadı.",
-                "Hesap oluşturulurken bir sorun oluştu. Lütfen tekrar deneyin.");
-        }
+           Önceki davranış herkese otomatik User rolü veriyordu; onay akışıyla
+           birlikte bu, "yönetici erişim verir" kuralını daha kayıt anında
+           delen bir yol olurdu. Rol artık tek bir yerde — yönetici onayında —
+           atanır ve orada sunucu tarafında doğrulanır. Rolsüz kalan hesap
+           erişim açısından zararsızdır: onaylanmadığı için zaten hiçbir
+           authenticated uca ulaşamaz. */
 
         await SendConfirmationEmailAsync(user, cancellationToken);
 
         _logger.LogInformation("Yeni kullanıcı kaydı oluşturuldu. UserId={UserId}", user.Id);
 
-        // Otomatik login YAPILMAZ: önce e-posta doğrulanmalı.
+        // Otomatik login YAPILMAZ: önce e-posta doğrulanmalı, sonra yönetici onaylamalı.
         return AccountResult.Success(
-            "Hesabınız oluşturuldu. Giriş yapabilmek için e-posta adresinizi doğrulayın.");
+            "Hesabınız oluşturuldu. Önce e-posta adresinizi doğrulayın; " +
+            "ardından hesabınız yönetici onayına gönderilecektir.");
     }
 
     /* --- E-posta doğrulama --------------------------------------------------- */
@@ -145,9 +133,10 @@ public class AccountService : IAccountService
         }
 
         // Tekrar doğrulama hata değil: kullanıcı linke iki kez tıklamış olabilir.
+        // Idempotent yanıt hesabın O ANKİ durumunu anlatır, sabit bir cümle değil.
         if (user.EmailConfirmed)
         {
-            return AccountResult.Success("E-posta adresiniz zaten doğrulanmış. Giriş yapabilirsiniz.");
+            return AccountResult.Success(DescribeConfirmedState(user));
         }
 
         if (!TryDecodeToken(request.Token, out var token))
@@ -163,10 +152,55 @@ public class AccountService : IAccountService
             return invalid;
         }
 
+        /* Doğrulama, hesabı bir sonraki KAPIYA taşır — uygulamaya değil.
+           Geçiş yalnızca PendingEmailVerification'dan yapılır: askıya alınmış
+           veya reddedilmiş bir hesap, e-postasını doğrulayarak kendini yeniden
+           onay sırasına sokamaz. */
+        if (user.AccountStatus == AccountStatus.PendingEmailVerification)
+        {
+            user.AccountStatus = AccountStatus.PendingApproval;
+
+            /* Devralınan (AUTH-7 öncesi) kayıtlarda is_active true olabilir;
+               onay beklerken aktif görünmesi durum modeliyle çelişirdi. Bu
+               satır kimseyi erişimden etmez: doğrulanmamış hesap zaten giriş
+               yapamıyordu. */
+            user.IsActive = false;
+
+            var transition = await _userManager.UpdateAsync(user);
+
+            if (!transition.Succeeded)
+            {
+                _logger.LogError(
+                    "E-posta doğrulandı fakat hesap onay sırasına alınamadı. UserId={UserId} {Errors}",
+                    user.Id,
+                    string.Join("; ", transition.Errors.Select(e => e.Description)));
+
+                return AccountResult.Failure(
+                    "E-posta adresiniz doğrulandı fakat hesabınız onay sırasına alınamadı.",
+                    "Lütfen daha sonra tekrar deneyin veya yöneticinizle iletişime geçin.");
+            }
+        }
+
         _logger.LogInformation("E-posta doğrulandı. UserId={UserId}", user.Id);
 
-        return AccountResult.Success("E-posta adresiniz doğrulandı. Artık giriş yapabilirsiniz.");
+        return AccountResult.Success(DescribeConfirmedState(user));
     }
+
+    /// <summary>
+    /// Doğrulanmış bir hesabın kullanıcıya gösterilecek durum cümlesi.
+    /// Enum adı asla dışarı yazılmaz.
+    /// </summary>
+    private static string DescribeConfirmedState(User user) => user.AccountStatus switch
+    {
+        AccountStatus.PendingApproval =>
+            "E-posta adresiniz doğrulandı. Hesabınız yönetici onayı bekliyor.",
+        AccountStatus.Active =>
+            "E-posta adresiniz doğrulanmış. Giriş yapabilirsiniz.",
+        AccountStatus.Rejected =>
+            "E-posta adresiniz doğrulanmış fakat hesap başvurunuz onaylanmadı.",
+        _ =>
+            "E-posta adresiniz doğrulanmış. Hesabınız şu anda giriş yapmaya uygun değil."
+    };
 
     public async Task<AccountResult> ResendConfirmationAsync(ResendConfirmationRequest request, CancellationToken cancellationToken = default)
     {
@@ -177,7 +211,14 @@ public class AccountService : IAccountService
         {
             var user = await _userManager.FindByEmailAsync(email);
 
-            if (user is not null && !user.IsDeleted && user.IsActive && !user.EmailConfirmed)
+            /* Yalnızca hâlâ doğrulama aşamasında olan hesap yeni bağlantı alır.
+               is_active'e BAKILMAZ: onay akışında doğrulama bekleyen hesap
+               zaten pasiftir, o alana bakmak doğrulama e-postasını kendi
+               kullanıcısına kapatırdı. */
+            if (user is not null
+                && !user.IsDeleted
+                && !user.EmailConfirmed
+                && user.AccountStatus == AccountStatus.PendingEmailVerification)
             {
                 await SendConfirmationEmailAsync(user, cancellationToken);
             }
@@ -196,7 +237,7 @@ public class AccountService : IAccountService
         {
             var user = await _userManager.FindByEmailAsync(email);
 
-            if (user is not null && !user.IsDeleted && user.IsActive)
+            if (user is not null && CanUseAccountRecovery(user))
             {
                 var rawToken = await _userManager.GeneratePasswordResetTokenAsync(user);
                 var link = BuildLink("reset-password", new Dictionary<string, string?>
@@ -245,7 +286,7 @@ public class AccountService : IAccountService
 
         var user = await _userManager.FindByEmailAsync(email);
 
-        if (user is null || user.IsDeleted || !user.IsActive)
+        if (user is null || !CanUseAccountRecovery(user))
         {
             // Kayıtlı olmayan adres için de "geçersiz token" denir; böylece
             // adresin sistemde olup olmadığı anlaşılmaz.
@@ -289,7 +330,7 @@ public class AccountService : IAccountService
     {
         var user = await _userManager.FindByIdAsync(userId.ToString());
 
-        if (user is null || user.IsDeleted || !user.IsActive)
+        if (user is null || !CanUseAccountRecovery(user))
         {
             return AccountResult.Failure("Şifre değiştirilemedi.", "Hesap bulunamadı.");
         }
@@ -320,6 +361,22 @@ public class AccountService : IAccountService
     }
 
     /* --- Yardımcılar --------------------------------------------------------- */
+
+    /// <summary>
+    /// Hesabın şifre sıfırlama/değiştirme akışlarını kullanabilir olup
+    /// olmadığı.
+    /// </summary>
+    /// <remarks>
+    /// Kapı <c>is_active</c> yerine durum üzerinden kurulur. Önceki koşul
+    /// (<c>IsActive</c>) devralınan veride "askıya alınmamış" ile eşanlamlıydı;
+    /// onay akışında ise henüz onaylanmamış hesaplar da pasif olduğu için aynı
+    /// koşul, kendi şifresini unutan yeni bir kullanıcıyı sıfırlama akışının
+    /// dışında bırakırdı. Kapsam dışı bırakılanlar aynı kalır: silinmiş,
+    /// askıya alınmış ve reddedilmiş hesaplar.
+    /// </remarks>
+    private static bool CanUseAccountRecovery(User user) =>
+        !user.IsDeleted
+        && user.AccountStatus is not (AccountStatus.Suspended or AccountStatus.Rejected);
 
     private async Task SendConfirmationEmailAsync(User user, CancellationToken cancellationToken)
     {
