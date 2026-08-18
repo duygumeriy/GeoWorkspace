@@ -53,6 +53,11 @@ async function signIn(page, { role = 'Admin' } = {}) {
   await page.route('**/api/admin/users/roles', (route) => route.fulfill(json(ROLES)))
   await page.route('**/api/admin/users/1', (route) => route.fulfill(json(admin)))
   await page.route('**/api/admin/users', (route) => route.fulfill(json([admin])))
+  /* Roller ekranı artık gerçek envanteri okuyor; kabuk testleri onun içeriğini
+     değil, yalnızca rotanın kabuğun içinde açıldığını doğrular. */
+  await page.route('**/api/admin/roles', (route) => route.fulfill(json([
+    { id: 1, name: 'Admin', userCount: 1, permissionCount: 27, isSystem: true, isLegacy: true, isAssignable: false, canRename: false, canDelete: false, canEditPermissions: false },
+  ])))
 
   await page.goto('/login')
   /* An hour out, not a far-future date: AuthContext schedules the automatic
@@ -133,17 +138,23 @@ test('the users screen keeps its existing content inside the shell', async ({ pa
   await expect(page.getByRole('link', { name: '← Haritaya dön' })).toHaveCount(0)
 })
 
-test('roles and permissions are honest placeholders, not fake data', async ({ page }) => {
+test('roles is a real screen and permissions is still an honest placeholder', async ({ page }) => {
   await signIn(page)
 
+  /* Roller Phase 5B'de gerçek oldu; yer tutucusu bilinçli olarak kaldırıldı.
+     Ekranın kendi davranışı admin-roles.spec.js'te doğrulanıyor — burada
+     ölçülen, rotanın kabuğun içinde açılması. */
   await page.goto('/admin/roles')
   await expect(page.getByRole('heading', { name: 'Roller', level: 1 })).toBeVisible()
-  await expect(page.getByText('Bu ekran hazırlanıyor')).toBeVisible()
-  await expect(page.getByText(/Rol yönetimi arayüzü bir sonraki aşamada/)).toBeVisible()
+  await expect(page.getByRole('button', { name: '+ Yeni Rol' })).toBeVisible()
+  await expect(page.getByText('Bu ekran hazırlanıyor')).toHaveCount(0)
 
+  // Yetkiler Phase 5D'ye kadar yer tutucu kalır; sahte katalog gösterilmez.
   await page.goto('/admin/permissions')
   await expect(page.getByRole('heading', { name: 'Yetkiler', level: 1 })).toBeVisible()
+  await expect(page.getByText('Bu ekran hazırlanıyor')).toBeVisible()
   await expect(page.getByText(/Yetki kataloğu ve rol-yetki yönetimi bir sonraki aşamada/)).toBeVisible()
+  await expect(page.getByRole('checkbox')).toHaveCount(0)
 })
 
 /* --- Rol uyumluluğu --------------------------------------------------------
