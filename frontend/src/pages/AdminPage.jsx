@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../auth/AuthContext.jsx'
-import { approveUser, fetchAdminUser, fetchAdminUsers, fetchAssignableRoles, readApiError, rejectUser, updateUserRole, updateUserStatus } from '../services/api.js'
+import { approveUser, fetchAdminUser, fetchAdminUserPermissions, fetchAdminUsers, fetchAssignableRoles, readApiError, rejectUser, updateAdminUserPermissions, updateUserRole, updateUserStatus } from '../services/api.js'
 import AdminPageHeader from '../components/admin/AdminPageHeader.jsx'
 import UserDetailPanel from '../components/admin/UserDetailPanel.jsx'
 import UserManagementList from '../components/admin/UserManagementList.jsx'
 import { roleFilterOptions } from '../components/admin/userRoles.js'
+import { directActiveCodes, sameSet } from '../components/admin/userPermissions.js'
 import { STATUS_FILTERS } from '../components/admin/userStatus.js'
 import './AdminPage.css'
 
@@ -26,6 +27,39 @@ export default function AdminPage() {
   const [notice, setNotice] = useState(null)
   const mutationInFlight = useRef(false)
 
+  /* --- Kullanıcıya özel yetkiler --------------------------------------------
+     Ayrı durum tutulur çünkü ayrı bir kaynaktır: detay çağrısı hesabı anlatır,
+     bu çağrı yetki tablosunu. Tek isteğe birleştirmek, yetkilere hiç bakmayan
+     yönetici için her detay açılışını pahalılaştırırdı.
+
+     `baseline` sunucunun onayladığı son durumdur; `selected` üzerinde çalışılan
+     kümedir. Kirlilik SIRAYA değil ÜYELİĞE bakar. */
+  const [permissionData, setPermissionData] = useState(null)
+  const [permissionBaseline, setPermissionBaseline] = useState(() => new Set())
+  const [permissionSelected, setPermissionSelected] = useState(() => new Set())
+  const [permissionLoading, setPermissionLoading] = useState(false)
+  const [permissionError, setPermissionError] = useState('')
+  const [permissionSaving, setPermissionSaving] = useState(false)
+  const [permissionSaveError, setPermissionSaveError] = useState('')
+
+  const adoptPermissions = useCallback((payload) => {
+    setPermissionData(payload)
+    const direct = directActiveCodes(payload.permissions)
+    setPermissionBaseline(direct)
+    setPermissionSelected(new Set(direct))
+    setPermissionSaveError('')
+  }, [])
+
+  const loadPermissions = useCallback(async (id) => {
+    setPermissionLoading(true); setPermissionError('')
+    try {
+      const res = await fetchAdminUserPermissions(id)
+      if (!res.ok) throw new Error(res.status === 403 ? 'Yetkileri görüntülemek için gerekli yetkiye sahip değilsiniz.' : await readApiError(res, 'Kullanıcı yetkileri yüklenemedi.'))
+      adoptPermissions(await res.json())
+    } catch (err) { setPermissionError(err.message || 'Kullanıcı yetkileri yüklenemedi.') }
+    finally { setPermissionLoading(false) }
+  }, [adoptPermissions])
+
   const loadUsers = useCallback(async () => {
     setLoading(true); setError('')
     try {
@@ -44,13 +78,17 @@ export default function AdminPage() {
 
   const openDetail = useCallback(async (id) => {
     setSelectedId(id); setDetail(null); setDetailLoading(true); setError('')
+    /* Yetki tablosu detayla BİRLİKTE yüklenir: sekmeye tıklandığında beklemek,
+       en çok bakılan bilginin arkasına gereksiz bir gecikme koyardı. */
+    setPermissionData(null); setPermissionBaseline(new Set()); setPermissionSelected(new Set())
+    loadPermissions(id)
     try {
       const res = await fetchAdminUser(id)
       if (!res.ok) throw new Error(res.status === 403 ? 'Bu işlem için yetkiniz bulunmuyor.' : await readApiError(res, 'Kullanıcı detayı yüklenemedi.'))
       setDetail(await res.json())
     } catch (err) { setError(err.message || 'Kullanıcı detayı yüklenemedi.'); setSelectedId(null) }
     finally { setDetailLoading(false) }
-  }, [])
+  }, [loadPermissions])
 
   const filteredUsers = useMemo(() => {
     const term = search.trim().toLocaleLowerCase('tr-TR')
@@ -86,6 +124,10 @@ export default function AdminPage() {
       if (!res.ok) throw new Error(res.status === 409 ? await readApiError(res, conflictMessage) : res.status === 403 ? 'Bu işlem için yetkiniz bulunmuyor.' : await readApiError(res, 'İşlem tamamlanamadı.'))
       const updated = await res.json()
       setDetail(updated); setUsers((all) => all.map((u) => u.id === updated.id ? { ...u, ...updated } : u))
+      /* Rol veya hesap durumu değişti: KALITIM ve ETKİNLİK artık farklı olabilir.
+         Bayat bir "GIS Editor rolünden" etiketi bırakmak, yöneticiye artık
+         doğru olmayan bir kaynak göstermek olurdu. */
+      loadPermissions(updated.id)
       /* The account really did change even when the notification e-mail could
          not be delivered, so that case is a warning on a completed action —
          never an error that would invite the admin to retry. */
@@ -110,6 +152,60 @@ export default function AdminPage() {
   const approve = (role) => mutate((id) => approveUser(id, role), (u) => `${u.username} onaylandı ve ${role} rolüyle aktifleştirildi. Giriş yapabileceği kendisine e-postayla bildirildi.`)
   const reject = (reason) => mutate((id) => rejectUser(id, reason), (u) => `${u.username} başvurusu reddedildi. Hesap uygulamaya erişemeyecek.`)
 
+  const togglePermission = (code) => {
+    setPermissionSelected((current) => {
+      const next = new Set(current)
+      if (next.has(code)) next.delete(code); else next.add(code)
+      return next
+    })
+    setPermissionSaveError('')
+  }
+
+  /* Geri alma SUNUCUYA GİTMEZ: son onaylanmış durum zaten elimizde. İstek
+     atmak, aynı veriyi ikinci kez indirmek ve ağ hatasıyla "geri al"ı
+     başarısız kılabilmek olurdu. */
+  const resetPermissions = () => {
+    setPermissionSelected(new Set(permissionBaseline))
+    setPermissionSaveError('')
+  }
+
+  const savePermissions = async () => {
+    if (permissionSaving || !selectedId) return
+    setPermissionSaving(true); setPermissionSaveError('')
+    try {
+      const res = await updateAdminUserPermissions(selectedId, [...permissionSelected])
+      if (!res.ok) {
+        throw new Error(res.status === 403
+          ? 'Bu kullanıcıya seçilen yetkiyi atamak için gerekli yetkiye sahip değilsiniz.'
+          : await readApiError(res, 'Yetkiler kaydedilemedi.'))
+      }
+      /* Sunucunun döndürdüğü durum YENİ temeldir. İsteği kendi seçimimizle
+         "başarılı saymak", sunucunun koruduğu pasif kayıtları ve tazelenmiş
+         kaynak etiketlerini kaçırırdı. */
+      adoptPermissions(await res.json())
+      setNotice({ type: 'success', message: 'Kullanıcıya özel yetkiler güncellendi.' })
+    } catch (err) {
+      /* Başarısız kaydetmede seçim KORUNUR: yönetici 27 satırı yeniden
+         işaretlemek zorunda kalmadan düzeltip tekrar deneyebilsin. */
+      setPermissionSaveError(err.message || 'Yetkiler kaydedilemedi.')
+    } finally { setPermissionSaving(false) }
+  }
+
+  const permissionSection = {
+    data: permissionData,
+    selected: permissionSelected,
+    baseline: permissionBaseline,
+    loading: permissionLoading,
+    error: permissionError,
+    saving: permissionSaving,
+    saveError: permissionSaveError,
+    dirty: !sameSet(permissionBaseline, permissionSelected),
+    onToggle: togglePermission,
+    onReset: resetPermissions,
+    onSave: savePermissions,
+    onRetry: () => loadPermissions(selectedId),
+  }
+
   const emptyMessage = search.trim() ? 'Aramanızla eşleşen kullanıcı bulunamadı.' : roleFilter !== 'All' || statusFilter !== 'All' ? 'Seçili filtrelerle eşleşen kullanıcı bulunamadı.' : 'Henüz kullanıcı bulunmuyor.'
   /* Kabuk artık <main>, kendi başlığını ve haritaya dönüş bağlantısını taşıyor.
      Burada ikinci bir <main> ya da ikinci bir "← Haritaya dön" bırakmak, sayfada
@@ -126,6 +222,6 @@ export default function AdminPage() {
     </section>
     {error && <div className="admin-error" role="alert"><span>{error}</span><button type="button" onClick={loadUsers}>Tekrar dene</button></div>}
     <UserManagementList users={filteredUsers} currentUserId={userId} loading={loading} selectedId={selectedId} onSelect={openDetail} emptyMessage={emptyMessage} />
-    {(selectedId || detailLoading) && <UserDetailPanel user={detail} currentUserId={userId} loading={detailLoading} mutating={mutating} roles={roles} onClose={() => { setSelectedId(null); setDetail(null) }} onChangeRole={changeRole} onChangeStatus={changeStatus} onApprove={approve} onReject={reject} />}
+    {(selectedId || detailLoading) && <UserDetailPanel user={detail} currentUserId={userId} loading={detailLoading} mutating={mutating} roles={roles} permissions={permissionSection} onClose={() => { setSelectedId(null); setDetail(null) }} onChangeRole={changeRole} onChangeStatus={changeStatus} onApprove={approve} onReject={reject} />}
   </div>
 }

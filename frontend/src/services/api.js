@@ -347,6 +347,48 @@ export function updateAdminRolePermissions(id, permissionCodes) {
   })
 }
 
+/**
+ * Bir kullanıcının yetki tablosu: kataloğun TAMAMI, her satırda yetkinin o
+ * kullanıcı için KAYNAĞI (`inheritedFromRoles`, `directAssigned`) ve ETKİSİ
+ * (`effective`).
+ *
+ * Kaynak ile etki ayrı alanlardır ve öyle kalmalıdır: bir satırın var olması
+ * yetkinin işlediği anlamına gelmez — yetki pasifleştirilmiş ya da hesap askıya
+ * alınmış olabilir. Arayüz bu ikisini birleştirirse çalışmayan bir erişimi "var"
+ * gösterir.
+ *
+ * `canAssignDirect` / `canRemoveDirect` / `canManageDirectPermissions` de
+ * sunucudan gelir. İstemci "bu kullanıcı Viewer, o hâlde şunu veremem" gibi bir
+ * çıkarım YAPMAZ; rol adına bakan bir kural, sunucudaki yetki verisi
+ * değiştiğinde sessizce yanlışa düşerdi.
+ *
+ * Yalnızca kullanıcı detayı açıldığında çağrılır — liste kullanıcı başına yetki
+ * okumaz.
+ */
+export function fetchAdminUserPermissions(userId) {
+  return authFetch(`/api/admin/users/${userId}/permissions`)
+}
+
+/**
+ * Kullanıcının DOĞRUDAN yetkilerini gönderilen kümeye eşitler.
+ *
+ * Gövde farkı değil HEDEF durumu taşır (`{ permissionCodes }`); ekleme ve
+ * kaldırmayı sunucu hesaplar. Küme yalnızca AKTİF ve DOĞRUDAN atamaları
+ * kapsar:
+ *
+ * - rolden gelen kodlar GÖNDERİLMEZ — sunucu onları reddeder (400), çünkü
+ *   ikinci bir satır hiçbir erişim eklemez ama rol değiştiğinde arkada kalırdı;
+ * - pasif kodlar GÖNDERİLMEZ — sunucu yeni atamayı reddeder ama mevcut tarihsel
+ *   bağı isteğe bakmadan korur.
+ */
+export function updateAdminUserPermissions(userId, permissionCodes) {
+  return authFetch(`/api/admin/users/${userId}/permissions`, {
+    method: 'PUT',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ permissionCodes }),
+  })
+}
+
 /* --- Drawings ---------------------------------------------------------------
    All calls go through authFetch, so the Bearer token, the 401 handler and the
    automatic logout keep working exactly as they do for /api/auth/me. The WKT

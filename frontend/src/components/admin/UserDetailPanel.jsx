@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { accountStatusBadge, isPendingApproval, mfaLabel } from './userStatus.js'
+import UserPermissionEditor from './UserPermissionEditor.jsx'
 
 const formatDate = (value) => new Intl.DateTimeFormat('tr-TR', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
 
@@ -43,18 +44,28 @@ function ApprovalSection({ user, roles, selectedRole, onSelectRole, mutating, on
   </section>
 }
 
-export default function UserDetailPanel({ user, currentUserId, loading, mutating, roles, onClose, onChangeRole, onChangeStatus, onApprove, onReject }) {
+export default function UserDetailPanel({ user, currentUserId, loading, mutating, roles, permissions, onClose, onChangeRole, onChangeStatus, onApprove, onReject }) {
   const [confirm, setConfirm] = useState(null)
   const [selectedRole, setSelectedRole] = useState('')
-  useEffect(() => { const fn = (e) => { if (e.key === 'Escape' && !confirm) onClose() }; document.addEventListener('keydown', fn); return () => document.removeEventListener('keydown', fn) }, [confirm, onClose])
+  const [tab, setTab] = useState('general')
+  /* Kaydedilmemiş yetki değişikliği varken paneli kapatmak veya rolü
+     değiştirmek, kullanıcının işaretlediklerini sessizce çöpe atardı. Rol
+     değişikliği ayrıca KALITIMI değiştirir: kaydedilmemiş seçim, artık geçerli
+     olmayan bir kaynak tablosunun üzerine yazılırdı. */
+  const permissionsDirty = permissions?.dirty === true
+  const guard = (run) => permissionsDirty
+    ? setConfirm({ kind: 'discard', run, title: 'Kaydedilmemiş yetki değişiklikleri var', copy: 'Bu kullanıcı için işaretlediğiniz doğrudan yetkiler henüz kaydedilmedi. Devam ederseniz değişiklikler kaybolur.', action: 'Değişiklikleri Yoksay', danger: true })
+    : run()
+  const requestClose = () => guard(onClose)
+  useEffect(() => { const fn = (e) => { if (e.key === 'Escape' && !confirm) requestClose() }; document.addEventListener('keydown', fn); return () => document.removeEventListener('keydown', fn) })
   // A fresh account starts with no pre-selected role on purpose: choosing one
   // is the administrator's decision, not a default they have to notice.
-  useEffect(() => { setSelectedRole('') }, [user?.id])
+  useEffect(() => { setSelectedRole(''); setTab('general') }, [user?.id])
   /* Onay metni rolün ADINDAN değil, sunucunun o rol için verdiği açıklamadan
      kurulur. "Admin ise şu, değilse User" dallanması dinamik rollerde yanlış
      cümleler üretiyordu: GIS Editor yapılan biri için "yönetici yetkilerini
      kaybedecek" denmesi gibi. */
-  const requestRole = (role) => {
+  const requestRole = (role) => guard(() => {
     const target = roles.find((r) => r.name === role)
     const parts = [target?.description ?? `Kullanıcının rolü ${role} olarak değiştirilecek.`]
     if (target?.requiresTwoFactor && !user.twoFactorEnabled) {
@@ -64,14 +75,22 @@ export default function UserDetailPanel({ user, currentUserId, loading, mutating
       parts.push('Kendi hesabınızı değiştiriyorsunuz; mevcut oturum kısa süre eski yetkileri taşıyabilir.')
     }
     setConfirm({ kind: 'role', value: role, title: `${user.username} kullanıcısının rolü ${role} olsun mu?`, copy: parts.join(' '), action: 'Rolü Değiştir' })
-  }
+  })
   const requestStatus = (active) => setConfirm({ kind: 'status', value: active, title: `${user.username} hesabı ${active ? 'aktifleştirilsin' : 'pasifleştirilsin'} mi?`, copy: active ? 'Rol, e-posta doğrulaması, 2FA ve çizim sahipliği değişmeden hesap yeniden giriş yapabilir.' : `Kullanıcı yeni oturum açamayacaktır. Mevcut çizimleri silinmeyecek ve haritada kalacaktır.${user.id === currentUserId ? ' Kendi hesabınızı pasifleştiriyorsunuz.' : ''}`, action: active ? 'Hesabı Aktifleştir' : 'Hesabı Pasifleştir', danger: !active })
   const requestApproval = () => setConfirm({ kind: 'approve', value: selectedRole, title: `${user.username} onaylansın mı?`, copy: `Hesap ${selectedRole} rolüyle aktifleştirilecek ve kullanıcıya giriş yapabileceğini bildiren bir e-posta gönderilecek.`, action: 'Onayla ve Aktifleştir' })
   const requestRejection = () => setConfirm({ kind: 'reject', title: `${user.username} başvurusu reddedilsin mi?`, copy: 'Kullanıcı uygulamaya erişemeyecek ve rol atanmayacak. Başvurusunun onaylanmadığı kendisine e-postayla bildirilecek.', action: 'Başvuruyu Reddet', danger: true, withReason: true })
-  const submit = async (reason) => { const next = confirm; if (next.kind === 'role') await onChangeRole(next.value); else if (next.kind === 'status') await onChangeStatus(next.value); else if (next.kind === 'approve') await onApprove(next.value); else await onReject(reason); setConfirm(null) }
+  const submit = async (reason) => { const next = confirm; setConfirm(null); if (next.kind === 'discard') { permissions?.onReset(); next.run(); return } if (next.kind === 'role') await onChangeRole(next.value); else if (next.kind === 'status') await onChangeStatus(next.value); else if (next.kind === 'approve') await onApprove(next.value); else await onReject(reason) }
   const status = user ? accountStatusBadge(user) : null
   const pending = isPendingApproval(user)
-  return <><div className="admin-panel-scrim" onMouseDown={onClose} aria-hidden="true" /><aside className="admin-detail-panel" role="dialog" aria-modal="true" aria-labelledby="admin-detail-title"><button type="button" className="admin-panel-close" onClick={onClose} aria-label="Detayı kapat">×</button>{loading || !user ? <div className="admin-detail-loading">Kullanıcı detayı yükleniyor…</div> : <><header><span className="admin-avatar" aria-hidden="true">{user.username.slice(0, 1).toUpperCase()}</span><div><h2 id="admin-detail-title">{user.username}</h2><span className={`admin-badge ${status.tone}`}>{status.label}</span>{user.id === currentUserId && <span className="admin-badge info">Siz</span>}</div></header><dl className="admin-detail-grid"><div><dt>Kullanıcı adı</dt><dd>{user.username}</dd></div><div><dt>E-posta</dt><dd>{user.email || '—'}</dd></div><div><dt>E-posta durumu</dt><dd>{user.emailConfirmed ? 'Doğrulandı' : 'Doğrulanmadı'}</dd></div><div><dt>Hesap durumu</dt><dd>{status.label}</dd></div><div><dt>Rol</dt><dd>{user.role || 'Atanmamış'}</dd></div><div><dt>İki Faktörlü Doğrulama</dt><dd>{mfaLabel(user)}</dd></div>{user.approvedAt && <div><dt>Onay</dt><dd>{formatDate(user.approvedAt)}{user.approvedByUsername ? ` — ${user.approvedByUsername}` : ''}</dd></div>}{user.rejectedAt && <div><dt>Red</dt><dd>{formatDate(user.rejectedAt)}{user.rejectedByUsername ? ` — ${user.rejectedByUsername}` : ''}{user.rejectionReason ? ` · ${user.rejectionReason}` : ''}</dd></div>}<div><dt>Son güncelleme</dt><dd>{formatDate(user.modifiedDate)}</dd></div></dl>
+  return <><div className="admin-panel-scrim" onMouseDown={requestClose} aria-hidden="true" /><aside className="admin-detail-panel" role="dialog" aria-modal="true" aria-labelledby="admin-detail-title"><button type="button" className="admin-panel-close" onClick={requestClose} aria-label="Detayı kapat">×</button>{loading || !user ? <div className="admin-detail-loading">Kullanıcı detayı yükleniyor…</div> : <><header><span className="admin-avatar" aria-hidden="true">{user.username.slice(0, 1).toUpperCase()}</span><div><h2 id="admin-detail-title">{user.username}</h2><span className={`admin-badge ${status.tone}`}>{status.label}</span>{user.id === currentUserId && <span className="admin-badge info">Siz</span>}</div></header>{/* İki sekme: detay zaten yoğun, yetki tablosu 27 satır. Altına eklemek
+        panelin en çok kullanılan üst kısmını erişilemez kılardı. */}
+    <div className="admin-detail-tabs" role="tablist" aria-label="Kullanıcı detayı">
+      <button type="button" role="tab" id="admin-tab-general" aria-selected={tab === 'general'} aria-controls="admin-tabpanel-general" className={`admin-detail-tab ${tab === 'general' ? 'is-active' : ''}`} onClick={() => setTab('general')}>Genel</button>
+      <button type="button" role="tab" id="admin-tab-permissions" aria-selected={tab === 'permissions'} aria-controls="admin-tabpanel-permissions" className={`admin-detail-tab ${tab === 'permissions' ? 'is-active' : ''}`} onClick={() => setTab('permissions')}>Yetkiler{permissionsDirty && <span className="admin-tab-dot" aria-label="kaydedilmemiş değişiklik"> •</span>}</button>
+    </div>
+    {tab === 'permissions'
+      ? <div id="admin-tabpanel-permissions" role="tabpanel" aria-labelledby="admin-tab-permissions"><UserPermissionEditor {...permissions} /></div>
+      : <div id="admin-tabpanel-general" role="tabpanel" aria-labelledby="admin-tab-general"><dl className="admin-detail-grid"><div><dt>Kullanıcı adı</dt><dd>{user.username}</dd></div><div><dt>E-posta</dt><dd>{user.email || '—'}</dd></div><div><dt>E-posta durumu</dt><dd>{user.emailConfirmed ? 'Doğrulandı' : 'Doğrulanmadı'}</dd></div><div><dt>Hesap durumu</dt><dd>{status.label}</dd></div><div><dt>Rol</dt><dd>{user.role || 'Atanmamış'}</dd></div><div><dt>İki Faktörlü Doğrulama</dt><dd>{mfaLabel(user)}</dd></div>{user.approvedAt && <div><dt>Onay</dt><dd>{formatDate(user.approvedAt)}{user.approvedByUsername ? ` — ${user.approvedByUsername}` : ''}</dd></div>}{user.rejectedAt && <div><dt>Red</dt><dd>{formatDate(user.rejectedAt)}{user.rejectedByUsername ? ` — ${user.rejectedByUsername}` : ''}{user.rejectionReason ? ` · ${user.rejectionReason}` : ''}</dd></div>}<div><dt>Son güncelleme</dt><dd>{formatDate(user.modifiedDate)}</dd></div></dl>
     {pending
       ? <ApprovalSection user={user} roles={roles} selectedRole={selectedRole} onSelectRole={setSelectedRole} mutating={mutating} onApprove={requestApproval} onReject={requestRejection} />
       : <section className="admin-management"><h3>Yetki ve hesap durumu</h3>
@@ -96,5 +115,5 @@ export default function UserDetailPanel({ user, currentUserId, loading, mutating
                 </select></label><label>Hesap Durumu<select value={user.isActive ? 'active' : 'inactive'} disabled={mutating} onChange={(e) => requestStatus(e.target.value === 'active')}><option value="active">Aktif</option><option value="inactive">Pasif</option></select></label>{user.role === 'Admin' && <p className="admin-policy-note">Sistemde en az bir aktif yönetici bulunmalıdır. Son aktif Admin’in rolü düşürülemez veya hesabı pasifleştirilemez.</p>}</>}
           {user.accountStatus === 'PendingEmailVerification' && <button type="button" className="admin-button danger" disabled={mutating} onClick={requestRejection}>Başvuruyu Reddet</button>}
         </section>}
-    <p className="admin-readonly-note">E-posta doğrulaması ve 2FA durumu yalnızca görüntülenir. Parola ve güvenlik anahtarlarına erişilemez.</p></>}</aside>{confirm && <ConfirmDialog config={confirm} busy={mutating} onCancel={() => setConfirm(null)} onConfirm={submit} />}</>
+    <p className="admin-readonly-note">E-posta doğrulaması ve 2FA durumu yalnızca görüntülenir. Parola ve güvenlik anahtarlarına erişilemez.</p></div>}</>}</aside>{confirm && <ConfirmDialog config={confirm} busy={mutating} onCancel={() => setConfirm(null)} onConfirm={submit} />}</>
 }

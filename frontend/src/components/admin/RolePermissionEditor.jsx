@@ -1,5 +1,6 @@
 import { useId, useMemo } from 'react'
 import { activeCount, assignedInactive, groupByCategory } from './rolePermissions.js'
+import './permissionMatrix.css'
 
 /**
  * Rolün yetki matrisi: okuma ve — sunucu izin veriyorsa — düzenleme.
