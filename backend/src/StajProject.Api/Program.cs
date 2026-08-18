@@ -199,6 +199,14 @@ builder.Services.AddScoped<IDrawingAuthorizationService, DrawingAuthorizationSer
 builder.Services.AddScoped<IDrawingService, DrawingService>();
 builder.Services.AddScoped<ISpatialAnalysisService, SpatialAnalysisService>();
 
+/* Etkin yetki motoru. AppDbContext scoped olduğu ve servis her çağrıda canlı
+   veritabanı durumunu okuduğu için lifetime da scoped'tır.
+
+   Bu fazda hiçbir uç bu servisi ÇAĞIRMAZ; yetkilendirme hâlâ [Authorize],
+   AdminOnly ve AdminMfaRequired ile yapılır. Servis, uç denetimini kuracak
+   sonraki fazın enjekte edeceği bağımsız bir port olarak durur. */
+builder.Services.AddScoped<IEffectivePermissionService, EffectivePermissionService>();
+
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
