@@ -195,6 +195,37 @@
   font-style: italic;
 }
 
+/* --- Rolden gelen satırın kilidi ---------------------------------------------
+   Onay kutusunun yerini alır ve onunla AYNI kutuyu kaplar: hizanın kayması,
+   kilitli satırları listede farklı bir sütunmuş gibi gösterirdi.
+
+   Kilit yalnızca bir vurgudur; anlamın kendisi ("… rolünden", "Etkin" rozeti,
+   ve sr-only metin) her zaman yazıyla da verilir. */
+
+.admin-permissions .admin-permission-mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin: 0.15rem 0 0;
+  color: var(--primary-light);
+}
+
+/* Rolden gelen satır soluk DEĞİLDİR: yetki gerçekten işliyor. Kullanımdan
+   kaldırılmış bir satırla aynı görünmesi, tam da düzeltmeye çalıştığımız
+   yanlış okumayı üretirdi. */
+.admin-permissions .admin-permission-row.is-inherited {
+  opacity: 1;
+}
+
+/* `.is-locked` başlığı söndürür; rolden gelen satırda bu geri alınır. Aksi
+   hâlde işleyen bir yetki, kullanımdan kaldırılmış bir satırla aynı tonda
+   görünür ve düzeltmeye çalıştığımız yanlış okuma geri gelirdi. */
+.admin-permissions .admin-permission-row.is-inherited .admin-permission-text strong {
+  color: var(--text-primary);
+}
+
 /* --- Detay sekmeleri ---------------------------------------------------------
    Kullanıcı detayı zaten yoğun; yetki tablosu 27 satır. İkisini alt alta
    koymak, panelin en çok kullanılan üst kısmını uzun bir kaydırmanın arkasına

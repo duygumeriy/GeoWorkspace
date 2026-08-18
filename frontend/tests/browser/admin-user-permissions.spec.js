@@ -165,15 +165,20 @@ test('a role-inherited permission names its source and cannot be assigned direct
 
   await expect(row(page, 'Nokta Ekleme')).toContainText('GIS Editor rolünden')
 
-  /* Kutu DOĞRUDAN atamayı temsil eder, "sahip mi"yi değil: bu satırda kişiye
-     özel kayıt yok. Yetkinin işlediği bilgisi "Etkin" rozetinden okunur. */
-  await expect(box(page, 'Nokta Ekleme')).not.toBeChecked()
-  await expect(box(page, 'Nokta Ekleme')).toBeDisabled()
+  /* Kutu HİÇ ÇİZİLMEZ. Boş bir onay kutusu, yetki gerçekten işlerken "kapalı"
+     diye okunurdu: kutu doğrudan atamayı anlatır, kullanıcı ise onu "bu yetki
+     var mı" diye okur. Kaydı olmayan bir satırda kapatılabilir bir kutu zaten
+     yanlış bir vaattir. */
+  await expect(box(page, 'Nokta Ekleme')).toHaveCount(0)
+  await expect(row(page, 'Nokta Ekleme')).toHaveClass(/is-inherited/)
+
+  // Yetkinin İŞLEDİĞİ bilgisi kaybolmaz.
   await expect(row(page, 'Nokta Ekleme')).toContainText('Etkin')
 
-  /* Kilidin sebebi YAZILIR: devre dışı bir kutunun solukluğu tek başına
-     "neden tıklayamıyorum" sorusunu cevaplamaz. */
-  await expect(row(page, 'Nokta Ekleme')).toContainText('Rolden geldiği için ayrıca atanamaz')
+  /* Kilidin sebebi YAZILIR ve ekran okuyucuya da ulaşır: simge tek başına
+     bırakılmaz. */
+  await expect(row(page, 'Nokta Ekleme')).toContainText('Bu yetki rol tarafından sağlanıyor')
+  await expect(row(page, 'Nokta Ekleme')).toContainText('Rolden geliyor, salt okunur.')
 })
 
 test('a permission inherited from several roles lists them all', async ({ page }) => {
@@ -242,6 +247,66 @@ test('the historical overlap shows both sources at once', async ({ page }) => {
   await expect(box(page, 'Çizgi Ekleme')).toBeEnabled()
 })
 
+test('the three states are visually distinct from one another', async ({ page }) => {
+  await openPermissions(page)
+
+  /* Asıl karışıklık buradaydı: rolden gelen bir yetki "Etkin" derken yanında
+     boş bir kutu duruyordu ve bu "kapalı" diye okunuyordu. Üç durum artık
+     birbirine benzemiyor. */
+
+  // Rolden gelen: kutu yok, kilit var, etkin.
+  await expect(box(page, 'Nokta Ekleme')).toHaveCount(0)
+  await expect(row(page, 'Nokta Ekleme').locator('.admin-permission-mark')).toBeVisible()
+  await expect(row(page, 'Nokta Ekleme')).toContainText('Etkin')
+
+  // Kişiye özel: işaretli ve düzenlenebilir kutu, kilit yok.
+  await expect(box(page, 'Envanter Analizi')).toBeChecked()
+  await expect(box(page, 'Envanter Analizi')).toBeEnabled()
+  await expect(row(page, 'Envanter Analizi').locator('.admin-permission-mark')).toHaveCount(0)
+
+  // Atanmamış: boş ve düzenlenebilir kutu — burada boşluk DOĞRU okumadır.
+  await expect(box(page, 'Katman Yönetimi')).not.toBeChecked()
+  await expect(box(page, 'Katman Yönetimi')).toBeEnabled()
+  await expect(row(page, 'Katman Yönetimi')).not.toContainText('Etkin')
+})
+
+test('an inherited row is not dimmed like a retired one', async ({ page }) => {
+  await openPermissions(page)
+
+  /* Rolden gelen satır işleyen bir yetkidir; kullanımdan kaldırılmış bir
+     satırla aynı tonda görünmesi, düzeltilen yanlış okumayı geri getirirdi. */
+  const inherited = row(page, 'Nokta Ekleme').locator('strong').first()
+  const retired = row(page, 'Eski Dışa Aktarma').locator('strong').first()
+
+  const colourOf = (locator) => locator.evaluate((el) => getComputedStyle(el).color)
+  expect(await colourOf(inherited)).not.toBe(await colourOf(retired))
+})
+
+test('an overlapping row keeps its checkbox so the direct copy can be removed', async ({ page }) => {
+  await openPermissions(page)
+
+  /* Çakışan satır kilit muamelesi ALMAZ: orada kaldırılacak gerçek bir kayıt
+     vardır ve kilit onu erişilemez kılardı. */
+  await expect(row(page, 'Çizgi Ekleme')).not.toHaveClass(/is-inherited/)
+  await expect(box(page, 'Çizgi Ekleme')).toBeEnabled()
+  await expect(row(page, 'Çizgi Ekleme')).toContainText('GIS Editor + Saha Ekibi rolünden')
+  await expect(row(page, 'Çizgi Ekleme')).toContainText('Kullanıcıya özel kayıt mevcut')
+})
+
+test('an inherited permission that is inactive still says so', async ({ page }) => {
+  await openPermissions(page, {
+    body: payload({
+      permissions: PERMISSIONS.map((p) =>
+        p.code === 'map.view' ? { ...p, isActive: false, effective: false } : p),
+    }),
+  })
+
+  // Kilit "etkin" demez; etkinliği yalnızca rozet söyler.
+  await expect(row(page, 'Harita Görüntüleme')).toContainText('Pasif')
+  await expect(row(page, 'Harita Görüntüleme')).not.toContainText('Etkin')
+  await expect(box(page, 'Harita Görüntüleme')).toHaveCount(0)
+})
+
 /* --- Sunucu kaynaklı kabiliyet ---------------------------------------------- */
 
 test('grantability comes from the server, not from role names', async ({ page }) => {
@@ -274,9 +339,16 @@ test('a view-only actor gets a read-only screen', async ({ page }) => {
   await expect(saveButton(page)).toHaveCount(0)
   await expect(page.getByText('değiştirmek için kullanıcı düzenleme', { exact: false })).toBeVisible()
 
-  // Hiçbir kutu yanıltıcı biçimde etkin bırakılmaz.
+  /* Hiçbir kutu yanıltıcı biçimde etkin bırakılmaz. Rolden gelen satırlarda
+     kutu zaten yoktur; kalanların hepsi devre dışıdır. */
   for (const item of PERMISSIONS) {
-    await expect(box(page, item.name)).toBeDisabled()
+    const inheritedOnly = item.inheritedFromRoles.length > 0 && !item.directAssigned
+    if (inheritedOnly) {
+      await expect(box(page, item.name)).toHaveCount(0)
+      await expect(row(page, item.name)).toHaveClass(/is-inherited/)
+    } else {
+      await expect(box(page, item.name)).toBeDisabled()
+    }
   }
 })
 
@@ -335,8 +407,8 @@ test('the save sends the desired ACTIVE DIRECT set and nothing else', async ({ p
 test('an inherited permission is never sent as a new direct grant', async ({ page }) => {
   const { saves } = await openPermissions(page)
 
-  // Kilitli satır tıklamayla değiştirilemez.
-  await expect(box(page, 'Nokta Ekleme')).toBeDisabled()
+  // Değiştirilecek bir kontrol yok: satırda onay kutusu hiç çizilmiyor.
+  await expect(box(page, 'Nokta Ekleme')).toHaveCount(0)
 
   await box(page, 'Katman Yönetimi').check()
   await saveButton(page).click()

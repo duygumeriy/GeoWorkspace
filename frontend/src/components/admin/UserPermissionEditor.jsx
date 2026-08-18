@@ -1,4 +1,5 @@
 import { useId, useMemo } from 'react'
+import LockIcon from '../ui/icons/LockIcon.jsx'
 import { groupByCategory, isToggleable, preservedInactiveDirect, sourceNotes } from './userPermissions.js'
 import './permissionMatrix.css'
 
@@ -151,42 +152,73 @@ export default function UserPermissionEditor({
                 directAssigned: item.isActive ? selected.has(item.code) : item.directAssigned,
               })
 
+              /* Rolden gelen ve kişiye özel kaydı OLMAYAN satırda düzenlenecek
+                 hiçbir şey yoktur. Burada boş bir onay kutusu çizmek, yetki
+                 gerçekten işlerken "kapalı" izlenimi verirdi — kutu doğrudan
+                 atamayı anlatır, kullanıcı ise onu "bu yetki var mı" diye
+                 okur. Form kontrolü yerine kilit konur: kaydı olmayan bir
+                 satır için kapatılabilir bir kutu zaten yanlış bir vaattir.
+
+                 Çakışan satır (hem rolden gelen hem kişiye özel) bu muameleyi
+                 ALMAZ: orada kaldırılacak gerçek bir kayıt vardır. */
+              const lockedByRole = inherited && !item.directAssigned
+
+              const body = (
+                <span className="admin-permission-text">
+                  <strong>
+                    {item.name}
+                    {!item.isActive && <span className="admin-badge">Pasif</span>}
+                    {item.effective && <span className="admin-badge success">Etkin</span>}
+                  </strong>
+                  {item.description && <span>{item.description}</span>}
+
+                  {/* Kaynak METİNLE anlatılır; bir simgenin ya da devre dışı bir
+                      kutunun rengi tek başına hiçbir şey açıklamaz. */}
+                  {notes.length > 0 && <span className="admin-permission-source">{notes.join(' · ')}</span>}
+                  {notes.length === 0 && item.isActive && <span className="admin-permission-source">Atanmamış</span>}
+
+                  {/* Kilidin SEBEBİ yazılır: "neden tıklayamıyorum" sorusu
+                      ekranda cevaplanmalı, deneme yanılmayla değil. */}
+                  {lockedByRole && (
+                    <span className="admin-permission-lock">
+                      Bu yetki rol tarafından sağlanıyor; doğrudan atama yapılamaz.
+                    </span>
+                  )}
+                  {editable && item.isActive && !toggleable && !inherited && !baseline.has(item.code) && (
+                    <span className="admin-permission-lock">Bu yetkiyi doğrudan atama yetkiniz yok.</span>
+                  )}
+
+                  {/* Teknik kod yöneticiye faydalıdır ama satırın konusu
+                      değildir: küçük, sönük ve en altta. */}
+                  <code>{item.code}</code>
+                </span>
+              )
+
               return (
                 <li key={item.code}>
-                  <label className={`admin-permission-row ${toggleable ? '' : 'is-locked'}`}>
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      disabled={!toggleable}
-                      onChange={() => onToggle(item.code)}
-                    />
-                    <span className="admin-permission-text">
-                      <strong>
-                        {item.name}
-                        {!item.isActive && <span className="admin-badge">Pasif</span>}
-                        {item.effective && <span className="admin-badge success">Etkin</span>}
-                      </strong>
-                      {item.description && <span>{item.description}</span>}
-
-                      {/* Kaynak METİNLE anlatılır; devre dışı bir kutunun rengi
-                          tek başına hiçbir şey açıklamaz. */}
-                      {notes.length > 0 && <span className="admin-permission-source">{notes.join(' · ')}</span>}
-                      {notes.length === 0 && item.isActive && <span className="admin-permission-source">Atanmamış</span>}
-
-                      {/* Kilidin SEBEBİ yazılır: "neden tıklayamıyorum" sorusu
-                          ekranda cevaplanmalı, deneme yanılmayla değil. */}
-                      {editable && item.isActive && !toggleable && inherited && !item.directAssigned && (
-                        <span className="admin-permission-lock">Rolden geldiği için ayrıca atanamaz.</span>
-                      )}
-                      {editable && item.isActive && !toggleable && !inherited && !baseline.has(item.code) && (
-                        <span className="admin-permission-lock">Bu yetkiyi doğrudan atama yetkiniz yok.</span>
-                      )}
-
-                      {/* Teknik kod yöneticiye faydalıdır ama satırın konusu
-                          değildir: küçük, sönük ve en altta. */}
-                      <code>{item.code}</code>
-                    </span>
-                  </label>
+                  {lockedByRole ? (
+                    /* <label> DEĞİL: sarmalayacak bir form kontrolü yok, ve
+                       tıklanabilir görünen bir etiket hiçbir şey yapmazdı. */
+                    <div className="admin-permission-row is-locked is-inherited">
+                      <span className="admin-permission-mark">
+                        <LockIcon size={16} />
+                        {/* Simge tek başına bırakılmaz: ekran okuyucu da kilidi
+                            duymalı. */}
+                        <span className="sr-only">Rolden geliyor, salt okunur.</span>
+                      </span>
+                      {body}
+                    </div>
+                  ) : (
+                    <label className={`admin-permission-row ${toggleable ? '' : 'is-locked'}`}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={!toggleable}
+                        onChange={() => onToggle(item.code)}
+                      />
+                      {body}
+                    </label>
+                  )}
                 </li>
               )
             })}
