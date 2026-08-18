@@ -12,7 +12,10 @@ import ConfirmEmailPage from './pages/ConfirmEmailPage'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
 import MapPage from './pages/MapPage'
+import AdminLayout from './components/admin/AdminLayout.jsx'
 import AdminPage from './pages/AdminPage'
+import RolesPage from './pages/admin/RolesPage.jsx'
+import PermissionsPage from './pages/admin/PermissionsPage.jsx'
 
 function App() {
   // Splash lives above the router entirely, gating what mounts underneath it
@@ -47,19 +50,29 @@ function App() {
                 }
               />
               {/* Admin-only. The guard is navigation convenience; the real
-                  enforcement is the backend's AdminOnly policy (403). */}
+                  enforcement is the backend's MFA + permission policies (403).
+
+                  Nested so the shell (sidebar, header, responsive drawer)
+                  mounts ONCE and the child routes only swap the content. Flat
+                  routes would remount the whole panel on every navigation and
+                  invite each page to grow its own copy of the sidebar. */}
               <Route
                 path="/admin"
-                element={<Navigate to="/admin/users" replace />}
-              />
-              <Route
-                path="/admin/users"
                 element={
                   <AdminRoute>
-                    <AdminPage />
+                    <AdminLayout />
                   </AdminRoute>
                 }
-              />
+              >
+                {/* Phase 5A'da panelin gerçek ekranı Kullanıcılar'dır; /admin
+                    onu açar. Ayrı bir dashboard yok — olmayan metrikleri
+                    gösteren bir karşılama ekranı eklemek yerine, panel doğrudan
+                    işe yarayan sayfayla açılır. */}
+                <Route index element={<Navigate to="/admin/users" replace />} />
+                <Route path="users" element={<AdminPage />} />
+                <Route path="roles" element={<RolesPage />} />
+                <Route path="permissions" element={<PermissionsPage />} />
+              </Route>
               <Route path="/" element={<Navigate to="/map" replace />} />
               <Route path="*" element={<Navigate to="/login" replace />} />
             </Routes>
