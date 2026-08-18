@@ -293,6 +293,40 @@ export function deleteAdminRole(id) {
   return authFetch(`/api/admin/roles/${id}`, { method: 'DELETE' })
 }
 
+/**
+ * Rolün yetki matrisi: kataloğun TAMAMI, her satırda `assigned` bayrağıyla,
+ * ayrıca rolün güncel hâli (liste satırıyla aynı şekil, sayımlar dâhil).
+ *
+ * Tek istek yeter, iki değil: yanıt katalog alanlarını (code, name,
+ * description, category, sortOrder, isActive) zaten taşır, dolayısıyla yanına
+ * `GET /api/admin/permissions` eklemek aynı satırları ikinci kez indirmek
+ * olurdu. Yalnızca rol detayı açıldığında çağrılır — liste rol başına yetki
+ * okumaz.
+ */
+export function fetchAdminRolePermissions(id) {
+  return authFetch(`/api/admin/roles/${id}/permissions`)
+}
+
+/**
+ * Rolün AKTİF yetki kümesini gönderilen kümeye eşitler.
+ *
+ * Gövde farkı değil, HEDEF durumu taşır (`{ permissionCodes }`); ekleme ve
+ * kaldırmayı sunucu tek transaction içinde hesaplar. Kimlik olarak kod
+ * kullanılır, satır Id'si değil: kodlar kanonik, Id'ler kuruluma özgüdür.
+ *
+ * Pasif yetkiler bilinçli olarak GÖNDERİLMEZ. Sunucu pasif bir kodu doğrudan
+ * reddeder (400), buna karşılık rolün mevcut pasif bağlarını isteğe bakmadan
+ * KORUR — istek yalnızca aktif kümeyi tanımlar. Bu yüzden onları listeye
+ * eklemek, her kaydetmeyi 400'e çevirmekten başka bir şey yapmazdı.
+ */
+export function updateAdminRolePermissions(id, permissionCodes) {
+  return authFetch(`/api/admin/roles/${id}/permissions`, {
+    method: 'PUT',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ permissionCodes }),
+  })
+}
+
 /* --- Drawings ---------------------------------------------------------------
    All calls go through authFetch, so the Bearer token, the 401 handler and the
    automatic logout keep working exactly as they do for /api/auth/me. The WKT
