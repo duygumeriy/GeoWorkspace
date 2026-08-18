@@ -370,10 +370,28 @@ public class ActorAwareAssignableRoleTests
         var roleName = $"Role-{userName}";
         var role = (await Roles(scope).CreateRoleAsync(new CreateRoleRequest { Name = roleName })).Value!;
 
-        await Roles(scope).ReplaceRolePermissionsAsync(
-            role.Id, new UpdateRolePermissionsRequest { PermissionCodes = [.. codes] });
+        /* Kurgu doğrudan veritabanına yazılır: ReplaceRolePermissionsAsync
+           artık grant-authority bariyeri uygular ve kurulmakta olan ZAYIF
+           aktörün kendi rolünü donatması o bariyere takılırdı. Buranın konusu
+           atanabilir rol keşfidir. */
+        await SeedRolePermissionsAsync(scope, role.Id, codes);
 
         return await CreateUserAsync(scope, userName, roleName);
+    }
+
+    private static async Task SeedRolePermissionsAsync(AsyncServiceScope scope, int roleId, string[] codes)
+    {
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var ids = await db.Permissions
+            .Where(p => codes.Contains(p.Code))
+            .Select(p => p.Id)
+            .ToListAsync();
+
+        Assert.Equal(codes.Distinct().Count(), ids.Count);
+
+        db.RolePermissions.AddRange(ids.Select(id => new RolePermission { RoleId = roleId, PermissionId = id }));
+        await db.SaveChangesAsync();
     }
 
     private static async Task<User> CreateUserAsync(AsyncServiceScope scope, string userName, string role)

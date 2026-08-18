@@ -357,8 +357,31 @@ public class RoleAssignmentEscalationTests
     private static IEffectivePermissionService Effective(AsyncServiceScope scope) =>
         scope.ServiceProvider.GetRequiredService<IEffectivePermissionService>();
 
-    private static Task ReplaceAsync(AsyncServiceScope scope, int roleId, params string[] codes) =>
-        Roles(scope).ReplaceRolePermissionsAsync(roleId, new UpdateRolePermissionsRequest { PermissionCodes = [.. codes] });
+    /// <summary>
+    /// Rol yetkisi kurgusu doğrudan veritabanına yazılır.
+    /// </summary>
+    /// <remarks>
+    /// Bilinçli olarak <c>ReplaceRolePermissionsAsync</c> KULLANILMAZ: o uç
+    /// artık "yeni eklenenler ⊆ çağıranın yetkileri" bariyerini uygular ve
+    /// kurgu adımı, kurmaya çalıştığı zayıf aktörün yetkisizliğine takılırdı.
+    /// Bu dosyanın konusu ROL ATAMA otoritesidir; yetki düzenleme otoritesi
+    /// <c>RolePermissionGrantAuthorityTests</c> içinde sınanır.
+    /// </remarks>
+    private static async Task ReplaceAsync(AsyncServiceScope scope, int roleId, params string[] codes)
+    {
+        var db = Db(scope);
+
+        var ids = await db.Permissions
+            .Where(p => codes.Contains(p.Code))
+            .Select(p => p.Id)
+            .ToListAsync();
+
+        Assert.Equal(codes.Distinct().Count(), ids.Count);
+
+        db.RolePermissions.RemoveRange(await db.RolePermissions.Where(rp => rp.RoleId == roleId).ToListAsync());
+        db.RolePermissions.AddRange(ids.Select(id => new RolePermission { RoleId = roleId, PermissionId = id }));
+        await db.SaveChangesAsync();
+    }
 
     /// <summary>Verilen yetkilere sahip özel bir rol ve o roldeki aktif kullanıcı.</summary>
     private static async Task<User> CreateActorAsync(AsyncServiceScope scope, string userName, params string[] codes)

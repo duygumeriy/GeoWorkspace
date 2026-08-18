@@ -227,7 +227,7 @@ public class RoleManagementTests
         var service = Service(scope);
 
         var created = (await service.CreateRoleAsync(new CreateRoleRequest { Name = "Field Surveyor" })).Value!;
-        await service.ReplaceRolePermissionsAsync(created.Id, Codes(PermissionCodes.MapView, PermissionCodes.DrawingsView));
+        await service.ReplaceRolePermissionsAsync(await AuthorityAsync(scope), created.Id, Codes(PermissionCodes.MapView, PermissionCodes.DrawingsView));
 
         var renamed = await service.RenameRoleAsync(created.Id, new UpdateRoleRequest { Name = "Regional Editor" });
 
@@ -285,7 +285,7 @@ public class RoleManagementTests
         var db = Db(scope);
 
         var created = (await service.CreateRoleAsync(new CreateRoleRequest { Name = "Field Surveyor" })).Value!;
-        await service.ReplaceRolePermissionsAsync(created.Id, Codes(PermissionCodes.MapView, PermissionCodes.DrawingsView));
+        await service.ReplaceRolePermissionsAsync(await AuthorityAsync(scope), created.Id, Codes(PermissionCodes.MapView, PermissionCodes.DrawingsView));
 
         Assert.True((await service.DeleteRoleAsync(created.Id)).IsSuccess);
 
@@ -408,6 +408,7 @@ public class RoleManagementTests
         var role = await FindRoleAsync(scope, GisRoles.GisAnalyst);
 
         var result = await service.ReplaceRolePermissionsAsync(
+            await AuthorityAsync(scope),
             role.Id,
             Codes(PermissionCodes.MapView, PermissionCodes.DrawingsView, PermissionCodes.LayersManage));
 
@@ -430,6 +431,7 @@ public class RoleManagementTests
         var created = (await service.CreateRoleAsync(new CreateRoleRequest { Name = "Field Surveyor" })).Value!;
 
         var result = await service.ReplaceRolePermissionsAsync(
+            await AuthorityAsync(scope),
             created.Id,
             Codes(PermissionCodes.MapView, PermissionCodes.DrawingsView, PermissionCodes.DrawingsPointCreate));
 
@@ -445,6 +447,7 @@ public class RoleManagementTests
         var role = await FindRoleAsync(scope, GisRoles.Viewer);
 
         var result = await service.ReplaceRolePermissionsAsync(
+            await AuthorityAsync(scope),
             role.Id,
             Codes(PermissionCodes.MapView, PermissionCodes.MapView, " " + PermissionCodes.MapView + " "));
 
@@ -461,6 +464,7 @@ public class RoleManagementTests
         var role = await FindRoleAsync(scope, GisRoles.Viewer);
 
         var result = await service.ReplaceRolePermissionsAsync(
+            await AuthorityAsync(scope),
             role.Id,
             Codes(PermissionCodes.MapView, "does.not.exist"));
 
@@ -483,6 +487,7 @@ public class RoleManagementTests
         await DeactivateAsync(scope, PermissionCodes.LayersManage);
 
         var result = await service.ReplaceRolePermissionsAsync(
+            await AuthorityAsync(scope),
             role.Id,
             Codes(PermissionCodes.MapView, PermissionCodes.LayersManage));
 
@@ -501,7 +506,7 @@ public class RoleManagementTests
         var role = await FindRoleAsync(scope, roleName);
         var before = await Db(scope).RolePermissions.CountAsync(rp => rp.RoleId == role.Id);
 
-        var result = await Service(scope).ReplaceRolePermissionsAsync(role.Id, Codes(PermissionCodes.MapView));
+        var result = await Service(scope).ReplaceRolePermissionsAsync(await AuthorityAsync(scope), role.Id, Codes(PermissionCodes.MapView));
 
         Assert.False(result.IsSuccess);
         Assert.Equal(ServiceErrorKind.Conflict, result.ErrorKind);
@@ -521,7 +526,7 @@ public class RoleManagementTests
         await DeactivateAsync(scope, PermissionCodes.DrawingsDelete);
 
         // İstek yalnızca AKTİF yetki kümesini tanımlar.
-        Assert.True((await service.ReplaceRolePermissionsAsync(role.Id, Codes(PermissionCodes.MapView))).IsSuccess);
+        Assert.True((await service.ReplaceRolePermissionsAsync(await AuthorityAsync(scope), role.Id, Codes(PermissionCodes.MapView))).IsSuccess);
 
         /* Pasif yetkiye ait bağ korunur: aksi hâlde bir yetki pasifleştirilip
            ilk kaydetme yapıldığında ilişki kalıcı olarak silinir ve yetki
@@ -544,7 +549,7 @@ public class RoleManagementTests
 
         Assert.True(await permissions.HasPermissionAsync(user.Id, PermissionCodes.InventoryAnalysis));
 
-        await Service(scope).ReplaceRolePermissionsAsync(role.Id, Codes(PermissionCodes.MapView));
+        await Service(scope).ReplaceRolePermissionsAsync(await AuthorityAsync(scope), role.Id, Codes(PermissionCodes.MapView));
 
         // Yeniden giriş, token yenilemesi veya restart YOK.
         Assert.False(await permissions.HasPermissionAsync(user.Id, PermissionCodes.InventoryAnalysis));
@@ -561,6 +566,7 @@ public class RoleManagementTests
         Assert.False(await permissions.HasPermissionAsync(user.Id, PermissionCodes.DrawingsPointCreate));
 
         await Service(scope).ReplaceRolePermissionsAsync(
+            await AuthorityAsync(scope),
             role.Id,
             Codes(PermissionCodes.MapView, PermissionCodes.DrawingsPointCreate));
 
@@ -579,6 +585,7 @@ public class RoleManagementTests
         Assert.Empty(await Effective(scope).GetEffectivePermissionCodesAsync(user.Id));
 
         await service.ReplaceRolePermissionsAsync(
+            await AuthorityAsync(scope),
             created.Id,
             Codes(PermissionCodes.MapView, PermissionCodes.DrawingsView, PermissionCodes.DrawingsPointCreate));
 
@@ -596,7 +603,7 @@ public class RoleManagementTests
         await using var scope = await CreateScopeAsync();
         var role = await FindRoleAsync(scope, GisRoles.GisEditor);
 
-        await Service(scope).ReplaceRolePermissionsAsync(role.Id, Codes(PermissionCodes.MapView));
+        await Service(scope).ReplaceRolePermissionsAsync(await AuthorityAsync(scope), role.Id, Codes(PermissionCodes.MapView));
 
         await SeedAsync(scope);
 
@@ -629,6 +636,26 @@ public class RoleManagementTests
 
     private static IEffectivePermissionService Effective(AsyncServiceScope scope) =>
         scope.ServiceProvider.GetRequiredService<IEffectivePermissionService>();
+
+    /// <summary>
+    /// Bu dosyadaki yetki düzenleme testlerinin çağıranı: katalogdaki tüm
+    /// yetkilere sahip bir Administrator.
+    /// </summary>
+    /// <remarks>
+    /// <c>ReplaceRolePermissionsAsync</c> artık <c>yeni eklenenler ⊆ çağıranın
+    /// etkin yetkileri</c> kuralını uygular. Buradaki testlerin konusu o kural
+    /// DEĞİL, fark hesabı ve doğrulama semantiğidir; bu yüzden çağıran bilerek
+    /// tam yetkilidir ve bariyer testlerin konusunu gölgelemez. Bariyerin
+    /// kendisi <c>RolePermissionGrantAuthorityTests</c> içinde sınanır.
+    /// </remarks>
+    private static async Task<int> AuthorityAsync(AsyncServiceScope scope)
+    {
+        const string userName = "permission-authority";
+
+        var existing = await Db(scope).Users.AsNoTracking().SingleOrDefaultAsync(u => u.UserName == userName);
+
+        return existing?.Id ?? (await CreateUserAsync(scope, userName, GisRoles.Administrator)).Id;
+    }
 
     private static async Task<IdentityRole<int>> FindRoleAsync(AsyncServiceScope scope, string name)
     {

@@ -33,11 +33,16 @@ namespace StajProject.Api.Controllers;
 public class AdminRolesController : ApiControllerBase
 {
     private readonly IRoleManagementService _roles;
+    private readonly ICurrentUserService _currentUser;
 
-    public AdminRolesController(IRoleManagementService roles, ILogger<AdminRolesController> logger)
+    public AdminRolesController(
+        IRoleManagementService roles,
+        ICurrentUserService currentUser,
+        ILogger<AdminRolesController> logger)
         : base(logger)
     {
         _roles = roles;
+        _currentUser = currentUser;
     }
 
     /// <summary>
@@ -121,6 +126,12 @@ public class AdminRolesController : ApiControllerBase
     /// Değişiklik anında geçerlidir: yetki denetimi her istekte canlı
     /// veritabanını okur, dolayısıyla yeniden giriş, token yenilemesi veya
     /// sunucu yeniden başlatması GEREKMEZ.
+    /// </para>
+    /// <para>
+    /// Tam da bu canlılık yüzünden servise çağıranın kimliği geçilir: aksi
+    /// hâlde <c>permissions.assign</c> sahibi kendi rolünü genişletip aynı
+    /// oturumda yetkilenebilirdi. Servis <c>yeni eklenenler ⊆ çağıranın etkin
+    /// yetkileri</c> kuralını uygular ve ihlalde 403 döner.
     /// </remarks>
     [RequirePermission(PermissionCodes.RolesUpdate)]
     [RequirePermission(PermissionCodes.PermissionsAssign)]
@@ -131,11 +142,23 @@ public class AdminRolesController : ApiControllerBase
         CancellationToken cancellationToken) =>
         Guard<RolePermissionsResponse>(
             nameof(ReplaceRolePermissions),
-            async () => Respond(await _roles.ReplaceRolePermissionsAsync(id, request, cancellationToken)));
+            async () => Respond(await _roles.ReplaceRolePermissionsAsync(
+                ActingUserId, id, request, cancellationToken)));
 
     /* --- Sonuç eşlemesi --------------------------------------------------------
        İş kuralı sonuçlarının HTTP karşılığı tek yerde tutulur; her action
        kendi eşlemesini yazmaz. */
+
+    /// <summary>
+    /// İşlemi yapan yöneticinin kimliği; daima doğrulanmış token'dan gelir,
+    /// istek gövdesinden veya query'den ASLA okunmaz.
+    /// </summary>
+    /// <remarks>
+    /// Policy sayesinde buraya yalnızca doğrulanmış bir kullanıcı gelebilir,
+    /// dolayısıyla değer pratikte daima mevcuttur. Yine de <c>0</c>'a düşüş
+    /// fail-closed'dır: servis bu kimlikle hiçbir YENİ yetki ekleyemez.
+    /// </remarks>
+    private int ActingUserId => _currentUser.UserId ?? 0;
 
     private ActionResult<TValue> Respond<TValue>(ServiceResult<TValue> result) =>
         result.IsSuccess ? Ok(result.Value!) : Error(result);
@@ -149,6 +172,11 @@ public class AdminRolesController : ApiControllerBase
         {
             ServiceErrorKind.NotFound => NotFound(new { message = result.Error }),
             ServiceErrorKind.Conflict => Conflict(new { message = result.Error }),
+            /* Yetki yükseltme reddi: istek biçimsel olarak geçerli, rol ve
+               yetki kodları da var — eksik olan çağıranın o yetkiyi DAĞITMA
+               otoritesidir. 400 "isteğin bozuk" derdi ve nedeni yanlış
+               anlatırdı; kullanıcı yönetimi ucu da aynı eşlemeyi kullanır. */
+            ServiceErrorKind.Forbidden => StatusCode(StatusCodes.Status403Forbidden, new { message = result.Error }),
             _ => BadRequest(new { message = result.Error })
         };
 }
