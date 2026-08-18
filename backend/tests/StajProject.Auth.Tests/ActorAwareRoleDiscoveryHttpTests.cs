@@ -314,8 +314,21 @@ public class ActorAwareRoleDiscoveryHttpTests
 
             var role = (await roles.CreateRoleAsync(new CreateRoleRequest { Name = $"Role-{userName}" })).Value!;
 
-            await roles.ReplaceRolePermissionsAsync(
-                role.Id, new UpdateRolePermissionsRequest { PermissionCodes = [.. codes] });
+            /* Kurgu doğrudan veritabanına yazılır: ReplaceRolePermissionsAsync
+               artık "yeni eklenenler ⊆ çağıranın yetkileri" bariyerini uygular
+               ve kurulmakta olan zayıf aktörün rolünü donatmak o bariyere
+               takılırdı. Bu dosyanın konusu HTTP rol keşfidir. */
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+            var ids = await db.Permissions
+                .Where(p => codes.Contains(p.Code))
+                .Select(p => p.Id)
+                .ToListAsync();
+
+            Assert.Equal(codes.Distinct().Count(), ids.Count);
+
+            db.RolePermissions.AddRange(ids.Select(id => new RolePermission { RoleId = role.Id, PermissionId = id }));
+            await db.SaveChangesAsync();
 
             return await CreateUserAsync(userName, role.Name);
         }

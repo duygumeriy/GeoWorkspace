@@ -281,6 +281,7 @@ public class RoleManagementService : IRoleManagementService
     /* --- Yetki atama -------------------------------------------------------------- */
 
     public async Task<ServiceResult<RolePermissionsResponse>> ReplaceRolePermissionsAsync(
+        int actingUserId,
         int roleId,
         UpdateRolePermissionsRequest request,
         CancellationToken cancellationToken = default)
@@ -358,6 +359,67 @@ public class RoleManagementService : IRoleManagementService
             .Where(id => !currentIds.Contains(id))
             .Select(id => new RolePermission { RoleId = role.Id, PermissionId = id })
             .ToArray();
+
+        /* --- Yetki yükseltme bariyeri ---------------------------------------
+           Uçtaki roles.update + permissions.assign yalnızca "rol yetkisi
+           düzenleyebilirsin" der. Sahip OLMADIĞI bir yetkiyi dağıtabilmek ayrı
+           bir sorudur ve cevabı hayırdır: aksi hâlde çağıran kendi rolüne
+           istediğini ekleyip anında yetkilenirdi (yetkilendirme canlı okunur,
+           yeniden giriş bile gerekmez).
+
+           Kural YALNIZCA yeni eklenenlere uygulanır. "İstenen küme ⊆ çağıran"
+           denseydi, kendisinden güçlü bir rolü olduğu gibi kaydetmek — hatta o
+           rolden yetki ÇIKARMAK — imkânsız hâle gelir, ayrıcalık azaltan bir
+           işlem ayrıcalık gerektirirdi.
+
+           Kontrol SaveChanges'ten önce yapılır: istek ya bütünüyle uygulanır ya
+           da hiç uygulanmaz. Bir kısmı yetkili eklemelerden oluşan bir istek
+           "yetkili olan kadarını" yazmaz. */
+        if (toAdd.Length > 0 || toRemove.Length > 0)
+        {
+            var addedCodes = requested.Where(code => !currentIds.Contains(byCode[code].Id)).ToArray();
+
+            // Otorite tek sefer, canlı veritabanından çözülür (rol ∪ doğrudan yetkiler).
+            var authority = await LoadGrantAuthorityAsync(actingUserId, cancellationToken);
+
+            /* Kimliği çözülemeyen çağıran hiçbir şey YAZAMAZ — ekleme de,
+               kaldırma da. Kaldırma ayrıcalık yükseltmez ama bir rolü boşaltmak
+               yıkıcı bir işlemdir; "kim olduğunu bilmiyorum" bunun için yeterli
+               bir yetki değildir. CanGrant boş kümede bile false döndüğü için
+               kural tek ifadede toplanır, ama ayrım logda görünür kalsın diye
+               mesajlar ayrılır. */
+            if (!authority.IsUsable)
+            {
+                _logger.LogWarning(
+                    "Rol yetkisi güncellemesi reddedildi: çağıran kimliği çözülemedi (ActingUserId={ActingUserId}), " +
+                    "hedef rol={Role} (RoleId={RoleId})",
+                    actingUserId,
+                    role.Name,
+                    role.Id);
+
+                return ServiceResult<RolePermissionsResponse>.Forbidden(
+                    "Rol yetkilerini düzenlemek için oturumunuz doğrulanamadı.");
+            }
+
+            if (!authority.CanGrant(addedCodes))
+            {
+                _logger.LogWarning(
+                    "Rol yetkisi yükseltme girişimi reddedildi: acting UserId={ActingUserId} hedef rol={Role} " +
+                    "(RoleId={RoleId}) eksik yetki sayısı={Missing}",
+                    actingUserId,
+                    role.Name,
+                    role.Id,
+                    authority.MissingFor(addedCodes).Count);
+
+                /* Hangi yetkilerin eksik olduğu YAZILMAZ. Mesaj, çağıranın
+                   kendi yetki kümesini uç üzerinden haritalamasına yarayacak
+                   bir kâşif aracına dönüşmemelidir; rol atama reddi de aynı
+                   dili kullanır. */
+                return ServiceResult<RolePermissionsResponse>.Forbidden(
+                    $"'{role.Name}' rolüne seçilen yetkileri eklemek için yeterli yetkiye sahip değilsiniz. " +
+                    "Bir role yalnızca kendi sahip olduğunuz yetkileri ekleyebilirsiniz.");
+            }
+        }
 
         if (toRemove.Length > 0 || toAdd.Length > 0)
         {

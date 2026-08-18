@@ -53,7 +53,31 @@ public interface IRoleManagementService
     /// <summary>
     /// Rolün yetkilerini istenen kümeye eşitler (ekleme + kaldırma farkı).
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Bu uç yetki yükseltmeye kapalıdır.</b> Uçtaki <c>roles.update</c> +
+    /// <c>permissions.assign</c> "rol yetkisi düzenleyebilirsin" der; "hangi
+    /// yetkiyi dağıtabilirsin" sorusunu cevaplamaz. Cevaplamasaydı, bu iki
+    /// yetkiye sahip biri kendi rolüne <c>users.delete</c> ekleyip anında tüm
+    /// sisteme erişebilirdi. Bu yüzden servis çağıranın kimliğini bilmek
+    /// ZORUNDADIR ve kural şudur:
+    /// </para>
+    /// <para>
+    /// <c>yeni eklenenler ⊆ çağıranın etkin yetkileri</c>
+    /// </para>
+    /// <para>
+    /// Kural yalnızca EKLEMELERE uygulanır. Rolde zaten bulunan bir yetki yeni
+    /// bir bağış değildir; kaldırma ise ayrıcalığı azaltır. Aksi hâlde
+    /// (<c>istenen küme ⊆ çağıran</c>) bir yönetici, kendisinden güçlü bir rolü
+    /// hiç kaydedemez — hatta o rolden yetki çıkaramaz — hâle gelirdi.
+    /// </para>
+    /// </remarks>
+    /// <param name="actingUserId">
+    /// Doğrulanmış çağıranın kimliği. İstek gövdesinden/query'den ASLA
+    /// okunmaz; çözülemezse (<c>0</c> veya negatif) hiçbir ekleme yapılamaz.
+    /// </param>
     Task<ServiceResult<RolePermissionsResponse>> ReplaceRolePermissionsAsync(
+        int actingUserId,
         int roleId,
         UpdateRolePermissionsRequest request,
         CancellationToken cancellationToken = default);

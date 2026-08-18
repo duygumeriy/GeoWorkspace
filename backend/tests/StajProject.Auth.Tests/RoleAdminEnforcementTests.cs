@@ -206,7 +206,8 @@ public class RoleAdminEnforcementTests
             .Returns(ServiceResult<bool>.Success(true));
         roles.GetRolePermissionsAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(ServiceResult<RolePermissionsResponse>.Success(new RolePermissionsResponse()));
-        roles.ReplaceRolePermissionsAsync(Arg.Any<int>(), Arg.Any<UpdateRolePermissionsRequest>(), Arg.Any<CancellationToken>())
+        roles.ReplaceRolePermissionsAsync(
+            Arg.Any<int>(), Arg.Any<int>(), Arg.Any<UpdateRolePermissionsRequest>(), Arg.Any<CancellationToken>())
             .Returns(ServiceResult<RolePermissionsResponse>.Success(new RolePermissionsResponse()));
 
         var databaseName = $"role-admin-http-{Guid.NewGuid():N}";
