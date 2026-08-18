@@ -207,6 +207,17 @@ builder.Services.AddScoped<ISpatialAnalysisService, SpatialAnalysisService>();
    sonraki fazın enjekte edeceği bağımsız bir port olarak durur. */
 builder.Services.AddScoped<IEffectivePermissionService, EffectivePermissionService>();
 
+/* Yetki tabanlı authorization. Policy sağlayıcı singleton'dır (ASP.NET Core
+   onu bir kez çözer) ve yalnızca "Permission:" ön ekini tanır; AdminOnly,
+   AdminMfaRequired ve MfaRequired varsayılan sağlayıcıya düşerek çalışmaya
+   devam eder.
+
+   Handler SCOPED'tır: kararı, scoped AppDbContext üzerinden okuyan
+   IEffectivePermissionService'e devreder. Her istek canlı veritabanı
+   durumunu görür — yetki değişikliği ve hesap askıya alma anında etkilidir. */
+builder.Services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
+builder.Services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
+
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -251,6 +262,20 @@ builder.Services.AddAuthorization(options =>
     {
         policy.RequireAuthenticatedUser();
         policy.RequireRole(ApplicationRoles.Admin);
+        policy.RequireAssertion(context => AuthenticationMethods.IsMultiFactor(context.User));
+    });
+
+    /* Yalnızca ikinci faktör kanıtı; rol şartı YOK. AdminMfaRequired ile
+       BİREBİR aynı kanıta bakar (AuthenticationMethods.IsMultiFactor) —
+       MFA şartı gevşetilmez, yalnızca rol adı bağı kaldırılır.
+
+       Yönetim uçları bunu "gerekli yetki" ile birlikte kullanır. Böylece
+       erişim, rol adının Admin olmasına değil, kullanıcının gerçekten o
+       yetkiye sahip olmasına bağlanır; 27 yetkiye sahip bir Administrator
+       da geçebilir. AdminMfaRequired geriye dönük uyumluluk için KORUNUR. */
+    options.AddPolicy(AuthorizationPolicies.MfaRequired, policy =>
+    {
+        policy.RequireAuthenticatedUser();
         policy.RequireAssertion(context => AuthenticationMethods.IsMultiFactor(context.User));
     });
 });
