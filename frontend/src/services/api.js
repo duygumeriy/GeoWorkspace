@@ -293,6 +293,26 @@ export function deleteAdminRole(id) {
   return authFetch(`/api/admin/roles/${id}`, { method: 'DELETE' })
 }
 
+/* --- Admin: yetki kataloğu ---------------------------------------------------
+   MFA + `permissions.view` ister. Katalog SALT OKUNURDUR: sunucuda create /
+   update / delete ucu yoktur, çünkü bir yetki kodda karşılığı olan bir
+   yeteneği temsil eder ve çalışma zamanında icat edilemez. */
+
+/**
+ * Kanonik yetki kataloğu: `{ id, code, name, description, category, isActive,
+ * sortOrder }` satırları.
+ *
+ * Kullanımdan kaldırılmış yetkiler de DÖNER (`isActive = false`); yönetici
+ * mevcut durumu eksiksiz görebilmelidir. Sıra sunucudan gelir (category →
+ * sortOrder → code) ve tarayıcıda yeniden sıralanmaz.
+ *
+ * Katalog ekranı yalnızca bunu çağırır. Rol bazlı `.../roles/{id}/permissions`
+ * bambaşka bir soruyu yanıtlar ("bu rolde ne işaretli") ve burada işi yoktur.
+ */
+export function fetchAdminPermissions() {
+  return authFetch('/api/admin/permissions')
+}
+
 /**
  * Rolün yetki matrisi: kataloğun TAMAMI, her satırda `assigned` bayrağıyla,
  * ayrıca rolün güncel hâli (liste satırıyla aynı şekil, sayımlar dâhil).
