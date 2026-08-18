@@ -60,10 +60,16 @@ public class AuthController : ApiControllerBase
 
             if (!result.IsSuccess)
             {
+                /* `reason` ek bir alandır; `message` ve
+                   `requiresEmailConfirmation` mevcut sözleşmedeki anlamlarıyla
+                   aynen kalır, dolayısıyla eski istemciler etkilenmez.
+                   İstemci mesajı sunucudan olduğu gibi gösterir — hesap durumu
+                   metinleri tek bir yerde, servis katmanında tanımlıdır. */
                 return Unauthorized(new
                 {
                     message = result.ErrorMessage,
-                    requiresEmailConfirmation = result.RequiresEmailConfirmation
+                    requiresEmailConfirmation = result.RequiresEmailConfirmation,
+                    reason = result.BlockReason.ToString()
                 });
             }
 

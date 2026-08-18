@@ -206,6 +206,39 @@ export function updateUserStatus(id, isActive) {
   })
 }
 
+/**
+ * The roles an administrator may assign when approving. Read from the server
+ * rather than hard-coded here, so the list the admin sees and the list the
+ * backend accepts cannot drift apart.
+ */
+export function fetchAssignableRoles() {
+  return authFetch('/api/admin/users/roles')
+}
+
+/**
+ * Approves a pending account with the selected role.
+ *
+ * Only the role travels. Activation, the approval timestamp and the approving
+ * administrator are decided server-side from the verified token — sending them
+ * from here would be sending the server its own answer.
+ */
+export function approveUser(id, role) {
+  return authFetch(`/api/admin/users/${id}/approve`, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ role }),
+  })
+}
+
+/** Rejects a pending application. The reason is an internal note, never mailed. */
+export function rejectUser(id, reason) {
+  return authFetch(`/api/admin/users/${id}/reject`, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ reason }),
+  })
+}
+
 /* --- Drawings ---------------------------------------------------------------
    All calls go through authFetch, so the Bearer token, the 401 handler and the
    automatic logout keep working exactly as they do for /api/auth/me. The WKT

@@ -24,4 +24,34 @@ public class User : IdentityUser<int>, IAuditableEntity
 
     /// <summary>UTC olarak tutulur.</summary>
     public DateTime ModifiedDate { get; set; }
+
+    /* --- Hesap onay yaşam döngüsü --------------------------------------------
+       Kayıt tek başına uygulamaya erişim vermez; araya yönetici incelemesi
+       girer. Varsayılan değer bilinçli olarak en kısıtlı durumdur: yeni bir
+       User nesnesi hiçbir şey yapılmadan uygulamaya giremez. Bootstrap
+       yönetici hesabı gibi istisnalar durumu AÇIKÇA yükseltmek zorundadır. */
+
+    public AccountStatus AccountStatus { get; set; } = AccountStatus.PendingEmailVerification;
+
+    /// <summary>Onay anı (UTC). Hiç onaylanmamış hesaplarda <c>null</c>.</summary>
+    public DateTime? ApprovedAt { get; set; }
+
+    /// <summary>
+    /// Onaylayan yöneticinin kimliği. Navigation property BİLEREK yoktur:
+    /// User → User çift yönlü ilişkisi Identity'nin kendi kullanıcı grafiğine
+    /// döngü eklerdi; ilişki <c>UserConfiguration</c> içinde navigation'sız
+    /// tanımlanır.
+    /// </summary>
+    public int? ApprovedByUserId { get; set; }
+
+    /// <summary>Reddetme anı (UTC).</summary>
+    public DateTime? RejectedAt { get; set; }
+
+    public int? RejectedByUserId { get; set; }
+
+    /// <summary>
+    /// Yöneticinin kendi kayıtları için tuttuğu isteğe bağlı gerekçe.
+    /// Kullanıcıya gönderilen e-postada YER ALMAZ.
+    /// </summary>
+    public string? RejectionReason { get; set; }
 }

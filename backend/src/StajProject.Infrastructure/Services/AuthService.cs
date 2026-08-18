@@ -43,16 +43,22 @@ public class AuthService : IAuthService
 
         var user = await _userManager.FindByNameAsync(request.Username);
 
-        // Kullanıcı yoksa da şifre yanlışsa da aynı mesaj döner: hangi
-        // kullanıcı adlarının var olduğu dışarı sızmasın.
-        if (user is null || user.IsDeleted || !user.IsActive)
+        /* Kullanıcı yoksa da, silinmişse de, şifre yanlışsa da aynı mesaj
+           döner: hangi kullanıcı adlarının var olduğu dışarı sızmasın.
+
+           Hesap DURUMU (onay bekliyor / askıya alınmış / reddedilmiş) bu
+           kontrole dahil DEĞİLDİR; aşağıda, şifre doğrulandıktan sonra
+           değerlendirilir. Sebebi EmailConfirmed'deki gerekçenin aynısıdır:
+           şifreyi bilmeyen biri bir hesabın var olduğunu ve hangi aşamada
+           takıldığını öğrenememelidir. */
+        if (user is null || user.IsDeleted)
         {
             return LoginResult.Failure(InvalidCredentialsMessage);
         }
 
         if (await _userManager.IsLockedOutAsync(user))
         {
-            return LoginResult.Failure(LockedOutMessage);
+            return LoginResult.LockedOut(LockedOutMessage);
         }
 
         /* SignInManager.CheckPasswordSignInAsync başarılı şifrede lockout
@@ -75,7 +81,7 @@ public class AuthService : IAuthService
 
                 if (await _userManager.IsLockedOutAsync(user))
                 {
-                    return LoginResult.Failure(LockedOutMessage);
+                    return LoginResult.LockedOut(LockedOutMessage);
                 }
             }
 
@@ -98,6 +104,23 @@ public class AuthService : IAuthService
 
             return LoginResult.EmailNotConfirmed(
                 "E-posta adresinizi doğrulamanız gerekiyor. Doğrulama bağlantısını yeniden gönderebilirsiniz.");
+        }
+
+        /* --- Hesap onay kapısı ------------------------------------------------
+           E-postanın doğrulanmış olması uygulamaya girmeye yetmez: araya
+           yönetici incelemesi girer. Kapı BURADA — token üretiminden önce —
+           durur; frontend'in route guard'ı bir kolaylıktır, güvenlik sınırı
+           değildir.
+
+           Sıra önemlidir: 2FA kararından da önce gelir, çünkü onaylanmamış bir
+           hesaba challenge bileti vermek, ikinci faktörü tamamlayınca token
+           alabileceği anlamına gelirdi. */
+        var accountGate = CheckAccountStatus(user);
+
+        if (accountGate is not null)
+        {
+            await ResetFailedCountAsync(user);
+            return accountGate;
         }
 
         var roles = await _userManager.GetRolesAsync(user);
@@ -147,6 +170,39 @@ public class AuthService : IAuthService
         });
     }
 
+    /// <summary>
+    /// Hesap durumunun oturum açmaya izin verip vermediğini söyler. İzin
+    /// veriyorsa <c>null</c>, aksi hâlde dönecek sonucu üretir.
+    /// </summary>
+    /// <remarks>
+    /// Yalnızca <see cref="AccountStatus.Active"/> <b>ve</b> <c>IsActive</c>
+    /// birlikte geçer. İkisinin ayrışması normal akışta imkânsızdır (durum
+    /// değişiklikleri ikisini birlikte yazar); yine de burada "ikisi de doğru
+    /// olmalı" denerek olası bir tutarsızlık erişime değil, engellemeye
+    /// dönüşür.
+    /// </remarks>
+    private static LoginResult? CheckAccountStatus(User user) => user.AccountStatus switch
+    {
+        AccountStatus.Active when user.IsActive => null,
+
+        AccountStatus.PendingApproval => LoginResult.Blocked(
+            LoginBlockReason.PendingApproval,
+            "Hesabınız yönetici onayı bekliyor. Onaylandıktan sonra uygulamaya giriş yapabilirsiniz."),
+
+        AccountStatus.Rejected => LoginResult.Blocked(
+            LoginBlockReason.Rejected,
+            "Hesap başvurunuz onaylanmadı. Ayrıntı için yöneticinizle iletişime geçin."),
+
+        /* PendingEmailVerification buraya normalde düşmez (üstteki
+           EmailConfirmed kontrolü onu önce yakalar); yalnızca doğrulanmış ama
+           durumu geride kalmış devralınmış bir kayıtta mümkündür. Böyle bir
+           satırın hangi kovaya düştüğünden bağımsız olarak sonuç aynıdır:
+           erişim yok. */
+        _ => LoginResult.Blocked(
+            LoginBlockReason.Suspended,
+            "Hesabınız devre dışı bırakılmış. Lütfen yöneticinizle iletişime geçin.")
+    };
+
     private async Task<bool> ResetFailedCountAsync(User user)
     {
         if (!user.LockoutEnabled || user.AccessFailedCount == 0)
@@ -163,7 +219,9 @@ public class AuthService : IAuthService
             .AsNoTracking()
             .SingleOrDefaultAsync(u => u.Id == userId, cancellationToken);
 
-        if (user is null || user.IsDeleted || !user.IsActive)
+        // Oturum sırasında askıya alınan/onayı geri çekilen hesabın profili de
+        // artık çözülmez; istemci ilk /me çağrısında oturumunu kaybeder.
+        if (user is null || user.IsDeleted || !user.IsActive || user.AccountStatus != AccountStatus.Active)
         {
             return null;
         }

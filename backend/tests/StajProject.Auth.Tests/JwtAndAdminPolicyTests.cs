@@ -1,9 +1,11 @@
 using System.IdentityModel.Tokens.Jwt;
+using System.Reflection;
 using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
+using StajProject.Api.Controllers;
 using StajProject.Application.Common;
 using StajProject.Domain.Common;
 using StajProject.Infrastructure.Authentication;
@@ -76,6 +78,38 @@ public class JwtAndAdminPolicyTests
             AuthorizationPolicies.AdminMfaRequired);
 
         Assert.Equal(expected, result.Succeeded);
+    }
+
+    /// <summary>
+    /// Onay/red uçları anonim veya sıradan bir kullanıcıya açılamaz.
+    /// </summary>
+    /// <remarks>
+    /// Koruma controller seviyesindedir ve yukarıdaki theory policy'nin
+    /// kendisini doğrular. Burada eksik olan halka test edilir: yeni action'lar
+    /// gerçekten o korumanın ALTINDA mı, yoksa <c>[AllowAnonymous]</c> ile
+    /// dışına mı çıkmışlar. Reflection kasıtlıdır — bir action'ın yanlışlıkla
+    /// korumasız bırakılması, yalnızca çalışma zamanında fark edilecek bir
+    /// hatadır.
+    /// </remarks>
+    [Theory]
+    [InlineData(nameof(AdminUsersController.Approve))]
+    [InlineData(nameof(AdminUsersController.Reject))]
+    [InlineData(nameof(AdminUsersController.GetAssignableRoles))]
+    public void Approval_endpoints_stay_behind_the_admin_mfa_policy(string actionName)
+    {
+        var controller = typeof(AdminUsersController);
+
+        var policy = controller
+            .GetCustomAttributes<AuthorizeAttribute>(inherit: true)
+            .Select(attribute => attribute.Policy)
+            .SingleOrDefault();
+
+        Assert.Equal(AuthorizationPolicies.AdminMfaRequired, policy);
+
+        var action = controller.GetMethod(actionName);
+
+        Assert.NotNull(action);
+        Assert.Empty(action!.GetCustomAttributes<AllowAnonymousAttribute>(inherit: true));
     }
 
     private static TokenValidationParameters ValidationParameters() => new()

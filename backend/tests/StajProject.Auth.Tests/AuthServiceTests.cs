@@ -67,8 +67,105 @@ public class AuthServiceTests
         tokens.DidNotReceiveWithAnyArgs().GenerateToken(default, default!, default!, default);
     }
 
+    /* --- Hesap onay kapısı ----------------------------------------------------
+       Bu testlerin ortak noktası: şifre DOĞRU. Yani buradaki her engelleme,
+       "yanlış şifre" yolundan değil, hesabın durumundan kaynaklanır — ve
+       hiçbirinde access token üretilmez. */
+
+    [Fact]
+    public async Task Pending_approval_user_is_blocked_without_access_token_or_challenge()
+    {
+        var (service, _, tokens, challenges, user) = CreateService(
+            twoFactorEnabled: false,
+            roles: [],
+            status: AccountStatus.PendingApproval,
+            isActive: false);
+
+        var result = await service.LoginAsync(new LoginRequest { Username = user.UserName!, Password = "correct" });
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(LoginBlockReason.PendingApproval, result.BlockReason);
+        Assert.False(result.RequiresEmailConfirmation);
+        tokens.DidNotReceiveWithAnyArgs().GenerateToken(default, default!, default!, default);
+        challenges.DidNotReceiveWithAnyArgs().Create(default, default!, default);
+    }
+
+    [Fact]
+    public async Task Suspended_user_is_blocked_even_with_correct_password()
+    {
+        var (service, _, tokens, _, user) = CreateService(
+            twoFactorEnabled: false,
+            roles: [ApplicationRoles.User],
+            status: AccountStatus.Suspended,
+            isActive: false);
+
+        var result = await service.LoginAsync(new LoginRequest { Username = user.UserName!, Password = "correct" });
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(LoginBlockReason.Suspended, result.BlockReason);
+        tokens.DidNotReceiveWithAnyArgs().GenerateToken(default, default!, default!, default);
+    }
+
+    [Fact]
+    public async Task Rejected_user_is_blocked_even_with_correct_password()
+    {
+        var (service, _, tokens, _, user) = CreateService(
+            twoFactorEnabled: false,
+            roles: [],
+            status: AccountStatus.Rejected,
+            isActive: false);
+
+        var result = await service.LoginAsync(new LoginRequest { Username = user.UserName!, Password = "correct" });
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(LoginBlockReason.Rejected, result.BlockReason);
+        tokens.DidNotReceiveWithAnyArgs().GenerateToken(default, default!, default!, default);
+    }
+
+    [Fact]
+    public async Task Unverified_user_is_blocked_before_the_approval_gate_is_consulted()
+    {
+        // Doğrulama kapısı önce gelir: durumu ne olursa olsun mesaj
+        // "e-postanı doğrula" olmalı, "onay bekliyor" değil.
+        var (service, _, tokens, _, user) = CreateService(
+            twoFactorEnabled: false,
+            roles: [],
+            status: AccountStatus.PendingEmailVerification,
+            isActive: false);
+        user.EmailConfirmed = false;
+
+        var result = await service.LoginAsync(new LoginRequest { Username = user.UserName!, Password = "correct" });
+
+        Assert.False(result.IsSuccess);
+        Assert.True(result.RequiresEmailConfirmation);
+        Assert.Equal(LoginBlockReason.EmailNotConfirmed, result.BlockReason);
+        tokens.DidNotReceiveWithAnyArgs().GenerateToken(default, default!, default!, default);
+    }
+
+    [Fact]
+    public async Task Approved_mfa_user_still_has_to_complete_the_second_factor()
+    {
+        // Onay, ikinci faktörün YERİNE GEÇMEZ: onaylı bir MFA hesabı hâlâ
+        // token değil, challenge alır.
+        var (service, _, tokens, challenges, user) = CreateService(
+            twoFactorEnabled: true,
+            roles: [ApplicationRoles.User]);
+
+        var result = await service.LoginAsync(new LoginRequest { Username = user.UserName!, Password = "correct" });
+
+        Assert.True(result.IsSuccess);
+        Assert.True(result.Response!.RequiresTwoFactor);
+        Assert.Null(result.Response.Token);
+        tokens.DidNotReceiveWithAnyArgs().GenerateToken(default, default!, default!, default);
+        challenges.Received(1).Create(user.Id, user.SecurityStamp!, TwoFactorChallengePurpose.Verify);
+    }
+
     private static (AuthService Service, UserManager<User> Users, ITokenService Tokens, ITwoFactorChallengeService Challenges, User User)
-        CreateService(bool twoFactorEnabled, IList<string> roles)
+        CreateService(
+            bool twoFactorEnabled,
+            IList<string> roles,
+            AccountStatus status = AccountStatus.Active,
+            bool isActive = true)
     {
         var user = new User
         {
@@ -76,7 +173,8 @@ public class AuthServiceTests
             UserName = "tester",
             Email = "tester@example.invalid",
             EmailConfirmed = true,
-            IsActive = true,
+            AccountStatus = status,
+            IsActive = isActive,
             LockoutEnabled = true,
             TwoFactorEnabled = twoFactorEnabled,
             SecurityStamp = "stamp"
