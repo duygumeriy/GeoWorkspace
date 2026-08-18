@@ -1,9 +1,11 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using StajProject.Api.Authorization;
 using StajProject.Api.Common;
 using StajProject.Application.Common;
 using StajProject.Application.DTOs;
 using StajProject.Application.Interfaces;
+using StajProject.Domain.Common;
 
 namespace StajProject.Api.Controllers;
 
@@ -34,6 +36,13 @@ public class AnalysisController : ApiControllerBase
     /// Gönderilen poligonla kesişen envanter kayıtlarını sayar. Poligon
     /// yalnızca sorgu parametresidir; hiçbir tabloya yazılmaz.
     /// </summary>
+    /// <remarks>
+    /// YETKİ: <c>inventory.analysis</c>. Uç envanteri yalnızca okumakla
+    /// kalmaz, kesişim analizi çalıştırır; bu yüzden salt görüntüleme yetkisi
+    /// (<c>inventory.view</c>) yeterli sayılmaz. Viewer analiz çalıştıramaz,
+    /// GIS Analyst çalıştırabilir.
+    /// </remarks>
+    [RequirePermission(PermissionCodes.InventoryAnalysis)]
     [HttpPost("intersections")]
     public Task<ActionResult<IntersectionAnalysisResponse>> CountIntersections(
         [FromBody] IntersectionAnalysisRequest request,

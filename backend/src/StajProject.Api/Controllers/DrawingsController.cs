@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using StajProject.Api.Authorization;
 using StajProject.Api.Common;
 using StajProject.Application.Common;
 using StajProject.Application.DTOs;
@@ -42,14 +43,17 @@ public class DrawingsController : ApiControllerBase
 
     /* --- Create ------------------------------------------------------------- */
 
+    [RequirePermission(PermissionCodes.DrawingsPointCreate)]
     [HttpPost("point")]
     public Task<ActionResult<DrawingResponse>> CreatePoint([FromBody] CreateDrawingRequest request, CancellationToken cancellationToken) =>
         GuardCreate(nameof(CreatePoint), () => _drawingService.CreatePointAsync(request, cancellationToken));
 
+    [RequirePermission(PermissionCodes.DrawingsLineCreate)]
     [HttpPost("line")]
     public Task<ActionResult<DrawingResponse>> CreateLine([FromBody] CreateDrawingRequest request, CancellationToken cancellationToken) =>
         GuardCreate(nameof(CreateLine), () => _drawingService.CreateLineAsync(request, cancellationToken));
 
+    [RequirePermission(PermissionCodes.DrawingsPolygonCreate)]
     [HttpPost("polygon")]
     public Task<ActionResult<DrawingResponse>> CreatePolygon([FromBody] CreateDrawingRequest request, CancellationToken cancellationToken) =>
         GuardCreate(nameof(CreatePolygon), () => _drawingService.CreatePolygonAsync(request, cancellationToken));
@@ -58,14 +62,17 @@ public class DrawingsController : ApiControllerBase
        Servis yalnızca ÇAĞIRAN kullanıcının silinmemiş ve aktif kayıtlarını
        döndürür; filtre veritabanı sorgusundadır, burada değil. */
 
+    [RequirePermission(PermissionCodes.DrawingsView)]
     [HttpGet("points")]
     public Task<ActionResult<IReadOnlyList<DrawingResponse>>> GetPoints(CancellationToken cancellationToken) =>
         GuardList(nameof(GetPoints), () => _drawingService.GetPointsAsync(cancellationToken));
 
+    [RequirePermission(PermissionCodes.DrawingsView)]
     [HttpGet("lines")]
     public Task<ActionResult<IReadOnlyList<DrawingResponse>>> GetLines(CancellationToken cancellationToken) =>
         GuardList(nameof(GetLines), () => _drawingService.GetLinesAsync(cancellationToken));
 
+    [RequirePermission(PermissionCodes.DrawingsView)]
     [HttpGet("polygons")]
     public Task<ActionResult<IReadOnlyList<DrawingResponse>>> GetPolygons(CancellationToken cancellationToken) =>
         GuardList(nameof(GetPolygons), () => _drawingService.GetPolygonsAsync(cancellationToken));
@@ -79,36 +86,62 @@ public class DrawingsController : ApiControllerBase
     /// <c>IgnoreQueryFilters</c>, ne de sahiplik kararı vardır. Uç yalnızca
     /// HTTP sınırıdır ve diğer okuma uçlarıyla aynı hata sınırını kullanır.
     /// </remarks>
+    [RequirePermission(PermissionCodes.DrawingsView)]
     [HttpGet("deleted")]
     public Task<ActionResult<IReadOnlyList<DeletedDrawingResponse>>> GetDeleted(CancellationToken cancellationToken) =>
         GuardList(nameof(GetDeleted), () => _drawingService.GetDeletedAsync(cancellationToken));
 
     /* --- Detay düzenleme: ad + renk + geometry ------------------------------
        Detay popup'ının "Kaydet" aksiyonu buraya gelir. Gönderilmeyen alanlar
-       korunur, sahiplik istek gövdesinden DEĞİL veritabanından okunur. */
+       korunur, sahiplik istek gövdesinden DEĞİL veritabanından okunur.
 
+       YETKİ: tek çağrı üç ayrı işlemi birden yapabilir — metadata (ad,
+       açıklama, kategori, etiket), stil ve geometry. Statik bir attribute
+       gövdede hangi alanların geldiğini göremez, dolayısıyla üç yetkinin
+       TAMAMI istenir. Bu bilinçli olarak fail-closed bir seçimdir: tek bir
+       yetkiye indirgemek, yalnızca ad değiştirebilmesi gereken birine
+       geometry değiştirme imkânı verirdi.
+
+       Seed edilen rollerin hiçbirinde bu üç yetkinin parçalı bir alt kümesi
+       yoktur (Editor/Manager/Administrator üçüne de sahiptir, Viewer/Analyst
+       hiçbirine), dolayısıyla pratikte kimse fazladan engellenmez. Alan
+       bazında yetkilendirme istenirse doğru çözüm ucu bölmektir; bu, ayrı ve
+       odaklı bir değişikliğin konusudur. */
+
+    [RequirePermission(PermissionCodes.DrawingsMetadataUpdate)]
+    [RequirePermission(PermissionCodes.DrawingsGeometryUpdate)]
+    [RequirePermission(PermissionCodes.DrawingsStyleUpdate)]
     [HttpPut("point/{id:int}")]
     public Task<ActionResult<DrawingResponse>> UpdatePoint(int id, [FromBody] UpdateDrawingRequest request, CancellationToken cancellationToken) =>
         GuardUpdate(nameof(UpdatePoint), () => _drawingService.UpdateAsync(DrawingKind.Point, id, request, cancellationToken));
 
+    [RequirePermission(PermissionCodes.DrawingsMetadataUpdate)]
+    [RequirePermission(PermissionCodes.DrawingsGeometryUpdate)]
+    [RequirePermission(PermissionCodes.DrawingsStyleUpdate)]
     [HttpPut("line/{id:int}")]
     public Task<ActionResult<DrawingResponse>> UpdateLine(int id, [FromBody] UpdateDrawingRequest request, CancellationToken cancellationToken) =>
         GuardUpdate(nameof(UpdateLine), () => _drawingService.UpdateAsync(DrawingKind.Line, id, request, cancellationToken));
 
+    [RequirePermission(PermissionCodes.DrawingsMetadataUpdate)]
+    [RequirePermission(PermissionCodes.DrawingsGeometryUpdate)]
+    [RequirePermission(PermissionCodes.DrawingsStyleUpdate)]
     [HttpPut("polygon/{id:int}")]
     public Task<ActionResult<DrawingResponse>> UpdatePolygon(int id, [FromBody] UpdateDrawingRequest request, CancellationToken cancellationToken) =>
         GuardUpdate(nameof(UpdatePolygon), () => _drawingService.UpdateAsync(DrawingKind.Polygon, id, request, cancellationToken));
 
     /* --- Style update: yalnızca görünüm kolonları, geometry değişmez --------- */
 
+    [RequirePermission(PermissionCodes.DrawingsStyleUpdate)]
     [HttpPatch("point/{id:int}/style")]
     public Task<ActionResult<DrawingResponse>> UpdatePointStyle(int id, [FromBody] DrawingStyleDto style, CancellationToken cancellationToken) =>
         GuardUpdate(nameof(UpdatePointStyle), () => _drawingService.UpdateStyleAsync(DrawingKind.Point, id, style, cancellationToken));
 
+    [RequirePermission(PermissionCodes.DrawingsStyleUpdate)]
     [HttpPatch("line/{id:int}/style")]
     public Task<ActionResult<DrawingResponse>> UpdateLineStyle(int id, [FromBody] DrawingStyleDto style, CancellationToken cancellationToken) =>
         GuardUpdate(nameof(UpdateLineStyle), () => _drawingService.UpdateStyleAsync(DrawingKind.Line, id, style, cancellationToken));
 
+    [RequirePermission(PermissionCodes.DrawingsStyleUpdate)]
     [HttpPatch("polygon/{id:int}/style")]
     public Task<ActionResult<DrawingResponse>> UpdatePolygonStyle(int id, [FromBody] DrawingStyleDto style, CancellationToken cancellationToken) =>
         GuardUpdate(nameof(UpdatePolygonStyle), () => _drawingService.UpdateStyleAsync(DrawingKind.Polygon, id, style, cancellationToken));
@@ -116,14 +149,17 @@ public class DrawingsController : ApiControllerBase
     /* --- Delete (soft) ------------------------------------------------------
        Satır tablodan kaldırılmaz: is_deleted = true, is_active = false. */
 
+    [RequirePermission(PermissionCodes.DrawingsDelete)]
     [HttpDelete("point/{id:int}")]
     public Task<IActionResult> DeletePoint(int id, CancellationToken cancellationToken) =>
         GuardDelete(nameof(DeletePoint), () => _drawingService.DeleteAsync(DrawingKind.Point, id, cancellationToken));
 
+    [RequirePermission(PermissionCodes.DrawingsDelete)]
     [HttpDelete("line/{id:int}")]
     public Task<IActionResult> DeleteLine(int id, CancellationToken cancellationToken) =>
         GuardDelete(nameof(DeleteLine), () => _drawingService.DeleteAsync(DrawingKind.Line, id, cancellationToken));
 
+    [RequirePermission(PermissionCodes.DrawingsDelete)]
     [HttpDelete("polygon/{id:int}")]
     public Task<IActionResult> DeletePolygon(int id, CancellationToken cancellationToken) =>
         GuardDelete(nameof(DeletePolygon), () => _drawingService.DeleteAsync(DrawingKind.Polygon, id, cancellationToken));
@@ -134,11 +170,13 @@ public class DrawingsController : ApiControllerBase
     /// Seçili kayıtları tek transaction içinde siler. Bir id bulunamazsa
     /// hiçbir kayıt silinmez ve 404 döner — frontend yarım state'e düşmez.
     /// </summary>
+    [RequirePermission(PermissionCodes.DrawingsDelete)]
     [HttpPost("bulk-delete")]
     public Task<ActionResult<BulkDeleteResponse>> BulkDelete([FromBody] BulkDeleteRequest request, CancellationToken cancellationToken) =>
         GuardOk(nameof(BulkDelete), () => _drawingService.BulkDeleteAsync(request, cancellationToken));
 
     /// <summary>Seçili kayıtların yalnızca stil kolonlarını tek transaction içinde günceller.</summary>
+    [RequirePermission(PermissionCodes.DrawingsStyleUpdate)]
     [HttpPatch("bulk-style")]
     public Task<ActionResult<BulkDrawingsResponse>> BulkStyle([FromBody] BulkStyleRequest request, CancellationToken cancellationToken) =>
         GuardOk(nameof(BulkStyle), () => _drawingService.BulkUpdateStyleAsync(request, cancellationToken));
@@ -152,11 +190,22 @@ public class DrawingsController : ApiControllerBase
     /// açılacağını (tür + id) taşır. Yetki kaydın orijinal sahibine göre
     /// değerlendirilir: sahibi veya Admin geri açabilir, başkası 403 alır.
     /// </remarks>
+    [RequirePermission(PermissionCodes.DrawingsRestore)]
     [HttpPost("restore")]
     public Task<ActionResult<BulkDrawingsResponse>> Restore([FromBody] BulkRestoreRequest request, CancellationToken cancellationToken) =>
         GuardOk(nameof(Restore), () => _drawingService.RestoreAsync(request, cancellationToken));
 
     /// <summary>Birden çok YENİ kayıt oluşturur; sahipleri daima çağıran kullanıcıdır.</summary>
+    /// <remarks>
+    /// YETKİ: gövde nokta, çizgi ve poligonu bir arada taşıyabilir; statik
+    /// attribute hangi türlerin geldiğini göremediği için üç oluşturma
+    /// yetkisinin tamamı istenir (fail-closed). Seed edilen rollerde bu üçünün
+    /// parçalı bir alt kümesi bulunmaz, dolayısıyla fiilî bir daralma olmaz.
+    /// Tür bazında yetkilendirme, ucun bölünmesini gerektiren ayrı bir iştir.
+    /// </remarks>
+    [RequirePermission(PermissionCodes.DrawingsPointCreate)]
+    [RequirePermission(PermissionCodes.DrawingsLineCreate)]
+    [RequirePermission(PermissionCodes.DrawingsPolygonCreate)]
     [HttpPost("bulk-create")]
     public Task<ActionResult<BulkDrawingsResponse>> BulkCreate([FromBody] BulkCreateRequest request, CancellationToken cancellationToken) =>
         GuardCreated(nameof(BulkCreate), () => _drawingService.BulkCreateAsync(request, cancellationToken));

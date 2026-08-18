@@ -1,9 +1,11 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using StajProject.Api.Authorization;
 using StajProject.Api.Common;
 using StajProject.Application.Common;
 using StajProject.Application.DTOs;
 using StajProject.Application.Interfaces;
+using StajProject.Domain.Common;
 
 namespace StajProject.Api.Controllers;
 
@@ -31,7 +33,24 @@ namespace StajProject.Api.Controllers;
 /// </para>
 /// </remarks>
 [ApiController]
-[Authorize(Policy = AuthorizationPolicies.AdminMfaRequired)]
+/* Yönetim uçlarının güvenliği iki BAĞIMSIZ boyuttan oluşur:
+
+     1) MfaRequired  — "kimliğini ne kadar güçlü kanıtladı"
+     2) RequirePermission — "bunu yapmaya yetkisi var mı"
+
+   Daha önce burada AdminMfaRequired vardı; o politika MFA'nın yanında legacy
+   `Admin` ROL ADINI da şart koşuyordu. Dinamik yetkilendirmede erişimin
+   kaynağı yetki satırlarıdır: 27 yetkinin tamamına sahip bir `Administrator`
+   kullanıcısı, sırf rol adı `Admin` olmadığı için engellenmemelidir.
+
+   MFA şartı GEVŞETİLMEDİ — MfaRequired birebir aynı `amr=mfa` kanıtına bakar.
+   Kaldırılan tek şey rol adı bağıdır; onun yerini uç bazında gereken yetki
+   alır. Legacy Admin de geçmeye devam eder, çünkü Phase 1 ona 27 yetkinin
+   tamamını vermiştir — rol adı sayesinde değil.
+
+   AdminMfaRequired politikası SİLİNMEDİ; tanımı yerinde durur ve ileride
+   bilinçli bir temizlikle kaldırılana kadar geriye dönük uyumluluk sağlar. */
+[Authorize(Policy = AuthorizationPolicies.MfaRequired)]
 [Route("api/admin/users")]
 public class AdminUsersController : ApiControllerBase
 {
@@ -48,12 +67,14 @@ public class AdminUsersController : ApiControllerBase
         _currentUser = currentUser;
     }
 
+    [RequirePermission(PermissionCodes.UsersView)]
     [HttpGet]
     public Task<ActionResult<IReadOnlyList<AdminUserListItem>>> GetUsers(CancellationToken cancellationToken) =>
         Guard<IReadOnlyList<AdminUserListItem>>(
             nameof(GetUsers),
             async () => Ok(await _userManagement.GetUsersAsync(cancellationToken)));
 
+    [RequirePermission(PermissionCodes.UsersView)]
     [HttpGet("{id:int}")]
     public Task<ActionResult<AdminUserDetail>> GetUser(int id, CancellationToken cancellationToken) =>
         GuardUser(nameof(GetUser), () => _userManagement.GetUserAsync(id, cancellationToken));
@@ -62,6 +83,7 @@ public class AdminUsersController : ApiControllerBase
     /// Onay ekranında atanabilecek roller. Rota <c>{id:int}</c> kısıtı
     /// sayesinde kullanıcı detayı ucuyla çakışmaz.
     /// </summary>
+    [RequirePermission(PermissionCodes.RolesView)]
     [HttpGet("roles")]
     public Task<ActionResult<IReadOnlyList<AssignableRole>>> GetAssignableRoles() =>
         Guard<IReadOnlyList<AssignableRole>>(
@@ -69,6 +91,7 @@ public class AdminUsersController : ApiControllerBase
             () => Task.FromResult<ActionResult<IReadOnlyList<AssignableRole>>>(
                 Ok(_userManagement.GetAssignableRoles())));
 
+    [RequirePermission(PermissionCodes.UsersUpdate)]
     [HttpPatch("{id:int}/role")]
     public Task<ActionResult<AdminUserDetail>> ChangeRole(
         int id,
@@ -78,6 +101,26 @@ public class AdminUsersController : ApiControllerBase
             nameof(ChangeRole),
             () => _userManagement.ChangeRoleAsync(id, request, ActingUserId, cancellationToken));
 
+    /// <remarks>
+    /// YETKİ: <c>users.update</c> — bilinçli olarak <c>users.deactivate</c>
+    /// DEĞİL.
+    /// <para>
+    /// Uç tek bir <c>IsActive</c> bayrağı alır ve aynı çağrı hem pasifleştirme
+    /// hem yeniden aktifleştirme yapabilir. Statik bir attribute gövdedeki
+    /// <c>true</c>/<c>false</c> ayrımını göremez; bu uca
+    /// <c>users.deactivate</c> bağlamak, "yalnızca devre dışı bırakabilir"
+    /// diye okunan bir yetkiyi sessizce "aktifleştirebilir de" hâline
+    /// getirirdi — yani yanıltıcı bir yetkilendirme olurdu.
+    /// </para>
+    /// <para>
+    /// Bu yüzden daha genel ve dürüst olan <c>users.update</c> kullanılır.
+    /// Seed edilen matriste her iki yetki de yalnızca Administrator/legacy
+    /// Admin'dedir, dolayısıyla mevcut güvenlik seviyesi DÜŞMEZ. Eylem bazında
+    /// ayrım istenirse doğru çözüm ucu ikiye bölmektir; bu ayrı ve odaklı bir
+    /// değişikliğin konusudur.
+    /// </para>
+    /// </remarks>
+    [RequirePermission(PermissionCodes.UsersUpdate)]
     [HttpPatch("{id:int}/status")]
     public Task<ActionResult<AdminUserDetail>> ChangeStatus(
         int id,
@@ -92,6 +135,7 @@ public class AdminUsersController : ApiControllerBase
        kimliği istemciden OKUNMAZ; sunucunun kendi kararlarıdır ve
        ActingUserId doğrulanmış yönetici token'ından gelir. */
 
+    [RequirePermission(PermissionCodes.UsersUpdate)]
     [HttpPost("{id:int}/approve")]
     public Task<ActionResult<AdminUserDetail>> Approve(
         int id,
@@ -101,6 +145,7 @@ public class AdminUsersController : ApiControllerBase
             nameof(Approve),
             () => _userManagement.ApproveAsync(id, request, ActingUserId, cancellationToken));
 
+    [RequirePermission(PermissionCodes.UsersUpdate)]
     [HttpPost("{id:int}/reject")]
     public Task<ActionResult<AdminUserDetail>> Reject(
         int id,
