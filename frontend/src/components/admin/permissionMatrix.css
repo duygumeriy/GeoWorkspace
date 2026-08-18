@@ -1,0 +1,283 @@
+/* Yetki matrisi: rol yetkisi editörü ile kullanıcı yetkisi editörünün ORTAK
+   görünümü.
+
+   İki ekran aynı 27 satırlık tabloyu çizer. Stiller ait oldukları sayfanın
+   CSS'inde bırakılsaydı ya ikinci ekran çıplak kalır ya da blok kopyalanıp
+   zamanla iki farklı görünüme ayrışırdı. Bu yüzden dosya bileşenlerin YANINDA
+   durur ve her iki editör de kendisi import eder — kullanan kim olursa olsun
+   stiller onunla birlikte gelir. */
+
+/* --- Yetki matrisi -----------------------------------------------------------
+   27 satır tek bir çekmeceye sığmalı: her yetki için kart açmak paneli metre
+   uzunluğunda bir yığına çevirirdi. Bu yüzden satırlar dar, kategoriler ince
+   bir çizgiyle ayrılır ve renk yalnızca vurgu için kullanılır — durumun kendisi
+   hep metinle de anlatılır. */
+
+.admin-permission-summary {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-small);
+}
+
+.admin-permission-summary strong {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-permission-dirty {
+  color: #d99b16;
+  font-weight: 700;
+}
+
+.admin-permission-group {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.admin-permission-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+/* Büyük harfe çevrilmez. Sayfa `lang="en"` olduğu için tarayıcı Türkçe döküm
+   kurallarını uygulamaz ve "Çizim" → "ÇIZIM" olurdu: noktalı İ kaybolur,
+   başlık yanlış okunur. Boyut ve harf aralığı hiyerarşiyi zaten kuruyor. */
+.admin-permission-group-head h4 {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.admin-permission-bulk {
+  padding: 0.2rem 0.4rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--primary-light);
+  font: inherit;
+  font-size: var(--font-small);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.admin-permission-bulk:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.admin-permission-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.15rem;
+}
+
+/* Tıklama hedefi etiketin TAMAMIDIR: 16px'lik bir kutuya nişan almak zorunda
+   kalmak, dokunmatikte en sinir bozucu yönetim ekranı hatasıdır.
+
+   Seçici `.admin-permissions` ile başlar çünkü AdminPage.css'teki
+   `.admin-management label` kuralı (aynı elemana uyan, daha yüksek özgüllükte)
+   etiketleri SÜTUN yönüne çeviriyor: onay kutusu metnin üstüne düşerdi. */
+.admin-permissions .admin-permission-row {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.5rem 0.4rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.admin-permissions .admin-permission-row:hover {
+  background: rgba(99, 102, 241, 0.09);
+}
+
+.admin-permissions .admin-permission-row input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 0.15rem 0 0;
+  accent-color: var(--primary-light);
+  cursor: inherit;
+}
+
+.admin-permissions .admin-permission-row input:focus-visible {
+  outline: 2px solid var(--primary-light);
+  outline-offset: 2px;
+}
+
+/* Kilitli satır yalnızca solmuş DEĞİLDİR: onay kutusu gerçekten disabled'dır,
+   imleç değişir ve pasif yetkiler ayrıca "Pasif" rozeti taşır. Durumu tek
+   başına renge yüklemek, renk ayırt edemeyen birine hiçbir şey söylemezdi. */
+.admin-permissions .admin-permission-row.is-locked {
+  cursor: default;
+}
+
+.admin-permissions .admin-permission-row.is-locked:hover {
+  background: none;
+}
+
+.admin-permissions .admin-permission-row.is-locked .admin-permission-text strong,
+.admin-permissions .admin-permission-row.is-locked .admin-permissions .admin-permission-text span {
+  color: var(--text-secondary);
+}
+
+.admin-permissions .admin-permission-text {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+  color: var(--text-primary);
+  font-weight: 400;
+}
+
+.admin-permissions .admin-permission-text strong {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: var(--font-small);
+}
+
+.admin-permissions .admin-permission-text span {
+  color: var(--text-secondary);
+  font-size: var(--font-small);
+  line-height: 1.45;
+}
+
+/* Kod yöneticiye faydalıdır ama satırın konusu o değildir: küçük, tek renk ve
+   en altta. `anywhere`, uzun kodların dar çekmecede taşmasını engeller. */
+.admin-permissions .admin-permission-text code {
+  color: var(--text-tertiary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.admin-permissions .admin-error {
+  margin-top: 0;
+}
+
+@media (max-width: 760px) {
+  /* Telefonda tek sütun ve tam genişlik satırlar. İki sütunluk bir ızgara,
+     375px'te açıklamaları iki kelimelik şeritlere sıkıştırırdı. */
+  .admin-permissions .admin-permission-row {
+    padding: 0.55rem 0.3rem;
+  }
+
+  .admin-permissions .admin-role-actions .admin-button {
+    flex: 1 1 100%;
+  }
+}
+
+/* --- Kaynak ve kilit metinleri -----------------------------------------------
+   Kullanıcı yetkisi editörüne özgü. Rol editöründe bir satırın tek bir durumu
+   vardır (atanmış / atanmamış); kullanıcı tarafında ise satır aynı anda hem
+   rolden gelip hem kişiye özel kaydı olabilir. Bu yüzden durum RENKLE değil,
+   satırın altındaki kısa bir CÜMLEYLE anlatılır: devre dışı bir onay kutusunun
+   solukluğu, ekran okuyucuya ve renk ayrımı yapamayan kullanıcıya hiçbir şey
+   söylemez. */
+
+.admin-permissions .admin-permission-source {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.admin-permissions .admin-permission-lock {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+/* --- Rolden gelen satırın kilidi ---------------------------------------------
+   Onay kutusunun yerini alır ve onunla AYNI kutuyu kaplar: hizanın kayması,
+   kilitli satırları listede farklı bir sütunmuş gibi gösterirdi.
+
+   Kilit yalnızca bir vurgudur; anlamın kendisi ("… rolünden", "Etkin" rozeti,
+   ve sr-only metin) her zaman yazıyla da verilir. */
+
+.admin-permissions .admin-permission-mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin: 0.15rem 0 0;
+  color: var(--primary-light);
+}
+
+/* Rolden gelen satır soluk DEĞİLDİR: yetki gerçekten işliyor. Kullanımdan
+   kaldırılmış bir satırla aynı görünmesi, tam da düzeltmeye çalıştığımız
+   yanlış okumayı üretirdi. */
+.admin-permissions .admin-permission-row.is-inherited {
+  opacity: 1;
+}
+
+/* `.is-locked` başlığı söndürür; rolden gelen satırda bu geri alınır. Aksi
+   hâlde işleyen bir yetki, kullanımdan kaldırılmış bir satırla aynı tonda
+   görünür ve düzeltmeye çalıştığımız yanlış okuma geri gelirdi. */
+.admin-permissions .admin-permission-row.is-inherited .admin-permission-text strong {
+  color: var(--text-primary);
+}
+
+/* --- Detay sekmeleri ---------------------------------------------------------
+   Kullanıcı detayı zaten yoğun; yetki tablosu 27 satır. İkisini alt alta
+   koymak, panelin en çok kullanılan üst kısmını uzun bir kaydırmanın arkasına
+   iterdi. */
+
+.admin-detail-tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin: 0.75rem 0 1rem;
+  border-bottom: 1px solid var(--border-subtle, rgba(127, 127, 127, 0.25));
+}
+
+.admin-detail-tab {
+  appearance: none;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 0.5rem 0.75rem;
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.admin-detail-tab:hover {
+  color: var(--text-primary);
+}
+
+/* Seçili sekme yalnızca renkle değil, altındaki çizgiyle de belirtilir. */
+.admin-detail-tab.is-active {
+  color: var(--text-primary);
+  border-bottom-color: currentColor;
+  font-weight: 600;
+}
+
+.admin-detail-tab:focus-visible {
+  outline: 2px solid var(--accent, #4c8dff);
+  outline-offset: 2px;
+}
+
+/* Kaydedilmemiş değişiklik, sekme kapalıyken de görünür olmalı: aksi hâlde
+   yönetici "Genel" sekmesindeyken paneli kapatıp değişikliğini kaybederdi. */
+.admin-tab-dot {
+  color: var(--accent, #4c8dff);
+  font-weight: 700;
+}
+
+@media (max-width: 760px) {
+  .admin-detail-tabs {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--surface, inherit);
+  }
+}

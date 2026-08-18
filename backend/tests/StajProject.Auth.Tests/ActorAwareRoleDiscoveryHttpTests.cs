@@ -236,6 +236,7 @@ public class ActorAwareRoleDiscoveryHttpTests
                 services.AddScoped<IEffectivePermissionService, EffectivePermissionService>();
                 services.AddScoped<IRoleManagementService, RoleManagementService>();
                 services.AddScoped<IUserManagementService, UserManagementService>();
+                services.AddScoped<IUserPermissionManagementService, UserPermissionManagementService>();
 
                 services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
                 services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();

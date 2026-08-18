@@ -346,6 +346,10 @@ public class PermissionEnforcementTests
                 services.AddScoped<ICurrentUserService, CurrentUserService>();
                 services.AddScoped<IDrawingAuthorizationService>(_ => Substitute.For<IDrawingAuthorizationService>());
 
+                /* Bu dosyanın konusu filtre katmanıdır; doğrudan yetki servisi
+                   yalnızca controller'ın kurulabilmesi için gerekir. */
+                services.AddScoped(_ => Substitute.For<IUserPermissionManagementService>());
+
                 /* Üretimdeki kayıtların AYNISI. Test kendi yetkilendirme
                    mantığını kurmaz; Program.cs'teki hattı çalıştırır. */
                 services.AddScoped<IEffectivePermissionService, EffectivePermissionService>();

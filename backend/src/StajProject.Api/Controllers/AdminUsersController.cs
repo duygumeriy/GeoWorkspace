@@ -56,15 +56,18 @@ public class AdminUsersController : ApiControllerBase
 {
     private readonly IUserManagementService _userManagement;
     private readonly ICurrentUserService _currentUser;
+    private readonly IUserPermissionManagementService _userPermissions;
 
     public AdminUsersController(
         IUserManagementService userManagement,
         ICurrentUserService currentUser,
+        IUserPermissionManagementService userPermissions,
         ILogger<AdminUsersController> logger)
         : base(logger)
     {
         _userManagement = userManagement;
         _currentUser = currentUser;
+        _userPermissions = userPermissions;
     }
 
     [RequirePermission(PermissionCodes.UsersView)]
@@ -186,6 +189,74 @@ public class AdminUsersController : ApiControllerBase
         string endpoint,
         Func<Task<ServiceResult<AdminUserDetail>>> operation) =>
         Guard<AdminUserDetail>(endpoint, async () => Respond(await operation()));
+
+    /* --- Kullanıcıya özel yetkiler ---------------------------------------------
+       İki yetki birden istenir: kullanıcıyı görmek (users.view) ve yetki
+       kataloğunu görmek (permissions.view). Yanıt ikisini birleştirdiği için
+       tek bir yetkiyle açmak, diğer kaynağı dolaylı olarak sızdırmak olurdu —
+       rol yetkisi ucundaki kuralın aynısı. */
+
+    /// <summary>
+    /// Kullanıcının yetki tablosu: her yetkinin kaynağı (rol / doğrudan),
+    /// etkisi ve çağıran için mutasyon kabiliyeti.
+    /// </summary>
+    /// <remarks>
+    /// Liste çağırana göre FİLTRELENMEZ: yönetici, veremeyeceği yetkileri de
+    /// görebilmelidir. "Ne verebilirim" sorusunun cevabı satırlardaki
+    /// <c>canAssignDirect</c> alanındadır.
+    /// </remarks>
+    [RequirePermission(PermissionCodes.UsersView)]
+    [RequirePermission(PermissionCodes.PermissionsView)]
+    [HttpGet("{id:int}/permissions")]
+    public Task<ActionResult<UserPermissionsResponse>> GetUserPermissions(
+        int id,
+        CancellationToken cancellationToken) =>
+        Guard<UserPermissionsResponse>(
+            nameof(GetUserPermissions),
+            async () => RespondPermissions(
+                await _userPermissions.GetUserPermissionsAsync(ActingUserId, id, cancellationToken)));
+
+    /// <summary>
+    /// Kullanıcının DOĞRUDAN yetkilerini gönderilen aktif kümeye eşitler.
+    /// </summary>
+    /// <remarks>
+    /// Değişiklik anında geçerlidir: yetki denetimi her istekte canlı
+    /// veritabanını okur, dolayısıyla yeniden giriş veya token yenilemesi
+    /// GEREKMEZ. Aynı canlılık yüzünden servise çağıranın kimliği geçilir —
+    /// aksi hâlde <c>permissions.assign</c> sahibi bir kuklaya istediği yetkiyi
+    /// verip o hesap üzerinden sisteme erişebilirdi.
+    /// </remarks>
+    [RequirePermission(PermissionCodes.UsersUpdate)]
+    [RequirePermission(PermissionCodes.PermissionsAssign)]
+    [HttpPut("{id:int}/permissions")]
+    public Task<ActionResult<UserPermissionsResponse>> ReplaceUserPermissions(
+        int id,
+        [FromBody] UpdateUserPermissionsRequest request,
+        CancellationToken cancellationToken) =>
+        Guard<UserPermissionsResponse>(
+            nameof(ReplaceUserPermissions),
+            async () => RespondPermissions(
+                await _userPermissions.ReplaceUserPermissionsAsync(
+                    ActingUserId, id, request, cancellationToken)));
+
+    private ActionResult<UserPermissionsResponse> RespondPermissions(
+        ServiceResult<UserPermissionsResponse> result)
+    {
+        if (result.IsSuccess)
+        {
+            return Ok(result.Value);
+        }
+
+        return result.ErrorKind switch
+        {
+            ServiceErrorKind.NotFound => NotFound(new { message = result.Error }),
+            ServiceErrorKind.Conflict => Conflict(new { message = result.Error }),
+            /* Yetki yükseltme reddi: istek geçerli, kullanıcı ve yetki kodları
+               da var — eksik olan çağıranın o yetkiyi DAĞITMA otoritesidir. */
+            ServiceErrorKind.Forbidden => StatusCode(StatusCodes.Status403Forbidden, new { message = result.Error }),
+            _ => BadRequest(new { message = result.Error })
+        };
+    }
 
     /// <summary>
     /// İşlemi yapan yöneticinin kimliği; daima doğrulanmış token'dan gelir,

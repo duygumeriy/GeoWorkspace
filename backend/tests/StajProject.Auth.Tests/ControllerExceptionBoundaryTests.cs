@@ -211,6 +211,7 @@ public class ControllerExceptionBoundaryTests
         WithHttpContext(new AdminUsersController(
             userManagement,
             Substitute.For<ICurrentUserService>(),
+            Substitute.For<IUserPermissionManagementService>(),
             NullLogger<AdminUsersController>.Instance));
 
     private static TController WithHttpContext<TController>(TController controller)
