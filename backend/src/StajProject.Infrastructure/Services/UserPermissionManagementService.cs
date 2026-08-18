@@ -66,8 +66,10 @@ public class UserPermissionManagementService : IUserPermissionManagementService
             return ServiceResult<UserPermissionsResponse>.NotFound("Kullanıcı bulunamadı.");
         }
 
+        var authority = await LoadAuthorityAsync(actingUserId, cancellationToken);
+
         return ServiceResult<UserPermissionsResponse>.Success(
-            await BuildAsync(actingUserId, target, cancellationToken));
+            await BuildAsync(target, authority, cancellationToken));
     }
 
     /* --- Güncelleme ------------------------------------------------------------------- */
@@ -84,6 +86,11 @@ public class UserPermissionManagementService : IUserPermissionManagementService
         {
             return ServiceResult<UserPermissionsResponse>.NotFound("Kullanıcı bulunamadı.");
         }
+
+        /* Çağıranın otoritesi işlem başına BİR kez çözülür ve hem doğrulamada
+           hem yanıtta kullanılır. Yetki başına ya da aşama başına yeniden
+           sormak, katalog büyüdükçe büyüyen bir maliyet olurdu. */
+        var authority = await LoadAuthorityAsync(actingUserId, cancellationToken);
 
         // Aynı kodun birden çok kez gönderilmesi hata değildir; küme anlamı taşır.
         var requested = (request.PermissionCodes ?? [])
@@ -168,8 +175,6 @@ public class UserPermissionManagementService : IUserPermissionManagementService
            içeren bir istek "yetkili olan kadarını" yazmaz. */
         if (toAdd.Length > 0 || toRemove.Length > 0)
         {
-            var authority = await LoadAuthorityAsync(actingUserId, cancellationToken);
-
             /* Kimliği çözülemeyen çağıran hiçbir şey yazamaz — ekleme de,
                kaldırma da. Kaldırma yükseltme değildir ama yıkıcıdır; "kim
                olduğunu bilmiyorum" bunun için yeterli bir yetki değildir. */
@@ -226,15 +231,23 @@ public class UserPermissionManagementService : IUserPermissionManagementService
                 actingUserId);
         }
 
+        /* Çağıran KENDİ yetkilerini düzenlediyse otorite artık bayat olabilir:
+           kendi doğrudan yetkisini kaldırmış olabilir. Yanıt mutasyondan SONRAKİ
+           durumu anlatmak zorunda olduğu için bu dar durumda bir kez daha
+           çözülür; başkası düzenlendiğinde çağıranın yetkileri değişemez. */
+        var responseAuthority = actingUserId == targetUserId && (toAdd.Length > 0 || toRemove.Length > 0)
+            ? await LoadAuthorityAsync(actingUserId, cancellationToken)
+            : authority;
+
         return ServiceResult<UserPermissionsResponse>.Success(
-            await BuildAsync(actingUserId, target, cancellationToken));
+            await BuildAsync(target, responseAuthority, cancellationToken));
     }
 
     /* --- Yanıt kurulumu --------------------------------------------------------------- */
 
     private async Task<UserPermissionsResponse> BuildAsync(
-        int actingUserId,
         User target,
+        HashSet<string>? authority,
         CancellationToken cancellationToken)
     {
         var catalog = await _dbContext.Permissions
@@ -260,9 +273,6 @@ public class UserPermissionManagementService : IUserPermissionManagementService
             .ToHashSet(StringComparer.Ordinal);
 
         var roles = await LoadRoleNamesAsync(target.Id, cancellationToken);
-
-        // Çağıranın otoritesi işlem başına BİR kez.
-        var authority = await LoadAuthorityAsync(actingUserId, cancellationToken);
 
         var canManage = authority is not null
             && authority.Contains(PermissionCodes.UsersUpdate)
