@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import RolePermissionEditor from './RolePermissionEditor.jsx'
 import { roleType } from './roleType.js'
 
 /**
@@ -8,12 +9,17 @@ import { roleType } from './roleType.js'
  * returns the SAME shape as a list row (RoleDetail extends RoleListItem and adds
  * nothing), so opening a detail needs no second request.
  *
- * Which actions appear is the SERVER'S answer — `canRename` / `canDelete` — not
- * a name comparison here. If the backend ever unfreezes a role, this screen
- * follows without an edit. Disabling a button is only ever a courtesy: the
- * backend refuses the request regardless of what the browser rendered.
+ * Which actions appear is the SERVER'S answer — `canRename` / `canDelete` /
+ * `canEditPermissions` — not a name comparison here. If the backend ever
+ * unfreezes a role, this screen follows without an edit. Disabling a button is
+ * only ever a courtesy: the backend refuses the request regardless of what the
+ * browser rendered.
+ *
+ * The permission matrix is a section of this same drawer, not a second screen
+ * or a tab strip: it is the one thing an administrator opens a role to see, and
+ * hiding it behind a tab would cost a click to reach the main content.
  */
-export default function RoleDetailPanel({ role, busy, onClose, onRename, onDelete }) {
+export default function RoleDetailPanel({ role, busy, permissions, onClose, onRename, onDelete }) {
   useEffect(() => {
     const onKeyDown = (event) => { if (event.key === 'Escape' && !busy) onClose() }
     document.addEventListener('keydown', onKeyDown)
@@ -51,34 +57,35 @@ export default function RoleDetailPanel({ role, busy, onClose, onRename, onDelet
           </div>
         </dl>
 
-        {/* Phase 5B yalnızca SAYIYI gösterir. Yetki düzenleyici bilinçli olarak
-            yoktur; onay kutusu, kirli durum ve kaydetme akışı sonraki fazın
-            konusudur. */}
-        <section className="admin-management">
-          <h3>Yetkiler</h3>
-          <p className="admin-readonly-note">
-            Bu rolde {role.permissionCount} aktif yetki var.{' '}
-            {role.canEditPermissions
-              ? 'Rol yetkilerinin düzenlenmesi bir sonraki aşamada bu ekrana eklenecek.'
-              : 'Bu rolün yetkileri sistem tarafından dondurulmuştur ve düzenlenemez.'}
-          </p>
-        </section>
+        <RolePermissionEditor role={role} {...permissions} />
 
         <section className="admin-management">
           <h3>Yönetim</h3>
           {role.canRename || role.canDelete ? (
-            <div className="admin-role-actions">
-              {role.canRename && (
-                <button type="button" className="admin-button secondary" disabled={busy} onClick={onRename}>
-                  Yeniden Adlandır
-                </button>
+            <>
+              {/* Kirli bir yetki seçimi varken yeniden adlandırma ve silme
+                  KAPALIDIR. İkisi de listeyi sunucudan yeniden okur ve açık
+                  düzenleyiciyi tazelenmiş veriyle ezerdi; kaydedilmemiş
+                  işaretlemeler sessizce kaybolurdu. */}
+              <div className="admin-role-actions">
+                {role.canRename && (
+                  <button type="button" className="admin-button secondary" disabled={busy || permissions.dirty} onClick={onRename}>
+                    Yeniden Adlandır
+                  </button>
+                )}
+                {role.canDelete && (
+                  <button type="button" className="admin-button danger" disabled={busy || permissions.dirty} onClick={onDelete}>
+                    Rolü Sil
+                  </button>
+                )}
+              </div>
+              {permissions.dirty && (
+                <p className="admin-policy-note">
+                  Önce yetki değişikliklerini kaydedin veya geri alın; rol adı ve silme işlemleri
+                  o zamana kadar kapalıdır.
+                </p>
               )}
-              {role.canDelete && (
-                <button type="button" className="admin-button danger" disabled={busy} onClick={onDelete}>
-                  Rolü Sil
-                </button>
-              )}
-            </div>
+            </>
           ) : (
             /* Devre dışı düğme yığını yerine tek cümle: kullanılamayan bir
                kontrolü göstermek, sebebini söylemekten daha az bilgi verir. */

@@ -6,6 +6,7 @@ import {
   readApiError,
   renameAdminRole,
 } from '../../services/api.js'
+import { useRolePermissions } from '../../hooks/useRolePermissions.js'
 import AdminPageHeader from '../../components/admin/AdminPageHeader.jsx'
 import RoleDetailPanel from '../../components/admin/RoleDetailPanel.jsx'
 import RoleFormDialog from '../../components/admin/RoleFormDialog.jsx'
@@ -22,7 +23,9 @@ import './RolesPage.css'
  *
  * Every mutation re-reads the list rather than patching state locally. Counts
  * and capability flags are the server's to compute, and a delete or rename can
- * change more than the row it touched.
+ * change more than the row it touched. The one exception is a permission save:
+ * that response already CARRIES the updated role, so the row is refreshed from
+ * it instead of paying for a second round trip.
  */
 export default function RolesPage() {
   const [roles, setRoles] = useState([])
@@ -36,6 +39,10 @@ export default function RolesPage() {
   const [dialogError, setDialogError] = useState('')
   const [busy, setBusy] = useState(false)
   const inFlight = useRef(false)
+
+  /* Kaydedilmemiş yetki değişikliği varken engellenen geçiş. Doğrudan
+     uygulanmaz; onay verilirse burada saklanan hareket yapılır. */
+  const [pending, setPending] = useState(null)
 
   const loadRoles = useCallback(async () => {
     setLoading(true); setError('')
@@ -68,6 +75,47 @@ export default function RolesPage() {
   useEffect(() => {
     if (selectedId !== null && !loading && !selected) setSelectedId(null)
   }, [selectedId, selected, loading])
+
+  /* Yetki matrisi YALNIZCA seçili rol için okunur. Kanca `selectedId`'yi izler;
+     liste yüklenirken hiçbir yetki isteği açılmaz. */
+  const permissions = useRolePermissions(selectedId)
+  const { dirty } = permissions
+
+  /**
+   * Kaydedilmemiş değişiklik varken geçişi onaya bağlar.
+   *
+   * Korunan hareketler: detayın KAPATILMASI (kapat düğmesi, perde, Escape) ve
+   * başka bir role geçiş.
+   *
+   * Rota için ayrı bir engelleyici YAZILMAZ ve buna gerek de yoktur: detay
+   * modal bir çekmecedir, perdesi kenar çubuğu dâhil sayfanın tamamını kapatır.
+   * Kaydedilmemiş bir seçim varken /admin/roles'tan çıkmanın tek yolu önce
+   * detayı kapatmaktır ve o yol zaten buradan geçer. Uygulama `BrowserRouter`
+   * kullandığı için `useBlocker` da yoktur; router'ın içine girmek, var olmayan
+   * bir kaçış yolunu kapatmak için ödenecek bir bedel olurdu.
+   */
+  function applyTransition(action) {
+    if (action.type === 'select') setSelectedId(action.id)
+    else if (action.type === 'close') setSelectedId(null)
+  }
+
+  function guard(action) {
+    if (dirty) { setPending(action); return }
+    applyTransition(action)
+  }
+
+  /**
+   * Yetki kaydı. Diğer mutasyonlardan ayrıdır çünkü listeyi yeniden OKUMAZ:
+   * yanıt rolün güncel hâlini (yetki sayımı dâhil) zaten taşır, dolayısıyla
+   * satır ondan tazelenir. Başarısızlıkta hiçbir sayım değişmez — olmamış bir
+   * kaydetmeyi olmuş gibi göstermek, yetki ekranını güvenilmez kılardı.
+   */
+  const savePermissions = async () => {
+    const saved = await permissions.save()
+    if (!saved) return
+    setRoles((current) => current.map((row) => (row.id === saved.id ? saved : row)))
+    setNotice({ type: 'success', message: `'${saved.name}' rolünün yetkileri güncellendi.` })
+  }
 
   /**
    * One path for every mutation: guard against double submits, map the failure,
@@ -162,16 +210,58 @@ export default function RolesPage() {
         </div>
       )}
 
-      <RoleList roles={roles} loading={loading} selectedId={selectedId} onSelect={setSelectedId} />
+      <RoleList
+        roles={roles}
+        loading={loading}
+        selectedId={selectedId}
+        onSelect={(id) => guard({ type: 'select', id })}
+      />
 
       {selected && (
         <RoleDetailPanel
           role={selected}
-          busy={busy}
-          onClose={() => setSelectedId(null)}
+          busy={busy || permissions.saving}
+          permissions={{
+            permissions: permissions.permissions,
+            selected: permissions.selected,
+            loading: permissions.loading,
+            error: permissions.error,
+            saving: permissions.saving,
+            saveError: permissions.saveError,
+            dirty: permissions.dirty,
+            onToggle: permissions.toggle,
+            onSetCategory: permissions.setCategorySelection,
+            onReset: permissions.reset,
+            onSave: savePermissions,
+            onRetry: permissions.reload,
+          }}
+          onClose={() => guard({ type: 'close' })}
           onRename={() => { setDialogError(''); setDialog('rename') }}
           onDelete={() => setDialog('delete')}
         />
+      )}
+
+      {pending && (
+        <div className="admin-dialog-backdrop" role="presentation">
+          <div className="admin-dialog" role="alertdialog" aria-modal="true" aria-labelledby="perm-discard-title">
+            <h2 id="perm-discard-title">Kaydedilmemiş yetki değişiklikleri var.</h2>
+            <p>Değişiklikleri kaybetmek istediğinize emin misiniz?</p>
+            <div className="admin-dialog-actions">
+              {/* Vazgeçmek düzenleyiciyi OLDUĞU GİBİ bırakır: seçim de kirli
+                  durum da korunur, hiçbir istek açılmaz. */}
+              <button type="button" className="admin-button secondary" onClick={() => setPending(null)}>
+                Düzenlemeye Dön
+              </button>
+              <button
+                type="button"
+                className="admin-button danger"
+                onClick={() => { const action = pending; setPending(null); applyTransition(action) }}
+              >
+                Değişiklikleri Yoksay
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {(dialog === 'create' || dialog === 'rename') && (
