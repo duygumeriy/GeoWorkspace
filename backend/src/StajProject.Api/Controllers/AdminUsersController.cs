@@ -181,6 +181,10 @@ public class AdminUsersController : ApiControllerBase
         {
             ServiceErrorKind.NotFound => NotFound(new { message = result.Error }),
             ServiceErrorKind.Conflict => Conflict(new { message = result.Error }),
+            /* Yetki yükseltme reddi: istek geçerli, rol var — eksik olan
+               çağıranın o rolü verme yetkisidir. Doğru karşılık 403'tür;
+               400 "istek bozuk" der ve nedeni yanlış anlatırdı. */
+            ServiceErrorKind.Forbidden => StatusCode(StatusCodes.Status403Forbidden, new { message = result.Error }),
             _ => BadRequest(new { message = result.Error })
         };
     }

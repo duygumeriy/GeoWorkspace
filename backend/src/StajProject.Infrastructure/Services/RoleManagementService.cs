@@ -31,15 +31,23 @@ public class RoleManagementService : IRoleManagementService
 {
     private readonly AppDbContext _dbContext;
     private readonly RoleManager<IdentityRole<int>> _roleManager;
+
+    /* Çağıranın gerçek yetkisi buradan okunur (rol yetkileri ∪ doğrudan
+       yetkiler). Etkin yetki çözümü YENİDEN YAZILMAZ; hesap durumu ve pasif
+       yetki filtreleri de otomatik olarak geçerli olur. */
+    private readonly IEffectivePermissionService _effectivePermissions;
+
     private readonly ILogger<RoleManagementService> _logger;
 
     public RoleManagementService(
         AppDbContext dbContext,
         RoleManager<IdentityRole<int>> roleManager,
+        IEffectivePermissionService effectivePermissions,
         ILogger<RoleManagementService> logger)
     {
         _dbContext = dbContext;
         _roleManager = roleManager;
+        _effectivePermissions = effectivePermissions;
         _logger = logger;
     }
 
@@ -407,6 +415,7 @@ public class RoleManagementService : IRoleManagementService
 
     public async Task<ServiceResult<string>> ResolveAssignableRoleAsync(
         string? roleName,
+        int actingUserId,
         CancellationToken cancellationToken = default)
     {
         var trimmed = (roleName ?? string.Empty).Trim();
@@ -433,8 +442,92 @@ public class RoleManagementService : IRoleManagementService
                 "Lütfen hedef rollerden veya tanımlı özel rollerden birini seçin.");
         }
 
+        /* Sıra fail-safe'tir: rol var mı → atanabilir mi → çağıranın onu verme
+           YETKİSİ var mı. Yetki kontrolü en sonda ve her zaman yapılır. */
+        var authority = await EnsureActorMayGrantAsync(role, actingUserId, cancellationToken);
+
+        if (authority is not null)
+        {
+            return authority;
+        }
+
         // Kanonik yazım döner; kullanıcıya "viewer" değil "Viewer" atanır.
         return ServiceResult<string>.Success(role.Name);
+    }
+
+    /// <summary>
+    /// Yetki yükseltmeyi engelleyen değişmez kural:
+    /// <c>hedef rolün aktif yetkileri ⊆ çağıranın etkin yetkileri</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Neden gerekli.</b> Uçlardaki <c>users.update</c> yetkisi "kullanıcı
+    /// kaydını değiştirebilir" demektir, "istediği yetkiyi dağıtabilir"
+    /// demek değil. Bu kural olmadan yalnızca <c>users.update</c> taşıyan bir
+    /// hesap, bir başkasını <c>Administrator</c> yapıp o hesap üzerinden tüm
+    /// sisteme erişebilirdi — kendi rolü hiç değişmeden.
+    /// </para>
+    /// <para>
+    /// <b>Rol hiyerarşisi YOKTUR.</b> Karar rol adına, sırasına veya bir
+    /// seviye/rank alanına değil, canlı yetki kümelerine bakılarak verilir.
+    /// Özel roller var olduğu için isme dayalı bir hiyerarşi zaten
+    /// tanımlanamazdı. Aynı sebeple <c>Admin</c>/<c>Administrator</c> için
+    /// kestirme bir geçiş de yoktur: legacy Admin bu kontrolü, adı yüzünden
+    /// değil, 27 yetkiye gerçekten sahip olduğu için geçer.
+    /// </para>
+    /// <para>
+    /// Yalnızca <b>aktif</b> yetkiler karşılaştırmaya girer: kullanımdan
+    /// kaldırılmış bir tanım kimseye yetki vermediği için, birinin onu
+    /// "taşımıyor" olması da atamayı engellememelidir.
+    /// </para>
+    /// <para>
+    /// Sıfır yetkili bir rol herkesçe atanabilir; boş küme her kümenin alt
+    /// kümesidir ve böyle bir rol hiçbir uygulama yeteneği vermez.
+    /// </para>
+    /// </remarks>
+    /// <returns>Sorun yoksa <c>null</c>; aksi hâlde reddedilmiş sonuç.</returns>
+    private async Task<ServiceResult<string>?> EnsureActorMayGrantAsync(
+        IdentityRole<int> role,
+        int actingUserId,
+        CancellationToken cancellationToken)
+    {
+        // Hedef rolün AKTİF yetki kodları — tek ve dar bir sorgu.
+        var targetCodes = await _dbContext.RolePermissions
+            .Where(rp => rp.RoleId == role.Id)
+            .Join(
+                _dbContext.Permissions.Where(p => p.IsActive),
+                rp => rp.PermissionId,
+                p => p.Id,
+                (_, p) => p.Code)
+            .ToListAsync(cancellationToken);
+
+        if (targetCodes.Count == 0)
+        {
+            return null;
+        }
+
+        var actorCodes = (await _effectivePermissions.GetEffectivePermissionCodesAsync(actingUserId, cancellationToken))
+            .ToHashSet(StringComparer.Ordinal);
+
+        var missing = targetCodes.Where(code => !actorCodes.Contains(code)).ToArray();
+
+        if (missing.Length == 0)
+        {
+            return null;
+        }
+
+        /* Hangi yetkilerin eksik olduğu istemciye SÖYLENMEZ: bu, saldırgana
+           hedef rolün yetki haritasını ve kendi eksiklerini sıralayan bir
+           keşif aracı verirdi. Ayrıntı yalnızca sunucu logunda kalır. */
+        _logger.LogWarning(
+            "Yetki yükseltme girişimi reddedildi: acting UserId={ActingUserId} hedef rol={Role} eksik yetki sayısı={Missing}",
+            actingUserId,
+            role.Name,
+            missing.Length);
+
+        return ServiceResult<string>.Forbidden(
+            $"'{role.Name}' rolünü atamak için yeterli yetkiye sahip değilsiniz. " +
+            "Bir kullanıcıya yalnızca kendi sahip olduğunuz yetkileri verebilirsiniz.");
     }
 
     /* --- Yardımcılar ---------------------------------------------------------------- */

@@ -521,6 +521,7 @@ public class AccountApprovalTests
         new(
             scope.ServiceProvider.GetRequiredService<AppDbContext>(),
             scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<int>>>(),
+            scope.ServiceProvider.GetRequiredService<IEffectivePermissionService>(),
             Substitute.For<ILogger<RoleManagementService>>());
 
     private static UserManagementService CreateManagement(AsyncServiceScope scope, out IEmailSender email)
@@ -565,6 +566,8 @@ public class AccountApprovalTests
             .AddRoles<IdentityRole<int>>()
             .AddEntityFrameworkStores<AppDbContext>()
             .AddDefaultTokenProviders();
+
+        services.AddScoped<IEffectivePermissionService, EffectivePermissionService>();
 
         var scope = services.BuildServiceProvider().CreateAsyncScope();
 

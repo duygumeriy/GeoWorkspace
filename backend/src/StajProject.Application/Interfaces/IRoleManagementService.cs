@@ -65,11 +65,30 @@ public interface IRoleManagementService
     Task<IReadOnlyList<AssignableRole>> GetAssignableRolesAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Serbest metinden atanabilir bir rol adı çözer. Onay ve rol değiştirme
-    /// akışlarının ikisi de bunu kullanır; doğrulama iki yerde ayrı ayrı
-    /// yazılmaz.
+    /// Serbest metinden atanabilir bir rol adı çözer ve <b>çağıranın o rolü
+    /// verme yetkisi olduğunu</b> doğrular. Onay ve rol değiştirme akışlarının
+    /// ikisi de bunu kullanır; doğrulama iki yerde ayrı ayrı yazılmaz.
     /// </summary>
+    /// <param name="actingUserId">
+    /// İşlemi yapan yöneticinin kimliği. <b>İstek gövdesinden değil</b>,
+    /// doğrulanmış token'dan gelmelidir.
+    /// </param>
+    /// <remarks>
+    /// <para>
+    /// <b>Yetki yükseltme koruması.</b> Bir kullanıcı sahip olmadığı yetkileri
+    /// dağıtamaz: hedef rolün AKTİF yetkileri, çağıranın etkin yetkilerinin
+    /// alt kümesi olmak zorundadır. Aksi hâlde yalnızca <c>users.update</c>
+    /// yetkisi olan biri, bir başkasını 27 yetkili <c>Administrator</c> yapıp
+    /// o hesap üzerinden tüm sisteme erişebilirdi.
+    /// </para>
+    /// <para>
+    /// Çağıran kimliği parametre olarak ZORUNLUDUR: kontrolsüz bir aşırı
+    /// yükleme bırakılmaz, böylece rol atayan hiçbir yol bu kuralı yanlışlıkla
+    /// atlayamaz.
+    /// </para>
+    /// </remarks>
     Task<ServiceResult<string>> ResolveAssignableRoleAsync(
         string? roleName,
+        int actingUserId,
         CancellationToken cancellationToken = default);
 }

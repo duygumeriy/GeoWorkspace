@@ -123,8 +123,10 @@ public class RoleManagementTests
     public async Task A_legacy_role_cannot_be_resolved_for_a_new_assignment(string role)
     {
         await using var scope = await CreateScopeAsync();
+        // Tam yetkili bir çağıran: red sebebi yetkisizlik değil, rolün legacy olması.
+        var actor = await CreateUserAsync(scope, "resolver-admin", GisRoles.Administrator);
 
-        var result = await Service(scope).ResolveAssignableRoleAsync(role);
+        var result = await Service(scope).ResolveAssignableRoleAsync(role, actor.Id);
 
         Assert.False(result.IsSuccess);
     }
@@ -134,7 +136,9 @@ public class RoleManagementTests
     {
         await using var scope = await CreateScopeAsync();
 
-        var result = await Service(scope).ResolveAssignableRoleAsync("  gis editor ");
+        var actor = await CreateUserAsync(scope, "resolver", GisRoles.Administrator);
+
+        var result = await Service(scope).ResolveAssignableRoleAsync("  gis editor ", actor.Id);
 
         Assert.True(result.IsSuccess);
         Assert.Equal(GisRoles.GisEditor, result.Value);

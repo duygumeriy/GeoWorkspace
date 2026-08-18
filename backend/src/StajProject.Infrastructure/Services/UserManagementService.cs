@@ -102,11 +102,15 @@ public class UserManagementService : IUserManagementService
         int actingUserId,
         CancellationToken cancellationToken = default)
     {
-        var resolved = await _roleManagement.ResolveAssignableRoleAsync(request.Role, cancellationToken);
+        /* Rol çözümü ÇAĞIRANIN kimliğiyle yapılır: yetki yükseltme kontrolü
+           (hedef rolün yetkileri ⊆ çağıranın yetkileri) burada uygulanır ve
+           hiçbir kayıt değiştirilmeden önce çalışır. actingUserId doğrulanmış
+           token'dan gelir, istek gövdesinden DEĞİL. */
+        var resolved = await _roleManagement.ResolveAssignableRoleAsync(request.Role, actingUserId, cancellationToken);
 
         if (!resolved.IsSuccess)
         {
-            return ServiceResult<AdminUserDetail>.Failure(resolved.Error!);
+            return Rejected(resolved);
         }
 
         var targetRole = resolved.Value!;
@@ -254,11 +258,15 @@ public class UserManagementService : IUserManagementService
         int actingUserId,
         CancellationToken cancellationToken = default)
     {
-        var resolved = await _roleManagement.ResolveAssignableRoleAsync(request.Role, cancellationToken);
+        /* Rol çözümü ÇAĞIRANIN kimliğiyle yapılır: yetki yükseltme kontrolü
+           (hedef rolün yetkileri ⊆ çağıranın yetkileri) burada uygulanır ve
+           hiçbir kayıt değiştirilmeden önce çalışır. actingUserId doğrulanmış
+           token'dan gelir, istek gövdesinden DEĞİL. */
+        var resolved = await _roleManagement.ResolveAssignableRoleAsync(request.Role, actingUserId, cancellationToken);
 
         if (!resolved.IsSuccess)
         {
-            return ServiceResult<AdminUserDetail>.Failure(resolved.Error!);
+            return Rejected(resolved);
         }
 
         var targetRole = resolved.Value!;
@@ -686,6 +694,23 @@ public class UserManagementService : IUserManagementService
         _ =>
             "Bu başvuru reddedilmiş. Onaylanabilmesi için yeniden değerlendirilmesi gerekir."
     };
+
+    /// <summary>
+    /// Rol çözümündeki reddi, hata TÜRÜNÜ koruyarak aktarır.
+    /// </summary>
+    /// <remarks>
+    /// Tür korunmazsa yetki yükseltme reddi 400'e düşerdi; oysa istek
+    /// geçerlidir ve rol vardır — eksik olan çağıranın yetkisidir, yani doğru
+    /// karşılık 403'tür.
+    /// </remarks>
+    private static ServiceResult<AdminUserDetail> Rejected(ServiceResult<string> resolved) =>
+        resolved.ErrorKind switch
+        {
+            ServiceErrorKind.Forbidden => ServiceResult<AdminUserDetail>.Forbidden(resolved.Error!),
+            ServiceErrorKind.NotFound => ServiceResult<AdminUserDetail>.NotFound(resolved.Error!),
+            ServiceErrorKind.Conflict => ServiceResult<AdminUserDetail>.Conflict(resolved.Error!),
+            _ => ServiceResult<AdminUserDetail>.Failure(resolved.Error!)
+        };
 
     private static ServiceResult<T> Failed<T>(string message, IdentityResult result) =>
         ServiceResult<T>.Failure($"{message} {string.Join(" ", result.Errors.Select(e => e.Description))}".Trim());

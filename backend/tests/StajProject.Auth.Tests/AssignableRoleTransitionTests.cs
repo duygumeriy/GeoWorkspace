@@ -203,11 +203,15 @@ public class AssignableRoleTransitionTests
         await using var scope = await CreateScopeAsync();
         await Roles(scope).CreateRoleAsync(new CreateRoleRequest { Name = "Field Surveyor" });
 
+        // Tam yetkili çağıran: liste ile kabul kümesi arasındaki fark ölçülüyor,
+        // yetki yükseltme kuralı değil.
+        var actor = await CreateActiveUserAsync(scope, "full-admin", GisRoles.Administrator);
+
         /* İstemcinin gördüğü liste ile sunucunun kabul ettiği küme aynı yerden
            türer; ekranda görünüp reddedilen bir rol oluşamaz. */
         foreach (var offered in await Management(scope).GetAssignableRolesAsync())
         {
-            Assert.True((await Roles(scope).ResolveAssignableRoleAsync(offered.Name)).IsSuccess, offered.Name);
+            Assert.True((await Roles(scope).ResolveAssignableRoleAsync(offered.Name, actor.Id)).IsSuccess, offered.Name);
         }
     }
 
