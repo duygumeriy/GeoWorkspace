@@ -85,14 +85,25 @@ public class UserManagementService : IUserManagementService
     /// Onay ekranında sunulacak roller.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Kaynak artık sabit bir liste değil, Identity'de gerçekten var olan ve
     /// atanabilir sayılan rollerdir. İstemcinin gördüğü liste ile sunucunun
     /// kabul ettiği liste hâlâ aynı yerden — <see cref="IRoleManagementService"/>
     /// — türer, dolayısıyla ekranda görünüp reddedilen bir rol oluşamaz.
     /// Legacy <c>Admin</c>/<c>User</c> bu listede YER ALMAZ.
+    /// </para>
+    /// <para>
+    /// Liste <b>çağırana özeldir</b>: aynı kuralla (hedef rolün aktif
+    /// yetkileri ⊆ çağıranın etkin yetkileri) daraltılır, çünkü mutasyon da
+    /// tam olarak bunu uygular. <paramref name="actingUserId"/> buraya
+    /// doğrulanmış token'dan gelir; <see cref="ChangeRoleAsync"/> ve
+    /// <see cref="ApproveAsync"/> ile aynı kimlik kaynağıdır.
+    /// </para>
     /// </remarks>
-    public Task<IReadOnlyList<AssignableRole>> GetAssignableRolesAsync(CancellationToken cancellationToken = default) =>
-        _roleManagement.GetAssignableRolesAsync(cancellationToken);
+    public Task<IReadOnlyList<AssignableRole>> GetAssignableRolesAsync(
+        int actingUserId,
+        CancellationToken cancellationToken = default) =>
+        _roleManagement.GetAssignableRolesAsync(actingUserId, cancellationToken);
 
     /* --- Rol değişikliği ------------------------------------------------------ */
 

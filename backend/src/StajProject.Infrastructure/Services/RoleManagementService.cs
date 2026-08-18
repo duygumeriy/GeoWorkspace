@@ -385,30 +385,55 @@ public class RoleManagementService : IRoleManagementService
     /* --- Atanabilir roller --------------------------------------------------------- */
 
     public async Task<IReadOnlyList<AssignableRole>> GetAssignableRolesAsync(
+        int actingUserId,
         CancellationToken cancellationToken = default)
     {
-        var roles = await _roleManager.Roles
+        var candidates = await _roleManager.Roles
             .AsNoTracking()
-            .Select(r => r.Name!)
+            .Select(r => new { r.Id, Name = r.Name! })
             .ToListAsync(cancellationToken);
 
-        return roles
-            .Where(RoleCatalog.IsAssignable)
-            .OrderBy(name => RoleCatalog.SortKey(name).Group)
-            .ThenBy(name => RoleCatalog.SortKey(name).Index)
-            .ThenBy(name => name, StringComparer.OrdinalIgnoreCase)
-            .Select(name => new AssignableRole
+        /* Önce GENEL kural: legacy geçiş rolleri hiç kimseye açılmaz. Bu filtre
+           yetkiden bağımsızdır — 27 yetkinin tamamına sahip bir çağıran bile
+           Admin/User göremez. */
+        var assignable = candidates.Where(r => RoleCatalog.IsAssignable(r.Name)).ToArray();
+
+        if (assignable.Length == 0)
+        {
+            return [];
+        }
+
+        /* Sonra ÇAĞIRANA özel kural. Çağıranın yetkileri bir kez okunur; rol
+           başına tekrar sorgu açmak rol sayısıyla büyüyen bir N+1 üretirdi. */
+        var authority = await LoadGrantAuthorityAsync(actingUserId, cancellationToken);
+
+        if (!authority.IsUsable)
+        {
+            return [];
+        }
+
+        // Tüm aday rollerin aktif yetkileri TEK sorguda gelir (rol başına değil).
+        var targetCodes = await LoadActiveRolePermissionCodesAsync(
+            [.. assignable.Select(r => r.Id)],
+            cancellationToken);
+
+        return assignable
+            .Where(role => authority.CanGrant(targetCodes.GetValueOrDefault(role.Id, [])))
+            .OrderBy(role => RoleCatalog.SortKey(role.Name).Group)
+            .ThenBy(role => RoleCatalog.SortKey(role.Name).Index)
+            .ThenBy(role => role.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(role => new AssignableRole
             {
-                Name = name,
-                Description = DescribeRole(name),
+                Name = role.Name,
+                Description = DescribeRole(role.Name),
                 /* Yönetim yetkilerine sahip roller için ikinci faktör bilgisi
                    istemciye gösterilir. Kaynak rol ADI değil, rolün gerçekten
                    yönetim yetkisi taşıyıp taşımadığıdır — ama bu bilgi burada
                    sunucu tarafında hesaplanmadığı için kanonik yönetici rolü
                    ile legacy Admin işaretlenir; yetki bazlı ayrıntı yönetim
                    ekranının kendi sorumluluğudur. */
-                RequiresTwoFactor = RoleCatalog.IsCanonical(name)
-                    && string.Equals(name, GisRoles.Administrator, StringComparison.OrdinalIgnoreCase)
+                RequiresTwoFactor = RoleCatalog.IsCanonical(role.Name)
+                    && string.Equals(role.Name, GisRoles.Administrator, StringComparison.OrdinalIgnoreCase)
             })
             .ToArray();
     }
@@ -476,13 +501,21 @@ public class RoleManagementService : IRoleManagementService
     /// değil, 27 yetkiye gerçekten sahip olduğu için geçer.
     /// </para>
     /// <para>
+    /// <b>Karşılaştırmanın kendisi burada yazılmaz</b>; hem bu mutasyon yolu
+    /// hem de <see cref="GetAssignableRolesAsync"/> listesi aynı
+    /// <see cref="RoleGrantAuthority"/> ilkelini kullanır. İki uç ayrı ayrı
+    /// karar verseydi, biri diğerinden sapıp "listede görünen ama atanamayan"
+    /// (veya daha kötüsü, tersi) bir rol doğurabilirdi.
+    /// </para>
+    /// <para>
     /// Yalnızca <b>aktif</b> yetkiler karşılaştırmaya girer: kullanımdan
     /// kaldırılmış bir tanım kimseye yetki vermediği için, birinin onu
     /// "taşımıyor" olması da atamayı engellememelidir.
     /// </para>
     /// <para>
-    /// Sıfır yetkili bir rol herkesçe atanabilir; boş küme her kümenin alt
-    /// kümesidir ve böyle bir rol hiçbir uygulama yeteneği vermez.
+    /// Sıfır yetkili bir rol, kimliği çözülebilen her çağıranca atanabilir; boş
+    /// küme her kümenin alt kümesidir ve böyle bir rol hiçbir uygulama yeteneği
+    /// vermez.
     /// </para>
     /// </remarks>
     /// <returns>Sorun yoksa <c>null</c>; aksi hâlde reddedilmiş sonuç.</returns>
@@ -491,27 +524,12 @@ public class RoleManagementService : IRoleManagementService
         int actingUserId,
         CancellationToken cancellationToken)
     {
-        // Hedef rolün AKTİF yetki kodları — tek ve dar bir sorgu.
-        var targetCodes = await _dbContext.RolePermissions
-            .Where(rp => rp.RoleId == role.Id)
-            .Join(
-                _dbContext.Permissions.Where(p => p.IsActive),
-                rp => rp.PermissionId,
-                p => p.Id,
-                (_, p) => p.Code)
-            .ToListAsync(cancellationToken);
+        var targetCodes = (await LoadActiveRolePermissionCodesAsync([role.Id], cancellationToken))
+            .GetValueOrDefault(role.Id, []);
 
-        if (targetCodes.Count == 0)
-        {
-            return null;
-        }
+        var authority = await LoadGrantAuthorityAsync(actingUserId, cancellationToken);
 
-        var actorCodes = (await _effectivePermissions.GetEffectivePermissionCodesAsync(actingUserId, cancellationToken))
-            .ToHashSet(StringComparer.Ordinal);
-
-        var missing = targetCodes.Where(code => !actorCodes.Contains(code)).ToArray();
-
-        if (missing.Length == 0)
+        if (authority.CanGrant(targetCodes))
         {
             return null;
         }
@@ -523,11 +541,124 @@ public class RoleManagementService : IRoleManagementService
             "Yetki yükseltme girişimi reddedildi: acting UserId={ActingUserId} hedef rol={Role} eksik yetki sayısı={Missing}",
             actingUserId,
             role.Name,
-            missing.Length);
+            authority.MissingFor(targetCodes).Count);
 
         return ServiceResult<string>.Forbidden(
             $"'{role.Name}' rolünü atamak için yeterli yetkiye sahip değilsiniz. " +
             "Bir kullanıcıya yalnızca kendi sahip olduğunuz yetkileri verebilirsiniz.");
+    }
+
+    /// <summary>
+    /// Çağıranın rol verme otoritesini bir kez çözer.
+    /// </summary>
+    /// <remarks>
+    /// Kimlik doğrulanamamışsa (controller'ın <c>?? 0</c> düşüşü dâhil) sonuç
+    /// <see cref="RoleGrantAuthority.Unusable"/>'dır ve hiçbir rol verilemez —
+    /// sıfır yetkili roller bile. Yetkilendirme sorusunun belirsizlikteki
+    /// güvenli cevabı "hiçbiri"dir. Bu, "yetkisi olmayan çağıran"dan farklı
+    /// bir durumdur; bkz. <see cref="RoleGrantAuthority.For"/>.
+    /// </remarks>
+    private async Task<RoleGrantAuthority> LoadGrantAuthorityAsync(
+        int actingUserId,
+        CancellationToken cancellationToken)
+    {
+        if (actingUserId <= 0)
+        {
+            _logger.LogWarning("Rol verme yetkisi çözülemedi: geçersiz çağıran kimliği ({ActingUserId}).", actingUserId);
+            return RoleGrantAuthority.Unusable;
+        }
+
+        /* Otorite daima CANLI veritabanından okunur. Token'daki rol claim'i ya
+           da oturum açılışında alınmış bir anlık görüntü kullanılsaydı, rolün
+           yetkileri değiştikten sonra liste ile mutasyon farklı cevaplar
+           verirdi. */
+        return RoleGrantAuthority.For(
+            await _effectivePermissions.GetEffectivePermissionCodesAsync(actingUserId, cancellationToken));
+    }
+
+    /// <summary>
+    /// Verilen rollerin AKTİF yetki kodları. Tek sorgu; rol başına gidiş yok.
+    /// </summary>
+    /// <remarks>
+    /// "Hedef rolün yetkileri" tanımının tek sahibi budur: tekil çözümleme de
+    /// (<see cref="EnsureActorMayGrantAsync"/>) liste de buradan okur, böylece
+    /// pasif yetki filtresi iki yerde ayrı ayrı yazılıp birbirinden sapamaz.
+    /// </remarks>
+    private async Task<Dictionary<int, string[]>> LoadActiveRolePermissionCodesAsync(
+        IReadOnlyCollection<int> roleIds,
+        CancellationToken cancellationToken)
+    {
+        if (roleIds.Count == 0)
+        {
+            return [];
+        }
+
+        var rows = await _dbContext.RolePermissions
+            .AsNoTracking()
+            .Where(rp => roleIds.Contains(rp.RoleId))
+            .Join(
+                _dbContext.Permissions.Where(p => p.IsActive),
+                rp => rp.PermissionId,
+                p => p.Id,
+                (rp, p) => new { rp.RoleId, p.Code })
+            .ToListAsync(cancellationToken);
+
+        return rows
+            .GroupBy(row => row.RoleId)
+            .ToDictionary(group => group.Key, group => group.Select(row => row.Code).ToArray());
+    }
+
+    /// <summary>
+    /// Rol verme kuralının <b>tek</b> tanımı: hedef rolün aktif yetkileri,
+    /// çağıranın etkin yetkilerinin alt kümesi olmalıdır.
+    /// </summary>
+    /// <remarks>
+    /// Karşılaştırma tek bir yerde durur ki "hangi rolleri görebilir" ile
+    /// "hangi rolleri atayabilir" soruları asla farklı cevap veremesin. İki
+    /// ayrı implementasyon, zamanla ya yanıltıcı bir UX (görünüp reddedilen
+    /// rol) ya da sessiz bir güvenlik açığı (listede olduğu için kabul edilen
+    /// rol) üretirdi.
+    /// </remarks>
+    private sealed class RoleGrantAuthority
+    {
+        /// <summary>Kimliği çözülemeyen çağıran: hiçbir rolü veremez.</summary>
+        public static RoleGrantAuthority Unusable { get; } = new(null);
+
+        private readonly HashSet<string>? _actorCodes;
+
+        private RoleGrantAuthority(HashSet<string>? actorCodes) => _actorCodes = actorCodes;
+
+        /// <summary>
+        /// Çağıranın etkin yetkilerinden otorite kurar.
+        /// </summary>
+        /// <remarks>
+        /// Boş bir yetki kümesi <b>geçerlidir</b> ve <see cref="Unusable"/> ile
+        /// karıştırılmaz: yetkisi olmayan bir çağıran yalnızca sıfır yetkili
+        /// rolleri verebilir (∅ ⊆ ∅), çünkü kural saf alt küme kuralıdır.
+        /// Fail-closed olan durum "yetkisi yok" değil, <b>kimliği yok</b>tur —
+        /// ikisi ayrı sorulardır. Pratikte yetkisiz bir hesap bu uçların
+        /// <c>roles.view</c> / <c>users.update</c> kapılarını zaten geçemez.
+        /// </remarks>
+        public static RoleGrantAuthority For(IReadOnlyCollection<string> actorCodes) =>
+            new(actorCodes.ToHashSet(StringComparer.Ordinal));
+
+        public bool IsUsable => _actorCodes is not null;
+
+        /// <summary>
+        /// Hedef rolün, çağıranın taşımadığı aktif yetkileri. Yalnızca sunucu
+        /// logu içindir; istemciye sızdırılmaz.
+        /// </summary>
+        public IReadOnlyCollection<string> MissingFor(IReadOnlyCollection<string> targetActiveCodes) =>
+            _actorCodes is null
+                ? targetActiveCodes
+                : [.. targetActiveCodes.Where(code => !_actorCodes.Contains(code))];
+
+        /// <summary>
+        /// <c>targetActiveCodes ⊆ actorCodes</c>. Kimliği çözülemeyen çağıran
+        /// için boş hedef kümede bile <c>false</c> döner (fail-closed).
+        /// </summary>
+        public bool CanGrant(IReadOnlyCollection<string> targetActiveCodes) =>
+            IsUsable && MissingFor(targetActiveCodes).Count == 0;
     }
 
     /* --- Yardımcılar ---------------------------------------------------------------- */

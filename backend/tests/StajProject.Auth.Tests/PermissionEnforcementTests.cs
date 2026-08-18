@@ -318,7 +318,7 @@ public class PermissionEnforcementTests
 
         var users = Substitute.For<IUserManagementService>();
         users.GetUsersAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<AdminUserListItem>());
-        users.GetAssignableRolesAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<AssignableRole>());
+        users.GetAssignableRolesAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(Array.Empty<AssignableRole>());
 
         var analysis = Substitute.For<ISpatialAnalysisService>();
         analysis.CountIntersectionsAsync(Arg.Any<IntersectionAnalysisRequest>(), Arg.Any<CancellationToken>())

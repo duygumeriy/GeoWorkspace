@@ -95,7 +95,12 @@ public class RoleManagementTests
     {
         await using var scope = await CreateScopeAsync();
 
-        var assignable = (await Service(scope).GetAssignableRolesAsync()).Select(r => r.Name).ToArray();
+        /* Liste çağırana özeldir; burada ölçülen GENEL atanabilirlik filtresi
+           olduğu için aktör tam yetkilidir ve yetki alt küme kuralı hiçbir rolü
+           elemez. */
+        var actor = await CreateUserAsync(scope, "assignable-reader", GisRoles.Administrator);
+
+        var assignable = (await Service(scope).GetAssignableRolesAsync(actor.Id)).Select(r => r.Name).ToArray();
 
         Assert.Equal(
             [GisRoles.Viewer, GisRoles.GisEditor, GisRoles.GisAnalyst, GisRoles.GisManager, GisRoles.Administrator],
@@ -113,8 +118,9 @@ public class RoleManagementTests
         var service = Service(scope);
 
         await service.CreateRoleAsync(new CreateRoleRequest { Name = "Field Surveyor" });
+        var actor = await CreateUserAsync(scope, "custom-reader", GisRoles.Administrator);
 
-        Assert.Contains("Field Surveyor", (await service.GetAssignableRolesAsync()).Select(r => r.Name));
+        Assert.Contains("Field Surveyor", (await service.GetAssignableRolesAsync(actor.Id)).Select(r => r.Name));
     }
 
     [Theory]

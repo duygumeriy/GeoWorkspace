@@ -40,6 +40,19 @@ public class AdminRolesController : ApiControllerBase
         _roles = roles;
     }
 
+    /// <summary>
+    /// Sistemdeki rollerin envanteri: legacy, kanonik ve özel rollerin tamamı,
+    /// metadata'sıyla birlikte.
+    /// </summary>
+    /// <remarks>
+    /// <b>Bu uç çağırana göre filtrelenmez</b> ve bilinçli olarak öyledir.
+    /// Sorusu "sistemde hangi roller VAR"dır; yönetim ekranı, atayamayacağı
+    /// rolleri de görebilmelidir (kullanıcı sayıları, yetki matrisi, silme /
+    /// yeniden adlandırma kuralları). "Bu çağıran hangi rolleri VEREBİLİR"
+    /// sorusu ayrı bir uçtadır: <c>GET /api/admin/users/roles</c>. İki soru
+    /// karıştırılırsa ya envanter eksik görünür ya da atama listesi yanıltıcı
+    /// olur.
+    /// </remarks>
     [RequirePermission(PermissionCodes.RolesView)]
     [HttpGet]
     public Task<ActionResult<IReadOnlyList<RoleListItem>>> GetRoles(CancellationToken cancellationToken) =>

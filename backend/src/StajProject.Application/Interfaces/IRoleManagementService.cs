@@ -59,10 +59,36 @@ public interface IRoleManagementService
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Yeni atamalarda seçilebilecek roller. Onay ekranı ve rol değiştirme
-    /// ucunun <b>tek</b> doğrulama kaynağıdır.
+    /// <b>Çağıranın</b> şu anda atayabileceği roller. Onay ekranı ve rol
+    /// değiştirme ucunun <b>tek</b> doğrulama kaynağıdır.
     /// </summary>
-    Task<IReadOnlyList<AssignableRole>> GetAssignableRolesAsync(CancellationToken cancellationToken = default);
+    /// <param name="actingUserId">
+    /// İşlemi yapan yöneticinin kimliği. <b>İstek gövdesinden değil</b>,
+    /// doğrulanmış token'dan gelmelidir.
+    /// </param>
+    /// <remarks>
+    /// <para>
+    /// Liste iki filtreden geçer: rol <b>genel olarak</b> atanabilir mi
+    /// (legacy geçiş rolleri herkese kapalıdır) <b>ve</b> çağıranın onu verme
+    /// yetkisi var mı. İkinci filtre
+    /// <see cref="ResolveAssignableRoleAsync"/> ile <b>aynı</b> kuralı
+    /// kullanır: hedef rolün aktif yetkileri ⊆ çağıranın etkin yetkileri.
+    /// Böylece ekranda görünüp mutasyonda 403 alan bir rol oluşamaz.
+    /// </para>
+    /// <para>
+    /// <b>Bu, sistemdeki rollerin envanteri DEĞİLDİR</b> — o soru
+    /// <see cref="GetRolesAsync"/>'in konusudur ve bilinçli olarak çağırana
+    /// göre filtrelenmez. Buradaki soru "hangi roller VAR" değil, "bu çağıran
+    /// şu an hangi rolleri VEREBİLİR"dir.
+    /// </para>
+    /// <para>
+    /// Kimliği çözülemeyen bir çağıran için sonuç <b>boştur</b>; belirsizlik
+    /// hâlinde güvenli cevap "hiçbiri"dir.
+    /// </para>
+    /// </remarks>
+    Task<IReadOnlyList<AssignableRole>> GetAssignableRolesAsync(
+        int actingUserId,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Serbest metinden atanabilir bir rol adı çözer ve <b>çağıranın o rolü

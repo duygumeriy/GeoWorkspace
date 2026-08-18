@@ -34,9 +34,17 @@ public interface IUserManagementService
 
     /// <summary>
     /// Onay ekranında seçilebilecek roller. Kaynak Identity'deki gerçek
-    /// rollerdir; legacy geçiş rolleri bu listeye girmez.
+    /// rollerdir; legacy geçiş rolleri bu listeye girmez ve liste
+    /// <b>çağırana göre</b> daraltılır.
     /// </summary>
-    Task<IReadOnlyList<AssignableRole>> GetAssignableRolesAsync(CancellationToken cancellationToken = default);
+    /// <param name="actingUserId">
+    /// Listeyi isteyen yönetici; doğrulanmış token'dan gelir. Yalnızca kendi
+    /// yetkilerinin kapsadığı roller döner, böylece ekranda görünüp mutasyonda
+    /// 403 alan bir seçenek oluşmaz.
+    /// </param>
+    Task<IReadOnlyList<AssignableRole>> GetAssignableRolesAsync(
+        int actingUserId,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Onay bekleyen hesabı, seçilen rolü atayarak aktifleştirir ve
