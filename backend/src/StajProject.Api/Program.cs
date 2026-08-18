@@ -199,6 +199,12 @@ builder.Services.AddScoped<IUserManagementService, UserManagementService>();
    yazmaz. */
 builder.Services.AddScoped<IRoleManagementService, RoleManagementService>();
 
+/* Kullanıcıya DOĞRUDAN verilen yetkiler ayrı bir servistedir: rol yetkisi
+   düzenlemek ile bir kişiye istisna tanımak farklı kararlardır ve tek kod
+   yolundan geçerlerse yanlışlıkla birbirini etkileyebilirler. Etkinliği
+   yeniden hesaplamaz; IEffectivePermissionService'i olduğu gibi kullanır. */
+builder.Services.AddScoped<IUserPermissionManagementService, UserPermissionManagementService>();
+
 /* Resource-based authorization: "Admin OR owner" kuralı tek bir handler'da
    tanımlıdır. Servis katmanı kuralı kopyalamaz, IDrawingAuthorizationService
    üzerinden sorar; ileride eklenecek geometry edit işlemleri de aynı
