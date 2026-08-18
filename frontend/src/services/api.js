@@ -239,6 +239,60 @@ export function rejectUser(id, reason) {
   })
 }
 
+/* --- Admin: roller ----------------------------------------------------------
+   Hepsi MFA + roles.* yetkisi ister. Yetkisi olmayan authenticated bir
+   kullanıcı 403 alır ve bu bir logout sebebi DEĞİLDİR; authFetch bu ayrımı
+   zaten yapıyor. */
+
+/**
+ * Sistemdeki rollerin envanteri.
+ *
+ * <b>`fetchAssignableRoles` ile karıştırılmamalıdır.</b> O uç "bu yönetici
+ * hangi rolleri ATAYABİLİR" sorusunu yanıtlar ve çağırana göre daralır; bu uç
+ * "sistemde hangi roller VAR" sorusunu yanıtlar ve daraltılmaz — rol yönetimi
+ * ekranı, atayamayacağı rolleri de yönetebilmelidir.
+ *
+ * Satırlar listeyi çizmek için gereken her şeyi taşır (sayımlar ve yetenek
+ * bayrakları dâhil), bu yüzden rol başına ikinci bir istek gerekmez.
+ */
+export function fetchAdminRoles() {
+  return authFetch('/api/admin/roles')
+}
+
+/** Tek bir rolün güncel hâli; liste satırıyla aynı şekli döner. */
+export function fetchAdminRole(id) {
+  return authFetch(`/api/admin/roles/${id}`)
+}
+
+/** Yeni özel rol. Başarıda 201 ve oluşturulan rol döner. */
+export function createAdminRole(name) {
+  return authFetch('/api/admin/roles', {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ name }),
+  })
+}
+
+/**
+ * Rolü yeniden adlandırır.
+ *
+ * PATCH'tir çünkü bu bir KİMLİK değişikliği değildir: rolün Id'si, yetkileri ve
+ * kullanıcı üyelikleri korunur. Sil + yeniden oluştur, rolü taşıyan herkesi
+ * sessizce rolsüz bırakırdı.
+ */
+export function renameAdminRole(id, name) {
+  return authFetch(`/api/admin/roles/${id}`, {
+    method: 'PATCH',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ name }),
+  })
+}
+
+/** Rolü siler. Başarıda 204 döner ve gövde YOKTUR. */
+export function deleteAdminRole(id) {
+  return authFetch(`/api/admin/roles/${id}`, { method: 'DELETE' })
+}
+
 /* --- Drawings ---------------------------------------------------------------
    All calls go through authFetch, so the Bearer token, the 401 handler and the
    automatic logout keep working exactly as they do for /api/auth/me. The WKT

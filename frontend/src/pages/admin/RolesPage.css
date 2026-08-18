@@ -1,0 +1,135 @@
+/* Roller ekranı.
+
+   Ortak yönetim ilkelleri (.admin-button, .admin-dialog*, .admin-detail-panel,
+   .admin-panel-scrim, .admin-badge, .admin-empty, .admin-skeleton,
+   .admin-notice, .admin-error, .admin-users-list, .admin-table-head,
+   .admin-user-row) AdminPage.css'te tanımlıdır ve App.jsx o modülü statik
+   olarak import ettiği için her /admin rotasında yüklüdür. Burada yeniden
+   yazmak, iki ekranın görsel dilinin zamanla ayrışması demek olurdu; bu dosya
+   yalnızca rollere ÖZGÜ olanı ekler. */
+
+.admin-roles-page {
+  min-width: 0;
+}
+
+.admin-roles-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  max-width: 1180px;
+  margin: 0 auto 1rem;
+}
+
+/* Kullanıcı tablosundan farklı sütun düzeni: rollerde kimlik tek bir addır,
+   geri kalanı sayı ve rozettir. */
+.admin-roles-list .admin-table-head,
+.admin-roles-list .admin-user-row {
+  grid-template-columns: minmax(180px, 1.6fr) 110px 100px 90px 130px;
+}
+
+.admin-role-count {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+/* --- Tür rozetleri ---------------------------------------------------------
+   Üç durum da okunur olmalı ama hiçbiri alarm gibi görünmemeli: legacy roller
+   bozuk değil, KORUNMUŞTUR. Bu yüzden kırmızı/uyarı tonu kullanılmaz. */
+
+.admin-badge.role-legacy {
+  color: var(--text-secondary);
+  border-style: dashed;
+}
+
+.admin-badge.role-system {
+  color: var(--primary-light);
+}
+
+.admin-badge.role-custom {
+  color: #22c55e;
+}
+
+/* --- Detay eylemleri -------------------------------------------------------- */
+
+.admin-role-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.admin-role-actions .admin-button {
+  flex: 1;
+  min-width: 150px;
+}
+
+/* --- Diyalog alanı ---------------------------------------------------------- */
+
+.admin-role-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 1rem;
+  color: var(--text-secondary);
+  font-size: var(--font-small);
+  font-weight: 600;
+}
+
+.admin-role-field input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 44px;
+  padding: 0.65rem 0.8rem;
+  color: var(--text-primary);
+  background: var(--surface-soft);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  font: inherit;
+}
+
+.admin-role-field input:focus-visible {
+  outline: 2px solid var(--primary-light);
+  outline-offset: 1px;
+}
+
+.admin-dialog-error {
+  margin: 0.9rem 0 0;
+  padding: 0.7rem 0.8rem;
+  color: var(--text-primary);
+  background: var(--danger-soft);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-small);
+  line-height: 1.5;
+}
+
+/* --- Dar ekran --------------------------------------------------------------
+   Kullanıcı tablosuyla aynı eşik (760px): satırlar kart hâline gelir ve
+   data-label sütun adlarını taşır. */
+
+@media (max-width: 760px) {
+  .admin-roles-list .admin-table-head {
+    display: none;
+  }
+
+  .admin-roles-list .admin-user-row {
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+  }
+
+  .admin-roles-list .admin-user-identity {
+    grid-column: 1 / -1;
+  }
+
+  .admin-roles-toolbar {
+    justify-content: stretch;
+  }
+
+  .admin-roles-toolbar .admin-button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 390px) {
+  .admin-roles-list .admin-user-row {
+    grid-template-columns: 1fr;
+  }
+}
