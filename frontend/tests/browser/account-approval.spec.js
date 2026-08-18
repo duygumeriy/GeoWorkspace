@@ -67,7 +67,9 @@ async function openAdminUsers(page, { onApprove, onReject } = {}) {
     sessionStorage.setItem('expiresAt', expiresAt)
   }, new Date(Date.now() + 3_600_000).toISOString())
   await page.goto('/admin/users')
-  await expect(page.getByRole('heading', { name: 'Kullanıcı Yönetimi' })).toBeVisible()
+  /* Başlık, yönetim kabuğuyla birlikte "Kullanıcılar" oldu: kenar çubuğundaki
+     gezinme öğesiyle aynı adı taşır. Sayfanın kimliği hâlâ doğrulanıyor. */
+  await expect(page.getByRole('heading', { name: 'Kullanıcılar', level: 1 })).toBeVisible()
 }
 
 test('a verified account is told it is waiting for approval, not that it can sign in', async ({ page }) => {
