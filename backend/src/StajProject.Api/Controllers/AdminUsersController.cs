@@ -85,11 +85,10 @@ public class AdminUsersController : ApiControllerBase
     /// </summary>
     [RequirePermission(PermissionCodes.RolesView)]
     [HttpGet("roles")]
-    public Task<ActionResult<IReadOnlyList<AssignableRole>>> GetAssignableRoles() =>
+    public Task<ActionResult<IReadOnlyList<AssignableRole>>> GetAssignableRoles(CancellationToken cancellationToken) =>
         Guard<IReadOnlyList<AssignableRole>>(
             nameof(GetAssignableRoles),
-            () => Task.FromResult<ActionResult<IReadOnlyList<AssignableRole>>>(
-                Ok(_userManagement.GetAssignableRoles())));
+            async () => Ok(await _userManagement.GetAssignableRolesAsync(cancellationToken)));
 
     [RequirePermission(PermissionCodes.UsersUpdate)]
     [HttpPatch("{id:int}/role")]

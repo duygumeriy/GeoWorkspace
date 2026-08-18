@@ -236,7 +236,10 @@ public class AuthService : IAuthService
             EmailConfirmed = user.EmailConfirmed,
             TwoFactorEnabled = user.TwoFactorEnabled,
             // Rol daima veritabanından okunur — istekten değil, token'dan bile değil.
-            Role = roles.FirstOrDefault(r => ApplicationRoles.All.Contains(r)),
+            /* Sabit listeye göre süzmek, dinamik rollerde (Viewer, özel roller)
+               rolü null gösterirdi. Kullanıcının gerçek rolü döner; legacy
+               roller de eskisi gibi tanınmaya devam eder. */
+            Role = roles.FirstOrDefault(),
             Roles = roles.ToArray()
         };
     }
