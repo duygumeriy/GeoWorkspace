@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext.jsx'
 import { approveUser, fetchAdminUser, fetchAdminUsers, fetchAssignableRoles, readApiError, rejectUser, updateUserRole, updateUserStatus } from '../services/api.js'
+import AdminPageHeader from '../components/admin/AdminPageHeader.jsx'
 import UserDetailPanel from '../components/admin/UserDetailPanel.jsx'
 import UserManagementList from '../components/admin/UserManagementList.jsx'
 import { STATUS_FILTERS } from '../components/admin/userStatus.js'
@@ -89,8 +89,12 @@ export default function AdminPage() {
   const reject = (reason) => mutate((id) => rejectUser(id, reason), (u) => `${u.username} başvurusu reddedildi. Hesap uygulamaya erişemeyecek.`)
 
   const emptyMessage = search.trim() ? 'Aramanızla eşleşen kullanıcı bulunamadı.' : roleFilter !== 'All' || statusFilter !== 'All' ? 'Seçili filtrelerle eşleşen kullanıcı bulunamadı.' : 'Henüz kullanıcı bulunmuyor.'
-  return <main className="admin-users-page">
-    <header className="admin-users-header"><div><Link className="admin-back-link" to="/map">← Haritaya dön</Link><h1>Kullanıcı Yönetimi</h1><p>Sistemdeki kullanıcıları, rollerini ve hesap durumlarını yönetin.</p></div></header>
+  /* Kabuk artık <main>, kendi başlığını ve haritaya dönüş bağlantısını taşıyor.
+     Burada ikinci bir <main> ya da ikinci bir "← Haritaya dön" bırakmak, sayfada
+     iç içe iki kabuk ve iki gezinme yolu demek olurdu. Ekranın İŞLEVSEL içeriği
+     (filtreler, liste, detay çekmecesi, tüm API çağrıları) olduğu gibi durur. */
+  return <div className="admin-users-page">
+    <AdminPageHeader title="Kullanıcılar" description="Sistemdeki kullanıcıları görüntüleyin ve yönetin." />
     {pendingCount > 0 && <button type="button" className="admin-pending-banner" onClick={() => setStatusFilter('PendingApproval')}><strong>{pendingCount} hesap onay bekliyor.</strong><span>Onay bekleyenleri göster →</span></button>}
     {notice && <div className={`admin-notice is-${notice.type}`} role="status">{notice.message}<button type="button" onClick={() => setNotice(null)} aria-label="Bildirimi kapat">×</button></div>}
     <section className="admin-toolbar" aria-label="Kullanıcı filtreleri">
@@ -101,5 +105,5 @@ export default function AdminPage() {
     {error && <div className="admin-error" role="alert"><span>{error}</span><button type="button" onClick={loadUsers}>Tekrar dene</button></div>}
     <UserManagementList users={filteredUsers} currentUserId={userId} loading={loading} selectedId={selectedId} onSelect={openDetail} emptyMessage={emptyMessage} />
     {(selectedId || detailLoading) && <UserDetailPanel user={detail} currentUserId={userId} loading={detailLoading} mutating={mutating} roles={roles} onClose={() => { setSelectedId(null); setDetail(null) }} onChangeRole={changeRole} onChangeStatus={changeStatus} onApprove={approve} onReject={reject} />}
-  </main>
+  </div>
 }
