@@ -39,6 +39,11 @@ public class UserManagementService : IUserManagementService
 
     private readonly AppDbContext _dbContext;
     private readonly UserManager<User> _userManager;
+
+    /* Atanabilir rol kuralının TEK sahibi. Onay ve rol değiştirme akışları
+       kendi doğrulamalarını yazmaz; ikisi de buraya sorar, böylece iki uç
+       zamanla farklı kurallara kayamaz. */
+    private readonly IRoleManagementService _roleManagement;
     private readonly IEmailSender _emailSender;
     private readonly ClientAppOptions _clientApp;
     private readonly ILogger<UserManagementService> _logger;
@@ -46,12 +51,14 @@ public class UserManagementService : IUserManagementService
     public UserManagementService(
         AppDbContext dbContext,
         UserManager<User> userManager,
+        IRoleManagementService roleManagement,
         IEmailSender emailSender,
         ClientAppOptions clientApp,
         ILogger<UserManagementService> logger)
     {
         _dbContext = dbContext;
         _userManager = userManager;
+        _roleManagement = roleManagement;
         _emailSender = emailSender;
         _clientApp = clientApp;
         _logger = logger;
@@ -75,21 +82,28 @@ public class UserManagementService : IUserManagementService
     }
 
     /// <summary>
-    /// Onay ekranında sunulacak roller. Kaynak <see cref="ApplicationRoles.All"/>
-    /// olduğu için istemcinin gördüğü liste ile sunucunun kabul ettiği liste
-    /// aynı yerden türer.
+    /// Onay ekranında sunulacak roller.
     /// </summary>
-    public IReadOnlyList<AssignableRole> GetAssignableRoles() =>
-        ApplicationRoles.All
-            .Select(role => new AssignableRole
-            {
-                Name = role,
-                Description = role == ApplicationRoles.Admin
-                    ? "Kullanıcı yönetimi ve tüm çizimler üzerinde yönetim yetkisi."
-                    : "Harita uygulamasına erişim; kendi çizimlerini oluşturur ve yönetir.",
-                RequiresTwoFactor = role == ApplicationRoles.Admin
-            })
-            .ToArray();
+    /// <remarks>
+    /// <para>
+    /// Kaynak artık sabit bir liste değil, Identity'de gerçekten var olan ve
+    /// atanabilir sayılan rollerdir. İstemcinin gördüğü liste ile sunucunun
+    /// kabul ettiği liste hâlâ aynı yerden — <see cref="IRoleManagementService"/>
+    /// — türer, dolayısıyla ekranda görünüp reddedilen bir rol oluşamaz.
+    /// Legacy <c>Admin</c>/<c>User</c> bu listede YER ALMAZ.
+    /// </para>
+    /// <para>
+    /// Liste <b>çağırana özeldir</b>: aynı kuralla (hedef rolün aktif
+    /// yetkileri ⊆ çağıranın etkin yetkileri) daraltılır, çünkü mutasyon da
+    /// tam olarak bunu uygular. <paramref name="actingUserId"/> buraya
+    /// doğrulanmış token'dan gelir; <see cref="ChangeRoleAsync"/> ve
+    /// <see cref="ApproveAsync"/> ile aynı kimlik kaynağıdır.
+    /// </para>
+    /// </remarks>
+    public Task<IReadOnlyList<AssignableRole>> GetAssignableRolesAsync(
+        int actingUserId,
+        CancellationToken cancellationToken = default) =>
+        _roleManagement.GetAssignableRolesAsync(actingUserId, cancellationToken);
 
     /* --- Rol değişikliği ------------------------------------------------------ */
 
@@ -99,10 +113,18 @@ public class UserManagementService : IUserManagementService
         int actingUserId,
         CancellationToken cancellationToken = default)
     {
-        if (!ApplicationRoles.TryParse(request.Role, out var targetRole))
+        /* Rol çözümü ÇAĞIRANIN kimliğiyle yapılır: yetki yükseltme kontrolü
+           (hedef rolün yetkileri ⊆ çağıranın yetkileri) burada uygulanır ve
+           hiçbir kayıt değiştirilmeden önce çalışır. actingUserId doğrulanmış
+           token'dan gelir, istek gövdesinden DEĞİL. */
+        var resolved = await _roleManagement.ResolveAssignableRoleAsync(request.Role, actingUserId, cancellationToken);
+
+        if (!resolved.IsSuccess)
         {
-            return InvalidRole();
+            return Rejected(resolved);
         }
+
+        var targetRole = resolved.Value!;
 
         await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
         await AcquireRoleMutationLockAsync(cancellationToken);
@@ -247,10 +269,18 @@ public class UserManagementService : IUserManagementService
         int actingUserId,
         CancellationToken cancellationToken = default)
     {
-        if (!ApplicationRoles.TryParse(request.Role, out var targetRole))
+        /* Rol çözümü ÇAĞIRANIN kimliğiyle yapılır: yetki yükseltme kontrolü
+           (hedef rolün yetkileri ⊆ çağıranın yetkileri) burada uygulanır ve
+           hiçbir kayıt değiştirilmeden önce çalışır. actingUserId doğrulanmış
+           token'dan gelir, istek gövdesinden DEĞİL. */
+        var resolved = await _roleManagement.ResolveAssignableRoleAsync(request.Role, actingUserId, cancellationToken);
+
+        if (!resolved.IsSuccess)
         {
-            return InvalidRole();
+            return Rejected(resolved);
         }
+
+        var targetRole = resolved.Value!;
 
         string approvedRole;
 
@@ -516,7 +546,13 @@ public class UserManagementService : IUserManagementService
     private async Task<ServiceResult<AdminUserDetail>?> AssignPrimaryRoleAsync(User user, string targetRole)
     {
         var currentRoles = await _userManager.GetRolesAsync(user);
-        var rolesToRemove = currentRoles.Where(r => ApplicationRoles.All.Contains(r)).ToArray();
+
+        /* Roller artık dinamik olduğu için "kaldırılacaklar" sabit bir listeden
+           süzülemez: kullanıcının SAHİP OLDUĞU tüm roller kaldırılır. Eski hâl
+           yalnızca Admin/User'ı temizlerdi ve Viewer -> GIS Editor geçişinde
+           kullanıcı iki rolde birden kalarak tek primary role kuralını
+           sessizce bozardı. Hedef rol zaten aşağıda yeniden eklenir. */
+        var rolesToRemove = currentRoles.Where(r => !string.Equals(r, targetRole, StringComparison.Ordinal)).ToArray();
 
         if (rolesToRemove.Length > 0)
         {
@@ -525,6 +561,12 @@ public class UserManagementService : IUserManagementService
             {
                 return Failed<AdminUserDetail>("Rol kaldırılamadı.", removal);
             }
+        }
+
+        // Hedef rol zaten duruyorsa yeniden eklemek Identity hatası üretirdi.
+        if (currentRoles.Contains(targetRole, StringComparer.Ordinal))
+        {
+            return null;
         }
 
         var assignment = await _userManager.AddToRoleAsync(user, targetRole);
@@ -652,10 +694,6 @@ public class UserManagementService : IUserManagementService
         return result;
     }
 
-    private static ServiceResult<AdminUserDetail> InvalidRole() =>
-        ServiceResult<AdminUserDetail>.Failure(
-            $"Geçersiz rol. Yalnızca şu roller atanabilir: {string.Join(", ", ApplicationRoles.All)}.");
-
     private static string DescribeUnapprovable(AccountStatus status) => status switch
     {
         AccountStatus.PendingEmailVerification =>
@@ -667,6 +705,23 @@ public class UserManagementService : IUserManagementService
         _ =>
             "Bu başvuru reddedilmiş. Onaylanabilmesi için yeniden değerlendirilmesi gerekir."
     };
+
+    /// <summary>
+    /// Rol çözümündeki reddi, hata TÜRÜNÜ koruyarak aktarır.
+    /// </summary>
+    /// <remarks>
+    /// Tür korunmazsa yetki yükseltme reddi 400'e düşerdi; oysa istek
+    /// geçerlidir ve rol vardır — eksik olan çağıranın yetkisidir, yani doğru
+    /// karşılık 403'tür.
+    /// </remarks>
+    private static ServiceResult<AdminUserDetail> Rejected(ServiceResult<string> resolved) =>
+        resolved.ErrorKind switch
+        {
+            ServiceErrorKind.Forbidden => ServiceResult<AdminUserDetail>.Forbidden(resolved.Error!),
+            ServiceErrorKind.NotFound => ServiceResult<AdminUserDetail>.NotFound(resolved.Error!),
+            ServiceErrorKind.Conflict => ServiceResult<AdminUserDetail>.Conflict(resolved.Error!),
+            _ => ServiceResult<AdminUserDetail>.Failure(resolved.Error!)
+        };
 
     private static ServiceResult<T> Failed<T>(string message, IdentityResult result) =>
         ServiceResult<T>.Failure($"{message} {string.Join(" ", result.Errors.Select(e => e.Description))}".Trim());

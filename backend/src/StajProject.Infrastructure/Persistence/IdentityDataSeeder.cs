@@ -310,7 +310,10 @@ public static class IdentityDataSeeder
         {
             var roles = await userManager.GetRolesAsync(user);
 
-            if (roles.Any(r => ApplicationRoles.All.Contains(r)))
+            /* "Rolsüz" demek artık "Admin/User değil" demek DEĞİLDİR: roller
+               dinamikleştiği için Viewer veya özel bir role sahip hesaplar da
+               rolsüz sanılır ve startup'ta sessizce User rolüne taşınırdı. */
+            if (roles.Count > 0)
             {
                 continue;
             }
@@ -356,8 +359,9 @@ public static class IdentityDataSeeder
             return;
         }
 
+        // Aynı gerekçe: kullanıcının sahip olduğu TÜM roller kaldırılır.
         var toRemove = (await userManager.GetRolesAsync(user))
-            .Where(r => ApplicationRoles.All.Contains(r))
+            .Where(r => !string.Equals(r, ApplicationRoles.Admin, StringComparison.Ordinal))
             .ToArray();
 
         if (toRemove.Length > 0)

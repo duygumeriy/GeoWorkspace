@@ -80,16 +80,38 @@ public class AdminUsersController : ApiControllerBase
         GuardUser(nameof(GetUser), () => _userManagement.GetUserAsync(id, cancellationToken));
 
     /// <summary>
-    /// Onay ekranında atanabilecek roller. Rota <c>{id:int}</c> kısıtı
-    /// sayesinde kullanıcı detayı ucuyla çakışmaz.
+    /// <b>Bu çağıranın</b> şu anda atayabileceği roller. Rota <c>{id:int}</c>
+    /// kısıtı sayesinde kullanıcı detayı ucuyla çakışmaz.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Uç sorumluluk ayrımı.</b> <c>GET /api/admin/roles</c> "sistemde
+    /// hangi roller VAR" sorusunu yanıtlar ve bilinçli olarak çağırana göre
+    /// filtrelenmez — yönetim ekranının envantere ihtiyacı vardır. Buradaki
+    /// uç ise "bu çağıran şu an hangi rolleri VEREBİLİR" sorusunu yanıtlar,
+    /// dolayısıyla çağırana özeldir. İkisi farklı sorulardır ve
+    /// birleştirilmemelidir.
+    /// </para>
+    /// <para>
+    /// Liste, mutasyon uçlarıyla <b>aynı</b> kuralı kullanır (hedef rolün
+    /// aktif yetkileri ⊆ çağıranın etkin yetkileri); böylece dropdown'da
+    /// görünüp atandığında 403 dönen bir rol oluşamaz.
+    /// </para>
+    /// <para>
+    /// <b>Yetki sözleşmesi DEĞİŞMEDİ:</b> uç hâlâ MFA + <c>roles.view</c>
+    /// ister. Dönen verinin çağırana özel olması, uca <c>users.update</c>
+    /// şartı eklemek için sebep değildir: "hangi rolleri verebilirdim"
+    /// sorusunu sormak, rol atamakla aynı şey değildir. Asıl mutasyon uçları
+    /// <c>users.update</c> istemeye devam eder — yetenek keşfi ile mutasyon
+    /// yetkilendirmesi ayrı tutulur.
+    /// </para>
+    /// </remarks>
     [RequirePermission(PermissionCodes.RolesView)]
     [HttpGet("roles")]
-    public Task<ActionResult<IReadOnlyList<AssignableRole>>> GetAssignableRoles() =>
+    public Task<ActionResult<IReadOnlyList<AssignableRole>>> GetAssignableRoles(CancellationToken cancellationToken) =>
         Guard<IReadOnlyList<AssignableRole>>(
             nameof(GetAssignableRoles),
-            () => Task.FromResult<ActionResult<IReadOnlyList<AssignableRole>>>(
-                Ok(_userManagement.GetAssignableRoles())));
+            async () => Ok(await _userManagement.GetAssignableRolesAsync(ActingUserId, cancellationToken)));
 
     [RequirePermission(PermissionCodes.UsersUpdate)]
     [HttpPatch("{id:int}/role")]
@@ -166,9 +188,15 @@ public class AdminUsersController : ApiControllerBase
         Guard<AdminUserDetail>(endpoint, async () => Respond(await operation()));
 
     /// <summary>
-    /// İşlemi yapan Admin'in kimliği. Policy sayesinde buraya yalnızca
-    /// doğrulanmış bir Admin gelebilir, dolayısıyla değer daima mevcuttur.
+    /// İşlemi yapan yöneticinin kimliği; daima doğrulanmış token'dan gelir,
+    /// istek gövdesinden veya query'den ASLA okunmaz.
     /// </summary>
+    /// <remarks>
+    /// Policy sayesinde buraya yalnızca doğrulanmış bir kullanıcı gelebilir,
+    /// dolayısıyla değer pratikte daima mevcuttur. Yine de <c>0</c>'a düşüş
+    /// sessizce "yetkisiz çağıran" anlamına gelir: servis katmanı bu kimlikle
+    /// hiçbir rol veremez ve atanabilir rol listesi boş döner (fail-closed).
+    /// </remarks>
     private int ActingUserId => _currentUser.UserId ?? 0;
 
     private ActionResult<AdminUserDetail> Respond(ServiceResult<AdminUserDetail> result)
@@ -182,6 +210,10 @@ public class AdminUsersController : ApiControllerBase
         {
             ServiceErrorKind.NotFound => NotFound(new { message = result.Error }),
             ServiceErrorKind.Conflict => Conflict(new { message = result.Error }),
+            /* Yetki yükseltme reddi: istek geçerli, rol var — eksik olan
+               çağıranın o rolü verme yetkisidir. Doğru karşılık 403'tür;
+               400 "istek bozuk" der ve nedeni yanlış anlatırdı. */
+            ServiceErrorKind.Forbidden => StatusCode(StatusCodes.Status403Forbidden, new { message = result.Error }),
             _ => BadRequest(new { message = result.Error })
         };
     }
