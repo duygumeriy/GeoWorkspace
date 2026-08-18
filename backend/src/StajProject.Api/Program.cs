@@ -190,6 +190,15 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IAccountService, AccountService>();
 builder.Services.AddScoped<IUserManagementService, UserManagementService>();
 
+/* Rol ve rol-yetki yönetimi. Kullanıcı yönetiminden ayrı bir servistir:
+   sorumlulukları farklıdır ve ikisini tek bir "AdminService" altında
+   birleştirmek, rol kurallarını kullanıcı iş kurallarıyla karıştırırdı.
+
+   UserManagementService bu servise BAĞLIDIR: atanabilir rol kuralının tek
+   sahibi burasıdır, onay ve rol değiştirme akışları kendi doğrulamalarını
+   yazmaz. */
+builder.Services.AddScoped<IRoleManagementService, RoleManagementService>();
+
 /* Resource-based authorization: "Admin OR owner" kuralı tek bir handler'da
    tanımlıdır. Servis katmanı kuralı kopyalamaz, IDrawingAuthorizationService
    üzerinden sorar; ileride eklenecek geometry edit işlemleri de aynı
