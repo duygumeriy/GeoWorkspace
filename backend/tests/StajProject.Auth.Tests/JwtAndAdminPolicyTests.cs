@@ -5,6 +5,7 @@ using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
+using StajProject.Api.Authorization;
 using StajProject.Api.Controllers;
 using StajProject.Application.Common;
 using StajProject.Domain.Common;
@@ -84,18 +85,31 @@ public class JwtAndAdminPolicyTests
     /// Onay/red uçları anonim veya sıradan bir kullanıcıya açılamaz.
     /// </summary>
     /// <remarks>
-    /// Koruma controller seviyesindedir ve yukarıdaki theory policy'nin
-    /// kendisini doğrular. Burada eksik olan halka test edilir: yeni action'lar
-    /// gerçekten o korumanın ALTINDA mı, yoksa <c>[AllowAnonymous]</c> ile
-    /// dışına mı çıkmışlar. Reflection kasıtlıdır — bir action'ın yanlışlıkla
-    /// korumasız bırakılması, yalnızca çalışma zamanında fark edilecek bir
-    /// hatadır.
+    /// <para>
+    /// Reflection kasıtlıdır: bir action'ın yanlışlıkla korumasız bırakılması
+    /// yalnızca çalışma zamanında fark edilecek bir hatadır.
+    /// </para>
+    /// <para>
+    /// <b>Koruma modeli değişti.</b> Controller artık
+    /// <see cref="AuthorizationPolicies.AdminMfaRequired"/> yerine
+    /// <see cref="AuthorizationPolicies.MfaRequired"/> kullanır ve her action
+    /// kendi yetkisini ayrıca ister. MFA şartı DÜŞMEDİ — aynı <c>amr</c>
+    /// kanıtına bakılır; kaldırılan tek şey legacy <c>Admin</c> rol adı
+    /// bağıdır. Aksi hâlde 27 yetkinin tamamına sahip bir
+    /// <c>Administrator</c> kullanıcısı sırf adı yüzünden engellenirdi.
+    /// </para>
     /// </remarks>
     [Theory]
-    [InlineData(nameof(AdminUsersController.Approve))]
-    [InlineData(nameof(AdminUsersController.Reject))]
-    [InlineData(nameof(AdminUsersController.GetAssignableRoles))]
-    public void Approval_endpoints_stay_behind_the_admin_mfa_policy(string actionName)
+    [InlineData(nameof(AdminUsersController.Approve), PermissionCodes.UsersUpdate)]
+    [InlineData(nameof(AdminUsersController.Reject), PermissionCodes.UsersUpdate)]
+    [InlineData(nameof(AdminUsersController.GetAssignableRoles), PermissionCodes.RolesView)]
+    [InlineData(nameof(AdminUsersController.GetUsers), PermissionCodes.UsersView)]
+    [InlineData(nameof(AdminUsersController.GetUser), PermissionCodes.UsersView)]
+    [InlineData(nameof(AdminUsersController.ChangeRole), PermissionCodes.UsersUpdate)]
+    [InlineData(nameof(AdminUsersController.ChangeStatus), PermissionCodes.UsersUpdate)]
+    public void Approval_endpoints_stay_behind_mfa_and_require_a_permission(
+        string actionName,
+        string expectedPermission)
     {
         var controller = typeof(AdminUsersController);
 
@@ -104,12 +118,59 @@ public class JwtAndAdminPolicyTests
             .Select(attribute => attribute.Policy)
             .SingleOrDefault();
 
-        Assert.Equal(AuthorizationPolicies.AdminMfaRequired, policy);
+        Assert.Equal(AuthorizationPolicies.MfaRequired, policy);
 
         var action = controller.GetMethod(actionName);
 
         Assert.NotNull(action);
         Assert.Empty(action!.GetCustomAttributes<AllowAnonymousAttribute>(inherit: true));
+
+        var permissions = action
+            .GetCustomAttributes<RequirePermissionAttribute>(inherit: true)
+            .Select(attribute => attribute.PermissionCode)
+            .ToArray();
+
+        Assert.Equal([expectedPermission], permissions);
+    }
+
+    /// <summary>
+    /// Rol adı bağı gerçekten koptu mu: MfaRequired, legacy <c>Admin</c> rolü
+    /// olmayan ama MFA'sını tamamlamış bir kullanıcıyı da geçirmelidir.
+    /// </summary>
+    [Theory]
+    [InlineData(GisRoles.Administrator, AuthenticationMethods.MultiFactor, true)]
+    [InlineData(ApplicationRoles.Admin, AuthenticationMethods.MultiFactor, true)]
+    [InlineData(GisRoles.Viewer, AuthenticationMethods.MultiFactor, true)]
+    [InlineData(ApplicationRoles.Admin, AuthenticationMethods.Password, false)]
+    [InlineData(GisRoles.Administrator, AuthenticationMethods.Password, false)]
+    public async Task Mfa_policy_checks_the_second_factor_and_not_the_role_name(
+        string role,
+        string authenticationMethod,
+        bool expected)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAuthorization(options =>
+            options.AddPolicy(AuthorizationPolicies.MfaRequired, policy =>
+            {
+                policy.RequireAuthenticatedUser();
+                policy.RequireAssertion(context => AuthenticationMethods.IsMultiFactor(context.User));
+            }));
+        await using var provider = services.BuildServiceProvider();
+        var authorization = provider.GetRequiredService<IAuthorizationService>();
+        var identity = new ClaimsIdentity(
+            [new Claim(ClaimTypes.NameIdentifier, "7"), new Claim(ClaimTypes.Role, role), new Claim(AuthenticationMethods.ClaimType, authenticationMethod)],
+            "test");
+
+        var result = await authorization.AuthorizeAsync(
+            new ClaimsPrincipal(identity),
+            resource: null,
+            AuthorizationPolicies.MfaRequired);
+
+        /* Policy YETKİ kontrol etmez; yalnızca ikinci faktörü doğrular. Viewer
+           da geçer — onu yönetim uçlarından uzak tutan şey RequirePermission'dır.
+           İki boyut bilinçli olarak ayrıdır. */
+        Assert.Equal(expected, result.Succeeded);
     }
 
     private static TokenValidationParameters ValidationParameters() => new()

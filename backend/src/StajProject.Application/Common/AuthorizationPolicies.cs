@@ -29,4 +29,28 @@ public static class AuthorizationPolicies
     /// password-only bir token kabul etmez.
     /// </remarks>
     public const string AdminMfaRequired = nameof(AdminMfaRequired);
+
+    /// <summary>
+    /// Tamamlanmış ikinci faktör (<c>amr=mfa</c>) — <b>rol şartı yok</b>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="AdminMfaRequired"/> ile aynı MFA kanıtını arar, ama legacy
+    /// <c>Admin</c> rol adını GEREKTİRMEZ. Dinamik yetkilendirmede "ne
+    /// yapabilir" sorusunu yetki satırları yanıtlar; MFA ise ondan bağımsız
+    /// bir güvenlik boyutudur ("kimliğini ne kadar güçlü kanıtladı").
+    /// </para>
+    /// <para>
+    /// İkisini ayırmak gerekiyordu: yönetim uçları yalnızca
+    /// <c>AdminMfaRequired</c> ile korunsaydı, 27 yetkinin tamamına sahip bir
+    /// <c>Administrator</c> kullanıcısı bile sırf rol adı <c>Admin</c>
+    /// olmadığı için engellenirdi. Korunan uçlar bu yüzden
+    /// <c>MfaRequired</c> + gerekli yetki biçiminde kurulur.
+    /// </para>
+    /// <para>
+    /// MFA şartı <b>gevşetilmez</b>: kanıt aynı <c>amr</c> claim'idir ve
+    /// yalnızca ikinci faktör doğrulandıktan sonra yazılır.
+    /// </para>
+    /// </remarks>
+    public const string MfaRequired = nameof(MfaRequired);
 }
