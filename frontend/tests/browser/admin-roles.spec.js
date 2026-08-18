@@ -48,10 +48,18 @@ const ROLES = [LEGACY_ADMIN, LEGACY_USER, VIEWER, GIS_EDITOR, ADMINISTRATOR, CUS
  * `onList` lets a test change what the refetch after a mutation returns, which
  * is how "the list re-reads from the server" gets proven.
  */
-async function openRoles(page, { onList, onCreate, onRename, onDelete, listStatus } = {}) {
+async function openRoles(page, { onList, onCreate, onRename, onDelete, listStatus, onPermissions } = {}) {
   await page.route('**/api/auth/me', (route) =>
     route.fulfill(json({ userId: 1, username: 'admin', emailConfirmed: true, twoFactorEnabled: true, role: 'Admin', roles: ['Admin'] })),
   )
+  /* Detay açıldığında rolün yetki matrisi okunur (Phase 5C). Bu dosyanın konusu
+     rol CRUD'udur, matrisin kendisi değil; boş bir katalog yeterlidir ve hiçbir
+     istek ağa çıkmaz. Matrisin davranışı admin-role-permissions.spec.js'te. */
+  await page.route('**/api/admin/roles/*/permissions', (route) => {
+    if (onPermissions) { onPermissions(route); return }
+    const id = Number(route.request().url().match(/roles\/(\d+)\/permissions/)[1])
+    route.fulfill(json({ role: ROLES.find((r) => r.id === id) ?? ROLES[0], permissions: [] }))
+  })
   if (onCreate) await page.route('**/api/admin/roles', (route) => (route.request().method() === 'POST' ? onCreate(route) : route.fulfill(json(onList ? onList() : ROLES))))
   if (onRename) await page.route('**/api/admin/roles/9', (route) => (route.request().method() === 'PATCH' ? onRename(route) : route.fallback()))
   if (onDelete) await page.route('**/api/admin/roles/9', (route) => (route.request().method() === 'DELETE' ? onDelete(route) : route.fallback()))
@@ -181,30 +189,32 @@ test('a legacy role explains that it is preserved, not broken', async ({ page })
   await expect(detail.getByRole('button', { name: 'Rolü Sil' })).toHaveCount(0)
 })
 
-/* --- Phase 5C sınırı --------------------------------------------------------- */
+/* --- Yetki matrisiyle sınır ---------------------------------------------------- */
 
-test('the detail shows a permission count but no permission editor', async ({ page }) => {
+test('the detail hosts the permission editor', async ({ page }) => {
   await openRoles(page)
   await rowFor(page, 'GIS Editor').click()
 
   const detail = page.getByRole('dialog', { name: 'GIS Editor' })
-  await expect(detail).toContainText('14 aktif yetki')
-
-  /* Phase 5B yetki DÜZENLEMEZ: onay kutusu, kaydet düğmesi ve kirli durum
-     sonraki fazın konusudur. */
-  await expect(detail.getByRole('checkbox')).toHaveCount(0)
-  await expect(detail.getByRole('button', { name: /Yetkileri Kaydet|Kaydet/ })).toHaveCount(0)
+  await expect(detail.getByRole('heading', { name: 'Yetkiler' })).toBeVisible()
 })
 
-test('no request is ever made to the role-permissions endpoint', async ({ page }) => {
+test('the permission matrix is read once, only when a detail opens', async ({ page }) => {
   const permissionCalls = []
-  await page.route('**/api/admin/roles/*/permissions', (route) => { permissionCalls.push(route.request().method()); route.fulfill(json({})) })
+  await openRoles(page, {
+    onPermissions: (route) => {
+      permissionCalls.push(route.request().method())
+      route.fulfill(json({ role: GIS_EDITOR, permissions: [] }))
+    },
+  })
 
-  await openRoles(page)
+  // Liste tek başına hiçbir matris okumaz — rol başına istek bir N+1 olurdu.
+  await expect(rows(page)).toHaveCount(6)
+  expect(permissionCalls).toEqual([])
+
   await rowFor(page, 'GIS Editor').click()
   await expect(page.getByRole('dialog', { name: 'GIS Editor' })).toBeVisible()
-
-  expect(permissionCalls).toEqual([])
+  expect(permissionCalls).toEqual(['GET'])
 })
 
 /* --- Oluşturma --------------------------------------------------------------- */
