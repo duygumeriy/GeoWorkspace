@@ -97,7 +97,7 @@ public class AccountApprovalTests
 
         var result = await management.ApproveAsync(
             user.Id,
-            new ApproveUserRequest { Role = ApplicationRoles.User },
+            new ApproveUserRequest { Role = GisRoles.GisEditor },
             ApproverId);
 
         Assert.False(result.IsSuccess);
@@ -107,10 +107,20 @@ public class AccountApprovalTests
         Assert.Empty(await users.GetRolesAsync(reloaded));
     }
 
+    /// <summary>
+    /// Var olmayan roller ve geçiş dönemi rolleri onayda reddedilir.
+    /// </summary>
+    /// <remarks>
+    /// <c>"GIS Manager"</c> vakası bilinçli olarak KALDIRILDI: hedef GIS
+    /// rolleri artık atanabilir ve bunu sağlamak Phase 4'ün amacıdır. Yerine
+    /// legacy <c>Admin</c>/<c>User</c> eklendi — bunlar mevcut kullanıcılarda
+    /// geçerli kalmaya devam eder ama YENİ onaylarda kullanılamaz.
+    /// </remarks>
     [Theory]
     [InlineData("")]
     [InlineData("SuperAdmin")]
-    [InlineData("GIS Manager")]
+    [InlineData(ApplicationRoles.Admin)]
+    [InlineData(ApplicationRoles.User)]
     public async Task Approval_rejects_roles_the_server_does_not_recognise(string role)
     {
         await using var scope = CreateScope();
@@ -136,20 +146,20 @@ public class AccountApprovalTests
         var management = CreateManagement(scope, out _);
 
         var user = await RegisterAndConfirmAsync(scope, "double-approved");
-        Assert.True((await management.ApproveAsync(user.Id, Approve(ApplicationRoles.User), ApproverId)).IsSuccess);
+        Assert.True((await management.ApproveAsync(user.Id, Approve(GisRoles.GisEditor), ApproverId)).IsSuccess);
 
         var approvedAt = (await users.FindByIdAsync(user.Id.ToString()))!.ApprovedAt;
 
         // İkinci onay farklı bir rolle geliyor; sessizce uygulanmamalı.
-        var second = await management.ApproveAsync(user.Id, Approve(ApplicationRoles.Admin), actingUserId: 42);
+        var second = await management.ApproveAsync(user.Id, Approve(GisRoles.Administrator), actingUserId: 42);
 
         Assert.False(second.IsSuccess);
         Assert.Equal(ServiceErrorKind.Conflict, second.ErrorKind);
         var reloaded = (await users.FindByIdAsync(user.Id.ToString()))!;
         Assert.Equal(approvedAt, reloaded.ApprovedAt);
         Assert.Equal(ApproverId, reloaded.ApprovedByUserId);
-        Assert.True(await users.IsInRoleAsync(reloaded, ApplicationRoles.User));
-        Assert.False(await users.IsInRoleAsync(reloaded, ApplicationRoles.Admin));
+        Assert.True(await users.IsInRoleAsync(reloaded, GisRoles.GisEditor));
+        Assert.False(await users.IsInRoleAsync(reloaded, GisRoles.Administrator));
     }
 
     [Fact]
@@ -162,7 +172,7 @@ public class AccountApprovalTests
         var user = await RegisterAndConfirmAsync(scope, "rejected-then-approved");
         Assert.True((await management.RejectAsync(user.Id, new RejectUserRequest(), ApproverId)).IsSuccess);
 
-        var result = await management.ApproveAsync(user.Id, Approve(ApplicationRoles.User), ApproverId);
+        var result = await management.ApproveAsync(user.Id, Approve(GisRoles.GisEditor), ApproverId);
 
         Assert.False(result.IsSuccess);
         var reloaded = (await users.FindByIdAsync(user.Id.ToString()))!;
@@ -182,7 +192,7 @@ public class AccountApprovalTests
         user.IsDeleted = true;
         Assert.True((await users.UpdateAsync(user)).Succeeded);
 
-        var result = await management.ApproveAsync(user.Id, Approve(ApplicationRoles.User), ApproverId);
+        var result = await management.ApproveAsync(user.Id, Approve(GisRoles.GisEditor), ApproverId);
 
         Assert.False(result.IsSuccess);
         Assert.Equal(ServiceErrorKind.NotFound, result.ErrorKind);
@@ -210,11 +220,12 @@ public class AccountApprovalTests
         var management = new UserManagementService(
             scope.ServiceProvider.GetRequiredService<AppDbContext>(),
             new RoleAssignmentFailsUserManager(scope.ServiceProvider),
+            RoleManagement(scope),
             email,
             ClientApp,
             Substitute.For<ILogger<UserManagementService>>());
 
-        var result = await management.ApproveAsync(user.Id, Approve(ApplicationRoles.User), ApproverId);
+        var result = await management.ApproveAsync(user.Id, Approve(GisRoles.GisEditor), ApproverId);
 
         Assert.False(result.IsSuccess);
         var reloaded = (await users.FindByIdAsync(user.Id.ToString()))!;
@@ -267,17 +278,17 @@ public class AccountApprovalTests
         var user = await RegisterAndConfirmAsync(scope, "approved-user");
         var before = DateTime.UtcNow;
 
-        var result = await management.ApproveAsync(user.Id, Approve(ApplicationRoles.User), ApproverId);
+        var result = await management.ApproveAsync(user.Id, Approve(GisRoles.GisEditor), ApproverId);
 
         Assert.True(result.IsSuccess);
         Assert.Equal(AccountStatus.Active, result.Value!.AccountStatus);
-        Assert.Equal(ApplicationRoles.User, result.Value.Role);
+        Assert.Equal(GisRoles.GisEditor, result.Value.Role);
         Assert.Null(result.Value.NotificationWarning);
 
         var reloaded = (await users.FindByIdAsync(user.Id.ToString()))!;
         Assert.Equal(AccountStatus.Active, reloaded.AccountStatus);
         Assert.True(reloaded.IsActive);
-        Assert.True(await users.IsInRoleAsync(reloaded, ApplicationRoles.User));
+        Assert.True(await users.IsInRoleAsync(reloaded, GisRoles.GisEditor));
         Assert.NotNull(reloaded.ApprovedAt);
         Assert.InRange(reloaded.ApprovedAt!.Value, before, DateTime.UtcNow);
         Assert.Equal(ApproverId, reloaded.ApprovedByUserId);
@@ -290,7 +301,7 @@ public class AccountApprovalTests
         var management = CreateManagement(scope, out var email);
 
         var user = await RegisterAndConfirmAsync(scope, "notified-user");
-        await management.ApproveAsync(user.Id, Approve(ApplicationRoles.User), ApproverId);
+        await management.ApproveAsync(user.Id, Approve(GisRoles.GisEditor), ApproverId);
 
         var sent = email.ReceivedCalls()
             .Select(call => call.GetArguments()[0])
@@ -299,7 +310,7 @@ public class AccountApprovalTests
 
         Assert.Equal(user.Email, sent.To);
         Assert.Contains("onayland", sent.Subject, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains(ApplicationRoles.User, sent.Body);
+        Assert.Contains(GisRoles.GisEditor, sent.Body);
         Assert.EndsWith("/login", sent.ActionUrl!);
         // Ne şifre, ne token, ne kurtarma kodu, ne de yönetici kimliği.
         Assert.DoesNotContain("Password", sent.Body, StringComparison.OrdinalIgnoreCase);
@@ -317,7 +328,7 @@ public class AccountApprovalTests
 
         var user = await RegisterAndConfirmAsync(scope, "mail-failure");
 
-        var result = await management.ApproveAsync(user.Id, Approve(ApplicationRoles.User), ApproverId);
+        var result = await management.ApproveAsync(user.Id, Approve(GisRoles.GisEditor), ApproverId);
 
         // İşlem başarısız SAYILMAZ: hesap gerçekten aktifleşti.
         Assert.True(result.IsSuccess);
@@ -326,7 +337,7 @@ public class AccountApprovalTests
         var reloaded = (await users.FindByIdAsync(user.Id.ToString()))!;
         Assert.Equal(AccountStatus.Active, reloaded.AccountStatus);
         Assert.True(reloaded.IsActive);
-        Assert.True(await users.IsInRoleAsync(reloaded, ApplicationRoles.User));
+        Assert.True(await users.IsInRoleAsync(reloaded, GisRoles.GisEditor));
         Assert.NotNull(reloaded.ApprovedAt);
     }
 
@@ -338,7 +349,7 @@ public class AccountApprovalTests
         var management = CreateManagement(scope, out _);
 
         var user = await RegisterAndConfirmAsync(scope, "logging-in");
-        await management.ApproveAsync(user.Id, Approve(ApplicationRoles.User), ApproverId);
+        await management.ApproveAsync(user.Id, Approve(GisRoles.GisEditor), ApproverId);
 
         var tokens = Substitute.For<ITokenService>();
         tokens.GenerateToken(Arg.Any<int>(), Arg.Any<string>(), Arg.Any<IEnumerable<string>>(), Arg.Any<AuthenticationLevel>())
@@ -390,7 +401,7 @@ public class AccountApprovalTests
         var management = CreateManagement(scope, out _);
 
         var user = await RegisterAndConfirmAsync(scope, "active-reject");
-        await management.ApproveAsync(user.Id, Approve(ApplicationRoles.User), ApproverId);
+        await management.ApproveAsync(user.Id, Approve(GisRoles.GisEditor), ApproverId);
 
         var result = await management.RejectAsync(user.Id, new RejectUserRequest(), ApproverId);
 
@@ -408,14 +419,14 @@ public class AccountApprovalTests
         var management = CreateManagement(scope, out _);
 
         var user = await RegisterAndConfirmAsync(scope, "suspend-cycle");
-        await management.ApproveAsync(user.Id, Approve(ApplicationRoles.User), ApproverId);
+        await management.ApproveAsync(user.Id, Approve(GisRoles.GisEditor), ApproverId);
 
         Assert.True((await management.ChangeStatusAsync(user.Id, new UpdateUserStatusRequest { IsActive = false }, ApproverId)).IsSuccess);
         var suspended = (await users.FindByIdAsync(user.Id.ToString()))!;
         Assert.Equal(AccountStatus.Suspended, suspended.AccountStatus);
         Assert.False(suspended.IsActive);
         // Rol korunur: askıya alma bir yetki kaldırma işlemi değildir.
-        Assert.True(await users.IsInRoleAsync(suspended, ApplicationRoles.User));
+        Assert.True(await users.IsInRoleAsync(suspended, GisRoles.GisEditor));
 
         Assert.True((await management.ChangeStatusAsync(user.Id, new UpdateUserStatusRequest { IsActive = true }, ApproverId)).IsSuccess);
         var restored = (await users.FindByIdAsync(user.Id.ToString()))!;
@@ -502,6 +513,16 @@ public class AccountApprovalTests
             Substitute.For<ILogger<AccountService>>());
     }
 
+    /// <summary>
+    /// Gerçek rol yönetimi servisi. Onay akışının atanabilir rol kuralını
+    /// taklit etmek yerine ÜRETİMDEKİ kuralla doğrulanması için kullanılır.
+    /// </summary>
+    private static RoleManagementService RoleManagement(AsyncServiceScope scope) =>
+        new(
+            scope.ServiceProvider.GetRequiredService<AppDbContext>(),
+            scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<int>>>(),
+            Substitute.For<ILogger<RoleManagementService>>());
+
     private static UserManagementService CreateManagement(AsyncServiceScope scope, out IEmailSender email)
     {
         email = Substitute.For<IEmailSender>();
@@ -509,6 +530,7 @@ public class AccountApprovalTests
         return new UserManagementService(
             scope.ServiceProvider.GetRequiredService<AppDbContext>(),
             scope.ServiceProvider.GetRequiredService<UserManager<User>>(),
+            RoleManagement(scope),
             email,
             ClientApp,
             Substitute.For<ILogger<UserManagementService>>());
@@ -548,7 +570,10 @@ public class AccountApprovalTests
 
         var roles = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<int>>>();
 
-        foreach (var role in seedRoles ?? ApplicationRoles.All)
+        /* Üretimdeki gibi hem legacy hem hedef roller var olur: Phase 4'te onay
+           akışı hedef rolleri kullanır, legacy roller yalnızca mevcut
+           kullanıcılar için durmaya devam eder. */
+        foreach (var role in seedRoles ?? [.. ApplicationRoles.All, .. GisRoles.All])
         {
             roles.CreateAsync(new IdentityRole<int>(role)).GetAwaiter().GetResult();
         }
