@@ -1,0 +1,200 @@
+namespace StajProject.Domain.Common;
+
+/// <summary>
+/// Sistemin tanıdığı yetkilerin <b>tek tanımı</b>: kod, görünen ad, açıklama,
+/// kategori ve gösterim sırası. Seed bu listeden çalışır; testler de aynı
+/// listeye bakar, dolayısıyla katalog ile veritabanı ayrışamaz.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Liste kasıtlı olarak <b>anlamlı yeteneklerden</b> oluşur. Arayüz hareketleri
+/// (yakınlaştırma, panel açma, tema değiştirme) yetki DEĞİLDİR; onları katalog
+/// içine almak, güvenlik modelini bir arayüz envanterine dönüştürürdü.
+/// </para>
+/// <para>
+/// Bazı yetkiler (örneğin katman yönetimi) henüz karşılığı olan bir uca sahip
+/// olmayabilir. Katalog ileriye dönük olarak eksiksiz tutulur: yetki tanımının
+/// var olması bir erişim açmaz — erişim, ancak sonraki fazda uygulanacak
+/// denetimle anlam kazanır.
+/// </para>
+/// </remarks>
+public static class PermissionCatalog
+{
+    /// <summary>
+    /// Katalogdaki tek bir yetki tanımı. Veritabanı satırının kaynağıdır.
+    /// </summary>
+    /// <param name="Code">Kanonik kod — kimlik budur.</param>
+    /// <param name="Name">Arayüzde gösterilen Türkçe ad.</param>
+    /// <param name="Description">Yetkinin neye izin verdiği.</param>
+    /// <param name="Category">Gruplama etiketi.</param>
+    /// <param name="SortOrder">Kategori içindeki gösterim sırası.</param>
+    public sealed record Definition(
+        string Code,
+        string Name,
+        string Description,
+        string Category,
+        int SortOrder);
+
+    /// <summary>
+    /// Kanonik katalog. Sıra, yetki yönetimi ekranındaki gösterim sırasıdır.
+    /// </summary>
+    public static readonly IReadOnlyList<Definition> All =
+    [
+        /* --- Harita ------------------------------------------------------------ */
+
+        new(PermissionCodes.MapView,
+            "Haritayı Görüntüleme",
+            "Harita uygulamasını açabilir ve harita üzerindeki verileri görüntüleyebilir.",
+            PermissionCategories.Map, 100),
+
+        /* --- Çizim oluşturma --------------------------------------------------- */
+
+        new(PermissionCodes.DrawingsPointCreate,
+            "Nokta Ekleme",
+            "Harita üzerinde yeni nokta geometrisi oluşturabilir.",
+            PermissionCategories.DrawingCreate, 200),
+
+        new(PermissionCodes.DrawingsLineCreate,
+            "Çizgi Ekleme",
+            "Harita üzerinde yeni çizgi geometrisi oluşturabilir.",
+            PermissionCategories.DrawingCreate, 210),
+
+        new(PermissionCodes.DrawingsPolygonCreate,
+            "Poligon Ekleme",
+            "Harita üzerinde yeni poligon geometrisi oluşturabilir.",
+            PermissionCategories.DrawingCreate, 220),
+
+        /* --- Çizim yönetimi ---------------------------------------------------- */
+
+        new(PermissionCodes.DrawingsView,
+            "Çizimleri Görüntüleme",
+            "Kayıtlı çizimleri listeleyebilir ve detaylarını görebilir.",
+            PermissionCategories.DrawingManagement, 300),
+
+        new(PermissionCodes.DrawingsMetadataUpdate,
+            "Çizim Bilgilerini Düzenleme",
+            "Çizimin adını, açıklamasını, kategorisini ve etiketlerini değiştirebilir.",
+            PermissionCategories.DrawingManagement, 310),
+
+        new(PermissionCodes.DrawingsGeometryUpdate,
+            "Çizim Geometrisini Düzenleme",
+            "Mevcut bir çizimin geometrisini harita üzerinde değiştirebilir.",
+            PermissionCategories.DrawingManagement, 320),
+
+        new(PermissionCodes.DrawingsStyleUpdate,
+            "Çizim Stilini Düzenleme",
+            "Çizimin rengini, kalınlığını, dolgusunu ve çizgi stilini değiştirebilir.",
+            PermissionCategories.DrawingManagement, 330),
+
+        new(PermissionCodes.DrawingsDelete,
+            "Çizim Silme",
+            "Çizimi çöp kutusuna taşıyabilir.",
+            PermissionCategories.DrawingManagement, 340),
+
+        new(PermissionCodes.DrawingsRestore,
+            "Çizim Geri Yükleme",
+            "Çöp kutusundaki bir çizimi geri getirebilir.",
+            PermissionCategories.DrawingManagement, 350),
+
+        /* --- Araçlar ----------------------------------------------------------- */
+
+        new(PermissionCodes.MeasurementUse,
+            "Ölçüm Araçlarını Kullanma",
+            "Harita üzerinde uzunluk ve alan ölçümü yapabilir.",
+            PermissionCategories.Tools, 400),
+
+        new(PermissionCodes.SelectionUse,
+            "Seçim Araçlarını Kullanma",
+            "Harita üzerindeki kayıtları seçim araçlarıyla seçebilir.",
+            PermissionCategories.Tools, 410),
+
+        /* --- Envanter ---------------------------------------------------------- */
+
+        new(PermissionCodes.InventoryView,
+            "Envanteri Görüntüleme",
+            "Envanter kayıtlarını ve özetlerini görüntüleyebilir.",
+            PermissionCategories.Inventory, 500),
+
+        new(PermissionCodes.InventoryAnalysis,
+            "Envanter Analizi",
+            "Envanter üzerinde kesişim ve dağılım analizlerini çalıştırabilir.",
+            PermissionCategories.Inventory, 510),
+
+        /* --- Katmanlar --------------------------------------------------------- */
+
+        new(PermissionCodes.LayersView,
+            "Katmanları Görüntüleme",
+            "Harita katmanlarını görebilir ve görünürlüklerini değiştirebilir.",
+            PermissionCategories.Layers, 600),
+
+        new(PermissionCodes.LayersManage,
+            "Katman Yönetimi",
+            "Katman tanımlarını ekleyebilir, düzenleyebilir ve kaldırabilir.",
+            PermissionCategories.Layers, 610),
+
+        /* --- Kullanıcılar ------------------------------------------------------ */
+
+        new(PermissionCodes.UsersView,
+            "Kullanıcıları Görüntüleme",
+            "Kullanıcı listesini ve hesap detaylarını görüntüleyebilir.",
+            PermissionCategories.Users, 700),
+
+        new(PermissionCodes.UsersCreate,
+            "Kullanıcı Ekleme",
+            "Yeni kullanıcı hesabı oluşturabilir.",
+            PermissionCategories.Users, 710),
+
+        new(PermissionCodes.UsersUpdate,
+            "Kullanıcı Güncelleme",
+            "Kullanıcı hesap bilgilerini güncelleyebilir.",
+            PermissionCategories.Users, 720),
+
+        new(PermissionCodes.UsersDeactivate,
+            "Kullanıcı Devre Dışı Bırakma",
+            "Bir hesabın uygulamaya girişini kapatabilir veya yeniden açabilir.",
+            PermissionCategories.Users, 730),
+
+        new(PermissionCodes.UsersDelete,
+            "Kullanıcı Silme",
+            "Bir kullanıcı hesabını silinmiş olarak işaretleyebilir.",
+            PermissionCategories.Users, 740),
+
+        /* --- Roller ------------------------------------------------------------ */
+
+        new(PermissionCodes.RolesView,
+            "Rolleri Görüntüleme",
+            "Tanımlı rolleri ve rol detaylarını görüntüleyebilir.",
+            PermissionCategories.Roles, 800),
+
+        new(PermissionCodes.RolesCreate,
+            "Rol Ekleme",
+            "Yeni rol tanımlayabilir.",
+            PermissionCategories.Roles, 810),
+
+        new(PermissionCodes.RolesUpdate,
+            "Rol Güncelleme",
+            "Mevcut bir rolün tanımını güncelleyebilir.",
+            PermissionCategories.Roles, 820),
+
+        new(PermissionCodes.RolesDelete,
+            "Rol Silme",
+            "Bir rol tanımını kaldırabilir.",
+            PermissionCategories.Roles, 830),
+
+        /* --- Yetkiler ---------------------------------------------------------- */
+
+        new(PermissionCodes.PermissionsView,
+            "Yetkileri Görüntüleme",
+            "Yetki kataloğunu ve rol/kullanıcı yetki dağılımını görüntüleyebilir.",
+            PermissionCategories.Permissions, 900),
+
+        new(PermissionCodes.PermissionsAssign,
+            "Yetki Atama",
+            "Rollere ve kullanıcılara yetki verebilir veya geri alabilir.",
+            PermissionCategories.Permissions, 910)
+    ];
+
+    /// <summary>Katalogdaki tüm kodlar.</summary>
+    public static IReadOnlyList<string> AllCodes { get; } =
+        All.Select(p => p.Code).ToArray();
+}
