@@ -1,0 +1,198 @@
+/* Yönetim paneli kabuğu.
+
+   Ölçüler: menü sütunu 248px (projedeki harita menüsüyle aynı ailede),
+   içerik kalan genişliği alır. İçerik sütunu `minmax(0, 1fr)` ile tanımlanır —
+   `1fr` tek başına grid öğesinin minimum içerik genişliğini koruyup geniş bir
+   tabloyu sayfanın tamamına taşırır ve yatay kaydırma yaratırdı. */
+
+.admin-layout {
+  display: grid;
+  grid-template-columns: 248px minmax(0, 1fr);
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.admin-layout-sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  height: 100dvh;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border-soft);
+}
+
+.admin-layout-main {
+  display: flex;
+  flex-direction: column;
+  /* Grid öğesinin taşmaması için: içerik ne kadar geniş olursa olsun sütunu
+     zorlamaz, kendi içinde kaydırır. */
+  min-width: 0;
+}
+
+.admin-layout-content {
+  flex: 1;
+  min-width: 0;
+  padding: clamp(1rem, 2.5vw, 2rem);
+}
+
+/* --- Başlık çubuğu / çekmece tetiği --------------------------------------- */
+
+.admin-layout-topbar {
+  display: none;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem clamp(1rem, 2.5vw, 2rem);
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.admin-layout-topbar-title {
+  color: var(--text-secondary);
+  font-size: var(--font-small);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.admin-layout-menu-btn {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--surface-solid);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.admin-layout-menu-btn:focus-visible {
+  outline: 2px solid var(--primary-light);
+  outline-offset: 2px;
+}
+
+.admin-layout-scrim {
+  display: none;
+}
+
+/* --- Çekmece modu ---------------------------------------------------------
+   1024px altında kalıcı sütun kaldırılır. 248px'lik bir menüyü 375px'lik bir
+   ekrana kalıcı olarak sıkıştırmak, içeriğe okunabilir bir genişlik
+   bırakmazdı. */
+
+@media (max-width: 1024px) {
+  .admin-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .admin-layout-topbar {
+    display: flex;
+  }
+
+  .admin-layout-sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: min(272px, 82vw);
+    /* Kullanıcı detay çekmecesi (z-index 90) ve onun scrim'i (80) bu menünün
+       ÜSTÜNDE kalmalıdır: detay paneli menünün altına düşerse kullanılamaz. */
+    z-index: 60;
+    transform: translateX(-100%);
+    box-shadow: var(--shadow-panel);
+    /* `visibility` kapalı çekmeceyi gerçekten yok sayar. Yalnızca ekran dışına
+       ötelemek görsel olarak yeterli görünür ama menü hâlâ sekmeyle
+       gezilebilir kalır: klavye kullanan biri, görünmeyen bir menünün içinde
+       kaybolurdu. Geçiş `transform` ile aynı süreyi kullanır, böylece
+       kapanış animasyonu kesilmez. */
+    visibility: hidden;
+    transition: transform var(--transition-base), visibility var(--transition-base);
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+
+  .admin-layout.is-drawer-open .admin-layout-sidebar {
+    transform: translateX(0);
+    visibility: visible;
+  }
+
+  .admin-layout-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    background: rgba(0, 0, 0, 0.5);
+    cursor: pointer;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-layout-sidebar {
+    transition: none;
+  }
+}
+
+/* --- Sayfa başlığı --------------------------------------------------------
+   Üç yönetim sayfası da aynı başlık ritmini kullanır. */
+
+.admin-page-header {
+  max-width: 1180px;
+  margin: 0 auto 1.25rem;
+}
+
+.admin-page-header h1 {
+  margin: 0 0 0.3rem;
+  font-size: clamp(1.5rem, 3vw, var(--font-h1));
+  line-height: 1.2;
+}
+
+.admin-page-header p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-body);
+}
+
+/* --- Yer tutucu ekranlar --------------------------------------------------
+   Roles/Permissions için sade bir boş durum. Sahte kart veya sahte metrik
+   göstermez: olmayan bir şeyi varmış gibi göstermek, paneli test edilebilir
+   olmaktan çıkarır. */
+
+.admin-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: clamp(2.25rem, 6vw, 3.25rem) 1.5rem;
+  text-align: center;
+  background: var(--surface-soft);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+}
+
+.admin-placeholder-icon {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  margin-bottom: 0.2rem;
+  border-radius: 50%;
+  background: var(--surface-solid);
+  border: 1px solid var(--border-soft);
+  color: var(--primary-light);
+}
+
+.admin-placeholder strong {
+  font-size: var(--font-h2);
+}
+
+.admin-placeholder p {
+  max-width: 46ch;
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}

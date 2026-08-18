@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext.jsx'
 import { approveUser, fetchAdminUser, fetchAdminUsers, fetchAssignableRoles, readApiError, rejectUser, updateUserRole, updateUserStatus } from '../services/api.js'
+import AdminPageHeader from '../components/admin/AdminPageHeader.jsx'
 import UserDetailPanel from '../components/admin/UserDetailPanel.jsx'
 import UserManagementList from '../components/admin/UserManagementList.jsx'
+import { roleFilterOptions } from '../components/admin/userRoles.js'
 import { STATUS_FILTERS } from '../components/admin/userStatus.js'
 import './AdminPage.css'
 
@@ -58,6 +59,18 @@ export default function AdminPage() {
 
   const pendingCount = useMemo(() => users.filter((u) => u.accountStatus === 'PendingApproval').length, [users])
 
+  /* Roller artık dinamik: sabit bir Admin/User listesi, Viewer veya özel bir
+     role sahip kullanıcıyı filtrelenemez yapardı. Seçenekler ekrandaki veriden
+     türer, bu yüzden yeni bir rol tanımlandığında burada kod değişmez. */
+  const roleOptions = useMemo(() => roleFilterOptions(users), [users])
+
+  /* Seçili rol listeden düşebilir (o rolü taşıyan son kullanıcı başka bir role
+     alındığında). Filtre o değerde kalırsa açılır liste eşleşmeyen bir değer
+     gösterir ve liste görünür bir sebep olmadan boşalır. */
+  useEffect(() => {
+    if (roleFilter !== 'All' && !roleOptions.includes(roleFilter)) setRoleFilter('All')
+  }, [roleOptions, roleFilter])
+
   /**
    * One mutation path for every admin action. `run` performs the request and
    * `describe` turns the updated user into the success message, so adding an
@@ -83,23 +96,36 @@ export default function AdminPage() {
     finally { mutationInFlight.current = false; setMutating(false) }
   }
 
-  const changeRole = (role) => mutate((id) => updateUserRole(id, role), () => role === 'Admin' ? `Rol Admin olarak değiştirildi.${detail.twoFactorEnabled ? '' : ' Kullanıcı bir sonraki girişinde zorunlu 2FA kurulumuna yönlendirilecektir.'}` : 'Rol User olarak değiştirildi. Mevcut 2FA ayarı korunmuştur.')
+  /* Mesaj, atanan rolün ADINI söyler. Eskiden "Admin ise şunu, değilse User"
+     diye iki dallıydı; dinamik rollerde bu, GIS Editor yapılan bir kullanıcı
+     için "Rol User olarak değiştirildi" gibi yanlış bir cümle üretiyordu.
+     Zorunlu 2FA uyarısı da rol ADINDAN değil, sunucunun o rol için bildirdiği
+     `requiresTwoFactor` alanından gelir — zaten yüklü olan veriden, ek istek
+     yok. */
+  const changeRole = (role) => mutate((id) => updateUserRole(id, role), (u) => {
+    const needsTwoFactorSetup = roles.find((r) => r.name === role)?.requiresTwoFactor && !u.twoFactorEnabled
+    return `Kullanıcının rolü ${role} olarak güncellendi.${needsTwoFactorSetup ? ' Kullanıcı bir sonraki girişinde zorunlu 2FA kurulumuna yönlendirilecektir.' : ''}`
+  })
   const changeStatus = (active) => mutate((id) => updateUserStatus(id, active), () => active ? 'Hesap aktifleştirildi.' : 'Hesap pasifleştirildi. Kullanıcının çizimleri korunmuştur.')
   const approve = (role) => mutate((id) => approveUser(id, role), (u) => `${u.username} onaylandı ve ${role} rolüyle aktifleştirildi. Giriş yapabileceği kendisine e-postayla bildirildi.`)
   const reject = (reason) => mutate((id) => rejectUser(id, reason), (u) => `${u.username} başvurusu reddedildi. Hesap uygulamaya erişemeyecek.`)
 
   const emptyMessage = search.trim() ? 'Aramanızla eşleşen kullanıcı bulunamadı.' : roleFilter !== 'All' || statusFilter !== 'All' ? 'Seçili filtrelerle eşleşen kullanıcı bulunamadı.' : 'Henüz kullanıcı bulunmuyor.'
-  return <main className="admin-users-page">
-    <header className="admin-users-header"><div><Link className="admin-back-link" to="/map">← Haritaya dön</Link><h1>Kullanıcı Yönetimi</h1><p>Sistemdeki kullanıcıları, rollerini ve hesap durumlarını yönetin.</p></div></header>
+  /* Kabuk artık <main>, kendi başlığını ve haritaya dönüş bağlantısını taşıyor.
+     Burada ikinci bir <main> ya da ikinci bir "← Haritaya dön" bırakmak, sayfada
+     iç içe iki kabuk ve iki gezinme yolu demek olurdu. Ekranın İŞLEVSEL içeriği
+     (filtreler, liste, detay çekmecesi, tüm API çağrıları) olduğu gibi durur. */
+  return <div className="admin-users-page">
+    <AdminPageHeader title="Kullanıcılar" description="Sistemdeki kullanıcıları görüntüleyin ve yönetin." />
     {pendingCount > 0 && <button type="button" className="admin-pending-banner" onClick={() => setStatusFilter('PendingApproval')}><strong>{pendingCount} hesap onay bekliyor.</strong><span>Onay bekleyenleri göster →</span></button>}
     {notice && <div className={`admin-notice is-${notice.type}`} role="status">{notice.message}<button type="button" onClick={() => setNotice(null)} aria-label="Bildirimi kapat">×</button></div>}
     <section className="admin-toolbar" aria-label="Kullanıcı filtreleri">
       <label className="admin-search"><span className="sr-only">Kullanıcı ara</span><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Kullanıcı veya e-posta ara..." /></label>
-      <label>Rol<select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}><option value="All">Tümü</option><option value="Admin">Admin</option><option value="User">User</option></select></label>
+      <label>Rol<select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}><option value="All">Tümü</option>{roleOptions.map((role) => <option key={role} value={role}>{role}</option>)}</select></label>
       <label>Durum<select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>{STATUS_FILTERS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}</select></label>
     </section>
     {error && <div className="admin-error" role="alert"><span>{error}</span><button type="button" onClick={loadUsers}>Tekrar dene</button></div>}
     <UserManagementList users={filteredUsers} currentUserId={userId} loading={loading} selectedId={selectedId} onSelect={openDetail} emptyMessage={emptyMessage} />
     {(selectedId || detailLoading) && <UserDetailPanel user={detail} currentUserId={userId} loading={detailLoading} mutating={mutating} roles={roles} onClose={() => { setSelectedId(null); setDetail(null) }} onChangeRole={changeRole} onChangeStatus={changeStatus} onApprove={approve} onReject={reject} />}
-  </main>
+  </div>
 }

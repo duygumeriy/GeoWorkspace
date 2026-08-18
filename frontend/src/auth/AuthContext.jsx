@@ -3,6 +3,12 @@ import { fetchMe, setUnauthorizedHandler } from '../services/api'
 
 const AuthContext = createContext(null)
 
+/* Yönetim panelini görebilen rol adları (geçiş dönemi).
+   `Admin` legacy köprü rolü, `Administrator` ise Phase 4'ün kanonik hedef
+   rolüdür; ikisi de 27 yetkinin tamamını taşır. Liste bilinçli olarak bu ikisiyle
+   sınırlıdır ve başka rollere genişletilmez. */
+const ADMIN_PANEL_ROLES = ['Admin', 'Administrator']
+
 function readStoredAuth() {
   const token = sessionStorage.getItem('token')
   const expiresAt = sessionStorage.getItem('expiresAt')
@@ -163,6 +169,20 @@ export function AuthProvider({ children }) {
     // reported, never stored separately.
     role: user?.role ?? null,
     isAdmin: user?.role === 'Admin',
+    /* Yalnızca yönetim panelinin GÖRÜNÜRLÜĞÜ için geçici bir uyumluluk kuralı.
+       Phase 4 ile `Administrator` gerçek bir hedef rol oldu ve backend'in admin
+       uçları ona rol ADINA değil yetki satırlarına bakarak izin veriyor. Bu
+       liste olmasaydı, backend'in kabul ettiği bir yönetici React tarafında
+       /admin'e giremezdi.
+
+       `isAdmin` bilinçli olarak DEĞİŞTİRİLMEDİ: onu haritadaki çizim sahiplik
+       kuralı (canManageDrawing) kullanıyor ve burada genişletmek, bu fazın
+       kapsamı dışında sessiz bir yetki değişikliği olurdu.
+
+       Bu bir güvenlik sınırı DEĞİLDİR — gerçek karar backend'de verilir ve
+       yetkisiz bir istek 403 alır. Yetki tabanlı frontend kararları (can(...))
+       ayrı bir fazın konusu; o geldiğinde bu rol adı listesi kaldırılacak. */
+    canAccessAdminPanel: ADMIN_PANEL_ROLES.includes(user?.role),
     profileLoading,
     login,
     logout,

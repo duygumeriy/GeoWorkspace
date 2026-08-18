@@ -37,7 +37,10 @@ export default function Sidebar({
   onLogout,
 }) {
   const navigate = useNavigate()
-  const { isAdmin } = useAuth()
+  /* Yönetim girişinin GÖRÜNÜRLÜĞÜ; `isAdmin` değil, çünkü Phase 4'ten beri
+     kanonik `Administrator` de backend'in kabul ettiği bir yöneticidir.
+     Haritanın çizim sahiplik kuralı `isAdmin`'i kullanmaya devam eder. */
+  const { canAccessAdminPanel } = useAuth()
   const asideRef = useRef(null)
   const isMobile = useMediaQuery('(max-width: 640px)')
 
@@ -68,7 +71,7 @@ export default function Sidebar({
     // Right after "Çizimlerim"/"Katmanlar" because it is the same subject seen
     // from the other side: the drawings that are no longer on the map.
     { id: 'trash', label: 'Çöp Kutusu', Icon: TrashIcon },
-    ...(isAdmin ? [{ id: 'admin-users', label: 'Kullanıcı Yönetimi', Icon: ShieldIcon }] : []),
+    ...(canAccessAdminPanel ? [{ id: 'admin-users', label: 'Kullanıcı Yönetimi', Icon: ShieldIcon }] : []),
     { id: 'settings', label: 'Ayarlar', Icon: SettingsIcon },
     { id: 'about', label: 'Hakkında', Icon: InfoIcon },
   ]

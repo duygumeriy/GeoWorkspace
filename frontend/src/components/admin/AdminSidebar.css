@@ -1,0 +1,155 @@
+/* Yönetim menüsü. Renkler token'lardan gelir; ham hex kullanılmaz, böylece
+   panel mevcut açık/koyu tema sisteminde de doğru boyanır. */
+
+.admin-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  height: 100%;
+  padding: 1.25rem 0.85rem;
+  box-sizing: border-box;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* --- Marka ---------------------------------------------------------------- */
+
+.admin-nav-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0 0.4rem;
+}
+
+.admin-nav-brand-mark {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  background: var(--gradient-primary);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.admin-nav-brand-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.admin-nav-brand-text strong {
+  color: var(--text-primary);
+  font-size: 15px;
+}
+
+.admin-nav-brand-text small {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+/* --- Gruplar -------------------------------------------------------------- */
+
+.admin-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.admin-nav-heading {
+  margin: 0 0 0.15rem;
+  padding: 0 0.55rem;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.admin-nav-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* --- Öğeler --------------------------------------------------------------- */
+
+.admin-nav-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  /* 44px: dokunmatik hedef alt sınırı, projenin diğer kontrolleriyle aynı. */
+  min-height: 44px;
+  padding: 0 0.75rem;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: var(--font-body);
+  font-weight: 600;
+  text-decoration: none;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.admin-nav-item:hover {
+  background: var(--surface-soft);
+  color: var(--text-primary);
+}
+
+.admin-nav-item-rail {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 3px;
+  height: 0;
+  border-radius: 0 3px 3px 0;
+  background: var(--primary-light);
+  transform: translateY(-50%);
+  transition: height var(--transition-fast);
+}
+
+.admin-nav-item.is-active {
+  background: var(--surface-solid);
+  color: var(--text-primary);
+  box-shadow: inset 0 0 0 1px var(--border-soft);
+}
+
+.admin-nav-item.is-active .admin-nav-item-rail {
+  height: 60%;
+}
+
+.admin-nav-item.is-active svg {
+  color: var(--primary-light);
+}
+
+/* Odak halkası görünür bırakılır: klavyeyle gezen biri nerede olduğunu
+   görebilmelidir. */
+.admin-nav-item:focus-visible {
+  outline: 2px solid var(--primary-light);
+  outline-offset: 2px;
+}
+
+/* --- Alt bölüm ------------------------------------------------------------ */
+
+.admin-nav-footer {
+  margin-top: auto;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--border-soft);
+}
+
+/* Haritaya dönüş bir yönetim sayfası değildir; aktif durum almaz. */
+.admin-nav-item.is-quiet.is-active {
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-secondary);
+}
+
+.admin-nav-item.is-quiet.is-active .admin-nav-item-rail {
+  height: 0;
+}

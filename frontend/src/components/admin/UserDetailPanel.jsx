@@ -50,7 +50,21 @@ export default function UserDetailPanel({ user, currentUserId, loading, mutating
   // A fresh account starts with no pre-selected role on purpose: choosing one
   // is the administrator's decision, not a default they have to notice.
   useEffect(() => { setSelectedRole('') }, [user?.id])
-  const requestRole = (role) => setConfirm({ kind: 'role', value: role, title: `${user.username} kullanıcısının rolü ${role} olsun mu?`, copy: role === 'Admin' ? 'Admin rolü kullanıcı yönetimi ve tüm çizimler üzerinde yönetim yetkisi sağlar. 2FA kapalıysa kullanıcı sonraki girişinde kurulum yapmalıdır.' : `Bu kullanıcı yönetici yetkilerini kaybedecek.${user.id === currentUserId ? ' Kendi hesabınızı değiştiriyorsunuz; mevcut oturum kısa süre eski yetkileri taşıyabilir.' : ''}`, action: role === 'Admin' ? 'Admin Yap' : 'User Yap', danger: role === 'User' })
+  /* Onay metni rolün ADINDAN değil, sunucunun o rol için verdiği açıklamadan
+     kurulur. "Admin ise şu, değilse User" dallanması dinamik rollerde yanlış
+     cümleler üretiyordu: GIS Editor yapılan biri için "yönetici yetkilerini
+     kaybedecek" denmesi gibi. */
+  const requestRole = (role) => {
+    const target = roles.find((r) => r.name === role)
+    const parts = [target?.description ?? `Kullanıcının rolü ${role} olarak değiştirilecek.`]
+    if (target?.requiresTwoFactor && !user.twoFactorEnabled) {
+      parts.push('Bu rolde iki faktörlü doğrulama zorunludur; kullanıcı sonraki girişinde kurulum yapacaktır.')
+    }
+    if (user.id === currentUserId) {
+      parts.push('Kendi hesabınızı değiştiriyorsunuz; mevcut oturum kısa süre eski yetkileri taşıyabilir.')
+    }
+    setConfirm({ kind: 'role', value: role, title: `${user.username} kullanıcısının rolü ${role} olsun mu?`, copy: parts.join(' '), action: 'Rolü Değiştir' })
+  }
   const requestStatus = (active) => setConfirm({ kind: 'status', value: active, title: `${user.username} hesabı ${active ? 'aktifleştirilsin' : 'pasifleştirilsin'} mi?`, copy: active ? 'Rol, e-posta doğrulaması, 2FA ve çizim sahipliği değişmeden hesap yeniden giriş yapabilir.' : `Kullanıcı yeni oturum açamayacaktır. Mevcut çizimleri silinmeyecek ve haritada kalacaktır.${user.id === currentUserId ? ' Kendi hesabınızı pasifleştiriyorsunuz.' : ''}`, action: active ? 'Hesabı Aktifleştir' : 'Hesabı Pasifleştir', danger: !active })
   const requestApproval = () => setConfirm({ kind: 'approve', value: selectedRole, title: `${user.username} onaylansın mı?`, copy: `Hesap ${selectedRole} rolüyle aktifleştirilecek ve kullanıcıya giriş yapabileceğini bildiren bir e-posta gönderilecek.`, action: 'Onayla ve Aktifleştir' })
   const requestRejection = () => setConfirm({ kind: 'reject', title: `${user.username} başvurusu reddedilsin mi?`, copy: 'Kullanıcı uygulamaya erişemeyecek ve rol atanmayacak. Başvurusunun onaylanmadığı kendisine e-postayla bildirilecek.', action: 'Başvuruyu Reddet', danger: true, withReason: true })
@@ -68,7 +82,18 @@ export default function UserDetailPanel({ user, currentUserId, loading, mutating
             ? <p className="admin-policy-note">Bu başvuru reddedildi. Kullanıcıya erişim vermek için yeni bir başvuru gerekir.</p>
             : user.accountStatus === 'PendingEmailVerification'
               ? <p className="admin-policy-note">Kullanıcı e-posta adresini doğrulamadı. Doğruladığında onay için burada listelenecek.</p>
-              : <><label>Rol<select value={user.role || 'User'} disabled={mutating} onChange={(e) => requestRole(e.target.value)}><option value="User">User</option><option value="Admin">Admin</option></select></label><label>Hesap Durumu<select value={user.isActive ? 'active' : 'inactive'} disabled={mutating} onChange={(e) => requestStatus(e.target.value === 'active')}><option value="active">Aktif</option><option value="inactive">Pasif</option></select></label>{user.role === 'Admin' && <p className="admin-policy-note">Sistemde en az bir aktif yönetici bulunmalıdır. Son aktif Admin’in rolü düşürülemez veya hesabı pasifleştirilemez.</p>}</>}
+              : <><label>Rol<select value={user.role || ''} disabled={mutating} onChange={(e) => requestRole(e.target.value)}>
+                  {/* Seçenekler sunucudan gelen ATANABİLİR rollerdir; sabit
+                      Admin/User listesi, Phase 4 backend'inin yeni atamalarda
+                      reddettiği iki rolden başka bir şey sunmuyordu. */}
+                  {!user.role && <option value="">Rol seçin…</option>}
+                  {/* Kullanıcının MEVCUT rolü atanabilir listede olmayabilir
+                      (legacy Admin/User gibi). Seçenek olarak eklenmezse
+                      açılır liste kullanıcının gerçek rolünü göstermez; devre
+                      dışı bırakılır çünkü geri dönülebilir bir seçim değildir. */}
+                  {user.role && !roles.some((r) => r.name === user.role) && <option value={user.role} disabled>{user.role}</option>}
+                  {roles.map((role) => <option key={role.name} value={role.name}>{role.name}</option>)}
+                </select></label><label>Hesap Durumu<select value={user.isActive ? 'active' : 'inactive'} disabled={mutating} onChange={(e) => requestStatus(e.target.value === 'active')}><option value="active">Aktif</option><option value="inactive">Pasif</option></select></label>{user.role === 'Admin' && <p className="admin-policy-note">Sistemde en az bir aktif yönetici bulunmalıdır. Son aktif Admin’in rolü düşürülemez veya hesabı pasifleştirilemez.</p>}</>}
           {user.accountStatus === 'PendingEmailVerification' && <button type="button" className="admin-button danger" disabled={mutating} onClick={requestRejection}>Başvuruyu Reddet</button>}
         </section>}
     <p className="admin-readonly-note">E-posta doğrulaması ve 2FA durumu yalnızca görüntülenir. Parola ve güvenlik anahtarlarına erişilemez.</p></>}</aside>{confirm && <ConfirmDialog config={confirm} busy={mutating} onCancel={() => setConfirm(null)} onConfirm={submit} />}</>
