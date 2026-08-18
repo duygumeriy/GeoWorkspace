@@ -1,0 +1,210 @@
+/* Yetki kataloğu ekranı.
+
+   Ortak yönetim ilkelleri (.admin-toolbar, .admin-search, .admin-users-list,
+   .admin-badge, .admin-empty, .admin-skeleton, .admin-error, .sr-only)
+   AdminPage.css'te tanımlıdır ve App.jsx o modülü statik olarak import ettiği
+   için her /admin rotasında yüklüdür. Burada yalnızca KATALOĞA özgü olan
+   eklenir; ilkelleri kopyalamak, ekranların görsel dilinin zamanla ayrışması
+   demek olurdu. */
+
+.admin-permissions-page {
+  min-width: 0;
+}
+
+.admin-catalog-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.75rem;
+  max-width: 1180px;
+  margin: 1rem auto 0;
+  color: var(--text-secondary);
+  font-size: var(--font-small);
+}
+
+.admin-catalog-summary strong {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Temizleme yalnızca süzgeç etkinken çizilir; boşta duran bir "temizle"
+   düğmesi, temizlenecek bir şey yokmuş gibi görünmeyen bir gürültüdür. */
+.admin-catalog-clear {
+  padding: 0.2rem 0.4rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--primary-light);
+  font: inherit;
+  font-size: var(--font-small);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.admin-catalog-clear:focus-visible {
+  outline: 2px solid var(--primary-light);
+  outline-offset: 2px;
+}
+
+/* --- Tablo ------------------------------------------------------------------
+   `.admin-users-list` çerçeveyi, yuvarlatmayı ve KENDİ İÇİNDE yatay kaydırmayı
+   zaten veriyor; tablo onun içinde tam genişlik çalışır. Böylece dar bir
+   içerik sütununda taşma sayfaya değil, tablonun kendisine çıkar. */
+
+.admin-catalog-table {
+  width: 100%;
+  border-collapse: collapse;
+  /* `fixed` DEĞİL: kod sütunu içeriğe göre nefes almalı, ama ad sütunu da
+     ezilmemeli. Genişlikler aşağıda sütun bazında sınırlanıyor. */
+  text-align: left;
+}
+
+.admin-catalog-table th,
+.admin-catalog-table td {
+  padding: 0.9rem 1rem;
+  vertical-align: top;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.admin-catalog-table tbody tr:last-child th,
+.admin-catalog-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.admin-catalog-table thead th {
+  color: var(--text-tertiary);
+  font-size: var(--font-small);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.admin-catalog-table tbody tr:hover {
+  background: rgba(99, 102, 241, 0.06);
+}
+
+.admin-catalog-table td {
+  color: var(--text-secondary);
+  font-size: var(--font-small);
+  font-weight: 400;
+}
+
+/* Ad sütunu satırın başlığıdır (`<th scope="row">`): ad üstte, açıklama altında
+   ve sönük.
+
+   Hücrenin KENDİSİNE `display: grid` VERİLMEZ. Bir tablo hücresini ızgaraya
+   çevirmek onu hücre olmaktan çıkarır; tarayıcı etrafına anonim bir hücre üretir
+   ve sütun genişlikleri artık bu kutuya göre hesaplanmaz — ad sütunu daralır,
+   yanında ölü bir boşluk kalır. Blok yapmak gereken şey hücre değil, İÇİNDEKİ
+   iki satırdır. */
+.admin-catalog-name {
+  min-width: 0;
+  font-weight: 400;
+}
+
+.admin-catalog-name strong {
+  display: block;
+  color: var(--text-primary);
+  font-size: var(--font-small);
+}
+
+.admin-catalog-name span {
+  display: block;
+  margin-top: 0.2rem;
+  color: var(--text-secondary);
+  font-size: var(--font-small);
+  line-height: 1.45;
+}
+
+/* Kod teknik metindir: küçük, tek renk, ve `anywhere` ile satır içinde kırılır.
+   Aksi hâlde `drawings.metadata.update` dar ekranda sütunu genişletirdi. */
+.admin-catalog-table code {
+  color: var(--text-tertiary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+/* Pasif rozeti nötrdür. Kullanımdan kaldırılmış bir yetki bozuk değildir;
+   kırmızı bir uyarı, yöneticiye düzeltmesi gereken bir arıza varmış gibi
+   görünürdü. Durum ayrıca metinle de yazılı. */
+.admin-badge.admin-catalog-inactive {
+  color: var(--text-secondary);
+  border-style: dashed;
+}
+
+.admin-catalog-table td small {
+  display: block;
+  margin-top: 0.3rem;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+/* Masaüstünde sütunlar: ad geniş, kategori ve durum dar, kod ortada. Böylece
+   kodlar alt alta hizalanır ve karşılaştırılabilir olur. */
+@media (min-width: 761px) {
+  .admin-catalog-table th:first-child {
+    width: 42%;
+  }
+
+  .admin-catalog-table th:nth-child(2) {
+    width: 16%;
+  }
+
+  .admin-catalog-table th:nth-child(3) {
+    width: 26%;
+  }
+}
+
+/* --- Dar ekran --------------------------------------------------------------
+   Panelin geri kalanıyla aynı eşik (760px) ve aynı yöntem: satır karta döner ve
+   hücreler sütun adını `data-label`'dan kendi taşır. 27 satırlık bir tabloyu
+   telefona sıkıştırmak, dört sütunu okunmaz şeritlere çevirirdi. */
+
+@media (max-width: 760px) {
+  .admin-catalog-table,
+  .admin-catalog-table thead,
+  .admin-catalog-table tbody,
+  .admin-catalog-table tr,
+  .admin-catalog-table th,
+  .admin-catalog-table td {
+    display: block;
+  }
+
+  /* Başlık satırı gizlenir ama DOM'da kalır: ekran okuyucu için `scope` bilgisi
+     sürer, gören kullanıcı ise etiketleri hücrelerin üstünde bulur. */
+  .admin-catalog-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+
+  .admin-catalog-table tbody tr {
+    display: grid;
+    gap: 0.5rem;
+    padding: 0.9rem 1rem;
+    border-bottom: 1px solid var(--border-soft);
+  }
+
+  .admin-catalog-table tbody tr:last-child {
+    border-bottom: 0;
+  }
+
+  .admin-catalog-table tbody th,
+  .admin-catalog-table tbody td {
+    padding: 0;
+    border-bottom: 0;
+  }
+
+  .admin-catalog-table td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 0.2rem;
+    color: var(--text-tertiary);
+    font-size: 11px;
+    font-weight: 700;
+  }
+}
