@@ -272,6 +272,17 @@ using (var scope = app.Services.CreateScope())
        rolünü, şifresini veya durumunu ezmez — bir yöneticinin bilinçli
        kararı restart sonrasında geri alınmaz (AUTH-3.1). */
     await IdentityDataSeeder.SeedAsync(userManager, roleManager, adminSeedOptions, logger);
+
+    /* Yetki kataloğu, hedef GIS rolleri ve rollerin başlangıç yetkileri.
+       Identity seed'inden SONRA çalışır: legacy Admin/User rolleri orada
+       oluşur ve geçiş dönemi yetkileri ancak var olan bir role verilebilir.
+
+       Bu adım yalnızca TANIM üretir — hiçbir kullanıcının rolünü değiştirmez
+       ve hiçbir uçta yetki denetimi başlatmaz. Denetim sonraki fazın işidir. */
+    var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var authzLogger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("AuthorizationSeed");
+
+    await AuthorizationDataSeeder.SeedAsync(dbContext, roleManager, authzLogger);
 }
 
 // Configure the HTTP request pipeline.
