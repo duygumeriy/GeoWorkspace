@@ -24,7 +24,7 @@ public class AuthorizationFoundationTests
     /* --- Yetki kataloğu -------------------------------------------------------- */
 
     [Fact]
-    public void Permission_catalog_contains_the_expected_29_codes()
+    public void Permission_catalog_contains_the_expected_30_codes()
     {
         string[] expected =
         [
@@ -65,14 +65,16 @@ public class AuthorizationFoundationTests
             "permissions.assign",
 
             "geography.view",
-            "geography.manage"
+            "geography.manage",
+
+            "activity.view"
         ];
 
         // Beklenen liste kasıtlı olarak literal yazılır: katalog sabitlerinden
         // türetilseydi, kodun kendisi yanlışlıkla değiştiğinde test de onunla
         // birlikte kayar ve hiçbir şey doğrulamamış olurdu.
-        Assert.Equal(29, expected.Length);
-        Assert.Equal(29, PermissionCatalog.All.Count);
+        Assert.Equal(30, expected.Length);
+        Assert.Equal(30, PermissionCatalog.All.Count);
         Assert.Equal(expected.OrderBy(c => c, StringComparer.Ordinal),
             PermissionCatalog.AllCodes.OrderBy(c => c, StringComparer.Ordinal));
     }
@@ -105,7 +107,7 @@ public class AuthorizationFoundationTests
 
         var stored = await Db(scope).Permissions.ToListAsync();
 
-        Assert.Equal(29, stored.Count);
+        Assert.Equal(30, stored.Count);
         Assert.Equal(
             PermissionCatalog.AllCodes.OrderBy(c => c, StringComparer.Ordinal),
             stored.Select(p => p.Code).OrderBy(c => c, StringComparer.Ordinal));

@@ -67,6 +67,12 @@ export const PERMISSIONS = Object.freeze({
      önler. */
   GEOGRAPHY_VIEW: 'geography.view',
   GEOGRAPHY_MANAGE: 'geography.manage',
+
+  /* --- Denetim ------------------------------------------------------------ */
+  /* Aktivite geçmişi kendi yetkisidir ve users.view / permissions.view altına
+     gizlenmez: kayıt, diğer yöneticilerin hareketlerini de gösterir. Kullanıcı
+     listesini görebilmek, yönetim geçmişini okuyabilmekle aynı şey değildir. */
+  ACTIVITY_VIEW: 'activity.view',
 })
 
 /**
@@ -94,6 +100,11 @@ export const ADMIN_SECTIONS = Object.freeze([
   { path: '/admin/users', permission: PERMISSIONS.USERS_VIEW },
   { path: '/admin/roles', permission: PERMISSIONS.ROLES_VIEW },
   { path: '/admin/permissions', permission: PERMISSIONS.PERMISSIONS_VIEW },
+  /* Aktivite geçmişi de bir yönetim BÖLÜMÜDÜR: yalnızca `activity.view`
+     taşıyan bir denetçi, başka hiçbir yetkisi olmasa bile yönetim panelini
+     açabilmeli ve doğrudan bu sayfaya yönlendirilmelidir. Listeye eklenmeseydi
+     menüde görünür ama /admin kökü onu hiç seçmezdi. */
+  { path: '/admin/activity', permission: PERMISSIONS.ACTIVITY_VIEW },
 ])
 
 /** Yönetim paneline girişi açan yetkiler: en az biri yeterlidir. */

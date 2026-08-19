@@ -42,6 +42,8 @@ import useBasemap from '../hooks/useBasemap.js'
 import useInventoryAnalysis from '../hooks/useInventoryAnalysis.js'
 import useWorkspaceMode, { STYLE_PANEL_MODES } from '../hooks/useWorkspaceMode.js'
 import useWorkspacePermissions from '../hooks/useWorkspacePermissions.js'
+import useGeographicScope from '../hooks/useGeographicScope.js'
+import useGeographicScopeLayer from '../hooks/useGeographicScopeLayer.js'
 import useMapView, { TURKEY_CENTER_LON_LAT, TURKEY_ZOOM } from '../hooks/useMapView.js'
 import useMeasurement from '../hooks/useMeasurement.js'
 import useFeatureInteraction from '../hooks/useFeatureInteraction.js'
@@ -64,6 +66,31 @@ import './MapPage.css'
 
 const MAP_READY_FALLBACK_MS = 2500
 
+/** Katlama tercihlerinin localStorage anahtarları. */
+const SIDEBAR_COLLAPSE_KEY = 'map.sidebarCollapsed'
+const TOOLBAR_COLLAPSE_KEY = 'map.toolbarCollapsed'
+
+/**
+ * Katlama tercihini okur. Erişim başarısız olursa AÇIK kabul edilir: bir
+ * kontrolü gizlemek, göstermekten daha riskli bir varsayılandır.
+ */
+function readCollapsePreference(key) {
+  try {
+    return localStorage.getItem(key) === '1'
+  } catch {
+    return false
+  }
+}
+
+function writeCollapsePreference(key, value) {
+  try {
+    localStorage.setItem(key, value ? '1' : '0')
+  } catch {
+    /* Depolama yoksa tercih yalnızca bu oturumda yaşar; hata gösterilmez —
+       kullanıcının düzeltebileceği bir şey değildir. */
+  }
+}
+
 function formatRemaining(expiresAt) {
   if (!expiresAt) return ''
   const diffMs = new Date(expiresAt).getTime() - Date.now()
@@ -84,8 +111,15 @@ export default function MapPage() {
 
   const [remaining, setRemaining] = useState(() => formatRemaining(expiresAt))
   const [mapReady, setMapReady] = useState(false)
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  /* Panel katlama tercihleri OTURUMLAR ARASI hatırlanır. Kişi kenar çubuğunu
+     her açılışta yeniden kapatmak zorunda kalmamalıdır. Depolama erişilemezse
+     (özel mod, kapalı çerezler) varsayılana düşülür — tercih bir kolaylıktır,
+     uygulamanın çalışması ona bağlanmaz. */
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => readCollapsePreference(SIDEBAR_COLLAPSE_KEY))
+  const [toolbarCollapsed, setToolbarCollapsed] = useState(() => readCollapsePreference(TOOLBAR_COLLAPSE_KEY))
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  /** "Yetki Alanım" katmanının görünürlüğü. Katman salt görselleştirmedir. */
+  const [scopeLayerVisible, setScopeLayerVisible] = useState(true)
   // Exposed as state (not just a ref) so the drawing hook re-runs when the map
   // instance is actually created or torn down, StrictMode double-mount included.
   const [mapInstance, setMapInstance] = useState(null)
@@ -124,6 +158,20 @@ export default function MapPage() {
   })
   const { analyzeSaved } = analysis
 
+  /* Kullanıcının KENDİ coğrafi sınırı. Kapsam CANLI okunur ve JWT'de taşınmaz;
+     yönetici bir alanı daralttığında yeniden giriş gerekmez.
+
+     Bu bir güvenlik sınırı DEĞİLDİR: uç hiç çağrılmasa bile çizim uçları kendi
+     coğrafi denetimini uygular. Buradaki veri, sınırı haritada göstermek ve
+     izinsiz bir çizimi BAŞLAMADAN durdurmak içindir. */
+  const geographic = useGeographicScope()
+
+  // Sınır, kullanıcının kendi çizimlerinin ALTINDA duran ayrı bir katmandır.
+  useGeographicScopeLayer(mapInstance, {
+    scope: geographic.scope,
+    visible: scopeLayerVisible,
+  })
+
   const workspace = useDrawingWorkspace(mapInstance, {
     showToast,
     activeDrawTool: workspaceMode.activeDrawTool,
@@ -132,7 +180,22 @@ export default function MapPage() {
        birer API mutasyonudur ve farklı yetkiler isteyebilir (bir silmeyi geri
        almak `drawings.restore` ister, ileri almak `drawings.delete`). */
     hasPermissions: canAll,
-    onPolygonSaved: analyzeSaved,
+    /* Poligon kaydedildikten sonra çalışan OTOMATİK analiz, yetki YOKSA hiç
+       başlatılmaz — istek gönderilip 403 yutulmaz. Yetkisiz kullanıcı, sıradan
+       bir poligon çizdiği için "Analiz yapılamadı (HTTP 403)" görmemelidir;
+       istemediği bir işin hatası ona ait değildir.
+
+       Kapı çağrıdan ÖNCEdir ve merkezî yetki durumundan okunur; rol adına
+       bakan hiçbir kural yoktur. Açık "Envanter" aracı kendi kapısını zaten
+       taşır (bkz. yukarıdaki `active`), dolayısıyla yetkili kullanıcının
+       bilerek başlattığı analiz etkilenmez. Çizim akışının geri kalanı —
+       AttributePopup, kaydetme, coğrafi denetim — değişmez. */
+    onPolygonSaved: allowed.canAnalyze ? analyzeSaved : null,
+    /* Alan dışı bir tık köşe olarak EKLENMEZ ve alan dışı kalan bir çizim
+       için AttributePopup hiç açılmaz. */
+    geographicScope: geographic.scope,
+    /* Sunucu coğrafi bir ret döndürürse tarayıcının sınırı eskimiş demektir. */
+    onForbidden: geographic.refresh,
   })
   /* The trash is fetched only while its panel is open, and a successful restore
      reloads the map through the workspace's own loader — the record has to come
@@ -264,6 +327,24 @@ export default function MapPage() {
     logout()
     navigate('/login', { replace: true })
   }
+
+  /* Katlama tercihleri hem duruma hem depolamaya YAZILIR. Depolamayı ayrı bir
+     efektten yazmak, aynı gerçeği iki yerde tutmak olurdu. */
+  const toggleSidebar = useCallback(() => {
+    setSidebarCollapsed((value) => {
+      const next = !value
+      writeCollapsePreference(SIDEBAR_COLLAPSE_KEY, next)
+      return next
+    })
+  }, [])
+
+  const toggleToolbar = useCallback(() => {
+    setToolbarCollapsed((value) => {
+      const next = !value
+      writeCollapsePreference(TOOLBAR_COLLAPSE_KEY, next)
+      return next
+    })
+  }, [])
 
   const { fitExtent, panTo, ensureVisible } = mapView
   const { selectionCount, selectionCounts, selectedFeatures } = workspace
@@ -492,7 +573,14 @@ export default function MapPage() {
       category: draft.category,
       tags: normalizeTags(draft.tags),
       style: colorPatchFor(selectedFeature.type, draft.color),
-      wkt,
+      /* Geometri DEĞİŞMEDİYSE hiç gönderilmez. Coğrafi yetki yalnızca
+         geometriye bakar; dokunulmamış bir geometriyi göndermek, sunucudan onu
+         yeni bir çizimmiş gibi sınamasını istemek olurdu — ve alanı sonradan
+         daraltılan bir kullanıcı, eski kaydının adını bile değiştiremezdi.
+
+         Bu bir güvenlik gevşetmesi DEĞİLDİR: geometri gerçekten değiştiğinde
+         WKT gider ve sunucu yeni konumu tam olarak eskisi gibi denetler. */
+      ...(editSession.isGeometryDirty ? { wkt } : {}),
     })
 
     // On failure the session stays open with the user's edits intact.
@@ -840,7 +928,7 @@ export default function MapPage() {
     <div className={`map-page ${mapReady ? 'map-page--ready' : ''}`}>
       <Sidebar
         collapsed={sidebarCollapsed}
-        onToggleCollapse={() => setSidebarCollapsed((value) => !value)}
+        onToggleCollapse={toggleSidebar}
         mobileOpen={mobileMenuOpen}
         onCloseMobile={() => setMobileMenuOpen(false)}
         activePanel={activePanel}
@@ -898,6 +986,11 @@ export default function MapPage() {
                 onUndo={workspace.undo}
                 onRedo={workspace.redo}
                 permissions={allowed}
+                /* Katlamak MOD DEĞİŞTİRMEZ: etkin araç workspaceMode'da
+                   yaşamaya devam eder ve çubuk açıldığında her şey bıraktığı
+                   gibidir. */
+                collapsed={toolbarCollapsed}
+                onToggleCollapse={toggleToolbar}
               />
 
               <DrawingHint
@@ -905,6 +998,9 @@ export default function MapPage() {
                 measureMode={workspaceMode.activeMeasureTool}
                 selectionTool={workspaceMode.activeSelectionTool}
                 analysisActive={Boolean(workspaceMode.activeAnalysisTool)}
+                /* Kısıt, araç seçilir seçilmez SÖYLENİR — ilk geçersiz tıkla
+                   öğrenilmesi beklenmez. */
+                scopeRestricted={geographic.isRestricted}
               />
 
               {/* One readout for both analysis entry points: the temporary tool
@@ -1048,6 +1144,15 @@ export default function MapPage() {
                 visibility={workspace.visibility}
                 counts={layerCounts}
                 onToggle={workspace.toggleVisibility}
+                /* Salt görselleştirme: katman kapatılabilir ama silinemez ve
+                   başka bir kullanıcının alanını göstermez. */
+                scope={{
+                  isRestricted: geographic.isRestricted,
+                  areaCount: geographic.areaCount,
+                  failed: geographic.failed,
+                  visible: scopeLayerVisible,
+                }}
+                onToggleScope={() => setScopeLayerVisible((value) => !value)}
               />
 
               <SettingsPanel

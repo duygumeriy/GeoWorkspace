@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom'
 import { usePermissions } from '../../auth/permissionStore.js'
 import { PERMISSIONS } from '../../auth/permissionCodes.js'
-import { KeyIcon, MapIcon, ShieldIcon, UserIcon } from '../ui/icons/index.js'
+import { ClockIcon, KeyIcon, MapIcon, ShieldIcon, UserIcon } from '../ui/icons/index.js'
 import './AdminSidebar.css'
 
 /* Tek gezinme tanımı. Sayfalar kendi menülerini kurmaz; bir uç eklemek burada
@@ -14,6 +14,7 @@ const NAV_ITEMS = [
   { to: '/admin/users', label: 'Kullanıcılar', Icon: UserIcon, permission: PERMISSIONS.USERS_VIEW },
   { to: '/admin/roles', label: 'Roller', Icon: ShieldIcon, permission: PERMISSIONS.ROLES_VIEW },
   { to: '/admin/permissions', label: 'Yetkiler', Icon: KeyIcon, permission: PERMISSIONS.PERMISSIONS_VIEW },
+  { to: '/admin/activity', label: 'Aktivite Geçmişi', Icon: ClockIcon, permission: PERMISSIONS.ACTIVITY_VIEW },
 ]
 
 /**

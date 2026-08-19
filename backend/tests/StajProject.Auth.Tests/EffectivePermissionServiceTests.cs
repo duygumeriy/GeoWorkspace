@@ -207,14 +207,14 @@ public class EffectivePermissionServiceTests
         var user = await CreateUserAsync(scope, "admin-rows", GisRoles.Administrator);
 
         var service = Service(scope);
-        Assert.Equal(29, (await service.GetEffectivePermissionCodesAsync(user.Id)).Count);
+        Assert.Equal(30, (await service.GetEffectivePermissionCodesAsync(user.Id)).Count);
 
         // Tek bir grant satırı kaldırılınca yetki GERÇEKTEN kaybolur. Kodda bir
         // süper kullanıcı kestirmesi olsaydı bu assert geçmezdi.
         await RevokeRoleGrantAsync(scope, GisRoles.Administrator, PermissionCodes.UsersDelete);
 
         Assert.False(await service.HasPermissionAsync(user.Id, PermissionCodes.UsersDelete));
-        Assert.Equal(28, (await service.GetEffectivePermissionCodesAsync(user.Id)).Count);
+        Assert.Equal(29, (await service.GetEffectivePermissionCodesAsync(user.Id)).Count);
     }
 
     [Fact]
@@ -224,7 +224,7 @@ public class EffectivePermissionServiceTests
         var user = await CreateUserAsync(scope, "legacy-admin-rows", ApplicationRoles.Admin);
 
         var service = Service(scope);
-        Assert.Equal(29, (await service.GetEffectivePermissionCodesAsync(user.Id)).Count);
+        Assert.Equal(30, (await service.GetEffectivePermissionCodesAsync(user.Id)).Count);
 
         await RevokeRoleGrantAsync(scope, ApplicationRoles.Admin, PermissionCodes.UsersDelete);
 

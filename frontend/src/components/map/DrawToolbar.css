@@ -152,3 +152,53 @@
     min-width: 40px;
   }
 }
+
+/* --- Katlama ----------------------------------------------------------------
+   Katlanmış çubuk haritanın alt şeridini geri verir ama KAYBOLMAZ: geriye
+   dokunulabilir tek bir tutamak kalır. Tamamen gizlemek, aracı geri açmanın
+   yolunu da gizlemek olurdu. */
+.draw-toolbar--collapsed {
+  padding: 0;
+  gap: 0;
+}
+
+.draw-toolbar-handle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  /* Dokunma hedefi tam boy: dar ekranda başparmakla vurulabilir olmalı. */
+  min-height: 44px;
+  padding: 0 0.9rem;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.draw-toolbar-handle-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: var(--font-small);
+}
+
+/* Etkin araç adı katlanmışken de görünür: kullanıcı haritaya tıkladığında ne
+   olacağını bilmelidir. */
+.draw-toolbar-handle-active {
+  padding: 0.05rem 0.4rem;
+  border-radius: var(--radius-full);
+  background: rgba(139, 92, 246, 0.22);
+  color: var(--text-primary);
+  font-size: 11px;
+}
+
+/* Açıkken tutamak aşağı, katlanmışken yukarı bakar. */
+.draw-toolbar-collapse svg {
+  transform: rotate(90deg);
+}
+
+.draw-toolbar-handle svg {
+  transform: rotate(-90deg);
+}

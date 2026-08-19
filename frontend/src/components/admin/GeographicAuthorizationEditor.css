@@ -10,7 +10,7 @@
 .geo-entry-actions{display:flex;flex-wrap:wrap;gap:.75rem}
 
 .geo-editor-backdrop{position:fixed;inset:0;z-index:95;display:grid;place-items:center;padding:1.5rem;background:rgba(0,0,0,.55)}
-.geo-editor{display:flex;flex-direction:column;gap:.9rem;box-sizing:border-box;width:min(1060px,100%);max-height:min(88vh,900px);padding:1.5rem;overflow-y:auto;background:var(--surface-solid);color:var(--text-primary);border:1px solid var(--border-soft);border-radius:var(--radius-lg);box-shadow:var(--shadow-panel)}
+.geo-editor{display:flex;flex-direction:column;gap:.9rem;box-sizing:border-box;width:min(1180px,100%);max-height:min(88vh,900px);padding:1.5rem;overflow-y:auto;background:var(--surface-solid);color:var(--text-primary);border:1px solid var(--border-soft);border-radius:var(--radius-lg);box-shadow:var(--shadow-panel)}
 .geo-editor-head{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem}
 .geo-editor-head h2{margin:0;font-size:1.25rem}
 .geo-editor-head p{margin:.35rem 0 0;color:var(--text-secondary);font-size:var(--font-small);line-height:1.5}
@@ -26,7 +26,59 @@
 .geo-editor-status.is-inherited{background:rgba(100,116,139,.12);border:1px solid rgba(100,116,139,.4)}
 .geo-editor-status.is-none{color:var(--text-secondary);background:var(--surface-soft);border:1px solid var(--border-soft)}
 
-.geo-editor-body{display:flex;flex-direction:column;gap:.6rem}
+/* Gövde İKİ SÜTUNDUR: solda alan listesi, sağda harita. Listeyi haritanın
+   altına koymak, "hangi alanı düzenliyorum" sorusunu her seferinde kaydırmaya
+   bağlardı; alan sayısı arttıkça harita ile liste aynı anda görünmez olurdu. */
+.geo-editor-body{display:grid;grid-template-columns:minmax(220px,280px) 1fr;gap:1rem;align-items:start}
+.geo-editor-mapwrap{display:flex;flex-direction:column;gap:.6rem;min-width:0}
+
+/* --- Alan listesi ---------------------------------------------------------- */
+.geo-editor-areas{display:flex;flex-direction:column;gap:.7rem;min-width:0}
+.geo-areas-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.5rem}
+.geo-areas-head h3{margin:0;font-size:var(--font-body)}
+.geo-areas-empty{margin:0;color:var(--text-secondary);font-size:var(--font-small);line-height:1.5}
+.geo-areas-list{display:flex;flex-direction:column;gap:.4rem;margin:0;padding:0;max-height:clamp(180px,32vh,320px);overflow-y:auto;list-style:none}
+
+/* Kart bir DÜĞMEDİR: klavyeyle gezilir, Enter/Space ile seçilir. Tıklanabilir
+   bir div bunların hiçbirini vermezdi. */
+.geo-area-card{display:flex;align-items:center;gap:.5rem;width:100%;padding:.55rem .7rem;text-align:left;background:var(--surface-soft);color:var(--text-primary);border:1px solid var(--border-soft);border-left:3px solid transparent;border-radius:var(--radius-sm);font:inherit;cursor:pointer}
+.geo-area-card:hover{background:var(--field-bg-hover)}
+/* Seçim yalnızca renkle anlatılmaz: sol şerit + dolgu + aria-pressed birlikte
+   çalışır, böylece renk ayırt edemeyen kişi için de belirgindir. */
+.geo-area-card.is-selected{border-color:var(--primary-light);border-left-color:var(--primary-light);background:rgba(99,102,241,.16)}
+.geo-area-card.is-editing{border-left-color:#d99b16}
+.geo-area-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.geo-area-source{flex:none;padding:.1rem .45rem;color:var(--text-secondary);background:var(--surface-solid);border:1px solid var(--border-soft);border-radius:var(--radius-full);font-size:11px}
+.geo-area-flag{flex:none;color:#d99b16;font-size:11px}
+.geo-area-actions{display:flex;flex-wrap:wrap;gap:.5rem}
+
+/* --- Taslak paneli --------------------------------------------------------- */
+.geo-draft{display:flex;flex-direction:column;gap:.7rem;padding:.9rem;background:var(--surface-soft);border:1px solid rgba(217,155,22,.4);border-radius:var(--radius-sm)}
+.geo-draft-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.5rem}
+.geo-draft-head h3{margin:0;font-size:var(--font-body)}
+.geo-method-tabs{display:flex;flex-wrap:wrap;gap:.5rem}
+.geo-method-body{display:flex;flex-direction:column;gap:.6rem}
+.geo-method-hint{margin:0;color:var(--text-secondary);font-size:var(--font-small);line-height:1.5}
+.geo-method-actions{display:flex;flex-wrap:wrap;gap:.5rem}
+
+/* --- Ortak alan kutusu ----------------------------------------------------- */
+.geo-field{display:flex;flex-direction:column;gap:.3rem;font-size:var(--font-small);color:var(--text-secondary)}
+.geo-field input,.geo-field select,.geo-field textarea{width:100%;box-sizing:border-box;padding:.5rem .6rem;color:var(--text-primary);background:var(--field-bg);border:1px solid var(--field-border);border-radius:var(--radius-sm);font:inherit}
+.geo-field textarea{resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.geo-field input:focus-visible,.geo-field select:focus-visible,.geo-field textarea:focus-visible{outline:none;border-color:var(--field-focus-border);box-shadow:0 0 0 3px var(--field-focus-ring)}
+
+/* --- İl / bölge seçimi ------------------------------------------------------ */
+.geo-place-picker{display:flex;flex-direction:column;gap:.6rem}
+.geo-place-kinds{display:flex;flex-wrap:wrap;gap:.5rem}
+.geo-place-empty{margin:0;color:var(--text-secondary);font-size:var(--font-small)}
+/* Yaklaşıklık uyarısı, bir kenar notu değil GÖRÜLMESİ GEREKEN bir bilgidir:
+   resmî sanılan bir bölge sınırıyla yetki vermek, yanlış kapsam demektir. */
+.geo-place-approximation{margin:0;padding:.7rem;color:var(--text-secondary);background:rgba(217,155,22,.1);border:1px solid rgba(217,155,22,.4);border-radius:var(--radius-sm);font-size:var(--font-small);line-height:1.5}
+.geo-place-parts{margin:0;padding:.7rem;background:var(--surface-solid);border:1px solid var(--border-soft);border-radius:var(--radius-sm);font-size:var(--font-small);line-height:1.5}
+
+/* --- Koordinat girişi ------------------------------------------------------- */
+.geo-coordinate-input{display:flex;flex-direction:column;gap:.5rem}
+.geo-coordinate-help{margin:0;color:var(--text-secondary);font-size:var(--font-small);line-height:1.5}
 /* Harita EKRANIN ASIL İÇERİĞİDİR: yükseklik viewport'a göre verilir, sabit
    birkaç yüz piksellik bir kutuya sıkıştırılmaz. */
 .geo-scope-map{position:relative;width:100%;height:clamp(320px,52vh,560px);overflow:hidden;background:var(--surface-soft);border:1px solid var(--border-soft);border-radius:var(--radius-sm)}
@@ -43,6 +95,7 @@
 .geo-swatch{width:18px;height:12px;border-radius:3px}
 .geo-swatch.is-direct{background:rgba(99,102,241,.25);border:2px solid #6366f1}
 .geo-swatch.is-inherited{background:rgba(100,116,139,.2);border:2px dashed #64748b}
+.geo-swatch.is-draft{background:rgba(217,155,22,.25);border:2px dashed #d99b16}
 
 .geo-editor-warning,.geo-editor-notice,.geo-editor-error,.geo-editor-readonly{margin:0;padding:.8rem;border-radius:var(--radius-sm);font-size:var(--font-small);line-height:1.5}
 .geo-editor-warning{background:rgba(217,155,22,.1);border:1px solid rgba(217,155,22,.4)}
@@ -54,9 +107,18 @@
 .geo-editor-tools,.geo-editor-submit{display:flex;flex-wrap:wrap;gap:.75rem}
 .admin-button.is-active{border-color:var(--primary-light);background:rgba(99,102,241,.18);color:var(--text-primary)}
 
+/* Orta genişlik: iki sütun sığmaz, liste haritanın üstüne geçer. */
+@media (max-width:900px){
+  .geo-editor-body{grid-template-columns:1fr}
+  .geo-areas-list{max-height:none}
+}
+
 /* Dar ekran: pencere neredeyse tam ekran olur, düğmeler alt alta dizilir ve
    harita kullanılabilir bir yükseklikte kalır. Yatay taşma YOKTUR. */
 @media (max-width:768px){
+  .geo-method-tabs,.geo-place-kinds,.geo-method-actions,.geo-area-actions{flex-direction:column}
+  .geo-method-tabs .admin-button,.geo-place-kinds .admin-button,
+  .geo-method-actions .admin-button,.geo-area-actions .admin-button{width:100%}
   .geo-editor-backdrop{padding:0}
   .geo-editor{width:100%;max-height:100vh;height:100vh;border:0;border-radius:0}
   .geo-editor-tools,.geo-editor-submit{flex-direction:column}

@@ -13,6 +13,7 @@ import {
   BoxSelectIcon,
   LassoIcon,
   AnalysisIcon,
+  ChevronIcon,
 } from '../ui/icons/index.js'
 import './DrawToolbar.css'
 
@@ -41,6 +42,16 @@ const SELECTION_ICONS = { single: CursorIcon, box: BoxSelectIcon, polygon: Lasso
  * Groups collapse with their contents: when nothing inside one is allowed, the
  * group and its divider go too, rather than leaving an empty bracket floating
  * over the map.
+ *
+ * <b>Çubuğun tamamı da katlanabilir.</b> (Phase 9) Dar ekranlarda ve alan
+ * incelerken haritanın alt şeridini geri kazanmak gerekir. Katlanmış hâlde
+ * geriye tek bir düğme kalır ve o düğme açıklığı `aria-expanded` ile bildirir.
+ *
+ * <b>Katlamak MOD DEĞİŞTİRMEZ.</b> Etkin araç, ölçüm ve seçim durumu
+ * `useWorkspaceMode` içinde yaşar; bu bileşen yalnızca onu ÇİZER. Katlarken
+ * aracı kapatmak, kullanıcının çizmekte olduğu şekli kaybettirirdi — bu yüzden
+ * katlama durumu workspace'e hiç dokunmaz ve açıldığında her şey bıraktığı
+ * gibidir. Katlanmışken etkin bir araç varsa düğme bunu ayrıca söyler.
  */
 export default function DrawToolbar({
   activeTool,
@@ -57,6 +68,8 @@ export default function DrawToolbar({
   onUndo,
   onRedo,
   permissions,
+  collapsed = false,
+  onToggleCollapse,
 }) {
   const { drawTools, canDrawAny, canMeasure, canSelect, canAnalyze, canMutateDrawings } = permissions
 
@@ -67,8 +80,36 @@ export default function DrawToolbar({
 
   if (!hasToolGroup && !canSelect && !canMutateDrawings) return null
 
+  /* Katlanmışken bile hangi aracın açık olduğu görünür kalır: kullanıcı
+     haritaya tıkladığında ne olacağını bilmelidir. */
+  const activeLabel =
+    DRAWING_TYPE_LIST.find((type) => type.id === activeTool)?.label ??
+    (measureMode ? 'Ölçüm' : analysisActive ? ANALYSIS_TOOL_INFO.label : null)
+
+  if (collapsed) {
+    return (
+      <div className="draw-toolbar draw-toolbar--collapsed">
+        <button
+          type="button"
+          className="draw-toolbar-handle"
+          aria-expanded={false}
+          aria-controls="draw-toolbar-panel"
+          aria-label="Çizim araçlarını göster"
+          title="Çizim araçlarını göster"
+          onClick={onToggleCollapse}
+        >
+          <ChevronIcon size={16} />
+          <span className="draw-toolbar-handle-text">
+            Araçlar
+            {activeLabel && <span className="draw-toolbar-handle-active">{activeLabel}</span>}
+          </span>
+        </button>
+      </div>
+    )
+  }
+
   return (
-    <div className="draw-toolbar" role="toolbar" aria-label="Çizim araçları">
+    <div className="draw-toolbar" id="draw-toolbar-panel" role="toolbar" aria-label="Çizim araçları">
       {hasToolGroup && (
       <div className="draw-toolbar-group">
         {drawTypes.map((type) => {
@@ -190,6 +231,21 @@ export default function DrawToolbar({
         </button>
       </div>
       )}
+
+      {/* Katlama düğmesi en sonda ve HER ZAMAN çizilir: çubuğun içeriği yetkiye
+          göre değişse de, çubuğu kapatabilmek bir yetki meselesi değildir. */}
+      <span className="draw-toolbar-divider" aria-hidden="true" />
+      <button
+        type="button"
+        className="draw-toolbar-btn draw-toolbar-btn--icon draw-toolbar-collapse"
+        aria-expanded
+        aria-controls="draw-toolbar-panel"
+        aria-label="Çizim araçlarını gizle"
+        title="Araç çubuğunu gizle"
+        onClick={onToggleCollapse}
+      >
+        <ChevronIcon size={16} />
+      </button>
     </div>
   )
 }

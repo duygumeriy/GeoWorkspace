@@ -242,12 +242,23 @@ public class AdminUsersController : ApiControllerBase
                 await _userPermissions.ReplaceUserPermissionsAsync(
                     ActingUserId, id, request, cancellationToken)));
 
-    /* --- Coğrafi yetki alanı ---------------------------------------------------
+    /* --- Coğrafi yetki alanı: TEKİL (UYUMLULUK — Phase 8A) ----------------------
        İki BAĞIMSIZ yetki birlikte aranır: hedefin türü için gereken yetki
        (users.view / users.update) ve coğrafi yönetim yeteneği (geography.view /
        geography.manage). Yalnızca users.update taşıyan bir aktör, coğrafi sınırı
        kaldıramaz — aksi hâlde kullanıcı düzenleme yetkisi sessizce coğrafi
-       yetki yönetimi anlamına gelirdi. */
+       yetki yönetimi anlamına gelirdi.
+
+       <b>Bu üç uç UYUMLULUK İÇİNDİR ve yeni ekranlar kullanmaz.</b> Hedef
+       başına tek alanın olduğu dönemden kalmışlardır; Phase 9 arayüzü aşağıdaki
+       ÇOĞUL uçları kullanır. Anlamları belirsiz değil, yalnızca dardır:
+
+         GET    → hedefin tüm doğrudan alanlarının BİRLEŞİMİ, tek WKT olarak
+         PUT    → hedefin TÜM doğrudan alanlarını gönderilen tek alanla DEĞİŞTİRİR
+         DELETE → hedefin TÜM doğrudan alanlarını kaldırır
+
+       Çok alanlı yönetim yapan hiçbir ekran tekil PUT'u çağırmamalıdır: o çağrı
+       ikinci ve sonraki alanları sessizce silerdi. */
 
     /// <summary>
     /// Kullanıcının coğrafi yetki alanı: kendi alanı ve fiilen uygulanan alan.
@@ -303,6 +314,103 @@ public class AdminUsersController : ApiControllerBase
             nameof(DeleteUserGeographicAuthorization),
             async () => RespondGeographic(
                 await _geographicAuthorization.DeleteUserAuthorizationAsync(id, cancellationToken)));
+
+    /* --- Coğrafi yetki alanları: ÇOKLU (Phase 9) -------------------------------
+       Yeni sözleşme çoğuldur ve her alan KENDİ kimliğiyle adreslenir. Tekil
+       uçlar (yukarıda) yalnızca uyumluluk için durur ve çok alanlı yönetimde
+       KULLANILMAZ: tekil PUT hedefin tüm alanlarını tek alana indirir.
+
+       Yetki matrisi tekil uçlarla BİREBİR aynıdır — çoğullaşma bir yetki
+       gevşetmesi değildir. */
+
+    /// <summary>
+    /// Kullanıcının doğrudan coğrafi alanları + fiilen uygulanan sınır.
+    /// </summary>
+    /// <remarks>
+    /// Alanı olmayan bir kullanıcı için 404 DÖNMEZ: kullanıcı vardır, yalnızca
+    /// kısıtı yoktur. "Kayıt yok" ile "hedef yok" farklı cevaplardır ve ikisini
+    /// aynı koda indirmek, yönetici ekranını var olmayan bir hata durumuna
+    /// sokardı.
+    /// </remarks>
+    [RequirePermission(PermissionCodes.UsersView)]
+    [RequirePermission(PermissionCodes.GeographyView)]
+    [HttpGet("{id:int}/geographic-authorizations")]
+    public Task<ActionResult<GeographicAreasResponse>> GetUserGeographicAreas(
+        int id,
+        CancellationToken cancellationToken) =>
+        Guard<GeographicAreasResponse>(
+            nameof(GetUserGeographicAreas),
+            async () => RespondAreas(
+                await _geographicAuthorization.GetUserAreasAsync(id, cancellationToken)));
+
+    /// <summary>
+    /// Kullanıcıya YENİ bir alan ekler; var olan alanlarına dokunmaz.
+    /// </summary>
+    /// <remarks>
+    /// Değişiklik ANINDA geçerlidir: çizim uçları alanı her istekte canlı
+    /// okur, dolayısıyla yeniden giriş veya token yenilemesi gerekmez. Coğrafi
+    /// yetki bilinçli olarak JWT'ye yazılmaz — yazılsaydı, daraltılan bir alan
+    /// eski token'ın ömrü boyunca uygulanmazdı.
+    /// </remarks>
+    [RequirePermission(PermissionCodes.UsersUpdate)]
+    [RequirePermission(PermissionCodes.GeographyManage)]
+    [HttpPost("{id:int}/geographic-authorizations")]
+    public Task<ActionResult<GeographicAreasResponse>> CreateUserGeographicArea(
+        int id,
+        [FromBody] SaveGeographicAreaRequest request,
+        CancellationToken cancellationToken) =>
+        Guard<GeographicAreasResponse>(
+            nameof(CreateUserGeographicArea),
+            async () => RespondAreas(
+                await _geographicAuthorization.CreateUserAreaAsync(id, request, cancellationToken)));
+
+    /// <summary>Kullanıcının TEK bir alanını değiştirir; diğerleri kalır.</summary>
+    [RequirePermission(PermissionCodes.UsersUpdate)]
+    [RequirePermission(PermissionCodes.GeographyManage)]
+    [HttpPut("{id:int}/geographic-authorizations/{areaId:int}")]
+    public Task<ActionResult<GeographicAreasResponse>> UpdateUserGeographicArea(
+        int id,
+        int areaId,
+        [FromBody] SaveGeographicAreaRequest request,
+        CancellationToken cancellationToken) =>
+        Guard<GeographicAreasResponse>(
+            nameof(UpdateUserGeographicArea),
+            async () => RespondAreas(
+                await _geographicAuthorization.UpdateUserAreaAsync(id, areaId, request, cancellationToken)));
+
+    /// <summary>
+    /// Kullanıcının TEK bir alanını kaldırır; diğerleri kalır. Son alan da
+    /// kaldırılırsa kullanıcı rollerinden gelen alanlara düşer.
+    /// </summary>
+    [RequirePermission(PermissionCodes.UsersUpdate)]
+    [RequirePermission(PermissionCodes.GeographyManage)]
+    [HttpDelete("{id:int}/geographic-authorizations/{areaId:int}")]
+    public Task<ActionResult<GeographicAreasResponse>> DeleteUserGeographicArea(
+        int id,
+        int areaId,
+        CancellationToken cancellationToken) =>
+        Guard<GeographicAreasResponse>(
+            nameof(DeleteUserGeographicArea),
+            async () => RespondAreas(
+                await _geographicAuthorization.DeleteUserAreaAsync(id, areaId, cancellationToken)));
+
+    private ActionResult<GeographicAreasResponse> RespondAreas(
+        ServiceResult<GeographicAreasResponse> result)
+    {
+        if (result.IsSuccess)
+        {
+            return Ok(result.Value);
+        }
+
+        return result.ErrorKind switch
+        {
+            ServiceErrorKind.NotFound => NotFound(new { message = result.Error }),
+            ServiceErrorKind.Conflict => Conflict(new { message = result.Error }),
+            ServiceErrorKind.Forbidden => StatusCode(StatusCodes.Status403Forbidden, new { message = result.Error }),
+            // Geçersiz geometri bir YETKİ sorunu değildir: 400 kalır.
+            _ => BadRequest(new { message = result.Error })
+        };
+    }
 
     private ActionResult<GeographicAuthorizationResponse> RespondGeographic(
         ServiceResult<GeographicAuthorizationResponse> result)

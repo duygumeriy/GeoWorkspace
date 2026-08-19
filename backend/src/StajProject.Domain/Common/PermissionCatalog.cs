@@ -203,7 +203,14 @@ public static class PermissionCatalog
         new(PermissionCodes.GeographyManage,
             "Coğrafi Yetkileri Yönetme",
             "Kullanıcı ve rol bazlı coğrafi yetki alanlarını oluşturma, düzenleme ve kaldırma yetkisi.",
-            PermissionCategories.Geography, 1010)
+            PermissionCategories.Geography, 1010),
+
+        /* --- Denetim ------------------------------------------------------------ */
+
+        new(PermissionCodes.ActivityView,
+            "Aktivite Geçmişini Görüntüleme",
+            "Sistemde yapılan yönetim ve çizim işlemlerinin kaydını görüntüleyebilir.",
+            PermissionCategories.Audit, 1100)
     ];
 
     /// <summary>Katalogdaki tüm kodlar.</summary>

@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { ALL_PERMISSIONS, mockPermissions } from './permissions.js'
 
 /**
- * Yönetim panelindeki coğrafi yetki düzenleyicisi (Phase 8B).
+ * Yönetim panelindeki ÇOK ALANLI coğrafi yetki düzenleyicisi (Phase 9).
  *
  * Ekran bir YÖNETİM arayüzüdür, bir güvenlik sınırı değildir: buradaki her
  * kural backend'in `users.view`/`users.update`, `roles.view`/`roles.update` ve
@@ -10,6 +10,11 @@ import { ALL_PERMISSIONS, mockPermissions } from './permissions.js'
  * geçmez. Testler de bunu böyle ölçer — bir düğmenin gizlenmesi yetkinin
  * kalktığını kanıtlamaz, yalnızca arayüzün yapılamayacak bir işi teklif
  * etmediğini gösterir.
+ *
+ * <b>Fazın çekirdek iddiası burada ölçülür: EKLEME SİLME DEĞİLDİR.</b> Yeni bir
+ * alan eklerken var olanlar haritada ve listede durmaya devam eder; kaydetmek
+ * yalnızca POST açar, düzenlemek yalnızca seçili alanın PUT'unu, silmek
+ * yalnızca onun DELETE'ini gönderir.
  *
  * Her şey ağ sınırında taklit edilir. Gerçek `geographic_authorizations`
  * tablosuna tek bir satır bile yazılmaz.
@@ -26,19 +31,33 @@ const json = (body, status = 200) => ({
    Web Mercator değeriyle karıştırılamayacak kadar küçük sayılar olması
    bilinçlidir: projeksiyon testi tam olarak bu farkı arar. */
 
-/** Ankara çevresinde ~1°'lik bir kare — kullanıcıya özel alan. */
+/** Ankara çevresinde ~1°'lik bir kare. */
 const ANKARA_WKT = 'POLYGON ((32.5 39.5, 33.5 39.5, 33.5 40.5, 32.5 40.5, 32.5 39.5))'
-const ANKARA_RING = [[32.5, 39.5], [33.5, 39.5], [33.5, 40.5], [32.5, 40.5], [32.5, 39.5]]
+
+/** Kayseri çevresinde, Ankara ile KESİŞMEYEN ikinci bir kare. */
+const KAYSERI_WKT = 'POLYGON ((35 38, 36 38, 36 39, 35 39, 35 38))'
 
 /** İç Anadolu'yu kapsayan daha geniş bir alan — rolden miras kalan alan. */
 const ROLE_WKT = 'POLYGON ((30 37, 38 37, 38 41, 30 41, 30 37))'
 
-/** Sunucu cevabının dört alanı; Phase 8A sözleşmesinin birebir kopyası. */
-const scope = ({ wkt = null, effectiveWkt = undefined, restricted = undefined } = {}) => ({
-  hasDirectAuthorization: wkt !== null,
+let nextAreaId = 100
+
+/** Sunucunun döndürdüğü tek bir alan kaydı. */
+const area = (name, wkt, { sourceType = 'ManualPolygon', sourceKey = null, id } = {}) => ({
+  id: id ?? (nextAreaId += 1),
+  name,
   wkt,
-  isRestricted: restricted ?? (effectiveWkt !== undefined ? effectiveWkt !== null : wkt !== null),
-  effectiveWkt: effectiveWkt === undefined ? wkt : effectiveWkt,
+  sourceType,
+  sourceKey,
+  createdDate: '2026-08-19T09:00:00Z',
+  modifiedDate: '2026-08-19T09:00:00Z',
+})
+
+/** Phase 9 sözleşmesinin birebir kopyası. */
+const scope = (areas, { effectiveWkt, restricted } = {}) => ({
+  areas,
+  isRestricted: restricted ?? (effectiveWkt !== undefined ? effectiveWkt !== null : areas.length > 0),
+  effectiveWkt: effectiveWkt === undefined ? (areas[0]?.wkt ?? null) : effectiveWkt,
 })
 
 const USER = {
@@ -68,40 +87,65 @@ const ROLE = {
 }
 
 /**
- * Coğrafi yetki uçlarını taklit eder ve yapılan çağrıları kaydeder.
+ * Çoğul coğrafi uçları taklit eder ve yapılan çağrıları kaydeder.
  *
- * Sunucu DURUMLUDUR: PUT ve DELETE, sonraki okumaların döneceği cevabı da
- * değiştirir. Phase 8A uçları zaten güncel durumu geri döndürür, ve ekranın
+ * Sunucu DURUMLUDUR: POST/PUT/DELETE sonraki okumaların döneceği cevabı da
+ * değiştirir. Phase 9 uçları zaten güncel durumu geri döndürür, ve ekranın
  * "kendi gönderdiğini başarılı saymak yerine sunucunun cevabını temel al"
  * davranışı ancak böyle ölçülebilir.
  */
-async function mockScope(page, { targetType, targetId, initial, onPut, onDelete, getStatus }) {
-  const calls = { get: 0, put: [], delete: 0 }
-  const state = { current: initial }
-  const path = `**/api/admin/${targetType === 'user' ? 'users' : 'roles'}/${targetId}/geographic-authorization`
+async function mockAreas(page, { targetType, targetId, initial = [], inherited = null, getStatus, onPost }) {
+  const calls = { get: 0, post: [], put: [], delete: [] }
+  const state = { areas: [...initial] }
 
-  await page.route(path, async (route) => {
-    const method = route.request().method()
+  const base = `**/api/admin/${targetType === 'user' ? 'users' : 'roles'}/${targetId}/geographic-authorizations`
 
-    if (method === 'PUT') {
-      calls.put.push(JSON.parse(route.request().postData() || '{}'))
-      if (onPut) return onPut(route, calls)
-      state.current = scope({ wkt: calls.put.at(-1).wkt })
-      return route.fulfill(json(state.current))
-    }
+  const body = () =>
+    state.areas.length > 0
+      ? scope(state.areas, { effectiveWkt: state.areas[0].wkt })
+      : scope([], { effectiveWkt: inherited, restricted: inherited !== null })
 
-    if (method === 'DELETE') {
-      calls.delete += 1
-      if (onDelete) return onDelete(route, calls)
-      state.current = scope({ wkt: null, effectiveWkt: null })
-      return route.fulfill(json(state.current))
+  // Koleksiyon önce kaydedilir; Playwright son kaydedileni önce dener, bu
+  // yüzden tekil rota aşağıda ve daha önceliklidir.
+  await page.route(base, async (route) => {
+    if (route.request().method() === 'POST') {
+      const payload = JSON.parse(route.request().postData() || '{}')
+      calls.post.push(payload)
+      if (onPost) return onPost(route, calls)
+      state.areas.push(area(payload.name || 'Adsız', payload.wkt, {
+        sourceType: payload.sourceType ?? 'ManualPolygon',
+        sourceKey: payload.sourceKey ?? null,
+      }))
+      return route.fulfill(json(body()))
     }
 
     calls.get += 1
     if (getStatus && getStatus !== 200) {
-      return route.fulfill(json({ message: 'Coğrafi yetki alanı okunamadı.' }, getStatus))
+      return route.fulfill(json({ message: 'Coğrafi yetki alanları okunamadı.' }, getStatus))
     }
-    return route.fulfill(json(state.current))
+    return route.fulfill(json(body()))
+  })
+
+  await page.route(`${base}/*`, async (route) => {
+    const method = route.request().method()
+    const id = Number(new URL(route.request().url()).pathname.split('/').pop())
+
+    if (method === 'PUT') {
+      const payload = JSON.parse(route.request().postData() || '{}')
+      calls.put.push({ id, ...payload })
+      state.areas = state.areas.map((item) =>
+        item.id === id ? { ...item, name: payload.name || item.name, wkt: payload.wkt } : item,
+      )
+      return route.fulfill(json(body()))
+    }
+
+    if (method === 'DELETE') {
+      calls.delete.push(id)
+      state.areas = state.areas.filter((item) => item.id !== id)
+      return route.fulfill(json(body()))
+    }
+
+    return route.fulfill(json(body()))
   })
 
   return { calls, state }
@@ -146,7 +190,7 @@ async function openUser(page, { permissions = ALL_PERMISSIONS, geo } = {}) {
   await page.route(`**/api/admin/users/${USER.id}/permissions`, (route) =>
     route.fulfill(json({ userId: USER.id, userName: USER.username, roles: ['GIS Editor'], canManageDirectPermissions: true, targetAccountEligible: true, permissions: [] })),
   )
-  const scopeMock = geo ? await mockScope(page, { targetType: 'user', targetId: USER.id, ...geo }) : null
+  const scopeMock = geo ? await mockAreas(page, { targetType: 'user', targetId: USER.id, ...geo }) : null
   await page.route(`**/api/admin/users/${USER.id}`, (route) => route.fulfill(json(USER)))
   await page.route('**/api/admin/users', (route) => route.fulfill(json([USER])))
 
@@ -162,7 +206,7 @@ async function openRole(page, { permissions = ALL_PERMISSIONS, geo } = {}) {
   await page.route('**/api/admin/roles/*/permissions', (route) =>
     route.fulfill(json({ role: ROLE, permissions: [] })),
   )
-  const scopeMock = geo ? await mockScope(page, { targetType: 'role', targetId: ROLE.id, ...geo }) : null
+  const scopeMock = geo ? await mockAreas(page, { targetType: 'role', targetId: ROLE.id, ...geo }) : null
   await page.route('**/api/admin/roles', (route) => route.fulfill(json([ROLE])))
 
   await page.goto('/admin/roles')
@@ -174,7 +218,9 @@ async function openRole(page, { permissions = ALL_PERMISSIONS, geo } = {}) {
 const entryButton = (page) => page.getByRole('button', { name: 'Coğrafi Yetki', exact: true })
 const editor = (page) => page.getByRole('dialog', { name: /^Coğrafi Yetki —/ })
 const scopeMap = (page) => page.getByTestId('geographic-scope-map')
-const saveButton = (page) => page.getByRole('button', { name: 'Coğrafi Yetkiyi Kaydet' })
+const addButton = (page) => editor(page).getByRole('button', { name: 'Yeni Alan Ekle' }).first()
+const saveButton = (page) => editor(page).getByRole('button', { name: /Alanı Kaydet$/ })
+const areaCard = (page, name) => editor(page).getByRole('button', { name: new RegExp(`^${name}`) })
 
 /** Yetki kümesinden tek tek kod çıkarır — "şu yetki olmasaydı" kurguları için. */
 const without = (...codes) => ALL_PERMISSIONS.filter((code) => !codes.includes(code))
@@ -195,6 +241,11 @@ async function openEditor(page) {
  * tıklamayla verilir — OpenLayers çizimi böyle bitirir.
  */
 async function drawPolygon(page, points = [[0.35, 0.35], [0.62, 0.35], [0.62, 0.62]]) {
+  /* Kip penceresi kendi içinde kaydırılabilir. Taslak paneli açıldığında harita
+     görünür alanın dışına kayabilir ve o koordinatlara yapılan bir tık haritaya
+     değil arka plana düşerdi — pencereyi kapatarak. Önce haritayı görünür
+     alana getiriyoruz. */
+  await scopeMap(page).scrollIntoViewIfNeeded()
   const box = await scopeMap(page).boundingBox()
   const at = ([fx, fy]) => ({ x: box.x + box.width * fx, y: box.y + box.height * fy })
 
@@ -206,14 +257,14 @@ async function drawPolygon(page, points = [[0.35, 0.35], [0.62, 0.35], [0.62, 0.
   await page.mouse.dblclick(last.x, last.y)
 }
 
-/* --- Kullanıcı: giriş noktasının görünürlüğü -------------------------------- */
+/* --- Giriş noktasının görünürlüğü -------------------------------------------- */
 
 test('a user without geography.view is never offered the geographic action', async ({ page }) => {
   await openUser(page, { permissions: without('geography.view') })
 
-  /* Düğme DEVRE DIŞI değil, HİÇ YOK. Ödevin kuralı budur: yetkisi olmayana
-     düğmeyi göstermemek. Devre dışı bir düğme, var olmayan bir yolu
-     duyurmaya devam ederdi. */
+  /* Düğme DEVRE DIŞI değil, HİÇ YOK. Kural budur: yetkisi olmayana düğmeyi
+     göstermemek. Devre dışı bir düğme, var olmayan bir yolu duyurmaya devam
+     ederdi. */
   await expect(entryButton(page)).toHaveCount(0)
   await expect(page.getByRole('heading', { name: 'Coğrafi Yetki', level: 3 })).toHaveCount(0)
 })
@@ -221,645 +272,463 @@ test('a user without geography.view is never offered the geographic action', asy
 test('geography.view alone is enough to reach the user geographic editor', async ({ page }) => {
   await openUser(page, {
     permissions: without('geography.manage'),
-    geo: { initial: scope({ wkt: null, effectiveWkt: null }) },
+    geo: { initial: [] },
   })
 
   await expect(entryButton(page)).toBeVisible()
   await openEditor(page)
 })
 
-/* --- Kullanıcı: salt okunur kapılar ----------------------------------------- */
-
-test('without geography.manage the user editor opens read-only', async ({ page }) => {
+test('without geography.manage the editor opens read-only', async ({ page }) => {
   await openUser(page, {
     permissions: without('geography.manage'),
-    geo: { initial: scope({ wkt: ANKARA_WKT }) },
+    geo: { initial: [area('Ankara', ANKARA_WKT, { id: 1 })] },
   })
   const panel = await openEditor(page)
 
-  await expect(panel.getByText('Coğrafi alan yalnızca görüntüleniyor.', { exact: false })).toBeVisible()
-  /* Düzenleme kontrolleri devre dışı DEĞİL, hiç çizilmez. */
-  for (const name of ['Poligon Çiz', 'Alanı Düzenle', 'Yeniden Çiz', 'Coğrafi Yetkiyi Kaydet', 'Coğrafi Yetkiyi Kaldır']) {
-    await expect(panel.getByRole('button', { name })).toHaveCount(0)
-  }
-  // Ama alan GÖRÜNÜR: okuma yetkisi okumayı gerçekten açar.
-  await expect(scopeMap(page)).toHaveAttribute('data-area-count', '1')
-})
-
-test('geography.manage without users.update still leaves the user editor read-only', async ({ page }) => {
-  /* Uç İKİ yetki birden arar. Yalnızca coğrafi yönetimi olan biri kullanıcıya
-     dokunamaz — aksi hâlde coğrafi yetki, kullanıcı düzenleme yetkisinin
-     arka kapısı olurdu. */
-  await openUser(page, {
-    permissions: without('users.update'),
-    geo: { initial: scope({ wkt: ANKARA_WKT }) },
-  })
-  const panel = await openEditor(page)
-
-  await expect(panel.getByText('Coğrafi alan yalnızca görüntüleniyor.', { exact: false })).toBeVisible()
+  await expect(panel.getByText('Coğrafi alanlar yalnızca görüntüleniyor.', { exact: false })).toBeVisible()
+  // Kayıtlı alan GÖRÜNÜR ama hiçbir düzenleme kontrolü çizilmez.
+  await expect(areaCard(page, 'Ankara')).toBeVisible()
+  await expect(panel.getByRole('button', { name: 'Yeni Alan Ekle' })).toHaveCount(0)
   await expect(saveButton(page)).toHaveCount(0)
 })
 
-test('users.update together with geography.manage makes the user editor editable', async ({ page }) => {
-  await openUser(page, { geo: { initial: scope({ wkt: ANKARA_WKT }) } })
-  const panel = await openEditor(page)
+/* --- Var olan alanların listelenmesi ----------------------------------------- */
 
-  await expect(panel.getByRole('button', { name: 'Alanı Düzenle' })).toBeVisible()
-  await expect(panel.getByRole('button', { name: 'Yeniden Çiz' })).toBeVisible()
-  await expect(panel.getByRole('button', { name: 'Coğrafi Yetkiyi Kaldır' })).toBeVisible()
-  // Hiçbir şey değişmeden kaydetme KAPALI: boş bir PUT, olmayan bir işi yapardı.
-  await expect(saveButton(page)).toBeDisabled()
-})
-
-/* --- Kullanıcı: üç coğrafi durum -------------------------------------------- */
-
-test('a user with neither a direct nor an inherited area is shown as unrestricted', async ({ page }) => {
-  await openUser(page, { geo: { initial: scope({ wkt: null, effectiveWkt: null }) } })
-  const panel = await openEditor(page)
-
-  await expect(panel.getByText('Bu kullanıcı için coğrafi kısıtlama bulunmuyor.', { exact: false })).toBeVisible()
-  await expect(panel.getByText('coğrafi olarak sınırsızdır', { exact: false })).toBeVisible()
-  await expect(scopeMap(page)).toHaveAttribute('data-area-count', '0')
-  await expect(scopeMap(page)).toHaveAttribute('data-inherited-count', '0')
-  // Alan yokken tek teklif çizmektir.
-  await expect(panel.getByRole('button', { name: 'Poligon Çiz' })).toBeVisible()
-})
-
-test('an area inherited from roles is shown as reference, not as the user own area', async ({ page }) => {
+test('every saved area is listed and drawn, not just the first', async ({ page }) => {
   await openUser(page, {
-    geo: { initial: scope({ wkt: null, effectiveWkt: ROLE_WKT, restricted: true }) },
+    geo: { initial: [area('Ankara', ANKARA_WKT, { id: 1 }), area('Kayseri', KAYSERI_WKT, { id: 2 })] },
   })
-  const panel = await openEditor(page)
+  await openEditor(page)
 
-  await expect(panel.getByText('Etkin alan rol(ler) üzerinden geliyor.', { exact: false })).toBeVisible()
+  await expect(areaCard(page, 'Ankara')).toBeVisible()
+  await expect(areaCard(page, 'Kayseri')).toBeVisible()
 
-  /* Miras alınan alan DÜZENLENEBİLİR kaynağa yüklenmez. Yüklenseydi, yönetici
-     onu kullanıcının kendi alanı sanır, bir köşesini oynatıp kaydeder ve
-     farkında olmadan rol mirasını kalıcı bir kullanıcı alanına çevirirdi. */
-  await expect(scopeMap(page)).toHaveAttribute('data-inherited-count', '1')
-  await expect(scopeMap(page)).toHaveAttribute('data-area-count', '0')
-
-  // Efsane renge değil metne dayanır.
-  await expect(panel.getByText('Rol üzerinden etkin alan (salt okunur)')).toBeVisible()
-  // Kaldırılacak doğrudan bir alan yok.
-  await expect(panel.getByRole('button', { name: 'Coğrafi Yetkiyi Kaldır' })).toHaveCount(0)
-  await expect(panel.getByRole('button', { name: 'Kullanıcıya Özel Alan Çiz' })).toBeVisible()
+  /* Haritadaki poligon sayısı tuvale çizilir ve DOM'dan okunamaz; bileşen onu
+     veri niteliği olarak yayımlar. İki alandan yalnızca birini çizen bir
+     uygulama burada düşer. */
+  await expect(scopeMap(page)).toHaveAttribute('data-area-count', '2')
+  await expect(editor(page).getByText('2 coğrafi alan tanımlı', { exact: false })).toBeVisible()
 })
 
-test('a direct user area is loaded as the editable geometry', async ({ page }) => {
-  await openUser(page, { geo: { initial: scope({ wkt: ANKARA_WKT }) } })
-  const panel = await openEditor(page)
-
-  await expect(panel.getByText('doğrudan bir coğrafi alan tanımlı', { exact: false })).toBeVisible()
-  await expect(scopeMap(page)).toHaveAttribute('data-area-count', '1')
-  /* Doğrudan alan varken roller HİÇ okunmaz (Phase 8A). Ekranda ikinci bir
-     referans alanı göstermek, birleşim varmış izlenimi verirdi. */
-  await expect(scopeMap(page)).toHaveAttribute('data-inherited-count', '0')
-})
-
-test('drawing over an inherited area warns that it replaces the role geography', async ({ page }) => {
+test('clicking an area card selects it and the map reports the selection', async ({ page }) => {
   await openUser(page, {
-    geo: { initial: scope({ wkt: null, effectiveWkt: ROLE_WKT, restricted: true }) },
+    geo: { initial: [area('Ankara', ANKARA_WKT, { id: 1 }), area('Kayseri', KAYSERI_WKT, { id: 2 })] },
   })
-  const panel = await openEditor(page)
-
-  await panel.getByRole('button', { name: 'Kullanıcıya Özel Alan Çiz' }).click()
-  await drawPolygon(page)
-
-  /* Öncelik kuralı KAYDETMEDEN ÖNCE söylenir: Phase 8A'da kullanıcıya özel
-     alan rollerle birleşmez, onların yerine geçer. */
-  await expect(panel.getByText('rol bazlı coğrafi alanların yerine geçer', { exact: false })).toBeVisible()
-})
-
-/* --- Projeksiyon ------------------------------------------------------------ */
-
-test('a loaded area is saved back as longitude/latitude, not as Web Mercator metres', async ({ page }) => {
-  /* Bu testin varlık sebebi tek bir hata sınıfıdır: haritanın çalıştığı
-     EPSG:3857 metre değerlerini boylam/enlem sanıp göndermek. O hata sessizdir
-     — istek başarıyla gider, ama alan Gine Körfezi'nin binlerce kilometre
-     ötesine düşer. Bu yüzden "PUT atıldı" demek yetmez; koordinatların
-     KENDİSİ sınanır. */
-  const { scopeMock } = await openUser(page, { geo: { initial: scope({ wkt: ANKARA_WKT }) } })
-  const panel = await openEditor(page)
-
-  /* Alan, var olan bir poligonun üzerine yeniden çizilir. Böylece haritada
-     GERÇEKTEN piksel koordinatlarından üretilmiş bir geometri gönderilir —
-     sunucudan gelen dizgenin geri yankılanması değil. Dönüşüm hatası ancak
-     böyle görünür hâle gelir. */
-  await panel.getByRole('button', { name: 'Yeniden Çiz' }).click()
-  await drawPolygon(page)
-  await expect(saveButton(page)).toBeEnabled()
-  await saveButton(page).click()
-  await expect(panel.getByText('Coğrafi yetki alanı güncellendi.')).toBeVisible()
-
-  expect(scopeMock.calls.put).toHaveLength(1)
-  const sent = scopeMock.calls.put[0].wkt
-  expect(sent).toMatch(/^POLYGON\s*\(\(/)
-
-  const coordinates = [...sent.matchAll(/(-?\d+(?:\.\d+)?) (-?\d+(?:\.\d+)?)/g)]
-    .map(([, lon, lat]) => [Number(lon), Number(lat)])
-  expect(coordinates.length).toBeGreaterThanOrEqual(4)
-
-  for (const [lon, lat] of coordinates) {
-    /* Derece aralığı. Web Mercator metreleri burada milyonlar mertebesinde
-       olurdu ve bu sınırı anında aşardı. */
-    expect(Math.abs(lon)).toBeLessThanOrEqual(180)
-    expect(Math.abs(lat)).toBeLessThanOrEqual(90)
-    // Ve alan gerçekten Türkiye'nin görünen penceresinde çizildi.
-    expect(lon).toBeGreaterThan(20)
-    expect(lon).toBeLessThan(50)
-    expect(lat).toBeGreaterThan(33)
-    expect(lat).toBeLessThan(45)
-  }
-})
-
-test('an untouched area round-trips through the map without moving', async ({ page }) => {
-  /* 4326 → 3857 → 4326 gidiş dönüşü koordinatları DEĞİŞTİRMEMELİDİR. Bir
-     kayma olsaydı, alanı yalnızca açıp kaydeden bir yönetici sınırı sessizce
-     oynatırdı. Kayan nokta toleransı bırakılır; eşitlik aranmaz. */
-  await openUser(page, { geo: { initial: scope({ wkt: ANKARA_WKT }) } })
   await openEditor(page)
 
-  const roundTripped = await page.evaluate(async ({ wkt }) => {
-    const { wkt4326ToFeature, geometryToWkt4326 } = await import('/src/map/drawing.js')
-    return geometryToWkt4326(wkt4326ToFeature(wkt).getGeometry())
-  }, { wkt: ANKARA_WKT })
+  await areaCard(page, 'Kayseri').click()
 
-  const coordinates = [...roundTripped.matchAll(/(-?\d+(?:\.\d+)?) (-?\d+(?:\.\d+)?)/g)]
-    .map(([, lon, lat]) => [Number(lon), Number(lat)])
+  await expect(areaCard(page, 'Kayseri')).toHaveAttribute('aria-pressed', 'true')
+  await expect(scopeMap(page)).toHaveAttribute('data-selected-id', '2')
+  // Seçim, alan bazlı eylemleri açar.
+  await expect(editor(page).getByRole('button', { name: 'Alanı Düzenle' })).toBeVisible()
+  await expect(editor(page).getByRole('button', { name: 'Alanı Sil' })).toBeVisible()
+})
 
-  expect(coordinates).toHaveLength(ANKARA_RING.length)
-  coordinates.forEach(([lon, lat], index) => {
-    expect(lon).toBeCloseTo(ANKARA_RING[index][0], 6)
-    expect(lat).toBeCloseTo(ANKARA_RING[index][1], 6)
+/* --- EKLEME SİLME DEĞİLDİR --------------------------------------------------- */
+
+test('starting a new area keeps the existing ones on the map', async ({ page }) => {
+  await openUser(page, {
+    geo: { initial: [area('Ankara', ANKARA_WKT, { id: 1 })] },
   })
-})
-
-/* --- Türkiye görünümü ------------------------------------------------------- */
-
-test('an empty target opens the map focused on Turkey', async ({ page }) => {
-  await openUser(page, { geo: { initial: scope({ wkt: null, effectiveWkt: null }) } })
   await openEditor(page)
 
-  const map = scopeMap(page)
-  /* Kırılgan piksel değeri değil, COĞRAFİ durum sınanır: kamera Türkiye'nin
-     üzerinde ve ülkeyi görecek kadar geniş bir yakınlaştırmada olmalı. */
-  await expect(map).toHaveAttribute('data-center-lon', /.+/)
-  const lon = Number(await map.getAttribute('data-center-lon'))
-  const lat = Number(await map.getAttribute('data-center-lat'))
-  const zoom = Number(await map.getAttribute('data-zoom'))
-
-  expect(lon).toBeGreaterThan(25)
-  expect(lon).toBeLessThan(45)
-  expect(lat).toBeGreaterThan(35)
-  expect(lat).toBeLessThan(43)
-  // Ülke ölçeği: bir şehre dalmış ya da dünyayı gösteren bir görünüm değil.
-  expect(zoom).toBeGreaterThan(4)
-  expect(zoom).toBeLessThan(9)
-})
-
-test('an existing area is fitted instead of falling back to the Turkey view', async ({ page }) => {
-  await openUser(page, { geo: { initial: scope({ wkt: ANKARA_WKT }) } })
-  await openEditor(page)
-
-  const map = scopeMap(page)
-  const lon = Number(await map.getAttribute('data-center-lon'))
-  const lat = Number(await map.getAttribute('data-center-lat'))
-  const zoom = Number(await map.getAttribute('data-zoom'))
-
-  // Kamera poligonun merkezine gelir (33.0, ~40.0), ülke merkezine değil.
-  expect(lon).toBeCloseTo(33, 0)
-  expect(lat).toBeCloseTo(40, 0)
-  // Ve var olan alana sığdırmak, ülke görünümünden daha yakındır.
-  expect(zoom).toBeGreaterThan(6)
-})
-
-/* --- Tek poligon kuralı ----------------------------------------------------- */
-
-test('redrawing replaces the working area instead of adding a second one', async ({ page }) => {
-  const { scopeMock } = await openUser(page, { geo: { initial: scope({ wkt: ANKARA_WKT }) } })
-  const panel = await openEditor(page)
   await expect(scopeMap(page)).toHaveAttribute('data-area-count', '1')
 
-  /* "Yeniden Çiz" YEREL geometriyi boşaltır — sunucudaki alanı SİLMEZ.
-     Silseydi, vazgeçilebilir bir düzenleme kalıcı bir veri kaybına dönerdi. */
-  await panel.getByRole('button', { name: 'Yeniden Çiz' }).click()
-  await expect(scopeMap(page)).toHaveAttribute('data-area-count', '0')
-  expect(scopeMock.calls.delete).toBe(0)
+  await addButton(page).click()
 
-  await drawPolygon(page)
-  // Bir çizim bitti: kaynakta hâlâ TEK alan var, ikincisi eklenmedi.
+  /* Fazın çekirdek iddiası: taslak açmak var olan alanı EKRANDAN SİLMEZ.
+     Eski davranışta yeni çizim tek kaynağı temizlerdi ve yönetici ikinci
+     bölgeyi birincisini göremeden çizmek zorunda kalırdı. */
   await expect(scopeMap(page)).toHaveAttribute('data-area-count', '1')
-
-  // Ve yeniden çizmek yine tek alan bırakır.
-  await panel.getByRole('button', { name: 'Yeniden Çiz' }).click()
-  await drawPolygon(page, [[0.4, 0.4], [0.7, 0.4], [0.7, 0.7]])
-  await expect(scopeMap(page)).toHaveAttribute('data-area-count', '1')
-
-  await saveButton(page).click()
-  await expect(panel.getByText('Coğrafi yetki alanı güncellendi.')).toBeVisible()
-  expect(scopeMock.calls.put).toHaveLength(1)
-  // Gönderilen gövde tek bir Polygon'dur; MultiPolygon değil.
-  expect(scopeMock.calls.put[0].wkt).toMatch(/^POLYGON\s*\(\(/)
-  expect(scopeMock.calls.put[0].wkt).not.toMatch(/MULTIPOLYGON/i)
+  await expect(areaCard(page, 'Ankara')).toBeVisible()
+  await expect(editor(page).getByRole('heading', { name: 'Yeni alan' })).toBeVisible()
 })
 
-/* --- Kaydetme --------------------------------------------------------------- */
-
-test('drawing and saving sends exactly one PUT and adopts the server answer', async ({ page }) => {
-  const { scopeMock } = await openUser(page, { geo: { initial: scope({ wkt: null, effectiveWkt: null }) } })
-  const panel = await openEditor(page)
-
-  await panel.getByRole('button', { name: 'Poligon Çiz' }).click()
-  await drawPolygon(page)
-  await expect(saveButton(page)).toBeEnabled()
-
-  await saveButton(page).click()
-  await expect(panel.getByText('Coğrafi yetki alanı güncellendi.')).toBeVisible()
-
-  expect(scopeMock.calls.put).toHaveLength(1)
-  /* Kaydetmeden sonra temel SUNUCUNUN cevabıdır: yeniden kirli görünmez ve
-     pencere açık kalır. */
-  await expect(saveButton(page)).toBeDisabled()
-  await expect(editor(page)).toBeVisible()
-  // Alan artık doğrudan tanımlıdır, dolayısıyla kaldırma da sunulur.
-  await expect(panel.getByRole('button', { name: 'Coğrafi Yetkiyi Kaldır' })).toBeVisible()
-})
-
-test('a rejected save keeps the drawn area, the dirty state and the session', async ({ page }) => {
+test('saving a second area POSTs once and never PUTs or DELETEs the first', async ({ page }) => {
   const { scopeMock } = await openUser(page, {
-    geo: {
-      initial: scope({ wkt: null, effectiveWkt: null }),
-      onPut: (route) => route.fulfill(json({ message: 'Bu işlem için yetkiniz bulunmuyor.' }, 403)),
-    },
+    geo: { initial: [area('Ankara', ANKARA_WKT, { id: 1 })] },
   })
-  const panel = await openEditor(page)
+  await openEditor(page)
 
-  await panel.getByRole('button', { name: 'Poligon Çiz' }).click()
+  await addButton(page).click()
   await drawPolygon(page)
+  await expect(scopeMap(page)).toHaveAttribute('data-draft-count', '1')
+
+  await editor(page).getByLabel('Alan adı').fill('Kayseri')
   await saveButton(page).click()
 
-  await expect(panel.getByText('Bu coğrafi yetkiyi değiştirme yetkiniz bulunmuyor.')).toBeVisible()
-  /* 403 bir OTURUM sorunu değildir: çizim ekranda kalır, yeniden denenebilir
-     ve kullanıcı giriş ekranına atılmaz. */
-  await expect(page).toHaveURL(/\/admin\/users/)
-  await expect(editor(page)).toBeVisible()
-  await expect(scopeMap(page)).toHaveAttribute('data-area-count', '1')
-  await expect(saveButton(page)).toBeEnabled()
-  expect(scopeMock.calls.put).toHaveLength(1)
-})
+  await expect(editor(page).getByText('Coğrafi alan eklendi.')).toBeVisible()
 
-test('a rejected geometry shows the server validation message', async ({ page }) => {
-  await openUser(page, {
-    geo: {
-      initial: scope({ wkt: null, effectiveWkt: null }),
-      onPut: (route) => route.fulfill(json({ message: 'Geometri kendisiyle kesişiyor.' }, 400)),
-    },
-  })
-  const panel = await openEditor(page)
-
-  await panel.getByRole('button', { name: 'Poligon Çiz' }).click()
-  await drawPolygon(page)
-  await saveButton(page).click()
-
-  // Doğrulama bir yetki sorunu değildir ve öyle anlatılmaz.
-  await expect(panel.getByText('Geometri kendisiyle kesişiyor.')).toBeVisible()
-  await expect(scopeMap(page)).toHaveAttribute('data-area-count', '1')
-})
-
-/* --- Kaldırma --------------------------------------------------------------- */
-
-test('removing a direct user area asks first and then falls back to the role area', async ({ page }) => {
-  const { scopeMock } = await openUser(page, {
-    geo: {
-      initial: scope({ wkt: ANKARA_WKT }),
-      /* Sunucu, silme sonrası YÜRÜRLÜKTEKİ durumu döndürür: kullanıcının
-         kendi alanı gitti, ama rolünden gelen alan devreye girdi. */
-      onDelete: (route, calls) => {
-        calls.fellBack = true
-        return route.fulfill(json(scope({ wkt: null, effectiveWkt: ROLE_WKT, restricted: true })))
-      },
-    },
-  })
-  const panel = await openEditor(page)
-
-  await panel.getByRole('button', { name: 'Coğrafi Yetkiyi Kaldır' }).click()
-  const confirmation = page.getByRole('alertdialog', { name: 'Coğrafi yetki kaldırılsın mı?' })
-  await expect(confirmation).toBeVisible()
-
-  // Vazgeçmek hiçbir istek açmaz.
-  await confirmation.getByRole('button', { name: 'İptal' }).click()
-  expect(scopeMock.calls.delete).toBe(0)
-
-  await panel.getByRole('button', { name: 'Coğrafi Yetkiyi Kaldır' }).click()
-  await page.getByRole('alertdialog').getByRole('button', { name: 'Coğrafi Yetkiyi Kaldır' }).click()
-
-  expect(scopeMock.calls.delete).toBe(1)
-  /* Kaldırma sonrası ekran, kullanıcının SINIRSIZ olduğunu varsaymaz: sunucunun
-     cevabı okunur ve rolden gelen alan referans olarak görünür. */
-  await expect(panel.getByText('Etkin alan rol(ler) üzerinden geliyor.', { exact: false })).toBeVisible()
-  await expect(scopeMap(page)).toHaveAttribute('data-inherited-count', '1')
-  await expect(scopeMap(page)).toHaveAttribute('data-area-count', '0')
-})
-
-/* --- Kirli durum ve kapatma ------------------------------------------------- */
-
-test('closing with unsaved changes is confirmed and can be cancelled', async ({ page }) => {
-  const { scopeMock } = await openUser(page, { geo: { initial: scope({ wkt: null, effectiveWkt: null }) } })
-  const panel = await openEditor(page)
-
-  await panel.getByRole('button', { name: 'Poligon Çiz' }).click()
-  await drawPolygon(page)
-
-  await panel.getByRole('button', { name: 'Coğrafi yetki penceresini kapat' }).click()
-  const confirmation = page.getByRole('alertdialog', { name: 'Kaydedilmemiş coğrafi alan değişiklikleri var' })
-  await expect(confirmation).toBeVisible()
-
-  await confirmation.getByRole('button', { name: 'Düzenlemeye Dön' }).click()
-  await expect(editor(page)).toBeVisible()
-  await expect(scopeMap(page)).toHaveAttribute('data-area-count', '1')
-
-  await panel.getByRole('button', { name: 'Coğrafi yetki penceresini kapat' }).click()
-  await page.getByRole('alertdialog').getByRole('button', { name: 'Değişiklikleri Yoksay' }).click()
-  await expect(editor(page)).toHaveCount(0)
-
-  // Hiçbir şey kaydedilmedi.
+  // TEK POST, hiç PUT, hiç DELETE.
+  expect(scopeMock.calls.post).toHaveLength(1)
   expect(scopeMock.calls.put).toHaveLength(0)
+  expect(scopeMock.calls.delete).toHaveLength(0)
+  expect(scopeMock.calls.post[0].name).toBe('Kayseri')
+
+  // Gönderilen WKT gerçekten 4326'dır: metre ölçeğinde bir sayı içermez.
+  expect(scopeMock.calls.post[0].wkt).toMatch(/^POLYGON/)
+  for (const value of scopeMock.calls.post[0].wkt.match(/-?\d+(\.\d+)?/g)) {
+    expect(Math.abs(Number(value))).toBeLessThanOrEqual(180)
+  }
+
+  // Sunucunun cevabı temel alınır: artık İKİ alan var.
+  await expect(areaCard(page, 'Ankara')).toBeVisible()
+  await expect(areaCard(page, 'Kayseri')).toBeVisible()
+  await expect(scopeMap(page)).toHaveAttribute('data-area-count', '2')
 })
 
-test('Escape does not slip past the unsaved guard or close the user drawer with it', async ({ page }) => {
-  await openUser(page, { geo: { initial: scope({ wkt: null, effectiveWkt: null }) } })
-  const panel = await openEditor(page)
+/* --- Tek alanı düzenleme ve silme -------------------------------------------- */
 
-  await panel.getByRole('button', { name: 'Poligon Çiz' }).click()
+test('editing a selected area PUTs only that area', async ({ page }) => {
+  const { scopeMock } = await openUser(page, {
+    geo: { initial: [area('Ankara', ANKARA_WKT, { id: 1 }), area('Kayseri', KAYSERI_WKT, { id: 2 })] },
+  })
+  await openEditor(page)
+
+  await areaCard(page, 'Ankara').click()
+  await editor(page).getByRole('button', { name: 'Alanı Düzenle' }).click()
+
+  /* Düzenlenen alan kayıtlı katmandan çıkar ve taslağa geçer: aynı poligon iki
+     kez çizilmez. */
+  await expect(scopeMap(page)).toHaveAttribute('data-area-count', '1')
+  await expect(scopeMap(page)).toHaveAttribute('data-draft-count', '1')
+
+  await editor(page).getByRole('button', { name: 'Yeniden Çiz' }).click()
+  await drawPolygon(page)
+  await saveButton(page).click()
+
+  await expect(editor(page).getByText('Coğrafi alan güncellendi.')).toBeVisible()
+
+  expect(scopeMock.calls.put).toHaveLength(1)
+  expect(scopeMock.calls.put[0].id).toBe(1)
+  expect(scopeMock.calls.post).toHaveLength(0)
+  expect(scopeMock.calls.delete).toHaveLength(0)
+
+  // İkinci alan dokunulmamış olarak durur.
+  await expect(areaCard(page, 'Kayseri')).toBeVisible()
+})
+
+test('deleting one area leaves the others in place', async ({ page }) => {
+  const { scopeMock } = await openUser(page, {
+    geo: { initial: [area('Ankara', ANKARA_WKT, { id: 1 }), area('Kayseri', KAYSERI_WKT, { id: 2 })] },
+  })
+  await openEditor(page)
+
+  await areaCard(page, 'Ankara').click()
+  await editor(page).getByRole('button', { name: 'Alanı Sil' }).click()
+
+  // Silme ONAY ister ve diyalog diğer alanların kalacağını SÖYLER.
+  const dialog = page.getByRole('alertdialog', { name: 'Bu alan kaldırılsın mı?' })
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByText('diğer 1 alanı olduğu gibi kalır', { exact: false })).toBeVisible()
+  await dialog.getByRole('button', { name: 'Alanı Sil' }).click()
+
+  await expect(editor(page).getByText('Coğrafi alan kaldırıldı.')).toBeVisible()
+
+  expect(scopeMock.calls.delete).toEqual([1])
+  await expect(areaCard(page, 'Kayseri')).toBeVisible()
+  await expect(areaCard(page, 'Ankara')).toHaveCount(0)
+  await expect(scopeMap(page)).toHaveAttribute('data-area-count', '1')
+})
+
+test('deleting the final direct area falls back to the role scope', async ({ page }) => {
+  await openUser(page, {
+    geo: { initial: [area('Ankara', ANKARA_WKT, { id: 1 })], inherited: ROLE_WKT },
+  })
+  await openEditor(page)
+
+  await areaCard(page, 'Ankara').click()
+  await editor(page).getByRole('button', { name: 'Alanı Sil' }).click()
+  const dialog = page.getByRole('alertdialog')
+  await expect(dialog.getByText('rollerinden gelen coğrafi alanlara düşer', { exact: false })).toBeVisible()
+  await dialog.getByRole('button', { name: 'Alanı Sil' }).click()
+
+  /* Kısıtsızlığa DEĞİL, rolün alanına düşülür ve o alan haritada kesikli
+     referans olarak belirir. */
+  await expect(scopeMap(page)).toHaveAttribute('data-area-count', '0')
+  await expect(scopeMap(page)).toHaveAttribute('data-inherited-count', '1')
+  await expect(editor(page).getByText('Etkin alan rol(ler) üzerinden geliyor', { exact: false })).toBeVisible()
+})
+
+/* --- İl / bölge seçimi -------------------------------------------------------- */
+
+test('choosing a province previews its real boundary before saving', async ({ page }) => {
+  const { scopeMock } = await openUser(page, { geo: { initial: [] } })
+  await openEditor(page)
+
+  await addButton(page).click()
+  await editor(page).getByRole('button', { name: 'İl / Bölge Seç' }).click()
+  await editor(page).getByLabel('İl seç').selectOption({ label: 'Ankara' })
+
+  // Önizleme KAYDETMEDEN ÖNCE haritadadır.
+  await expect(scopeMap(page)).toHaveAttribute('data-draft-count', '1')
+  expect(scopeMock.calls.post).toHaveLength(0)
+
+  await saveButton(page).click()
+
+  expect(scopeMock.calls.post).toHaveLength(1)
+  expect(scopeMock.calls.post[0].sourceType).toBe('Province')
+  expect(scopeMock.calls.post[0].sourceKey).toBe('TR-06')
+
+  /* Sınır UYDURULMAMIŞTIR: gerçek il verisinden gelir, dolayısıyla dört köşeli
+     bir kutu değildir ve Ankara'nın gerçek koordinat aralığındadır. */
+  const wkt = scopeMock.calls.post[0].wkt
+  expect(wkt.split(',').length).toBeGreaterThan(20)
+  const numbers = wkt.match(/-?\d+(\.\d+)?/g).map(Number)
+  const lons = numbers.filter((_, index) => index % 2 === 0)
+  const lats = numbers.filter((_, index) => index % 2 === 1)
+  expect(Math.min(...lons)).toBeGreaterThan(30)
+  expect(Math.max(...lons)).toBeLessThan(35)
+  expect(Math.min(...lats)).toBeGreaterThan(38)
+  expect(Math.max(...lats)).toBeLessThan(41.5)
+})
+
+test('the province search narrows the list', async ({ page }) => {
+  await openUser(page, { geo: { initial: [] } })
+  await openEditor(page)
+
+  await addButton(page).click()
+  await editor(page).getByRole('button', { name: 'İl / Bölge Seç' }).click()
+
+  const select = editor(page).getByLabel('İl seç')
+  // 81 il + "İl seçin…" seçeneği.
+  await expect(select.locator('option')).toHaveCount(82)
+
+  await editor(page).getByLabel('İl ara').fill('kayse')
+  await expect(select.locator('option')).toHaveCount(2)
+  await expect(select.locator('option').nth(1)).toHaveText('Kayseri')
+})
+
+test('a multi-part province is saved as several areas and no part is dropped', async ({ page }) => {
+  const { scopeMock } = await openUser(page, { geo: { initial: [] } })
+  await openEditor(page)
+
+  await addButton(page).click()
+  await editor(page).getByRole('button', { name: 'İl / Bölge Seç' }).click()
+  // İstanbul boğazla ayrılmış ve adaları olan bir ildir.
+  await editor(page).getByLabel('İl seç').selectOption({ label: 'İstanbul' })
+
+  const parts = await scopeMap(page).getAttribute('data-draft-count')
+  expect(Number(parts)).toBeGreaterThan(1)
+  await expect(editor(page).getByText('ayrı parçadan oluşuyor', { exact: false })).toBeVisible()
+
+  await saveButton(page).click()
+
+  /* Her parça KENDİ alanı olur. Yalnızca en büyüğünü almak, o ilin adalarını
+     sessizce kapsam dışında bırakmak olurdu. */
+  await expect
+    .poll(() => scopeMock.calls.post.length)
+    .toBe(Number(parts))
+  for (const call of scopeMock.calls.post) {
+    expect(call.sourceType).toBe('Province')
+    expect(call.sourceKey).toBe('TR-34')
+  }
+})
+
+test('the region picker says out loud that its boundary is an approximation', async ({ page }) => {
+  const { scopeMock } = await openUser(page, { geo: { initial: [] } })
+  await openEditor(page)
+
+  await addButton(page).click()
+  await editor(page).getByRole('button', { name: 'İl / Bölge Seç' }).click()
+  await editor(page).getByRole('button', { name: 'Coğrafi Bölge' }).click()
+
+  /* Yaklaşıklık seçim yapılmadan ÖNCE söylenir. Resmî coğrafi bölge sınırları
+     il sınırlarını birebir takip etmez; bunu gizlemek, yöneticinin yanlış
+     sandığı bir kapsamla yetki vermesi olurdu. */
+  await expect(editor(page).getByText('yaklaşık bölge kapsamı', { exact: false })).toBeVisible()
+
+  await editor(page).getByLabel('Bölge seç').selectOption({ label: 'İç Anadolu' })
+  await expect(scopeMap(page)).toHaveAttribute('data-draft-count', '1')
+
+  await saveButton(page).click()
+  expect(scopeMock.calls.post[0].sourceType).toBe('Region')
+  expect(scopeMock.calls.post[0].sourceKey).toBe('IC_ANADOLU')
+})
+
+/* --- Koordinat girişi --------------------------------------------------------- */
+
+test('typed coordinates preview and save as a closed polygon', async ({ page }) => {
+  const { scopeMock } = await openUser(page, { geo: { initial: [] } })
+  await openEditor(page)
+
+  await addButton(page).click()
+  await editor(page).getByRole('button', { name: 'Koordinat Gir' }).click()
+  await editor(page).getByLabel('Köşe koordinatları').fill('32.85, 39.92\n33.20, 39.50\n32.40, 38.90')
+
+  await expect(scopeMap(page)).toHaveAttribute('data-draft-count', '1')
+
+  await editor(page).getByLabel('Alan adı').fill('Elle Girilen')
+  await saveButton(page).click()
+
+  expect(scopeMock.calls.post).toHaveLength(1)
+  expect(scopeMock.calls.post[0].sourceType).toBe('Coordinates')
+  // Halka OTOMATİK kapanır: ilk köşe sonda tekrar eder.
+  expect(scopeMock.calls.post[0].wkt).toBe(
+    'POLYGON ((32.85 39.92, 33.2 39.5, 32.4 38.9, 32.85 39.92))',
+  )
+})
+
+test('too few vertices are refused before any request is made', async ({ page }) => {
+  const { scopeMock } = await openUser(page, { geo: { initial: [] } })
+  await openEditor(page)
+
+  await addButton(page).click()
+  await editor(page).getByRole('button', { name: 'Koordinat Gir' }).click()
+  await editor(page).getByLabel('Köşe koordinatları').fill('32.85, 39.92\n33.20, 39.50')
+
+  await expect(editor(page).getByRole('alert')).toContainText('en az 3 farklı köşe gerekir')
+  await expect(saveButton(page)).toBeDisabled()
+  expect(scopeMock.calls.post).toHaveLength(0)
+})
+
+test('metric coordinates are refused rather than silently treated as lon/lat', async ({ page }) => {
+  const { scopeMock } = await openUser(page, { geo: { initial: [] } })
+  await openEditor(page)
+
+  await addButton(page).click()
+  await editor(page).getByRole('button', { name: 'Koordinat Gir' }).click()
+  // EPSG:3857 metre değerleri.
+  await editor(page).getByLabel('Köşe koordinatları').fill('3561000, 4720000\n3672000, 4720000\n3672000, 4860000')
+
+  /* Yardım metni de aralıkları anlatır; ölçülen şey HATA'dır, bu yüzden
+     `alert` rolüyle aranır. */
+  await expect(editor(page).getByRole('alert')).toContainText('aralığında olmalı')
+  await expect(saveButton(page)).toBeDisabled()
+  expect(scopeMock.calls.post).toHaveLength(0)
+})
+
+/* --- Rol hedefi ---------------------------------------------------------------- */
+
+test('a role can hold several areas too', async ({ page }) => {
+  const { scopeMock } = await openRole(page, {
+    geo: { initial: [area('Ankara', ANKARA_WKT, { id: 1 }), area('Kayseri', KAYSERI_WKT, { id: 2 })] },
+  })
+  await openEditor(page)
+
+  await expect(scopeMap(page)).toHaveAttribute('data-area-count', '2')
+  // Rol hedefinde miras KAVRAMI YOKTUR: kesikli referans katmanı boş kalır.
+  await expect(scopeMap(page)).toHaveAttribute('data-inherited-count', '0')
+
+  await addButton(page).click()
+  await drawPolygon(page)
+  await saveButton(page).click()
+
+  expect(scopeMock.calls.post).toHaveLength(1)
+  expect(scopeMock.calls.delete).toHaveLength(0)
+})
+
+/* --- Yükleme hatası ------------------------------------------------------------ */
+
+test('a failed load is not shown as "no restriction"', async ({ page }) => {
+  await openUser(page, { geo: { initial: [], getStatus: 500 } })
+  await entryButton(page).click()
+
+  /* Yüklenemeyen alanlar için boş bir harita çizmek, var olan bir sınırı
+     yokmuş gibi göstermek olurdu. */
+  await expect(editor(page).getByText('Coğrafi yetki alanları okunamadı.')).toBeVisible()
+  await expect(editor(page).getByRole('button', { name: 'Tekrar dene' })).toBeVisible()
+  await expect(scopeMap(page)).toHaveCount(0)
+})
+
+/* --- Kaydedilmemiş taslak -------------------------------------------------------- */
+
+test('closing with an unsaved draft asks first', async ({ page }) => {
+  const { scopeMock } = await openUser(page, {
+    geo: { initial: [area('Ankara', ANKARA_WKT, { id: 1 })] },
+  })
+  await openEditor(page)
+
+  await addButton(page).click()
   await drawPolygon(page)
 
-  await page.keyboard.press('Escape')
-  await expect(page.getByRole('alertdialog', { name: 'Kaydedilmemiş coğrafi alan değişiklikleri var' })).toBeVisible()
-  /* Tek bir Escape iki katmanı birden kapatamaz: arkadaki kullanıcı çekmecesi
-     yerinde durur, yoksa onay penceresi kapanan bir ekranın üstünde kalırdı.
-     Başlık TAM eşleşmeyle aranır: düzenleyicinin kendi başlığı da kullanıcı
-     adını taşır ("Coğrafi Yetki — ..."). */
-  await expect(page.getByRole('heading', { name: USER.username, level: 2, exact: true })).toBeVisible()
+  await editor(page).getByRole('button', { name: 'Coğrafi yetki penceresini kapat' }).click()
 
-  // Escape onayı geri alır; düzenleyici açık kalır.
-  await page.keyboard.press('Escape')
-  await expect(page.getByRole('alertdialog')).toHaveCount(0)
+  const dialog = page.getByRole('alertdialog', { name: 'Kaydedilmemiş coğrafi alan değişiklikleri var' })
+  await expect(dialog).toBeVisible()
+  // Kayıtlı alanların etkilenmediği AÇIKÇA söylenir.
+  await expect(dialog.getByText('kayıtlı alanlara dokunulmaz', { exact: false })).toBeVisible()
+
+  await dialog.getByRole('button', { name: 'Düzenlemeye Dön' }).click()
   await expect(editor(page)).toBeVisible()
+  expect(scopeMock.calls.post).toHaveLength(0)
 })
 
-test('closing a clean editor needs no confirmation', async ({ page }) => {
-  await openUser(page, { geo: { initial: scope({ wkt: ANKARA_WKT }) } })
-  const panel = await openEditor(page)
-
-  await panel.getByRole('button', { name: 'Coğrafi yetki penceresini kapat' }).click()
-  await expect(editor(page)).toHaveCount(0)
-  await expect(page.getByRole('alertdialog')).toHaveCount(0)
-  // Arkadaki kullanıcı detayı açık kalır.
-  await expect(page.getByRole('heading', { name: USER.username, level: 2, exact: true })).toBeVisible()
-})
-
-/* --- Yükleme ve hata -------------------------------------------------------- */
-
-test('a failed read shows an error with retry, never an unrestricted map', async ({ page }) => {
+test('cancelling a draft restores the saved areas untouched', async ({ page }) => {
   const { scopeMock } = await openUser(page, {
-    geo: { initial: scope({ wkt: ANKARA_WKT }), getStatus: 500 },
+    geo: { initial: [area('Ankara', ANKARA_WKT, { id: 1 })] },
   })
+  await openEditor(page)
 
-  await entryButton(page).click()
-  const panel = editor(page)
-  await expect(panel.getByText('Coğrafi yetki alanı okunamadı.')).toBeVisible()
+  await addButton(page).click()
+  await drawPolygon(page)
+  await expect(scopeMap(page)).toHaveAttribute('data-draft-count', '1')
 
-  /* Okunamayan bir alan "kısıt yok" DEĞİLDİR. Boş bir Türkiye haritası
-     çizmek, var olan bir sınırı yokmuş gibi göstermek olurdu. */
-  await expect(panel.getByText('coğrafi kısıtlama bulunmuyor', { exact: false })).toHaveCount(0)
-  await expect(scopeMap(page)).toHaveCount(0)
-  await expect(saveButton(page)).toHaveCount(0)
+  await editor(page).getByRole('button', { name: 'Taslağı İptal Et' }).click()
 
-  const before = scopeMock.calls.get
-  await panel.getByRole('button', { name: 'Tekrar dene' }).click()
-  expect(scopeMock.calls.get).toBeGreaterThan(before)
+  await expect(scopeMap(page)).toHaveAttribute('data-draft-count', '0')
+  await expect(scopeMap(page)).toHaveAttribute('data-area-count', '1')
+  expect(scopeMock.calls.post).toHaveLength(0)
+  expect(scopeMock.calls.delete).toHaveLength(0)
 })
 
-/* --- Canlı yetki değişimi --------------------------------------------------- */
+/* --- Canlı yetki ---------------------------------------------------------------- */
 
 test('losing geography.manage live turns the open editor read-only without a re-login', async ({ page }) => {
   /* Gerçek senaryo: yönetici düzenleyiciyi açıkken bir başkası onun coğrafi
-     yönetim yetkisini kaldırır. Sunucu bir sonraki yazmaya 403 döner; Phase
-     7 altyapısı bunu yetkileri BİR kez tazelemek için kullanır ve arayüz
-     yeniden giriş yapılmadan yetişir. */
+     yönetim yetkisini kaldırır. Sunucu bir sonraki yazmaya 403 döner; Phase 7
+     altyapısı bunu yetkileri BİR kez tazelemek için kullanır ve arayüz yeniden
+     giriş yapılmadan yetişir. Yetki kümesini sunucuda değiştirmek TEK BAŞINA
+     yetmez ve yetmemelidir: tarayıcı her tuş vuruşunda yetki sorgulamaz. */
   const { control } = await openUser(page, {
     geo: {
-      initial: scope({ wkt: ANKARA_WKT }),
-      onPut: (route) => route.fulfill(json({ message: 'Bu işlem için yetkiniz bulunmuyor.' }, 403)),
+      initial: [area('Ankara', ANKARA_WKT, { id: 1 })],
+      onPost: (route) => route.fulfill(json({ message: 'Bu işlem için yetkiniz bulunmuyor.' }, 403)),
     },
   })
   const panel = await openEditor(page)
-  await expect(panel.getByRole('button', { name: 'Yeniden Çiz' })).toBeVisible()
+  await expect(addButton(page)).toBeVisible()
 
   // Sunucu tarafında yetki kaldırıldı; tarayıcı bunu henüz bilmiyor.
   control.set(without('geography.manage'))
 
-  await panel.getByRole('button', { name: 'Yeniden Çiz' }).click()
+  await addButton(page).click()
   await drawPolygon(page)
   await saveButton(page).click()
 
   /* Reddedilen kaydetmeden sonra arayüz yetişir: düzenleme kontrolleri
-     kaybolur, kaydetme sunulmaz ve durum açıkça salt okunur olur. */
-  await expect(panel.getByText('Coğrafi alan yalnızca görüntüleniyor.', { exact: false })).toBeVisible()
+     kaybolur ve durum açıkça salt okunur olur. */
+  await expect(panel.getByText('Coğrafi alanlar yalnızca görüntüleniyor.', { exact: false })).toBeVisible()
   await expect(saveButton(page)).toHaveCount(0)
-  await expect(panel.getByRole('button', { name: 'Yeniden Çiz' })).toHaveCount(0)
-  await expect(panel.getByRole('button', { name: 'Coğrafi Yetkiyi Kaldır' })).toHaveCount(0)
+  await expect(panel.getByRole('button', { name: 'Yeni Alan Ekle' })).toHaveCount(0)
+
+  // Kayıtlı alan hâlâ GÖRÜNÜR: okuma yetkisi duruyor.
+  await expect(areaCard(page, 'Ankara')).toBeVisible()
 
   // Oturum KAPANMAZ: 403 bir kimlik sorunu değildir.
   await expect(page).toHaveURL(/\/admin\/users/)
   await expect(editor(page)).toBeVisible()
 })
 
-test('regaining geography.manage live restores the editing controls without a re-login', async ({ page }) => {
-  /* Yetkiler JWT'den okunsaydı, geri verilen bir yetki ancak yeni bir oturumla
-     işe yarardı. Phase 7 kümesi canlıdır: aynı token'la, sıradan bir yönetici
-     işleminin tetiklediği tazeleme yeterlidir. */
+test('losing geography.view live hides the areas without a re-login', async ({ page }) => {
   const { control } = await openUser(page, {
-    permissions: without('geography.manage'),
-    geo: { initial: scope({ wkt: ANKARA_WKT }) },
+    geo: {
+      initial: [area('Ankara', ANKARA_WKT, { id: 1 })],
+      onPost: (route) => route.fulfill(json({ message: 'Bu işlem için yetkiniz bulunmuyor.' }, 403)),
+    },
   })
-  await page.route(`**/api/admin/users/${USER.id}/status`, (route) =>
-    route.fulfill(json({ ...USER, isActive: false })))
-
-  const panel = await openEditor(page)
-  await expect(panel.getByText('Coğrafi alan yalnızca görüntüleniyor.', { exact: false })).toBeVisible()
-  await expect(saveButton(page)).toHaveCount(0)
-
-  // Temiz düzenleyici onay istemeden kapanır.
-  await panel.getByRole('button', { name: 'Coğrafi yetki penceresini kapat' }).click()
-  await expect(editor(page)).toHaveCount(0)
-
-  // Sunucu tarafında yetki geri verildi.
-  control.set(ALL_PERMISSIONS)
-
-  /* Sıradan bir yönetici işlemi yetkileri tazeler (AdminPage her mutasyondan
-     sonra `refreshPermissions()` çağırır) — token'a dokunulmaz. */
-  await page.getByLabel('Hesap Durumu').selectOption('inactive')
-  await page.getByRole('alertdialog').getByRole('button', { name: 'Hesabı Pasifleştir' }).click()
-  await expect(page.getByText('Hesap pasifleştirildi.', { exact: false })).toBeVisible()
-
   await openEditor(page)
-  await expect(saveButton(page)).toBeVisible()
-  await expect(editor(page).getByRole('button', { name: 'Yeniden Çiz' })).toBeVisible()
-})
 
-/* --- Yaşam döngüsü ---------------------------------------------------------- */
+  control.set(without('geography.view', 'geography.manage'))
 
-test('opening and closing the editor repeatedly leaves exactly one map behind', async ({ page }) => {
-  const { scopeMock } = await openUser(page, { geo: { initial: scope({ wkt: ANKARA_WKT }) } })
-  const perRound = []
-
-  for (let round = 0; round < 3; round += 1) {
-    const before = scopeMock.calls.get
-    await openEditor(page)
-    await expect(scopeMap(page)).toHaveCount(1)
-    await editor(page).getByRole('button', { name: 'Coğrafi yetki penceresini kapat' }).click()
-    await expect(editor(page)).toHaveCount(0)
-    /* Kapanan düzenleyici haritasını da GÖTÜRÜR. Bırakılan bir OpenLayers
-       örneği, ikinci açılışta ikinci bir tuval ve ikinci bir dinleyici
-       demekti. */
-    await expect(scopeMap(page)).toHaveCount(0)
-    await expect(page.locator('.ol-viewport')).toHaveCount(0)
-    perRound.push(scopeMock.calls.get - before)
-  }
-
-  /* İstek sayısı açılış başına SABİTTİR — biriken bir dinleyici ya da geride
-     kalan bir bileşen olsaydı her tur bir öncekinden fazla okurdu. Mutlak sayı
-     kasten sınanmaz: geliştirme kipinde React.StrictMode etkileri bilerek iki
-     kez çalıştırır ve bu bir sızıntı değildir. */
-  expect(perRound[1]).toBe(perRound[0])
-  expect(perRound[2]).toBe(perRound[0])
-})
-
-/* --- Rol hedefi ------------------------------------------------------------- */
-
-test('a role without geography.view is never offered the geographic action', async ({ page }) => {
-  await openRole(page, { permissions: without('geography.view') })
-  await expect(entryButton(page)).toHaveCount(0)
-})
-
-test('a role with no area opens the Turkey view and offers a polygon', async ({ page }) => {
-  await openRole(page, { geo: { initial: scope({ wkt: null, effectiveWkt: null }) } })
-  const panel = await openEditor(page)
-
-  await expect(panel.getByText('Bu rol için coğrafi yetki tanımlanmamış.')).toBeVisible()
-  await expect(scopeMap(page)).toHaveAttribute('data-area-count', '0')
-  await expect(panel.getByRole('button', { name: 'Poligon Çiz' })).toBeVisible()
-
-  const lon = Number(await scopeMap(page).getAttribute('data-center-lon'))
-  const lat = Number(await scopeMap(page).getAttribute('data-center-lat'))
-  expect(lon).toBeGreaterThan(25)
-  expect(lon).toBeLessThan(45)
-  expect(lat).toBeGreaterThan(35)
-  expect(lat).toBeLessThan(43)
-
-  /* Rolde miras diye bir şey YOKTUR: bir rol başka bir yerden alan devralmaz,
-     bu yüzden referans katmanı hiç kullanılmaz. */
-  await expect(panel.getByText('Rol üzerinden etkin alan (salt okunur)')).toHaveCount(0)
-})
-
-test('an existing role area is loaded, fitted and editable', async ({ page }) => {
-  await openRole(page, { geo: { initial: scope({ wkt: ROLE_WKT }) } })
-  const panel = await openEditor(page)
-
-  await expect(panel.getByText('Bu rol için bir coğrafi alan tanımlı.')).toBeVisible()
-  await expect(scopeMap(page)).toHaveAttribute('data-area-count', '1')
-  await expect(panel.getByText('Rol coğrafi alanı')).toBeVisible()
-
-  // Kamera rolün alanına sığdırıldı (merkez ~34, ~39).
-  expect(Number(await scopeMap(page).getAttribute('data-center-lon'))).toBeCloseTo(34, 0)
-  expect(Number(await scopeMap(page).getAttribute('data-center-lat'))).toBeCloseTo(39, 0)
-
-  await expect(panel.getByRole('button', { name: 'Alanı Düzenle' })).toBeVisible()
-})
-
-test('without geography.manage the role editor opens read-only', async ({ page }) => {
-  await openRole(page, {
-    permissions: without('geography.manage'),
-    geo: { initial: scope({ wkt: ROLE_WKT }) },
-  })
-  const panel = await openEditor(page)
-
-  await expect(panel.getByText('Coğrafi alan yalnızca görüntüleniyor.', { exact: false })).toBeVisible()
-  await expect(saveButton(page)).toHaveCount(0)
-  await expect(scopeMap(page)).toHaveAttribute('data-area-count', '1')
-})
-
-test('geography.manage without roles.update still leaves the role editor read-only', async ({ page }) => {
-  await openRole(page, {
-    permissions: without('roles.update'),
-    geo: { initial: scope({ wkt: ROLE_WKT }) },
-  })
-  const panel = await openEditor(page)
-
-  await expect(panel.getByText('Coğrafi alan yalnızca görüntüleniyor.', { exact: false })).toBeVisible()
-  await expect(saveButton(page)).toHaveCount(0)
-})
-
-test('saving a role area sends the role endpoint exactly once', async ({ page }) => {
-  const { scopeMock } = await openRole(page, { geo: { initial: scope({ wkt: null, effectiveWkt: null }) } })
-  const panel = await openEditor(page)
-
-  await panel.getByRole('button', { name: 'Poligon Çiz' }).click()
+  await addButton(page).click()
   await drawPolygon(page)
   await saveButton(page).click()
 
-  await expect(panel.getByText('Coğrafi yetki alanı güncellendi.')).toBeVisible()
-  expect(scopeMock.calls.put).toHaveLength(1)
-  expect(scopeMock.calls.put[0].wkt).toMatch(/^POLYGON\s*\(\(/)
+  /* Artık okunmasına izin verilmeyen bir veriyi ekranda tutmak olmaz: harita
+     da alan listesi de düşer. */
+  await expect(scopeMap(page)).toHaveCount(0)
+  await expect(editor(page).getByText('Coğrafi yetkileri görüntüleme yetkiniz kaldırıldı.')).toBeVisible()
 })
-
-test('removing a role area confirms first and then refreshes from the server', async ({ page }) => {
-  const { scopeMock } = await openRole(page, { geo: { initial: scope({ wkt: ROLE_WKT }) } })
-  const panel = await openEditor(page)
-
-  await panel.getByRole('button', { name: 'Coğrafi Yetkiyi Kaldır' }).click()
-  await page.getByRole('alertdialog').getByRole('button', { name: 'Coğrafi Yetkiyi Kaldır' }).click()
-
-  expect(scopeMock.calls.delete).toBe(1)
-  await expect(panel.getByText('Bu rol için coğrafi yetki tanımlanmamış.')).toBeVisible()
-  await expect(scopeMap(page)).toHaveAttribute('data-area-count', '0')
-  // Alan gitti: kaldırma teklifi de gitti.
-  await expect(panel.getByRole('button', { name: 'Coğrafi Yetkiyi Kaldır' })).toHaveCount(0)
-})
-
-/* --- Duyarlı yerleşim ------------------------------------------------------- */
-
-for (const [label, width, height] of [['masaüstü', 1440, 900], ['tablet', 768, 1024], ['telefon', 375, 720]]) {
-  test(`the editor stays usable and free of sideways scroll at ${width}px (${label})`, async ({ page }) => {
-    await page.setViewportSize({ width, height })
-    await openUser(page, { geo: { initial: scope({ wkt: ANKARA_WKT }) } })
-    const panel = await openEditor(page)
-
-    // Belge yana kaymaz.
-    const overflow = await page.evaluate(() =>
-      document.documentElement.scrollWidth - document.documentElement.clientWidth)
-    expect(overflow).toBeLessThanOrEqual(1)
-
-    // Harita gerçekten kullanılabilir bir alan kaplar.
-    const box = await scopeMap(page).boundingBox()
-    expect(box.width).toBeGreaterThan(240)
-    expect(box.height).toBeGreaterThan(200)
-    expect(box.width).toBeLessThanOrEqual(width)
-
-    // Kapatma ve düzenleme kontrollerine ulaşılabilir.
-    await expect(panel.getByRole('button', { name: 'Coğrafi yetki penceresini kapat' })).toBeVisible()
-    await expect(saveButton(page)).toBeVisible()
-    await expect(panel.getByRole('button', { name: 'Coğrafi Yetkiyi Kaldır' })).toBeVisible()
-
-    /* "Görünür" yetmez: ana eylem GERÇEKTEN görünen alanda olmalı. DOM'da olup
-       ekranın altına düşen bir kaydet düğmesi kaydırmadan bulunamaz — ve
-       yalnızca `toBeVisible` arayan bir test bunu gizlerdi. */
-    for (const name of ['Coğrafi Yetkiyi Kaydet', 'Coğrafi yetki penceresini kapat']) {
-      const control = await panel.getByRole('button', { name }).boundingBox()
-      expect(control.y).toBeGreaterThanOrEqual(0)
-      expect(control.y + control.height).toBeLessThanOrEqual(height)
-    }
-  })
-}

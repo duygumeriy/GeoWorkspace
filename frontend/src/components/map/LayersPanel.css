@@ -119,3 +119,36 @@
     transition: none;
   }
 }
+
+/* --- Yetki alanı (sistem katmanı) -------------------------------------------
+   Kullanıcının kendi çizim katmanlarından AYRI bir grupta durur: ikisini aynı
+   listeye koymak, silinebilir bir katmanla silinemez bir sınırı aynı şey gibi
+   göstermek olurdu. */
+.layers-group-title {
+  margin: 1rem 0 0.5rem;
+  font-size: var(--font-small);
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* Satırın vurgusu haritadaki sınırla AYNI renktedir: panelde mavi, haritada
+   mor bir sınır görmek, ikisinin aynı şey olduğunu gizlerdi. */
+.layers-row--system.is-on {
+  border-color: rgba(168, 85, 247, 0.55);
+}
+
+/* Rozet METİNDİR: "sistem" olduğunu renk değil kelime söyler. */
+.layers-row-badge {
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-soft);
+  background: var(--surface-solid);
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  vertical-align: middle;
+}

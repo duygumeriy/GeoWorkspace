@@ -31,17 +31,38 @@ export function normalizeScopeWkt(wkt) {
 /**
  * Kullanıcıya rollerinden gelen ve buradan DÜZENLENEMEYEN alan.
  *
- * Yalnızca kullanıcı hedefinde ve yalnızca kullanıcının kendi alanı YOKKEN
- * anlamlıdır: doğrudan alan varken Phase 8A kuralı gereği roller hiç okunmaz,
- * dolayısıyla yürürlükteki alan zaten doğrudan alanın kendisidir. Rol
- * hedefinde miras diye bir şey yoktur.
+ * Yalnızca kullanıcı hedefinde ve yalnızca kullanıcının HİÇ doğrudan alanı
+ * yokken anlamlıdır: bir tek doğrudan alan bile varsa öncelik kuralı gereği
+ * roller hiç okunmaz, dolayısıyla yürürlükteki alan zaten doğrudan alanların
+ * birleşimidir. Rol hedefinde miras diye bir şey yoktur.
  *
  * @param {'user'|'role'} targetType
- * @param {{ hasDirectAuthorization?: boolean, isRestricted?: boolean, effectiveWkt?: string|null }|null} data
+ * @param {{ areas?: unknown[], isRestricted?: boolean, effectiveWkt?: string|null }|null} data
  * @returns {string|null}
  */
 export function inheritedScopeWkt(targetType, data) {
   if (targetType !== 'user' || !data) return null
-  if (data.hasDirectAuthorization) return null
+  if ((data.areas?.length ?? 0) > 0) return null
   return data.isRestricted ? (data.effectiveWkt ?? null) : null
+}
+
+/**
+ * Alanın nereden geldiğini anlatan kısa etiket.
+ *
+ * <b>Yetkilendirmeyi ETKİLEMEZ</b> ve öyle sunulmaz: bir alanın "İl" rozeti
+ * taşıması, kapsamının il sınırı olduğunu garanti etmez — kaydedilen ve sınanan
+ * şey daima poligonun kendisidir. Rozet yalnızca yöneticinin listedeki alanları
+ * ayırt etmesine yarar.
+ */
+export function areaSourceLabel(sourceType) {
+  switch (sourceType) {
+    case 'Province':
+      return 'İl'
+    case 'Region':
+      return 'Bölge'
+    case 'Coordinates':
+      return 'Koordinat'
+    default:
+      return 'Çizim'
+  }
 }

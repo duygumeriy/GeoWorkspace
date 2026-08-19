@@ -86,6 +86,15 @@ public static class PermissionCodes
     public const string GeographyView = "geography.view";
     public const string GeographyManage = "geography.manage";
 
+    /* --- Denetim --------------------------------------------------------------- */
+
+    /* Aktivite geçmişi kendi yetkisidir ve users.view / permissions.view altına
+       GİZLENMEZ: kayıt, kimin neyi ne zaman değiştirdiğini gösterir — yani
+       diğer yöneticilerin hareketlerini de. Kullanıcı listesini görebilmek,
+       yönetim geçmişini okuyabilmekle aynı şey değildir. */
+
+    public const string ActivityView = "activity.view";
+
     /// <summary>EF <c>HasMaxLength</c> ile aynı sınır.</summary>
     public const int MaxLength = 128;
 }

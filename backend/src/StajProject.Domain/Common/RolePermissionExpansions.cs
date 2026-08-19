@@ -53,16 +53,31 @@ public static class RolePermissionExpansions
     ];
 
     /// <summary>
+    /// Aktivite geçmişi kataloğu genişlemesi (Phase 9).
+    /// </summary>
+    /// <remarks>
+    /// Coğrafya genişlemesiyle aynı gerekçe: kayıt, kimin neyi ne zaman
+    /// değiştirdiğini — diğer yöneticilerin hareketleri dâhil — gösterir.
+    /// Operasyonel roller (GIS Manager / Analyst / Editor / Viewer) ve özel
+    /// roller bilinçli olarak DIŞARIDADIR; istenirse Rol Yetki
+    /// Düzenleyicisi'nden verilebilir.
+    /// </remarks>
+    private static readonly string[] AuditPermissions =
+    [
+        PermissionCodes.ActivityView
+    ];
+
+    /// <summary>
     /// Uygulanacak genişlemeler. Rol adları yalnızca <b>başlangıç verisi</b>
     /// üretmek için kullanılır; çalışma zamanı yetkilendirmesi hâlâ tamamen
     /// etkin yetki KODLARI üzerinden yürür.
     /// </summary>
     public static readonly IReadOnlyList<Expansion> All =
     [
-        new(GisRoles.Administrator, GeographyPermissions),
+        new(GisRoles.Administrator, [.. GeographyPermissions, .. AuditPermissions]),
 
         // Geçiş dönemi: legacy Admin, Administrator profiliyle birebir kalır.
-        new(ApplicationRoles.Admin, GeographyPermissions)
+        new(ApplicationRoles.Admin, [.. GeographyPermissions, .. AuditPermissions])
     ];
 
     /// <summary>Genişlemelerde geçen tüm kodlar (tekrarsız).</summary>

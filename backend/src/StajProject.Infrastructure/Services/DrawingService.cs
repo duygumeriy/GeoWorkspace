@@ -46,6 +46,18 @@ public class DrawingService : IDrawingService
     private const string OutsideAreaMessage =
         "Bu alanda çizim yapma yetkiniz bulunmuyor.";
 
+    /// <summary>
+    /// "Geometri değişmedi" sayılan azami sapma, DERECE cinsinden.
+    /// </summary>
+    /// <remarks>
+    /// Geometri istemciye 4326 → 3857 → 4326 yolundan gidip geldiği için son
+    /// basamaklarda kayan nokta gürültüsü taşır; sıfır toleransla değişmemiş
+    /// bir geometri pratikte hiç tanınamazdı. 1e-9 derece ekvatorda milimetrenin
+    /// onda biri mertebesindedir — gürültüyü yutar, gerçek bir taşımayı asla
+    /// gizleyemez.
+    /// </remarks>
+    private const double UnchangedGeometryTolerance = 1e-9;
+
     private readonly AppDbContext _dbContext;
     private readonly ICurrentUserService _currentUser;
     private readonly IDrawingAuthorizationService _drawingAuthorization;
@@ -970,13 +982,36 @@ public class DrawingService : IDrawingService
                dokunmaz ve coğrafi olarak sınanmaz — aksi hâlde sonradan
                daraltılan bir alanın dışında kalan eski bir kaydın rengi bile
                değiştirilemezdi. Coğrafi yetkinin cevapladığı soru "geometri
-               NEREYE konabilir"dir, "bu kayda dokunulabilir mi" değil. */
-            var area = await _geographicAuthorization.GetEffectiveAuthorizationAsync(
-                _currentUser.UserId!.Value, cancellationToken);
+               NEREYE konabilir"dir, "bu kayda dokunulabilir mi" değil.
 
-            if (!area.Allows(geometry))
+               <b>Gönderilen geometri kayıtlının AYNISI ise değişiklik yoktur.</b>
+               İstemcinin, dokunmadığı geometriyi de gövdeye koyması sıradan bir
+               durumdur (tek bir PUT ile ad + renk + geometri taşınır) ve o
+               isteği coğrafi olarak reddetmek, alanı sonradan daraltılan bir
+               kullanıcının eski kaydının adını bile değiştirememesi demekti.
+               Karar İSTEMCİYE bırakılmaz: değişip değişmediğini sunucu, kayıtlı
+               geometriyle karşılaştırarak kendisi belirler.
+
+               Karşılaştırma küçük bir toleransla yapılır çünkü geometri
+               tarayıcıya 4326 → 3857 → 4326 yolundan gider gelir ve bu gidiş
+               dönüş son basamaklarda kayan nokta gürültüsü bırakır; sıfır
+               toleransla "değişmedi" durumu pratikte hiç yakalanamazdı. Tolerans
+               derece cinsinden 1e-9'dur — ekvatorda milimetrenin onda biri
+               mertebesinde, yani hiçbir gerçek taşımayı gizleyemez. */
+            var unchanged = entity.Geometry is not null
+                && geometry.EqualsExact(entity.Geometry, UnchangedGeometryTolerance);
+
+            // Değişmemiş bir geometri için kapsam hiç ÇÖZÜLMEZ: sorulacak bir
+            // soru yoktur ve her metadata güncellemesi boşuna bir sorgu açardı.
+            if (!unchanged)
             {
-                return ServiceResult<DrawingResponse>.Forbidden(OutsideAreaMessage);
+                var area = await _geographicAuthorization.GetEffectiveAuthorizationAsync(
+                    _currentUser.UserId!.Value, cancellationToken);
+
+                if (!area.Allows(geometry))
+                {
+                    return ServiceResult<DrawingResponse>.Forbidden(OutsideAreaMessage);
+                }
             }
         }
 

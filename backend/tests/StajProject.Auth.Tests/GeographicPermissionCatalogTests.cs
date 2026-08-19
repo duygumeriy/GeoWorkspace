@@ -107,12 +107,16 @@ public class GeographicPermissionCatalogTests
     [Fact]
     public void The_expansion_adds_exactly_two_codes()
     {
-        /* Genişlemenin ölçüsü, kataloğun toplamı değil FARKIDIR: 29 sayısı
-           başka bir faz bir yetki eklediğinde kayar, "coğrafya dışındaki her
-           şey 27'dir" iddiası kaymaz. */
+        /* Ölçülen şey coğrafya genişlemesinin BÜYÜKLÜĞÜDÜR: kataloğa iki kod
+           eklemiştir, ne bir eksik ne bir fazla. Toplam sayı yerine bu FARKA
+           bakılır — Phase 9'un eklediği activity.view gibi başka fazların
+           katkıları bu iddiayı bozmamalıdır. */
         Assert.Equal(2, PermissionCatalog.AllCodes.Count(code => Geography.Contains(code)));
+
+        // Katalog coğrafya dışında da büyümüştür; iddia "sadece bu ikisi
+        // coğrafyadır" biçiminde kurulur, sabit bir toplamla değil.
         Assert.Equal(
-            27,
+            PermissionCatalog.AllCodes.Count - 2,
             PermissionCatalog.AllCodes.Count(code => !Geography.Contains(code)));
     }
 

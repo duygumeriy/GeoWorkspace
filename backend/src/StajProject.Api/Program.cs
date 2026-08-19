@@ -12,6 +12,8 @@ using StajProject.Api.Authorization;
 using StajProject.Api.Services;
 using StajProject.Domain.Common;
 using StajProject.Domain.Entities;
+using Microsoft.AspNetCore.Authorization.Policy;
+using StajProject.Api.Activity;
 using StajProject.Infrastructure.Authentication;
 using StajProject.Infrastructure.Email;
 using StajProject.Infrastructure.Persistence;
@@ -21,7 +23,11 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 
-builder.Services.AddControllers();
+/* Aktivite geçmişi TEK bir yerden yazılır: her mutasyon ucuna elle kayıt
+   eklemek, yeni bir ucun kaydı unutmasına açık kapı bırakırdı. Filtre neyi
+   kaydedeceğini bir İZİN LİSTESİNDEN okur (ActivityActionRegistry); listede
+   olmayan hiçbir uç — oturum açma, parola sıfırlama, 2FA dâhil — kaydedilemez. */
+builder.Services.AddControllers(options => options.Filters.Add<ActivityLogFilter>());
 
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
@@ -215,6 +221,19 @@ builder.Services.AddScoped<IDrawingAuthorizationService, DrawingAuthorizationSer
    soru burada yanıtlanır. Scoped'dır çünkü AppDbContext'e bağlıdır — kapsam
    her istekte CANLI okunur, hiçbir yerde önbelleğe alınmaz ve JWT'ye yazılmaz. */
 builder.Services.AddScoped<IGeographicAuthorizationService, GeographicAuthorizationService>();
+
+/* Aktivite geçmişi. Yazıcı her istekte çalışabilir, sorgu yalnızca yönetim
+   ekranından; ikisi ayrı arayüzlerdir ki her mutasyon isteği bir sorgulama
+   bağımlılığı taşımak zorunda kalmasın. İkisi de AppDbContext'e bağlı olduğu
+   için scoped'dır. */
+builder.Services.AddScoped<IActivityLogWriter, ActivityLogWriter>();
+builder.Services.AddScoped<IActivityLogQueryService, ActivityLogQueryService>();
+
+/* Yetki reddiyle biten mutasyon denemeleri de kaydedilir. Yetkilendirme MVC
+   filtrelerinden ÖNCE çalıştığı için reddedilen bir istek ActivityLogFilter'a
+   hiç ulaşmaz; bu handler o boşluğu AYNI izin listesiyle kapatır ve
+   yetkilendirme kararına hiçbir şekilde karışmaz. */
+builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, ActivityAuthorizationResultHandler>();
 builder.Services.AddScoped<IDrawingService, DrawingService>();
 builder.Services.AddScoped<ISpatialAnalysisService, SpatialAnalysisService>();
 

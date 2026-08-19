@@ -11,6 +11,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@turf/boolean-point-in-polygon": "^7.4.0",
+    "@turf/helpers": "^7.4.0",
+    "@turf/line-intersect": "^7.4.0",
     "ol": "^10.10.0",
     "qrcode.react": "^4.2.0",
     "react": "^19.2.8",
@@ -19,6 +22,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",
+    "@turf/union": "^7.4.0",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.4",
