@@ -133,8 +133,10 @@
   letter-spacing: 0.06em;
 }
 
+/* Satırın vurgusu haritadaki sınırla AYNI renktedir: panelde mavi, haritada
+   mor bir sınır görmek, ikisinin aynı şey olduğunu gizlerdi. */
 .layers-row--system.is-on {
-  border-color: rgba(0, 209, 255, 0.45);
+  border-color: rgba(168, 85, 247, 0.55);
 }
 
 /* Rozet METİNDİR: "sistem" olduğunu renk değil kelime söyler. */

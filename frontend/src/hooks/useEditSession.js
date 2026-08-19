@@ -415,6 +415,20 @@ export default function useEditSession({ feature, descriptor, active }) {
   const selectedVertex = clampSelection(state?.selectedVertex ?? null, state?.coords.length ?? 0)
   const selectedEdge = clampSelection(state?.selectedEdge ?? null, segments.length)
 
+  /**
+   * Did the GEOMETRY change since the session opened?
+   *
+   * Ayrı tutulur çünkü coğrafi yetki yalnızca geometriye bakar: sonradan
+   * daraltılan bir alanın dışında kalan eski bir kaydın adı ya da rengi hâlâ
+   * değiştirilebilmelidir. Kaydetme yolu bunu okuyup, geometri değişmediğinde
+   * WKT'yi HİÇ göndermez — değişmemiş bir geometriyi göndermek, sunucudan onu
+   * yeni bir çizimmiş gibi sınamasını istemek olurdu.
+   */
+  const isGeometryDirty = useMemo(
+    () => Boolean(state) && !isSameCoords(state.coords, state.original.coords),
+    [state],
+  )
+
   /** Anything at all changed since the session opened? Drives the unsaved guard. */
   const isDirty = useMemo(() => {
     if (!state) return false
@@ -448,6 +462,7 @@ export default function useEditSession({ feature, descriptor, active }) {
     metrics,
     validity,
     isDirty,
+    isGeometryDirty,
     canSave,
     canUndo: Boolean(state?.past.length),
     canRedo: Boolean(state?.future.length),

@@ -205,11 +205,13 @@
 
 /* Coğrafi kısıt notu ipucunun ALTINDA, kendi satırında durur: araç
    talimatıyla karışmamalı ama onunla birlikte okunmalıdır. */
+/* Renk, haritadaki sınırın rengiyle AYNI ailededir: not moru, sınır moru
+   olduğu için cümle hangi çizgiden bahsettiğini kendiliğinden söyler. */
 .map-hint-scope {
   display: block;
   margin-top: 0.35rem;
   padding-top: 0.35rem;
   border-top: 1px solid var(--border-soft);
-  color: var(--cyan);
+  color: #c084fc;
   font-size: var(--font-small);
 }

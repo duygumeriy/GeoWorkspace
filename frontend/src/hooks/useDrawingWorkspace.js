@@ -661,8 +661,13 @@ export default function useDrawingWorkspace(
        başlamaz, sonraki köşelerde köşe eklenmez. */
     const rejectVertex = (message) => {
       /* Toast SABİT kimliklidir: alan dışına art arda tıklamak onlarca bildirim
-         yığmaz, aynı bildirimi tazeler. */
-      showToast('error', message, { id: 'geographic-scope', timeout: 3000 })
+         yığmaz, aynı bildirimi tazeler.
+
+         Yerleşim ÜSTTEDİR. Varsayılan alt yığın, çizim talimatının durduğu
+         yerdir; uyarı oraya düştüğünde kullanıcının okuması gereken talimatı
+         kapatıyordu. Kural aşağıda okunmaya devam ederken uyarı yukarıda
+         görünür. */
+      showToast('error', message, { id: 'geographic-scope', timeout: 3500, placement: 'top' })
       return false
     }
 
@@ -673,14 +678,18 @@ export default function useDrawingWorkspace(
       const candidate = toLonLat(event.coordinate)
 
       if (!isMapCoordinateInsideScope(scope, event.coordinate)) {
-        return rejectVertex('Bu konum coğrafi yetki alanınızın dışında.')
+        return rejectVertex(
+          'Bu konum coğrafi yetki alanınızın dışında. Yalnızca izin verilen alan içinde çizim yapabilirsiniz.',
+        )
       }
 
       const previous = lastVertexRef.current
       if (previous && !isSegmentInsideScope(scope, previous, candidate)) {
         /* İki köşe de içeride ama aradaki kenar dışarı taşıyor. Yalnızca
            köşelere bakan bir denetim bunu kabul ederdi. */
-        return rejectVertex('Bu kenar coğrafi yetki alanınızın dışından geçiyor.')
+        return rejectVertex(
+          'Bu kenar coğrafi yetki alanınızın dışından geçiyor. Yalnızca izin verilen alan içinde çizim yapabilirsiniz.',
+        )
       }
 
       lastVertexRef.current = candidate
@@ -720,8 +729,8 @@ export default function useDrawingWorkspace(
         pendingSource.clear()
         showToast(
           'error',
-          'Çizim coğrafi yetki alanınızın dışında kaldığı için oluşturulmadı.',
-          { id: 'geographic-scope', timeout: 5000 },
+          'Çizim coğrafi yetki alanınızın dışında kaldığı için oluşturulmadı. Yalnızca izin verilen alan içinde çizim yapabilirsiniz.',
+          { id: 'geographic-scope', timeout: 5000, placement: 'top' },
         )
         return
       }

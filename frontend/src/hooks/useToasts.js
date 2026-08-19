@@ -26,21 +26,29 @@ export default function useToasts() {
   /**
    * @param {'success'|'error'|'info'} type
    * @param {string} message
-   * @param {{ timeout?: number, id?: string }} [options] a fixed `id` replaces
-   *   the toast already carrying it instead of stacking a duplicate.
+   * @param {{ timeout?: number, id?: string, placement?: 'bottom'|'top' }} [options]
+   *   a fixed `id` replaces the toast already carrying it instead of stacking a
+   *   duplicate.
+   *
+   *   `placement` ayrı bir yığın seçer. Varsayılan alt yığın, çizim
+   *   talimatının (`.map-hint`) durduğu yerdedir; oraya düşen bir uyarı
+   *   talimatın ÜSTÜNÜ kapatır ve iki ayrı iş tek bir karmaşaya dönüşür.
+   *   Kalıcı olarak okunması gereken bir kural ile geçici bir bildirim aynı
+   *   noktada yarışmamalıdır.
    */
   const showToast = useCallback(
     (type, message, options = {}) => {
       counterRef.current += 1
       const id = options.id ?? `toast-${counterRef.current}`
       const timeout = options.timeout ?? DEFAULT_TIMEOUT_MS
+      const placement = options.placement ?? 'bottom'
 
       const existingTimer = timersRef.current.get(id)
       if (existingTimer) clearTimeout(existingTimer)
 
       setToasts((current) => {
         const without = current.filter((toast) => toast.id !== id)
-        return [...without, { id, type, message }]
+        return [...without, { id, type, message, placement }]
       })
 
       if (timeout > 0) {

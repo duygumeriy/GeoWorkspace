@@ -10,6 +10,38 @@ import { wkt4326ToFeature } from '../map/drawing.js'
 export const SCOPE_LAYER_CLASSNAME = 'scope-layer'
 
 /**
+ * "Yetki Alanım" sınırının GÖRSEL TANIMI — tek yer.
+ *
+ * Rengi değiştirmek isteyen biri yalnızca burayı düzenler; stil, katman
+ * kurulumunun içine gömülü değildir. Bir tema ayarı ya da veritabanı alanı
+ * DEĞİLDİR ve olmamalıdır: sınırın rengi bir yetkilendirme verisi değil, bir
+ * sunum tercihidir.
+ *
+ * Renk MOR ailesindendir ve bunun sebebi vardır. Önceki açık mavi, OpenStreetMap
+ * altlığındaki su, yol ve idari sınır çizgileriyle aynı ton ailesine düşüyor ve
+ * kaybolup gidiyordu; kullanıcı sınırın nerede olduğunu ancak arayarak
+ * bulabiliyordu. Mor, OSM'in kendi paletinde neredeyse hiç geçmediği için
+ * altlıkla karışmaz ve uygulamanın kendi vurgu rengiyle de aynı ailedendir.
+ *
+ * Sınır, kullanıcının çizimlerinden AYRI okunmalıdır: nokta/çizgi/poligon
+ * çizimleri kendi stillerini taşır ve bu katman onlarla karışmasın diye
+ * KESİKLİ çizilir — renk ayırt edemeyen biri için de çizgi biçimi ayrımı kalır.
+ */
+export const SCOPE_STYLE = Object.freeze({
+  /** Kenar rengi: uygulamanın mor vurgusuyla aynı aile, altlıkta kaybolmaz. */
+  strokeColor: '#a855f7',
+  /** Kenarın altındaki koyu taban: açık altlıkta da kontrast bırakır. */
+  haloColor: 'rgba(76, 29, 149, 0.55)',
+  /** Öncekinden belirgin biçimde kalın; sınır aranmadan görülmelidir. */
+  strokeWidth: 4,
+  haloWidth: 7,
+  /** Okunur, seyrek bir desen: sürekli çizgi bir çizim sanılabilirdi. */
+  lineDash: [14, 8],
+  /** Dolgu haritayı örtmez; sınırı çerçeveler, perde çekmez. */
+  fillColor: 'rgba(168, 85, 247, 0.10)',
+})
+
+/**
  * Kullanıcının yetki alanını haritada gösteren katman.
  *
  * <b>Çizimlerin ALTINDA durur ve onları gizlemez.</b> Dolgu bilinçli olarak çok
@@ -41,10 +73,23 @@ export default function useGeographicScopeLayer(map, { scope, visible = true }) 
       /* Çizim katmanının ALTINDA: kullanıcının kendi verisi sınırın üstünde
          kalmalıdır. */
       zIndex: 4,
-      style: new Style({
-        fill: new Fill({ color: 'rgba(0, 209, 255, 0.07)' }),
-        stroke: new Stroke({ color: '#00d1ff', width: 2.5, lineDash: [10, 6] }),
-      }),
+      /* İKİ çizgi üst üste: koyu bir taban ve onun üstünde mor kesikli kenar.
+         Tek bir çizgi, açık altlıkta parlak bir zemine denk geldiğinde
+         siliniyordu; taban, sınırın her altlıkta ve her temada okunmasını
+         sağlar. Dolgu yalnızca en alttaki stile konur. */
+      style: [
+        new Style({
+          fill: new Fill({ color: SCOPE_STYLE.fillColor }),
+          stroke: new Stroke({ color: SCOPE_STYLE.haloColor, width: SCOPE_STYLE.haloWidth }),
+        }),
+        new Style({
+          stroke: new Stroke({
+            color: SCOPE_STYLE.strokeColor,
+            width: SCOPE_STYLE.strokeWidth,
+            lineDash: [...SCOPE_STYLE.lineDash],
+          }),
+        }),
+      ],
     })
 
     map.addLayer(layer)

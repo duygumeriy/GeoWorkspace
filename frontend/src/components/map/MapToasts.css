@@ -1,7 +1,5 @@
 .map-toasts {
   position: absolute;
-  /* Above the draw toolbar, centred, so it never covers the tools. */
-  bottom: 5.5rem;
   left: 50%;
   transform: translateX(-50%);
   z-index: 45;
@@ -10,6 +8,28 @@
   gap: 0.4rem;
   width: min(420px, calc(100% - 2rem));
   pointer-events: none;
+}
+
+/* Above the draw toolbar, centred, so it never covers the tools. */
+.map-toasts--bottom {
+  bottom: 5.5rem;
+}
+
+/* Üst yığın: çizim talimatının ve araç çubuğunun bulunduğu alt şeritten
+   TAMAMEN ayrıdır. Kural aşağıda okunmaya devam ederken uyarı yukarıda görünür;
+   ikisi birbirinin üstünü örtmez. Üst çubuk 56px civarındadır, bildirim onun
+   hemen altına oturur. */
+.map-toasts--top {
+  top: 1rem;
+}
+
+/* Coğrafi uyarı, sıradan bir hata bildiriminden daha görünür olmalıdır: sınırın
+   dışına çizmeye çalışmak sık yapılan ve anlaşılması gereken bir hatadır. Renk
+   TEK başına anlatmaz — ikon ve metin zaten oradadır; buradaki fark yalnızca
+   uyarının aranmadan görülmesini sağlar. */
+.map-toasts--top .map-toast.is-error {
+  border-width: 2px;
+  box-shadow: var(--shadow-panel), 0 0 0 4px rgba(255, 107, 107, 0.12);
 }
 
 .map-toast {

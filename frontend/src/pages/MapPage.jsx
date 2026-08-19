@@ -180,7 +180,17 @@ export default function MapPage() {
        birer API mutasyonudur ve farklı yetkiler isteyebilir (bir silmeyi geri
        almak `drawings.restore` ister, ileri almak `drawings.delete`). */
     hasPermissions: canAll,
-    onPolygonSaved: analyzeSaved,
+    /* Poligon kaydedildikten sonra çalışan OTOMATİK analiz, yetki YOKSA hiç
+       başlatılmaz — istek gönderilip 403 yutulmaz. Yetkisiz kullanıcı, sıradan
+       bir poligon çizdiği için "Analiz yapılamadı (HTTP 403)" görmemelidir;
+       istemediği bir işin hatası ona ait değildir.
+
+       Kapı çağrıdan ÖNCEdir ve merkezî yetki durumundan okunur; rol adına
+       bakan hiçbir kural yoktur. Açık "Envanter" aracı kendi kapısını zaten
+       taşır (bkz. yukarıdaki `active`), dolayısıyla yetkili kullanıcının
+       bilerek başlattığı analiz etkilenmez. Çizim akışının geri kalanı —
+       AttributePopup, kaydetme, coğrafi denetim — değişmez. */
+    onPolygonSaved: allowed.canAnalyze ? analyzeSaved : null,
     /* Alan dışı bir tık köşe olarak EKLENMEZ ve alan dışı kalan bir çizim
        için AttributePopup hiç açılmaz. */
     geographicScope: geographic.scope,
@@ -563,7 +573,14 @@ export default function MapPage() {
       category: draft.category,
       tags: normalizeTags(draft.tags),
       style: colorPatchFor(selectedFeature.type, draft.color),
-      wkt,
+      /* Geometri DEĞİŞMEDİYSE hiç gönderilmez. Coğrafi yetki yalnızca
+         geometriye bakar; dokunulmamış bir geometriyi göndermek, sunucudan onu
+         yeni bir çizimmiş gibi sınamasını istemek olurdu — ve alanı sonradan
+         daraltılan bir kullanıcı, eski kaydının adını bile değiştiremezdi.
+
+         Bu bir güvenlik gevşetmesi DEĞİLDİR: geometri gerçekten değiştiğinde
+         WKT gider ve sunucu yeni konumu tam olarak eskisi gibi denetler. */
+      ...(editSession.isGeometryDirty ? { wkt } : {}),
     })
 
     // On failure the session stays open with the user's edits intact.
