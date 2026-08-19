@@ -43,6 +43,12 @@ public class AppDbContext : IdentityDbContext<User, IdentityRole<int>, int>
     /// <summary>Kullanıcı/rol coğrafi yetki alanları (hedef başına en fazla bir satır).</summary>
     public DbSet<GeographicAuthorization> GeographicAuthorizations => Set<GeographicAuthorization>();
 
+    /// <summary>
+    /// Aktivite geçmişi. Yalnızca durum DEĞİŞTİREN işlemler yazılır; okuma
+    /// istekleri buraya girmez (bkz. <see cref="ActivityLog"/>).
+    /// </summary>
+    public DbSet<ActivityLog> ActivityLogs => Set<ActivityLog>();
+
     public override int SaveChanges()
     {
         StampAuditDates();
