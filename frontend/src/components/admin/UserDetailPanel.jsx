@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { accountStatusBadge, isPendingApproval, mfaLabel } from './userStatus.js'
+import GeographicAuthorizationEditor from './GeographicAuthorizationEditor.jsx'
 import UserPermissionEditor from './UserPermissionEditor.jsx'
 
 const formatDate = (value) => new Intl.DateTimeFormat('tr-TR', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
@@ -50,8 +51,9 @@ function ApprovalSection({ user, roles, selectedRole, onSelectRole, mutating, ca
   </section>
 }
 
-export default function UserDetailPanel({ user, currentUserId, loading, mutating, roles, permissions, canUpdate = true, canViewPermissions = true, onClose, onChangeRole, onChangeStatus, onApprove, onReject }) {
+export default function UserDetailPanel({ user, currentUserId, loading, mutating, roles, permissions, geography, canUpdate = true, canViewPermissions = true, onClose, onChangeRole, onChangeStatus, onApprove, onReject }) {
   const [confirm, setConfirm] = useState(null)
+  const [geographyOpen, setGeographyOpen] = useState(false)
   const [selectedRole, setSelectedRole] = useState('')
   const [tab, setTab] = useState('general')
   /* Kaydedilmemiş yetki değişikliği varken paneli kapatmak veya rolü
@@ -63,10 +65,13 @@ export default function UserDetailPanel({ user, currentUserId, loading, mutating
     ? setConfirm({ kind: 'discard', run, title: 'Kaydedilmemiş yetki değişiklikleri var', copy: 'Bu kullanıcı için işaretlediğiniz doğrudan yetkiler henüz kaydedilmedi. Devam ederseniz değişiklikler kaybolur.', action: 'Değişiklikleri Yoksay', danger: true })
     : run()
   const requestClose = () => guard(onClose)
-  useEffect(() => { const fn = (e) => { if (e.key === 'Escape' && !confirm) requestClose() }; document.addEventListener('keydown', fn); return () => document.removeEventListener('keydown', fn) })
+  /* Coğrafi yetki penceresi AÇIKKEN Escape onundur: burada da kapatmak,
+     tek tuşla iki katmanı birden kapatır ve haritadaki kaydedilmemiş alanın
+     onayını atlardı. */
+  useEffect(() => { const fn = (e) => { if (e.key === 'Escape' && !confirm && !geographyOpen) requestClose() }; document.addEventListener('keydown', fn); return () => document.removeEventListener('keydown', fn) })
   // A fresh account starts with no pre-selected role on purpose: choosing one
   // is the administrator's decision, not a default they have to notice.
-  useEffect(() => { setSelectedRole(''); setTab('general') }, [user?.id])
+  useEffect(() => { setSelectedRole(''); setTab('general'); setGeographyOpen(false) }, [user?.id])
   /* Yetki sekmesinin arkasındaki GET users.view + permissions.view ister.
      İkincisi olmadan sekme yalnızca bir 403 gösterirdi. */
   useEffect(() => { if (!canViewPermissions && tab === 'permissions') setTab('general') }, [canViewPermissions, tab])
@@ -129,5 +134,13 @@ export default function UserDetailPanel({ user, currentUserId, loading, mutating
                 </select></label><label>Hesap Durumu<select value={user.isActive ? 'active' : 'inactive'} disabled={mutating} onChange={(e) => requestStatus(e.target.value === 'active')}><option value="active">Aktif</option><option value="inactive">Pasif</option></select></label>{user.role === 'Admin' && <p className="admin-policy-note">Sistemde en az bir aktif yönetici bulunmalıdır. Son aktif Admin’in rolü düşürülemez veya hesabı pasifleştirilemez.</p>}</>}
           {user.accountStatus === 'PendingEmailVerification' && canUpdate && <button type="button" className="admin-button danger" disabled={mutating} onClick={requestRejection}>Başvuruyu Reddet</button>}
         </section>}
-    <p className="admin-readonly-note">E-posta doğrulaması ve 2FA durumu yalnızca görüntülenir. Parola ve güvenlik anahtarlarına erişilemez.</p></div>}</>}</aside>{confirm && <ConfirmDialog config={confirm} busy={mutating} onCancel={() => setConfirm(null)} onConfirm={submit} />}</>
+    {/* Coğrafi yetki: ayrı bir bölüm, çünkü hesap durumu ve rolden bağımsız
+        bir eksendir. Düğme yalnızca coğrafi görüntüleme yetkisi olana çizilir —
+        devre dışı bir düğme bırakmak, ödevin "yetkisi yoksa hiç gösterme"
+        kuralını karşılamazdı. */}
+    {geography?.canView && <section className="admin-management"><h3>Coğrafi Yetki</h3>
+      <p className="admin-readonly-note">Kullanıcının çizim yapabileceği coğrafi sınırı haritada tanımlayın. Alan tanımlanmadığında kullanıcı, rollerinden gelen alana veya hiç alan yoksa sınırsız çizime tabidir.</p>
+      <div className="geo-entry-actions"><button type="button" className="admin-button secondary" onClick={() => setGeographyOpen(true)}>Coğrafi Yetki</button></div>
+    </section>}
+    <p className="admin-readonly-note">E-posta doğrulaması ve 2FA durumu yalnızca görüntülenir. Parola ve güvenlik anahtarlarına erişilemez.</p></div>}</>}</aside>{geographyOpen && user && <GeographicAuthorizationEditor targetType="user" targetId={user.id} targetName={user.username} canView={geography?.canView === true} canManage={geography?.canManage === true} onClose={() => setGeographyOpen(false)} />}{confirm && <ConfirmDialog config={confirm} busy={mutating} onCancel={() => setConfirm(null)} onConfirm={submit} />}</>
 }

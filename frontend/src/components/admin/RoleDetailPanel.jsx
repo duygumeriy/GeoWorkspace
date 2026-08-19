@@ -1,4 +1,5 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
+import GeographicAuthorizationEditor from './GeographicAuthorizationEditor.jsx'
 import RolePermissionEditor from './RolePermissionEditor.jsx'
 import { roleType } from './roleType.js'
 
@@ -32,12 +33,23 @@ export default function RoleDetailPanel({
      biri "bu işi yapabilir misin", diğeri "bu rol buna açık mı" der. */
   canRename: actorCanRename = true,
   canDelete: actorCanDelete = true,
+  /* Coğrafi yetki: okumak roles.view + geography.view, yazmak
+     roles.update + geography.manage ister. Sayfa ikisini de hesaplayıp
+     verir; burada rol ADINA bakan bir kural yoktur. */
+  geography,
 }) {
+  const [geographyOpen, setGeographyOpen] = useState(false)
+
   useEffect(() => {
-    const onKeyDown = (event) => { if (event.key === 'Escape' && !busy) onClose() }
+    /* Coğrafi yetki penceresi açıkken Escape onundur: kaydedilmemiş bir alanın
+       onayını atlayıp iki katmanı birden kapatmak, çizilen poligonu sessizce
+       çöpe atardı. */
+    const onKeyDown = (event) => { if (event.key === 'Escape' && !busy && !geographyOpen) onClose() }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
-  }, [busy, onClose])
+  }, [busy, onClose, geographyOpen])
+
+  useEffect(() => { setGeographyOpen(false) }, [role?.id])
 
   if (!role) return null
 
@@ -74,6 +86,26 @@ export default function RoleDetailPanel({
         </dl>
 
         <RolePermissionEditor role={role} {...permissions} />
+
+        {/* Coğrafi yetki, ad/silme yönetiminden AYRI bir bölümdür: rol
+            korumalı olduğu için yeniden adlandırılamasa bile coğrafi alanı
+            tanımlanabilir. Düğme, yalnızca coğrafi görüntüleme yetkisi olana
+            çizilir — yetkisi olmayana devre dışı bir düğme bırakmak, ödevin
+            "yetkisi yoksa hiç gösterme" kuralını karşılamazdı. */}
+        {geography?.canView && (
+          <section className="admin-management">
+            <h3>Coğrafi Yetki</h3>
+            <p className="admin-readonly-note">
+              Bu rolü taşıyan ve kendine özel alanı olmayan kullanıcıların çizim yapabileceği
+              coğrafi sınır. Kullanıcıya özel bir alan tanımlandığında o alan bunun yerine geçer.
+            </p>
+            <div className="geo-entry-actions">
+              <button type="button" className="admin-button secondary" onClick={() => setGeographyOpen(true)}>
+                Coğrafi Yetki
+              </button>
+            </div>
+          </section>
+        )}
 
         <section className="admin-management">
           <h3>Yönetim</h3>
@@ -117,6 +149,17 @@ export default function RoleDetailPanel({
           )}
         </section>
       </aside>
+
+      {geographyOpen && (
+        <GeographicAuthorizationEditor
+          targetType="role"
+          targetId={role.id}
+          targetName={role.name}
+          canView={geography?.canView === true}
+          canManage={geography?.canManage === true}
+          onClose={() => setGeographyOpen(false)}
+        />
+      )}
     </>
   )
 }

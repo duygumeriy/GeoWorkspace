@@ -27,6 +27,12 @@ export default function AdminPage() {
   /* Atanabilir rol listesi roles.view ile korunur; yetkisi olmayana rol
      açılır listesi sunmak, doldurulamayacak bir alan göstermek olurdu. */
   const canViewRoles = can(PERMISSIONS.ROLES_VIEW)
+  /* Coğrafi yetki AYRI bir eksendir ve uçlar İKİ yetki birden arar. Okuma
+     users.view + geography.view; yazma users.update + geography.manage.
+     `geography.manage` tek başına yetmez — yetseydi, kullanıcı düzenleme
+     yetkisi olmayan biri kullanıcının coğrafi sınırını değiştirebilirdi. */
+  const canViewGeography = can(PERMISSIONS.GEOGRAPHY_VIEW)
+  const canManageGeography = canUpdateUser && can(PERMISSIONS.GEOGRAPHY_MANAGE)
   const [users, setUsers] = useState([])
   const [roles, setRoles] = useState([])
   const [selectedId, setSelectedId] = useState(null)
@@ -250,6 +256,6 @@ export default function AdminPage() {
     </section>
     {error && <div className="admin-error" role="alert"><span>{error}</span><button type="button" onClick={loadUsers}>Tekrar dene</button></div>}
     <UserManagementList users={filteredUsers} currentUserId={userId} loading={loading} selectedId={selectedId} onSelect={openDetail} emptyMessage={emptyMessage} />
-    {(selectedId || detailLoading) && <UserDetailPanel user={detail} currentUserId={userId} loading={detailLoading} mutating={mutating} roles={roles} permissions={permissionSection} canUpdate={canUpdateUser} canViewPermissions={canViewPermissions} onClose={() => { setSelectedId(null); setDetail(null) }} onChangeRole={changeRole} onChangeStatus={changeStatus} onApprove={approve} onReject={reject} />}
+    {(selectedId || detailLoading) && <UserDetailPanel user={detail} currentUserId={userId} loading={detailLoading} mutating={mutating} roles={roles} permissions={permissionSection} geography={{ canView: canViewGeography, canManage: canManageGeography }} canUpdate={canUpdateUser} canViewPermissions={canViewPermissions} onClose={() => { setSelectedId(null); setDetail(null) }} onChangeRole={changeRole} onChangeStatus={changeStatus} onApprove={approve} onReject={reject} />}
   </div>
 }
