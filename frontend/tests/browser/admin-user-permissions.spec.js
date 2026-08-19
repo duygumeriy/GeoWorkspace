@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { mockPermissions } from './permissions.js'
 
 /**
  * Kullanıcı detayındaki "Yetkiler" sekmesi.
@@ -109,6 +110,11 @@ async function openPermissions(page, {
   openTab = true,
 } = {}) {
   const saves = []
+
+  /* Yetki ucu da yanıtlanmalı: arayüz küme gelene kadar korumalı hiçbir şeyi
+     çizmez (fail-closed). Bu spec yetki KURALLARINI ölçmüyor, bu yüzden tam
+     küme verilir; kuralların kendisi permission-aware-ui.spec.js'in işidir. */
+  await mockPermissions(page)
 
   await page.route('**/api/auth/me', (route) =>
     route.fulfill(json({ userId: 1, username: 'admin', emailConfirmed: true, twoFactorEnabled: true, role: 'Admin', roles: ['Admin'] })),
@@ -509,6 +515,11 @@ test('a rejected duplicate shows the backend validation message', async ({ page 
 
 test('a failed load offers a retry inside the tab', async ({ page }) => {
   let attempts = 0
+  /* Yetki ucu da yanıtlanmalı: arayüz küme gelene kadar korumalı hiçbir şeyi
+     çizmez (fail-closed). Bu spec yetki KURALLARINI ölçmüyor, bu yüzden tam
+     küme verilir; kuralların kendisi permission-aware-ui.spec.js'in işidir. */
+  await mockPermissions(page)
+
   await page.route('**/api/auth/me', (route) =>
     route.fulfill(json({ userId: 1, username: 'admin', emailConfirmed: true, twoFactorEnabled: true, role: 'Admin', roles: ['Admin'] })),
   )
@@ -548,6 +559,11 @@ test('a role change refreshes the inherited sources', async ({ page }) => {
         ? { ...p, inheritedFromRoles: [], effective: false, canAssignDirect: true }
         : p),
   })
+
+  /* Yetki ucu da yanıtlanmalı: arayüz küme gelene kadar korumalı hiçbir şeyi
+     çizmez (fail-closed). Bu spec yetki KURALLARINI ölçmüyor, bu yüzden tam
+     küme verilir; kuralların kendisi permission-aware-ui.spec.js'in işidir. */
+  await mockPermissions(page)
 
   await page.route('**/api/auth/me', (route) =>
     route.fulfill(json({ userId: 1, username: 'admin', emailConfirmed: true, twoFactorEnabled: true, role: 'Admin', roles: ['Admin'] })),

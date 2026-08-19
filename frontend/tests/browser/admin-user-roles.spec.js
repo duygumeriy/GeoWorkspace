@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { mockPermissions } from './permissions.js'
 
 /**
  * The users screen against dynamic roles.
@@ -53,6 +54,11 @@ const USERS = [
 ]
 
 async function openUsers(page, { users = USERS, onRoleChange } = {}) {
+  /* Yetki ucu da yanıtlanmalı: arayüz küme gelene kadar korumalı hiçbir şeyi
+     çizmez (fail-closed). Bu spec yetki KURALLARINI ölçmüyor, bu yüzden tam
+     küme verilir; kuralların kendisi permission-aware-ui.spec.js'in işidir. */
+  await mockPermissions(page)
+
   await page.route('**/api/auth/me', (route) =>
     route.fulfill(json({ userId: 1, username: 'admin', emailConfirmed: true, twoFactorEnabled: true, role: 'Admin', roles: ['Admin'] })),
   )

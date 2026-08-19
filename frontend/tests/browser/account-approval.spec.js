@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { mockPermissions } from './permissions.js'
 
 /**
  * The approval workflow as the two people involved actually see it: the person
@@ -49,6 +50,11 @@ const activeAdmin = {
 
 /** Signs the browser in as an administrator and stubs the admin endpoints. */
 async function openAdminUsers(page, { onApprove, onReject } = {}) {
+  /* Yetki ucu da yanıtlanmalı: arayüz küme gelene kadar korumalı hiçbir şeyi
+     çizmez (fail-closed). Bu spec yetki KURALLARINI ölçmüyor, bu yüzden tam
+     küme verilir; kuralların kendisi permission-aware-ui.spec.js'in işidir. */
+  await mockPermissions(page)
+
   await page.route('**/api/auth/me', (route) =>
     route.fulfill(json({ userId: 1, username: 'admin', email: activeAdmin.email, emailConfirmed: true, twoFactorEnabled: true, role: 'Admin', roles: ['Admin'] })),
   )

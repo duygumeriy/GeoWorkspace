@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { mockPermissions } from './permissions.js'
 
 /**
  * Interaction-level QA for the geometry editor.
@@ -50,6 +51,11 @@ function record(id, name, wkt) {
 
 /** Signs in without a network round trip and puts one drawing of each type on the map. */
 async function openMap(page) {
+  /* Yetki ucu da yanıtlanmalı: arayüz küme gelene kadar korumalı hiçbir şeyi
+     çizmez (fail-closed). Bu spec yetki KURALLARINI ölçmüyor, bu yüzden tam
+     küme verilir; kuralların kendisi permission-aware-ui.spec.js'in işidir. */
+  await mockPermissions(page)
+
   await page.route('**/api/auth/me', (route) =>
     route.fulfill(json({ userId: USER_ID, username: 'browser-user', role: 'User' })),
   )

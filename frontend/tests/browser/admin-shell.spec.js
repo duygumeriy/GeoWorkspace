@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { mockPermissions } from './permissions.js'
 
 /**
  * The admin panel shell: one sidebar, three destinations, and a layout that
@@ -39,6 +40,11 @@ const admin = {
  * @param {string} role the role the server reports for the current user
  */
 async function signIn(page, { role = 'Admin' } = {}) {
+  /* Yetki ucu da yanıtlanmalı: arayüz küme gelene kadar korumalı hiçbir şeyi
+     çizmez (fail-closed). Bu spec yetki KURALLARINI ölçmüyor, bu yüzden tam
+     küme verilir; kuralların kendisi permission-aware-ui.spec.js'in işidir. */
+  await mockPermissions(page)
+
   await page.route('**/api/auth/me', (route) =>
     route.fulfill(json({
       userId: 1,
@@ -170,19 +176,30 @@ test('all three destinations are real screens now, with no placeholder left', as
    ederken React'in onu kapıda durdurması, sunucunun izin verdiği bir yöneticiyi
    arayüzden kilitlemek olurdu. */
 
-test('a canonical Administrator reaches the panel, a plain user does not', async ({ page }) => {
+/* Phase 7'den önce bu karar rol ADINA bakıyordu ('Admin' | 'Administrator').
+   Artık etkin yetki kodlarına bakıyor: aynı ekran, farklı ve doğru sebep.
+   Rol adının kendi başına hiçbir şey açmadığı permission-aware-ui.spec.js'te
+   ayrıca kanıtlanır. */
+test('the panel opens on an admin view permission, whatever the role is called', async ({ page }) => {
   await signIn(page, { role: 'Administrator' })
   await page.goto('/admin/users')
 
   await expect(nav(page)).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Kullanıcılar', level: 1 })).toBeVisible()
 
-  // The guard still turns away everyone else.
+  // Yönetim yetkisi taşımayan kimse geçemez.
+  const permissions = await mockPermissions(page, ['map.view'], { userId: 5 })
+  expect(permissions.calls).toBe(0)
+
   await page.route('**/api/auth/me', (route) =>
     route.fulfill(json({ userId: 5, username: 'viewer', emailConfirmed: true, twoFactorEnabled: false, role: 'Viewer', roles: ['Viewer'] })),
   )
   await page.goto('/admin/users')
-  await expect(page).toHaveURL(/\/map$/)
+
+  /* /login'e YÖNLENDİRİLMEZ: oturum sağlamdır, eksik olan yetkidir. */
+  await expect(page.getByRole('heading', { name: 'Bu bölüme erişim yetkiniz yok' })).toBeVisible()
+  await expect(page).not.toHaveURL(/\/login/)
+  await expect(nav(page)).toBeHidden()
 })
 
 /* --- Dar ekran ------------------------------------------------------------- */
