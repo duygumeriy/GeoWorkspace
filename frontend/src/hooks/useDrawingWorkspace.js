@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Draw from 'ol/interaction/Draw'
 import { createEmpty, extend, isEmpty } from 'ol/extent'
+import { DRAWING_CREATE_PERMISSIONS, PERMISSIONS } from '../auth/permissionCodes.js'
 import {
   bulkDeleteDrawings,
   bulkStyleDrawings,
@@ -44,6 +45,15 @@ function countLabel(count) {
   return `${count} çizim`
 }
 
+/* Tek bir PUT'un aradığı üçlü: uç metadata + geometry + style yetkilerinin
+   ÜÇÜNÜ birden arar. Sabit olarak modül düzeyinde durur ki her düzenleme
+   adımında yeni bir dizi üretilmesin ve liste tek yerde tanımlı kalsın. */
+const UPDATE_PERMISSIONS = Object.freeze([
+  PERMISSIONS.DRAWINGS_METADATA_UPDATE,
+  PERMISSIONS.DRAWINGS_GEOMETRY_UPDATE,
+  PERMISSIONS.DRAWINGS_STYLE_UPDATE,
+])
+
 /**
  * Owns everything about persisted drawings: the vector layer, the Draw
  * interaction, selection, per-type visibility, the style each tool will use
@@ -59,6 +69,7 @@ function countLabel(count) {
  *
  * @param {import('ol/Map').default | null} map
  * @param {{ showToast: Function, activeDrawTool: string|null, canViewDrawings?: boolean,
+ *           hasPermissions?: ((codes: string[]) => boolean)|null,
  *           onPolygonSaved?: (record: { wkt: string, databaseId: number, name: string }) => void }} deps
  *   `onPolygonSaved` fires once a polygon record exists in the database, which
  *   is what triggers the intersection analysis for it.
@@ -67,10 +78,22 @@ function countLabel(count) {
  *   Without it the three GETs would each come back 403 and the map would open
  *   on an error it could do nothing about, so the load is simply not attempted
  *   — the permission is re-checked server-side either way.
+ *
+ *   `hasPermissions(codes)` answers whether the caller currently holds ALL of
+ *   them. It gates undo/redo per history entry: both directions of every
+ *   command are real API mutations, so each is checked against the permission
+ *   that direction actually needs rather than a blanket "may mutate" flag.
+ *   Left null by callers that do not gate, which refuses nothing.
  */
 export default function useDrawingWorkspace(
   map,
-  { showToast, activeDrawTool = null, canViewDrawings = true, onPolygonSaved = null },
+  {
+    showToast,
+    activeDrawTool = null,
+    canViewDrawings = true,
+    hasPermissions = null,
+    onPolygonSaved = null,
+  },
 ) {
   const sourceRef = useRef(null)
   const layerRef = useRef(null)
@@ -104,7 +127,31 @@ export default function useDrawingWorkspace(
     polygon: defaultStyleFor('polygon'),
   }))
 
-  const history = useHistory()
+  /* Bekleyen adımın yetkisi HER SEFERİNDE yeniden sorulur; komut kaydedildiği
+     andaki yetki durumu saklanmaz. Yetkilendirme canlıdır ve "yapıldığında
+     izinliydi", "şimdi geri alınabilir" demek değildir.
+
+     Yetki dizisi olmayan bir komut fail-closed sayılır: ileride eklenen bir
+     geçmiş türü eşlemesi unutulursa, sessizce açık kalmaktansa kapalı kalır. */
+  /* Ref üzerinden okunur çünkü bu geri çağırma hem render sırasında (canUndo /
+     canRedo türetilirken) hem de uçuştaki bir undo/redo'nun ortasında
+     çağrılır; kimliğinin sabit kalması, komut yığınının her yetki
+     değişiminde yeniden kurulmasını da önler. Ref render sırasında yazılır,
+     bu yüzden okuduğu değer daima o render'ın değeridir. */
+  const hasPermissionsRef = useRef(hasPermissions)
+  hasPermissionsRef.current = hasPermissions
+
+  const authorizeHistory = useCallback((command, direction) => {
+    if (!command) return false
+
+    const check = hasPermissionsRef.current
+    if (!check) return true
+
+    const required = direction === 'undo' ? command.undoPermissions : command.redoPermissions
+    return Array.isArray(required) && required.length > 0 && check(required)
+  }, [])
+
+  const history = useHistory({ authorize: authorizeHistory })
   const pushHistory = history.push
 
   // The layer style function runs outside React, so it reads live values from
@@ -693,6 +740,10 @@ export default function useDrawingWorkspace(
           // Undo a create by deleting it; redo by posting the same snapshot.
           undo: guarded(() => persistDelete(clientKey), 'Geri alınamadı.'),
           redo: guarded(() => persistCreate(snapshot), 'İleri alınamadı.'),
+          /* Geri al DELETE, ileri al ise aynı türün POST ucudur — dolayısıyla
+             ileri alma tam olarak o türün oluşturma yetkisini ister. */
+          undoPermissions: [PERMISSIONS.DRAWINGS_DELETE],
+          redoPermissions: [DRAWING_CREATE_PERMISSIONS[pending.type]],
         })
 
         // A saved polygon is the trigger for the intersection analysis. Its own
@@ -775,6 +826,9 @@ export default function useDrawingWorkspace(
           label: 'Stil değişikliği',
           undo: guarded(() => persistStyle(key, before), 'Geri alınamadı.'),
           redo: guarded(() => persistStyle(key, after), 'İleri alınamadı.'),
+          // Her iki yön de aynı PATCH ucudur.
+          undoPermissions: [PERMISSIONS.DRAWINGS_STYLE_UPDATE],
+          redoPermissions: [PERMISSIONS.DRAWINGS_STYLE_UPDATE],
         })
         return true
       } catch (error) {
@@ -812,6 +866,8 @@ export default function useDrawingWorkspace(
           label: `${countLabel(features.length)} stil değişikliği`,
           undo: guarded(() => persistBulkStyle(clientKeys, { styleByKey: previous }), 'Geri alınamadı.'),
           redo: guarded(() => persistBulkStyle(clientKeys, { shared: patch }), 'İleri alınamadı.'),
+          undoPermissions: [PERMISSIONS.DRAWINGS_STYLE_UPDATE],
+          redoPermissions: [PERMISSIONS.DRAWINGS_STYLE_UPDATE],
         })
         return true
       } catch (error) {
@@ -862,6 +918,10 @@ export default function useDrawingWorkspace(
           label: `${DRAWING_TYPES[type].label} düzenleme`,
           undo: guarded(() => persistUpdate(key, before), 'Geri alınamadı.'),
           redo: guarded(() => persistUpdate(key, changes), 'İleri alınamadı.'),
+          /* Tek bir PUT gönderilir ve o uç üç yetkiyi BİRDEN arar; ikisine
+             sahip olmak bu adımı çalıştırmaya yetmez. */
+          undoPermissions: UPDATE_PERMISSIONS,
+          redoPermissions: UPDATE_PERMISSIONS,
         })
         return true
       } catch (error) {
@@ -896,6 +956,10 @@ export default function useDrawingWorkspace(
           label: `${DRAWING_TYPES[type].label} silme`,
           undo: guarded(() => persistRestore([snapshot]), 'Geri alınamadı.'),
           redo: guarded(() => persistDelete(key), 'İleri alınamadı.'),
+          /* Bir silmeyi geri almak kaydı DİRİLTİR; bu, silme yetkisi değil
+             `drawings.restore` ister — iki yön iki ayrı yetkidir. */
+          undoPermissions: [PERMISSIONS.DRAWINGS_RESTORE],
+          redoPermissions: [PERMISSIONS.DRAWINGS_DELETE],
         })
         return true
       } catch (error) {
@@ -937,6 +1001,8 @@ export default function useDrawingWorkspace(
           // Soft delete keeps the row, so the ids never change across
           // undo/redo cycles — redo can reuse the very same keys.
           redo: guarded(() => persistBulkDelete(clientKeys), 'İleri alınamadı.'),
+          undoPermissions: [PERMISSIONS.DRAWINGS_RESTORE],
+          redoPermissions: [PERMISSIONS.DRAWINGS_DELETE],
         })
         return true
       } catch (error) {
@@ -950,13 +1016,26 @@ export default function useDrawingWorkspace(
   const historyUndo = history.undo
   const historyRedo = history.redo
 
+  /* Ctrl/Cmd+Z ve Ctrl+Y düğmeden bağımsız olarak buraya ulaşır, bu yüzden
+     reddedilen bir adım sessizce yutulmaz: kişi tuşa bastığında neden bir şey
+     olmadığını öğrenmelidir. */
+  const unauthorizedMessage = 'Bu adımı geri almak için gerekli yetkiniz yok.'
+
   const undo = useCallback(async () => {
     const result = await historyUndo()
+    if (result.unauthorized) {
+      showToast('error', unauthorizedMessage)
+      return
+    }
     if (result.ok && !result.skipped) showToast('info', `Geri alındı: ${result.command.label}`)
   }, [historyUndo, showToast])
 
   const redo = useCallback(async () => {
     const result = await historyRedo()
+    if (result.unauthorized) {
+      showToast('error', 'Bu adımı ileri almak için gerekli yetkiniz yok.')
+      return
+    }
     if (result.ok && !result.skipped) showToast('info', `İleri alındı: ${result.command.label}`)
   }, [historyRedo, showToast])
 
@@ -1048,8 +1127,12 @@ export default function useDrawingWorkspace(
     isSaving: savingCount > 0,
     toolStyles,
     pendingDrawing,
-    canUndo: history.canUndo,
-    canRedo: history.canRedo,
+    /* Yığında adım OLMASI yetmez: o adımın yetkisi de gerekir. Kontrolün
+       kapalı görünmesi, tıklandığında garanti 403 alacak bir isteği vaat
+       etmemesi demektir. Adım yığından DÜŞÜRÜLMEZ — yetki geri verilirse
+       yeniden kullanılabilir olur. */
+    canUndo: history.canUndo && authorizeHistory(history.undoCommand, 'undo'),
+    canRedo: history.canRedo && authorizeHistory(history.redoCommand, 'redo'),
     // selection actions
     selectFeature,
     setSelection,

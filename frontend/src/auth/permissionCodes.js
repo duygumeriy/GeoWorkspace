@@ -62,6 +62,20 @@ export const PERMISSIONS = Object.freeze({
 })
 
 /**
+ * Çizim türü → o türü OLUŞTURMA yetkisi.
+ *
+ * Üç kod ayrı kalır ve tek bir "çizim oluşturma" yetkisine indirgenmez, çünkü
+ * backend'de de ayrılar: `POST /api/drawings/point` yalnızca
+ * `drawings.point.create` arar. Geçmiş yığınındaki bir "ileri al" adımı da
+ * aynı ucu çağırdığı için aynı eşlemeyi kullanır.
+ */
+export const DRAWING_CREATE_PERMISSIONS = Object.freeze({
+  point: PERMISSIONS.DRAWINGS_POINT_CREATE,
+  line: PERMISSIONS.DRAWINGS_LINE_CREATE,
+  polygon: PERMISSIONS.DRAWINGS_POLYGON_CREATE,
+})
+
+/**
  * Yönetim panelinin bölümleri, kenar çubuğundaki SIRAYLA.
  *
  * Tek tanım: kenar çubuğu, `/admin` kök yönlendirmesi ve rota koruyucuları

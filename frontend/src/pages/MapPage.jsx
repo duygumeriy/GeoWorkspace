@@ -78,7 +78,7 @@ export default function MapPage() {
   const mapContainerRef = useRef(null)
   const mapRef = useRef(null)
   const { logout, expiresAt, username, isAdmin, userId } = useAuth()
-  const { can } = usePermissions()
+  const { can, canAll } = usePermissions()
   const { reportMapReady, isIdle } = useTransition()
   const navigate = useNavigate()
 
@@ -128,6 +128,10 @@ export default function MapPage() {
     showToast,
     activeDrawTool: workspaceMode.activeDrawTool,
     canViewDrawings: allowed.canViewDrawings,
+    /* Geri/ileri al adım BAZINDA denetlenir: her komutun iki yönü de gerçek
+       birer API mutasyonudur ve farklı yetkiler isteyebilir (bir silmeyi geri
+       almak `drawings.restore` ister, ileri almak `drawings.delete`). */
+    hasPermissions: canAll,
     onPolygonSaved: analyzeSaved,
   })
   /* The trash is fetched only while its panel is open, and a successful restore

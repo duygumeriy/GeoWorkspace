@@ -713,3 +713,224 @@ test.describe('narrow screens', () => {
     expect(overflow).toBeLessThanOrEqual(0)
   })
 })
+
+/* ===========================================================================
+   12. Geri / İleri al — adım BAZINDA yetki
+   ===========================================================================
+
+   Geçmiş yığınındaki her komut, İKİ yönde de gerçek bir API mutasyonudur:
+
+     çizim oluşturma   geri al → DELETE            ileri al → POST /{tür}
+     silme             geri al → POST /restore     ileri al → DELETE
+     stil              her iki yön → PATCH /style
+     düzenleme         her iki yön → PUT (üç yetkiyi birden ister)
+
+   Dolayısıyla "herhangi bir çizim mutasyon yetkisi varsa geri/ileri al açık"
+   kuralı fazla geniştir: bir adımın kaydedildiği anda yetkili olması, onu
+   ŞİMDİ geri almanın yetkili olduğunu göstermez. Aşağıdakiler yönü ve adımı
+   ayrı ayrı denetlendiğini kanıtlar.
+
+   Backend yine de otoriterdir; buradaki amaç isteği hiç açmamaktır. */
+
+const STORED_POINT = {
+  id: 11,
+  wkt: 'POINT(32.85 39.92)',
+  name: 'nokta1',
+  description: '',
+  category: '',
+  tags: [],
+  style: { strokeColor: '#6D4AFF', strokeWidth: 2 },
+  createdByUserId: 1,
+  createdBy: 'admin',
+  createdDate: '2026-08-01T10:00:00Z',
+  modifiedDate: '2026-08-01T10:00:00Z',
+}
+
+/**
+ * Haritayı bir kayıtlı noktayla açar ve çizim uçlarına giden istekleri kaydeder.
+ * Silme/geri yükleme uçları GERÇEKTEN çağrılırsa listede görünür; testler tam
+ * olarak bu listeye bakar.
+ */
+async function openMapWithPoint(page, codes) {
+  const calls = []
+  const permissions = await signIn(page, codes)
+
+  await page.route('**/api/drawings/points', (route) => route.fulfill(json([STORED_POINT])))
+  await page.route('**/api/drawings/lines', (route) => route.fulfill(json([])))
+  await page.route('**/api/drawings/polygons', (route) => route.fulfill(json([])))
+  await page.route('**/api/drawings/deleted', (route) => route.fulfill(json([])))
+
+  /* Kimlik değil desen: geri alınan bir oluşturma, sunucunun verdiği YENİ id
+     ile silinir; tek bir id'ye bağlamak o isteği kaçırırdı. */
+  await page.route('**/api/drawings/point/*', (route) => {
+    calls.push('DELETE point')
+    return route.fulfill(json({ ok: true }))
+  })
+  await page.route('**/api/drawings/restore', (route) => {
+    calls.push('POST restore')
+    return route.fulfill(json([STORED_POINT]))
+  })
+
+  await page.goto('/map')
+  await expect(page.locator('.map-container canvas').first()).toBeVisible()
+
+  return { calls, permissions }
+}
+
+/** Çizimlerim panelinden siler ve onaylar. */
+async function deleteStoredPoint(page) {
+  await page.getByRole('button', { name: 'Çizimlerim' }).click()
+  await page.getByRole('button', { name: /nokta1 çizimini sil/ }).click()
+  await page.getByRole('button', { name: 'Sil', exact: true }).click()
+}
+
+
+/**
+ * Yetkileri sayfa YENİLEMEDEN tazeletir.
+ *
+ * Yenileme geçmiş yığınını da silerdi ve ölçmek istediğimiz şey tam olarak
+ * yığın ayaktayken yetkinin değişmesi. Uygulamanın kendi yolu kullanılır:
+ * beklenmeyen bir 403, merkezî yetki durumunu bir kez tazeler (Phase 7 §46).
+ * Çöp Kutusu listesi bu tetik için doğal bir yerdir — yetkiler değiştiği için
+ * gerçekten de 403 dönmesi beklenen bir uçtur.
+ */
+async function refreshPermissionsViaForbidden(page) {
+  await page.unroute('**/api/drawings/deleted')
+  await page.route('**/api/drawings/deleted', (route) =>
+    route.fulfill(json({ message: 'Yetkiniz yok.' }, 403)))
+
+  await page.getByRole('button', { name: 'Çöp Kutusu' }).click()
+  await page.waitForTimeout(800)
+  await page.keyboard.press('Escape')
+}
+
+const undoButton = (page) => toolbar(page).getByRole('button', { name: 'Geri al' })
+const redoButton = (page) => toolbar(page).getByRole('button', { name: 'İleri al' })
+
+const DELETER = ['map.view', 'drawings.view', 'selection.use', 'drawings.point.create', 'drawings.delete']
+
+test('undoing a delete needs drawings.restore, not merely some mutation permission', async ({ page }) => {
+  /* Aktör silebiliyor ve nokta oluşturabiliyor — yani "herhangi bir mutasyon
+     yetkisi" testinden geçer — ama geri yükleme yetkisi YOK. */
+  const { calls } = await openMapWithPoint(page, DELETER)
+
+  await deleteStoredPoint(page)
+  await expect.poll(() => calls).toContain('DELETE point')
+
+  // Geri alma, kaydı DİRİLTİRDİ: bu drawings.restore ister.
+  await expect(undoButton(page)).toBeDisabled()
+
+  /* Klavye kısayolu düğmeyi atlar, bu yüzden kapı eylemin kendisindedir.
+     İstek hiç açılmamalı — sunucunun 403'üne güvenmek yetmez. */
+  await page.keyboard.press('Control+z')
+  await page.waitForTimeout(600)
+
+  expect(calls).not.toContain('POST restore')
+  await expect(page.getByText('Bu adımı geri almak için gerekli yetkiniz yok.')).toBeVisible()
+})
+
+test('with drawings.restore the same undo is offered and really runs', async ({ page }) => {
+  // Aynı adım, tek fark yetki: kontrol açılır ve gerçekten geri yükler.
+  const { calls } = await openMapWithPoint(page, [...DELETER, 'drawings.restore'])
+
+  await deleteStoredPoint(page)
+  await expect.poll(() => calls).toContain('DELETE point')
+
+  await expect(undoButton(page)).toBeEnabled()
+  await undoButton(page).click()
+
+  await expect.poll(() => calls).toContain('POST restore')
+})
+
+test('a pending undo stops being offered when its permission is withdrawn live', async ({ page }) => {
+  /* Silme VE geri yükleme yetkisiyle başlanır; adım kaydedildiğinde geri alma
+     tamamen meşrudur. */
+  const codes = [
+    'map.view', 'drawings.view', 'selection.use',
+    'drawings.point.create', 'drawings.delete', 'drawings.restore',
+  ]
+  const { calls, permissions } = await openMapWithPoint(page, codes)
+
+  await deleteStoredPoint(page)
+  await expect.poll(() => calls).toContain('DELETE point')
+  await expect(undoButton(page)).toBeEnabled()
+
+  /* Yalnızca geri yükleme yetkisi kaldırılıyor. Silme ve nokta oluşturma
+     KALIYOR — yani eski "herhangi bir çizim mutasyon yetkisi" kuralı geri
+     almayı hâlâ açık tutardı. */
+  permissions.set(['map.view', 'drawings.view', 'selection.use', 'drawings.point.create', 'drawings.delete'])
+  await refreshPermissionsViaForbidden(page)
+
+  await expect(undoButton(page)).toBeDisabled()
+
+  // Klavye de kapalı: kapı düğmede değil, eylemin kendisinde.
+  await page.keyboard.press('Control+z')
+  await page.waitForTimeout(600)
+  expect(calls).not.toContain('POST restore')
+})
+
+test('a redo that would re-create a drawing needs that exact create permission', async ({ page }) => {
+  const { permissions } = await openMapWithPoint(page, [
+    'map.view', 'drawings.view', 'selection.use',
+    'drawings.point.create', 'drawings.delete', 'drawings.restore',
+  ])
+
+  let created = 0
+  await page.route('**/api/drawings/point', (route) => {
+    created += 1
+    return route.fulfill(json({ ...STORED_POINT, id: 40 + created }))
+  })
+
+  // Nokta çiz ve kaydet: adımın ileri alınması POST /point demektir.
+  await drawButton(page, 'Nokta').click()
+  const box = await page.locator('.map-container').boundingBox()
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
+  await expect(page.getByRole('dialog')).toBeVisible()
+  await page.getByLabel('İsim').fill('yeni nokta')
+  await page.getByRole('button', { name: 'Kaydet' }).click()
+  await expect(page.getByRole('dialog')).toBeHidden()
+  expect(created).toBe(1)
+
+  // Geri al: oluşturmanın tersi DELETE'tir ve o yetki duruyor.
+  await expect(undoButton(page)).toBeEnabled()
+  await undoButton(page).click()
+  await expect(redoButton(page)).toBeEnabled()
+
+  /* Nokta oluşturma yetkisi CANLI olarak kaldırılıyor; silme ve geri yükleme
+     KALIYOR, dolayısıyla eski genel kural ileri almayı açık tutardı. */
+  permissions.set(['map.view', 'drawings.view', 'selection.use', 'drawings.delete', 'drawings.restore'])
+  await refreshPermissionsViaForbidden(page)
+
+  await expect(redoButton(page)).toBeDisabled()
+
+  await page.keyboard.press('Control+y')
+  await page.waitForTimeout(600)
+
+  // Adım yığında duruyor ama isteği HİÇ açılmadı.
+  expect(created).toBe(1)
+  await expect(page.getByText('Bu adımı ileri almak için gerekli yetkiniz yok.')).toBeVisible()
+})
+
+test('regaining the permission makes the same history step usable again', async ({ page }) => {
+  const { calls, permissions } = await openMapWithPoint(page, DELETER)
+
+  await deleteStoredPoint(page)
+  await expect.poll(() => calls).toContain('DELETE point')
+
+  // Yetki yok: adım duruyor ama kapalı.
+  await expect(undoButton(page)).toBeDisabled()
+
+  /* Yetki geri veriliyor. Adım yığından DÜŞÜRÜLMEDİĞİ için yeniden
+     kullanılabilir olmalı — yetki kaybı geçmişi silmez. */
+  permissions.set([...DELETER, 'drawings.restore'])
+  await page.reload()
+  await expect(page.locator('.map-container canvas').first()).toBeVisible()
+
+  /* Yenileme yığını sıfırlar, bu yüzden adım baştan üretilir; ölçülen şey
+     aynı adımın artık açık olmasıdır. */
+  await deleteStoredPoint(page)
+  await expect(undoButton(page)).toBeEnabled()
+
+  await undoButton(page).click()
+  await expect.poll(() => calls).toContain('POST restore')
+})
