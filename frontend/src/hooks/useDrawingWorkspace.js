@@ -58,12 +58,20 @@ function countLabel(count) {
  * currently doing. This hook only reacts to it.
  *
  * @param {import('ol/Map').default | null} map
- * @param {{ showToast: Function, activeDrawTool: string|null,
+ * @param {{ showToast: Function, activeDrawTool: string|null, canViewDrawings?: boolean,
  *           onPolygonSaved?: (record: { wkt: string, databaseId: number, name: string }) => void }} deps
  *   `onPolygonSaved` fires once a polygon record exists in the database, which
  *   is what triggers the intersection analysis for it.
+ *
+ *   `canViewDrawings` mirrors the `drawings.view` the list endpoints require.
+ *   Without it the three GETs would each come back 403 and the map would open
+ *   on an error it could do nothing about, so the load is simply not attempted
+ *   — the permission is re-checked server-side either way.
  */
-export default function useDrawingWorkspace(map, { showToast, activeDrawTool = null, onPolygonSaved = null }) {
+export default function useDrawingWorkspace(
+  map,
+  { showToast, activeDrawTool = null, canViewDrawings = true, onPolygonSaved = null },
+) {
   const sourceRef = useRef(null)
   const layerRef = useRef(null)
   /** Separate source for the shape awaiting its attributes; never persisted. */
@@ -171,6 +179,17 @@ export default function useDrawingWorkspace(map, { showToast, activeDrawTool = n
      load after a failure, instead of the user having to reload the page. */
 
   const loadDrawings = useCallback(async () => {
+    /* Yetki yoksa istek hiç açılmaz. Haritanın kendisi `map.view` ile açılır ve
+       çizim VERİSİNİ görmek ayrı bir yetkidir; ikisini birbirine bağlamak,
+       yalnızca haritayı görebilen birine üç tane 403 göstermek olurdu. */
+    if (!canViewDrawings) {
+      sourceRef.current?.clear()
+      setDrawings([])
+      setLoadError(null)
+      setLoadingDrawings(false)
+      return false
+    }
+
     setLoadingDrawings(true)
     setLoadError(null)
 
@@ -203,7 +222,7 @@ export default function useDrawingWorkspace(map, { showToast, activeDrawTool = n
     } finally {
       setLoadingDrawings(false)
     }
-  }, [showToast, syncDrawings])
+  }, [showToast, syncDrawings, canViewDrawings])
 
   useEffect(() => {
     if (!map) return undefined

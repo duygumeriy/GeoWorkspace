@@ -28,6 +28,11 @@ export default function MultiSelectionPanel({
   // Bulk style/delete are all-or-nothing on the backend, so a selection that
   // contains even one drawing owned by someone else offers neither.
   canManageAll = true,
+  /* Toplu stil ve toplu silme AYRI uçlardır ve ayrı yetkiler ister
+     (drawings.style.update / drawings.delete); tek bayrakla göstermek,
+     birine sahip olmayan için garanti 403 alan bir düğme bırakırdı. */
+  canRestyle = true,
+  canDelete = true,
   foreignCount = 0,
 }) {
   if (!open) return null
@@ -64,14 +69,18 @@ export default function MultiSelectionPanel({
         </Button>
         {canManageAll && (
           <>
-            <Button variant="ghost" className="multi-panel-action" onClick={onEditStyle}>
-              <PaletteIcon size={16} />
-              Stil Uygula
-            </Button>
-            <Button variant="ghost" className="multi-panel-action multi-panel-action--danger" onClick={onDelete}>
-              <TrashIcon size={16} />
-              Seçilenleri Sil
-            </Button>
+            {canRestyle && (
+              <Button variant="ghost" className="multi-panel-action" onClick={onEditStyle}>
+                <PaletteIcon size={16} />
+                Stil Uygula
+              </Button>
+            )}
+            {canDelete && (
+              <Button variant="ghost" className="multi-panel-action multi-panel-action--danger" onClick={onDelete}>
+                <TrashIcon size={16} />
+                Seçilenleri Sil
+              </Button>
+            )}
           </>
         )}
         <Button variant="ghost" className="multi-panel-action" onClick={onClear}>
