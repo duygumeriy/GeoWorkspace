@@ -95,7 +95,7 @@ public class JwtAndAdminPolicyTests
     /// <see cref="AuthorizationPolicies.MfaRequired"/> kullanır ve her action
     /// kendi yetkisini ayrıca ister. MFA şartı DÜŞMEDİ — aynı <c>amr</c>
     /// kanıtına bakılır; kaldırılan tek şey legacy <c>Admin</c> rol adı
-    /// bağıdır. Aksi hâlde 27 yetkinin tamamına sahip bir
+    /// bağıdır. Aksi hâlde 29 yetkinin tamamına sahip bir
     /// <c>Administrator</c> kullanıcısı sırf adı yüzünden engellenirdi.
     /// </para>
     /// </remarks>

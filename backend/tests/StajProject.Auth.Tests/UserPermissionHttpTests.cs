@@ -113,7 +113,7 @@ public class UserPermissionHttpTests
 
         var body = (await response.Content.ReadFromJsonAsync<UserPermissionsResponse>())!;
 
-        Assert.Equal(27, body.Permissions.Count);
+        Assert.Equal(29, body.Permissions.Count);
         Assert.False(body.CanManageDirectPermissions);
         Assert.DoesNotContain(body.Permissions, p => p.CanAssignDirect);
 

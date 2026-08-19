@@ -221,7 +221,7 @@ public class PermissionEnforcementTests
         await using var host = await CreateHostAsync();
         var user = await host.CreateUserAsync("admin-no-mfa", ApplicationRoles.Admin);
 
-        // Yetki tam (legacy Admin 27 yetkiye sahip) ama ikinci faktör yok.
+        // Yetki tam (legacy Admin 29 yetkiye sahip) ama ikinci faktör yok.
         var response = await host.Client(user, AuthenticationLevel.Password).GetAsync("/api/admin/users");
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);

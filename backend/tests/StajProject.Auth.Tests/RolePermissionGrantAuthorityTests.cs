@@ -272,7 +272,7 @@ public class RolePermissionGrantAuthorityTests
     {
         await using var scope = await CreateScopeAsync();
 
-        /* Legacy Admin normalde 27 yetkiyle gelir ve bu yüzden her şeyi
+        /* Legacy Admin normalde 29 yetkiyle gelir ve bu yüzden her şeyi
            dağıtabilir. Tek bir satır silindiğinde otoritesi GERÇEKTEN
            kaybolmalıdır — aksi hâlde bir yerde ada bakan bir kestirme var
            demektir. Admin rolünün KENDİ yetkileri düzenlenemez (legacy), bu
