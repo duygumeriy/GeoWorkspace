@@ -28,23 +28,29 @@ function ConfirmDialog({ config, busy, onCancel, onConfirm }) {
  * enforces is visibly met, so the button never offers an action that would
  * come back as an error.
  */
-function ApprovalSection({ user, roles, selectedRole, onSelectRole, mutating, onApprove, onReject }) {
+function ApprovalSection({ user, roles, selectedRole, onSelectRole, mutating, canUpdate, onApprove, onReject }) {
   const chosen = roles.find((r) => r.name === selectedRole)
   const blocked = !user.emailConfirmed
   return <section className="admin-management admin-approval">
     <h3>Hesap Onayı</h3>
     <p className="admin-approval-lead">Bu kullanıcı e-posta adresini doğruladı ve yönetici kararı bekliyor. Onaylandığında seçilen rolle uygulamaya giriş yapabilecek.</p>
-    {blocked && <p className="admin-policy-note" role="alert">Kullanıcı e-posta adresini henüz doğrulamadı; doğrulanmadan onaylanamaz.</p>}
-    <label>Rol<select value={selectedRole} disabled={mutating || blocked} onChange={(e) => onSelectRole(e.target.value)}><option value="">Rol seçin…</option>{roles.map((role) => <option key={role.name} value={role.name}>{role.name}</option>)}</select></label>
-    {chosen && <div className="admin-role-preview"><strong>Rol ile gelecek erişim</strong><p>{chosen.description}</p>{chosen.requiresTwoFactor && <p className="admin-role-note">Bu rolde iki faktörlü doğrulama zorunludur; kullanıcı ilk girişinde kurulum yapacaktır.</p>}</div>}
-    <div className="admin-approval-actions">
-      <button type="button" className="admin-button danger" disabled={mutating} onClick={onReject}>Reddet</button>
-      <button type="button" className="admin-button" disabled={mutating || blocked || !selectedRole} onClick={onApprove}>Onayla ve Aktifleştir</button>
-    </div>
+    {/* Onay ve red AYNI ucu (users.update) kullanır; yetkisi olmayana karar
+        kontrolleri hiç sunulmaz, ekran yalnızca durumu anlatır. */}
+    {!canUpdate
+      ? <p className="admin-policy-note">Bu başvuruyu karara bağlamak için kullanıcı düzenleme yetkiniz yok.</p>
+      : <>
+          {blocked && <p className="admin-policy-note" role="alert">Kullanıcı e-posta adresini henüz doğrulamadı; doğrulanmadan onaylanamaz.</p>}
+          <label>Rol<select value={selectedRole} disabled={mutating || blocked} onChange={(e) => onSelectRole(e.target.value)}><option value="">Rol seçin…</option>{roles.map((role) => <option key={role.name} value={role.name}>{role.name}</option>)}</select></label>
+          {chosen && <div className="admin-role-preview"><strong>Rol ile gelecek erişim</strong><p>{chosen.description}</p>{chosen.requiresTwoFactor && <p className="admin-role-note">Bu rolde iki faktörlü doğrulama zorunludur; kullanıcı ilk girişinde kurulum yapacaktır.</p>}</div>}
+          <div className="admin-approval-actions">
+            <button type="button" className="admin-button danger" disabled={mutating} onClick={onReject}>Reddet</button>
+            <button type="button" className="admin-button" disabled={mutating || blocked || !selectedRole} onClick={onApprove}>Onayla ve Aktifleştir</button>
+          </div>
+        </>}
   </section>
 }
 
-export default function UserDetailPanel({ user, currentUserId, loading, mutating, roles, permissions, onClose, onChangeRole, onChangeStatus, onApprove, onReject }) {
+export default function UserDetailPanel({ user, currentUserId, loading, mutating, roles, permissions, canUpdate = true, canViewPermissions = true, onClose, onChangeRole, onChangeStatus, onApprove, onReject }) {
   const [confirm, setConfirm] = useState(null)
   const [selectedRole, setSelectedRole] = useState('')
   const [tab, setTab] = useState('general')
@@ -61,6 +67,9 @@ export default function UserDetailPanel({ user, currentUserId, loading, mutating
   // A fresh account starts with no pre-selected role on purpose: choosing one
   // is the administrator's decision, not a default they have to notice.
   useEffect(() => { setSelectedRole(''); setTab('general') }, [user?.id])
+  /* Yetki sekmesinin arkasındaki GET users.view + permissions.view ister.
+     İkincisi olmadan sekme yalnızca bir 403 gösterirdi. */
+  useEffect(() => { if (!canViewPermissions && tab === 'permissions') setTab('general') }, [canViewPermissions, tab])
   /* Onay metni rolün ADINDAN değil, sunucunun o rol için verdiği açıklamadan
      kurulur. "Admin ise şu, değilse User" dallanması dinamik rollerde yanlış
      cümleler üretiyordu: GIS Editor yapılan biri için "yönetici yetkilerini
@@ -86,13 +95,13 @@ export default function UserDetailPanel({ user, currentUserId, loading, mutating
         panelin en çok kullanılan üst kısmını erişilemez kılardı. */}
     <div className="admin-detail-tabs" role="tablist" aria-label="Kullanıcı detayı">
       <button type="button" role="tab" id="admin-tab-general" aria-selected={tab === 'general'} aria-controls="admin-tabpanel-general" className={`admin-detail-tab ${tab === 'general' ? 'is-active' : ''}`} onClick={() => setTab('general')}>Genel</button>
-      <button type="button" role="tab" id="admin-tab-permissions" aria-selected={tab === 'permissions'} aria-controls="admin-tabpanel-permissions" className={`admin-detail-tab ${tab === 'permissions' ? 'is-active' : ''}`} onClick={() => setTab('permissions')}>Yetkiler{permissionsDirty && <span className="admin-tab-dot" aria-label="kaydedilmemiş değişiklik"> •</span>}</button>
+      {canViewPermissions && <button type="button" role="tab" id="admin-tab-permissions" aria-selected={tab === 'permissions'} aria-controls="admin-tabpanel-permissions" className={`admin-detail-tab ${tab === 'permissions' ? 'is-active' : ''}`} onClick={() => setTab('permissions')}>Yetkiler{permissionsDirty && <span className="admin-tab-dot" aria-label="kaydedilmemiş değişiklik"> •</span>}</button>}
     </div>
-    {tab === 'permissions'
+    {tab === 'permissions' && canViewPermissions
       ? <div id="admin-tabpanel-permissions" role="tabpanel" aria-labelledby="admin-tab-permissions"><UserPermissionEditor {...permissions} /></div>
       : <div id="admin-tabpanel-general" role="tabpanel" aria-labelledby="admin-tab-general"><dl className="admin-detail-grid"><div><dt>Kullanıcı adı</dt><dd>{user.username}</dd></div><div><dt>E-posta</dt><dd>{user.email || '—'}</dd></div><div><dt>E-posta durumu</dt><dd>{user.emailConfirmed ? 'Doğrulandı' : 'Doğrulanmadı'}</dd></div><div><dt>Hesap durumu</dt><dd>{status.label}</dd></div><div><dt>Rol</dt><dd>{user.role || 'Atanmamış'}</dd></div><div><dt>İki Faktörlü Doğrulama</dt><dd>{mfaLabel(user)}</dd></div>{user.approvedAt && <div><dt>Onay</dt><dd>{formatDate(user.approvedAt)}{user.approvedByUsername ? ` — ${user.approvedByUsername}` : ''}</dd></div>}{user.rejectedAt && <div><dt>Red</dt><dd>{formatDate(user.rejectedAt)}{user.rejectedByUsername ? ` — ${user.rejectedByUsername}` : ''}{user.rejectionReason ? ` · ${user.rejectionReason}` : ''}</dd></div>}<div><dt>Son güncelleme</dt><dd>{formatDate(user.modifiedDate)}</dd></div></dl>
     {pending
-      ? <ApprovalSection user={user} roles={roles} selectedRole={selectedRole} onSelectRole={setSelectedRole} mutating={mutating} onApprove={requestApproval} onReject={requestRejection} />
+      ? <ApprovalSection user={user} roles={roles} selectedRole={selectedRole} onSelectRole={setSelectedRole} mutating={mutating} canUpdate={canUpdate} onApprove={requestApproval} onReject={requestRejection} />
       : <section className="admin-management"><h3>Yetki ve hesap durumu</h3>
           {/* Role and activation are only offered once the account has been
               decided on. While it is pending or rejected the backend refuses
@@ -101,6 +110,11 @@ export default function UserDetailPanel({ user, currentUserId, loading, mutating
             ? <p className="admin-policy-note">Bu başvuru reddedildi. Kullanıcıya erişim vermek için yeni bir başvuru gerekir.</p>
             : user.accountStatus === 'PendingEmailVerification'
               ? <p className="admin-policy-note">Kullanıcı e-posta adresini doğrulamadı. Doğruladığında onay için burada listelenecek.</p>
+              /* Rol ve hesap durumu AYNI ucu (users.update) kullanır. Yetkisi
+                 olmayan kişi hesabı görüntüler; değiştirilemeyen iki açılır
+                 liste bırakmak, yapılamayacak bir işi vaat etmek olurdu. */
+              : !canUpdate
+                ? <p className="admin-policy-note">Rol ve hesap durumu yalnızca görüntülenir; değiştirmek için kullanıcı düzenleme yetkisi gerekir.</p>
               : <><label>Rol<select value={user.role || ''} disabled={mutating} onChange={(e) => requestRole(e.target.value)}>
                   {/* Seçenekler sunucudan gelen ATANABİLİR rollerdir; sabit
                       Admin/User listesi, Phase 4 backend'inin yeni atamalarda
@@ -113,7 +127,7 @@ export default function UserDetailPanel({ user, currentUserId, loading, mutating
                   {user.role && !roles.some((r) => r.name === user.role) && <option value={user.role} disabled>{user.role}</option>}
                   {roles.map((role) => <option key={role.name} value={role.name}>{role.name}</option>)}
                 </select></label><label>Hesap Durumu<select value={user.isActive ? 'active' : 'inactive'} disabled={mutating} onChange={(e) => requestStatus(e.target.value === 'active')}><option value="active">Aktif</option><option value="inactive">Pasif</option></select></label>{user.role === 'Admin' && <p className="admin-policy-note">Sistemde en az bir aktif yönetici bulunmalıdır. Son aktif Admin’in rolü düşürülemez veya hesabı pasifleştirilemez.</p>}</>}
-          {user.accountStatus === 'PendingEmailVerification' && <button type="button" className="admin-button danger" disabled={mutating} onClick={requestRejection}>Başvuruyu Reddet</button>}
+          {user.accountStatus === 'PendingEmailVerification' && canUpdate && <button type="button" className="admin-button danger" disabled={mutating} onClick={requestRejection}>Başvuruyu Reddet</button>}
         </section>}
     <p className="admin-readonly-note">E-posta doğrulaması ve 2FA durumu yalnızca görüntülenir. Parola ve güvenlik anahtarlarına erişilemez.</p></div>}</>}</aside>{confirm && <ConfirmDialog config={confirm} busy={mutating} onCancel={() => setConfirm(null)} onConfirm={submit} />}</>
 }

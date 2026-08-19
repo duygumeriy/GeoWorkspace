@@ -14,11 +14,17 @@ import './permissionMatrix.css'
  * değiştiğinde arkada kalıp yöneticinin beklemediği bir yetkiyi sürdürürdü.
  *
  * <b>Yetkilendirme kararı burada verilmez.</b> Neyin atanabileceğini,
- * kaldırılabileceğini ve ekranın hiç düzenlenebilir olup olmadığını sunucu
- * söyler. "Kullanıcı Administrator ise" gibi bir dallanma ikinci bir kural
- * kitabı kurar ve backend'in verisi değiştiği gün sessizce onunla çelişirdi.
- * Devre dışı bir onay kutusu zaten yalnızca nezakettir: sunucu, tarayıcının ne
- * çizdiğine bakmadan reddeder.
+ * kaldırılabileceğini ve ekranın HEDEF açısından düzenlenebilir olup
+ * olmadığını sunucu söyler (`canManageDirectPermissions`, `canAssignDirect`,
+ * `canRemoveDirect`). "Kullanıcı Administrator ise" gibi bir dallanma ikinci
+ * bir kural kitabı kurar ve backend'in verisi değiştiği gün sessizce onunla
+ * çelişirdi.
+ *
+ * Buna AKTÖRÜN kendi yetkisi eklenir (`canEdit`): PUT ucu users.update +
+ * permissions.assign'ın ikisini birden arar. İki bayrak ayrı sorulardır ve
+ * yan yana durur — sunucununki hedefe, bunlar çağırana bakar. Devre dışı bir
+ * onay kutusu zaten yalnızca nezakettir: sunucu, tarayıcının ne çizdiğine
+ * bakmadan reddeder.
  */
 export default function UserPermissionEditor({
   data,
@@ -29,6 +35,7 @@ export default function UserPermissionEditor({
   saving,
   saveError,
   dirty,
+  canEdit = true,
   onToggle,
   onReset,
   onSave,
@@ -65,7 +72,7 @@ export default function UserPermissionEditor({
 
   if (!data) return null
 
-  const editable = data.canManageDirectPermissions === true
+  const editable = data.canManageDirectPermissions === true && canEdit
   const effectiveCount = data.permissions.filter((p) => p.effective).length
 
   return (
