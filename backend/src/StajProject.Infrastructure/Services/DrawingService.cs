@@ -5,6 +5,7 @@ using StajProject.Application.Bulk;
 using StajProject.Application.Common;
 using StajProject.Application.DTOs;
 using StajProject.Application.Drawings;
+using StajProject.Application.Geographic;
 using StajProject.Application.Interfaces;
 using StajProject.Application.Spatial;
 using StajProject.Application.Style;
@@ -33,18 +34,33 @@ public class DrawingService : IDrawingService
     private const string RestoreForbiddenMessage =
         "Geri alınmak istenen çizimlerin bir kısmı size ait değil. Hiçbir kayıt geri alınmadı.";
 
+    /// <summary>
+    /// Coğrafi yetki alanı dışına çizim denemesinde dönen mesaj.
+    /// </summary>
+    /// <remarks>
+    /// İzin verilen alanın kendisi BİLİNÇLİ olarak paylaşılmaz: hata mesajı,
+    /// yetkisi olmayan bir çağırana sınırı ikili aramayla haritalama imkânı
+    /// vermemelidir. Alanını öğrenmek isteyen kullanıcı için ayrı ve
+    /// yetkilendirilmiş bir yol vardır.
+    /// </remarks>
+    private const string OutsideAreaMessage =
+        "Bu alanda çizim yapma yetkiniz bulunmuyor.";
+
     private readonly AppDbContext _dbContext;
     private readonly ICurrentUserService _currentUser;
     private readonly IDrawingAuthorizationService _drawingAuthorization;
+    private readonly IGeographicAuthorizationService _geographicAuthorization;
 
     public DrawingService(
         AppDbContext dbContext,
         ICurrentUserService currentUser,
-        IDrawingAuthorizationService drawingAuthorization)
+        IDrawingAuthorizationService drawingAuthorization,
+        IGeographicAuthorizationService geographicAuthorization)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
         _drawingAuthorization = drawingAuthorization;
+        _geographicAuthorization = geographicAuthorization;
     }
 
     public Task<ServiceResult<DrawingResponse>> CreatePointAsync(CreateDrawingRequest request, CancellationToken cancellationToken) =>
@@ -254,6 +270,16 @@ public class DrawingService : IDrawingService
             return Propagate<IReadOnlyList<BulkCreateTarget>, BulkDrawingsResponse>(validated);
         }
 
+        var owner = RequireOwnerId<BulkDrawingsResponse>();
+
+        if (!owner.IsSuccess)
+        {
+            return Propagate<int, BulkDrawingsResponse>(owner);
+        }
+
+        // Tek çözüm, tüm öğeler için: coğrafi yetki istek boyunca değişmez.
+        var area = await _geographicAuthorization.GetEffectiveAuthorizationAsync(owner.Value, cancellationToken);
+
         await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
 
         try
@@ -264,9 +290,9 @@ public class DrawingService : IDrawingService
             {
                 var added = target.Kind switch
                 {
-                    DrawingKind.Point => AddPending<PointFeature, Point>(target),
-                    DrawingKind.Line => AddPending<LineFeature, LineString>(target),
-                    _ => AddPending<PolygonFeature, Polygon>(target)
+                    DrawingKind.Point => AddPending<PointFeature, Point>(target, area),
+                    DrawingKind.Line => AddPending<LineFeature, LineString>(target, area),
+                    _ => AddPending<PolygonFeature, Polygon>(target, area)
                 };
 
                 if (!added.IsSuccess)
@@ -483,7 +509,9 @@ public class DrawingService : IDrawingService
     }
 
     /// <summary>Toplu oluşturmada tek kaydı context'e ekler; id sonra oluşur.</summary>
-    private ServiceResult<Func<DrawingResponse>> AddPending<TEntity, TGeometry>(BulkCreateTarget target)
+    private ServiceResult<Func<DrawingResponse>> AddPending<TEntity, TGeometry>(
+        BulkCreateTarget target,
+        EffectiveGeographicAuthorization area)
         where TEntity : class, IDrawingFeature<TGeometry>, new()
         where TGeometry : Geometry
     {
@@ -492,6 +520,15 @@ public class DrawingService : IDrawingService
         if (!parsed.IsSuccess)
         {
             return ServiceResult<Func<DrawingResponse>>.Failure(parsed.Error!);
+        }
+
+        /* Toplu oluşturma da YENİ geometri üretir; tekil yoldaki coğrafi kural
+           burada da geçerlidir. Yürürlükteki alan çağrı başına BİR kez çözülüp
+           parametreyle taşınır — her öğe için yeniden sorgulamak, çok öğeli bir
+           istekte aynı cevabı N kez hesaplamak olurdu. */
+        if (!area.Allows(parsed.Value!))
+        {
+            return ServiceResult<Func<DrawingResponse>>.Forbidden(OutsideAreaMessage);
         }
 
         // Geri yükleme yolu: isim boş olabilir (kural öncesi kayıtlar), renk
@@ -658,6 +695,16 @@ public class DrawingService : IDrawingService
         if (!owner.IsSuccess)
         {
             return Propagate<int, DrawingResponse>(owner);
+        }
+
+        /* Coğrafi yetki, geometri DOĞRULANDIKTAN sonra ve kayıt açılmadan ÖNCE
+           sınanır. Sıra önemlidir: bozuk bir WKT "yanlış yerdesin" (403) diye
+           raporlanmamalıdır — o 400'dür ve yukarıda çoktan dönmüştür. */
+        var area = await _geographicAuthorization.GetEffectiveAuthorizationAsync(owner.Value, cancellationToken);
+
+        if (!area.Allows(parsed.Value!))
+        {
+            return ServiceResult<DrawingResponse>.Forbidden(OutsideAreaMessage);
         }
 
         var entity = new TEntity
@@ -913,6 +960,24 @@ public class DrawingService : IDrawingService
             }
 
             geometry = parsed.Value!;
+
+            /* Geometri DEĞİŞİYORSA yeni konum coğrafi yetkiye tabidir: bir
+               kaydı sürükleyerek alanın dışına taşımak, oraya yeni çizmekle
+               aynı şeydir.
+
+               Kontrol bilinçli olarak yalnızca bu blokta durur. Ad, açıklama,
+               kategori, etiket veya renk değiştiren bir istek geometriye
+               dokunmaz ve coğrafi olarak sınanmaz — aksi hâlde sonradan
+               daraltılan bir alanın dışında kalan eski bir kaydın rengi bile
+               değiştirilemezdi. Coğrafi yetkinin cevapladığı soru "geometri
+               NEREYE konabilir"dir, "bu kayda dokunulabilir mi" değil. */
+            var area = await _geographicAuthorization.GetEffectiveAuthorizationAsync(
+                _currentUser.UserId!.Value, cancellationToken);
+
+            if (!area.Allows(geometry))
+            {
+                return ServiceResult<DrawingResponse>.Forbidden(OutsideAreaMessage);
+            }
         }
 
         // Buradan sonrası yazma: her girdi doğrulanmış durumda.

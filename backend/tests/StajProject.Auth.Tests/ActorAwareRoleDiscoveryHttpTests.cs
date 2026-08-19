@@ -234,6 +234,7 @@ public class ActorAwareRoleDiscoveryHttpTests
                 /* İş servisleri GERÇEK: bu testin konusu listenin ve mutasyonun
                    aynı kuralı paylaşması, dolayısıyla ikisi de çalışmalıdır. */
                 services.AddScoped<IEffectivePermissionService, EffectivePermissionService>();
+                services.AddScoped<IGeographicAuthorizationService, GeographicAuthorizationService>();
                 services.AddScoped<IRoleManagementService, RoleManagementService>();
                 services.AddScoped<IUserManagementService, UserManagementService>();
                 services.AddScoped<IUserPermissionManagementService, UserPermissionManagementService>();

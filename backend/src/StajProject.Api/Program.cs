@@ -211,6 +211,10 @@ builder.Services.AddScoped<IUserPermissionManagementService, UserPermissionManag
    requirement'ı yeniden kullanabilir. */
 builder.Services.AddSingleton<IAuthorizationHandler, DrawingAuthorizationHandler>();
 builder.Services.AddScoped<IDrawingAuthorizationService, DrawingAuthorizationService>();
+/* Coğrafi yetki alanı: hem yönetim uçlarının hem çizim servisinin sorduğu
+   soru burada yanıtlanır. Scoped'dır çünkü AppDbContext'e bağlıdır — kapsam
+   her istekte CANLI okunur, hiçbir yerde önbelleğe alınmaz ve JWT'ye yazılmaz. */
+builder.Services.AddScoped<IGeographicAuthorizationService, GeographicAuthorizationService>();
 builder.Services.AddScoped<IDrawingService, DrawingService>();
 builder.Services.AddScoped<ISpatialAnalysisService, SpatialAnalysisService>();
 

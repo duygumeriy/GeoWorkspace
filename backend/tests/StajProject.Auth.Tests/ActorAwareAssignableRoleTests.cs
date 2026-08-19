@@ -483,6 +483,7 @@ public class ActorAwareAssignableRoleTests
 
         // Üretimdeki kayıtların aynısı; test kendi yetki mantığını kurmaz.
         services.AddScoped<IEffectivePermissionService, EffectivePermissionService>();
+        services.AddScoped<IGeographicAuthorizationService, GeographicAuthorizationService>();
         services.AddScoped<IRoleManagementService, RoleManagementService>();
         services.AddScoped<IUserManagementService, UserManagementService>();
 

@@ -316,7 +316,7 @@ public class DrawingManagementTests
         currentUser.UserName.Returns(userName);
         currentUser.IsAdmin.Returns(isAdmin);
 
-        return new DrawingService(db, currentUser, AuthorizationFor(userId, isAdmin));
+        return new DrawingService(db, currentUser, AuthorizationFor(userId, isAdmin), new GeographicAuthorizationService(db));
     }
 
     /// <summary>

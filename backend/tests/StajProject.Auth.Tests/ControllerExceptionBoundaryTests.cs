@@ -213,6 +213,7 @@ public class ControllerExceptionBoundaryTests
             userManagement,
             Substitute.For<ICurrentUserService>(),
             Substitute.For<IUserPermissionManagementService>(),
+            Substitute.For<IGeographicAuthorizationService>(),
             NullLogger<AdminUsersController>.Instance));
 
     private static TController WithHttpContext<TController>(TController controller)

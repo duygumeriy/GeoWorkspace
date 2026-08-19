@@ -229,6 +229,7 @@ public class RoleAdminEnforcementTests
                 services.AddScoped<ICurrentUserService, CurrentUserService>();
 
                 // Üretimdeki yetkilendirme hattının aynısı.
+                services.AddScoped(_ => Substitute.For<IGeographicAuthorizationService>());
                 services.AddScoped<IEffectivePermissionService, EffectivePermissionService>();
                 services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
                 services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();

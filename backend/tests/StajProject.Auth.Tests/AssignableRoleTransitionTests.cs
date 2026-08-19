@@ -300,6 +300,7 @@ public class AssignableRoleTransitionTests
         services.AddSingleton(new ClientAppOptions { BaseUrl = "https://client.example.invalid" });
         services.AddSingleton(Substitute.For<IEmailSender>());
         services.AddScoped<IEffectivePermissionService, EffectivePermissionService>();
+        services.AddScoped<IGeographicAuthorizationService, GeographicAuthorizationService>();
         services.AddScoped<IRoleManagementService, RoleManagementService>();
         services.AddScoped<IUserManagementService, UserManagementService>();
 

@@ -390,7 +390,7 @@ public class DrawingMetadataTests
             .Returns(call => call.Arg<IEnumerable<IStyledDrawingFeature>>()
                 .All(drawing => drawing.CreatedByUserId == userId));
 
-        return new DrawingService(db, currentUser, authorization);
+        return new DrawingService(db, currentUser, authorization, new GeographicAuthorizationService(db));
     }
 
     private static CreateDrawingRequest Create(string wkt, string name) => new()
