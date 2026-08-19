@@ -18,6 +18,7 @@ import AdminLayout from './components/admin/AdminLayout.jsx'
 import AdminPage from './pages/AdminPage'
 import RolesPage from './pages/admin/RolesPage.jsx'
 import PermissionsPage from './pages/admin/PermissionsPage.jsx'
+import ActivityPage from './pages/admin/ActivityPage.jsx'
 import AccessDeniedPage from './pages/AccessDeniedPage.jsx'
 
 function App() {
@@ -111,6 +112,17 @@ function App() {
                     element={
                       <PermissionRoute anyOf={[PERMISSIONS.PERMISSIONS_VIEW]}>
                         <PermissionsPage />
+                      </PermissionRoute>
+                    }
+                  />
+                  {/* Aktivite geçmişi kendi yetkisiyle korunur: yönetim
+                      paneline başka bir yetkiyle giren biri bu rotayı
+                      açamaz. */}
+                  <Route
+                    path="activity"
+                    element={
+                      <PermissionRoute anyOf={[PERMISSIONS.ACTIVITY_VIEW]}>
+                        <ActivityPage />
                       </PermissionRoute>
                     }
                   />
