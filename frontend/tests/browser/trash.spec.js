@@ -293,7 +293,9 @@ test('restoring sends the existing restore contract and returns the drawing to t
   await page.getByRole('button', { name: 'Ankara Ofis Alanı çizimini geri yükle' }).click()
   await page.getByRole('alertdialog').getByRole('button', { name: 'Geri Yükle' }).click()
 
-  await expect(page.locator('.map-toast.is-success')).toContainText('Çizim geri yüklendi.')
+  await expect(
+    page.getByRole('status').filter({ hasText: 'Çizim geri yüklendi.' }),
+  ).toBeVisible()
 
   // Identity only: no geometry, no name, no owner. Restoring must not be able
   // to turn into a create that claims ownership of the record.
