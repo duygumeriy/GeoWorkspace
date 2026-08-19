@@ -148,10 +148,14 @@ public class AdminRolesController : ApiControllerBase
             async () => Respond(await _roles.ReplaceRolePermissionsAsync(
                 ActingUserId, id, request, cancellationToken)));
 
-    /* --- Coğrafi yetki alanı ---------------------------------------------------
+    /* --- Coğrafi yetki alanı: TEKİL (UYUMLULUK — Phase 8A) ----------------------
        Kullanıcı hedefindeki ile aynı ikili kural: rol yetkisi (roles.view /
        roles.update) + coğrafi yönetim yeteneği (geography.view /
-       geography.manage). */
+       geography.manage).
+
+       <b>Bu üç uç UYUMLULUK İÇİNDİR ve yeni ekranlar kullanmaz</b> — bkz.
+       AdminUsersController'daki aynı not. PUT, rolün TÜM alanlarını tek alanla
+       değiştirir. */
 
     /// <summary>
     /// Rolün coğrafi yetki alanı.
@@ -201,6 +205,73 @@ public class AdminRolesController : ApiControllerBase
         Guard<GeographicAuthorizationResponse>(
             nameof(DeleteRoleGeographicAuthorization),
             async () => Respond(await _geographicAuthorization.DeleteRoleAuthorizationAsync(id, cancellationToken)));
+
+
+    /* --- Coğrafi yetki alanları: ÇOKLU (Phase 9) -------------------------------
+       Bir rol de birden çok alana sahip olabilir: "Saha Ekibi" rolü Ankara,
+       Kayseri ve Sivas'ı birlikte kapsayabilir ve bunların her biri ayrı ayrı
+       adlandırılıp silinebilir. Rolü taşıyan ve kendi alanı olmayan kullanıcı
+       bu alanların BİRLEŞİMİNİ görür; aradaki boşluk izinli DEĞİLDİR.
+
+       Yetki matrisi tekil uçlarla birebir aynıdır. */
+
+    /// <summary>Rolün coğrafi alanları.</summary>
+    [RequirePermission(PermissionCodes.RolesView)]
+    [RequirePermission(PermissionCodes.GeographyView)]
+    [HttpGet("{id:int}/geographic-authorizations")]
+    public Task<ActionResult<GeographicAreasResponse>> GetRoleGeographicAreas(
+        int id,
+        CancellationToken cancellationToken) =>
+        Guard<GeographicAreasResponse>(
+            nameof(GetRoleGeographicAreas),
+            async () => Respond(await _geographicAuthorization.GetRoleAreasAsync(id, cancellationToken)));
+
+    /// <summary>
+    /// Role YENİ bir alan ekler; var olan alanlarına dokunmaz.
+    /// </summary>
+    /// <remarks>
+    /// Alan, o rolü taşıyan ve kendi alanı olmayan HER kullanıcıyı anında
+    /// etkiler. Legacy rollerin yetki matrisi dondurulmuştur ama coğrafi alan
+    /// ayrı bir eksendir: burada rol adına bakan bir kural YOKTUR.
+    /// </remarks>
+    [RequirePermission(PermissionCodes.RolesUpdate)]
+    [RequirePermission(PermissionCodes.GeographyManage)]
+    [HttpPost("{id:int}/geographic-authorizations")]
+    public Task<ActionResult<GeographicAreasResponse>> CreateRoleGeographicArea(
+        int id,
+        [FromBody] SaveGeographicAreaRequest request,
+        CancellationToken cancellationToken) =>
+        Guard<GeographicAreasResponse>(
+            nameof(CreateRoleGeographicArea),
+            async () => Respond(
+                await _geographicAuthorization.CreateRoleAreaAsync(id, request, cancellationToken)));
+
+    /// <summary>Rolün TEK bir alanını değiştirir; diğerleri kalır.</summary>
+    [RequirePermission(PermissionCodes.RolesUpdate)]
+    [RequirePermission(PermissionCodes.GeographyManage)]
+    [HttpPut("{id:int}/geographic-authorizations/{areaId:int}")]
+    public Task<ActionResult<GeographicAreasResponse>> UpdateRoleGeographicArea(
+        int id,
+        int areaId,
+        [FromBody] SaveGeographicAreaRequest request,
+        CancellationToken cancellationToken) =>
+        Guard<GeographicAreasResponse>(
+            nameof(UpdateRoleGeographicArea),
+            async () => Respond(
+                await _geographicAuthorization.UpdateRoleAreaAsync(id, areaId, request, cancellationToken)));
+
+    /// <summary>Rolün TEK bir alanını kaldırır; diğerleri kalır.</summary>
+    [RequirePermission(PermissionCodes.RolesUpdate)]
+    [RequirePermission(PermissionCodes.GeographyManage)]
+    [HttpDelete("{id:int}/geographic-authorizations/{areaId:int}")]
+    public Task<ActionResult<GeographicAreasResponse>> DeleteRoleGeographicArea(
+        int id,
+        int areaId,
+        CancellationToken cancellationToken) =>
+        Guard<GeographicAreasResponse>(
+            nameof(DeleteRoleGeographicArea),
+            async () => Respond(
+                await _geographicAuthorization.DeleteRoleAreaAsync(id, areaId, cancellationToken)));
 
 
     /* --- Sonuç eşlemesi --------------------------------------------------------

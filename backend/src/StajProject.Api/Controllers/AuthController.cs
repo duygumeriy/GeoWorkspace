@@ -36,6 +36,7 @@ public class AuthController : ApiControllerBase
     private readonly ITwoFactorService _twoFactorService;
     private readonly ICurrentUserService _currentUser;
     private readonly IEffectivePermissionService _permissions;
+    private readonly IGeographicAuthorizationService _geographicAuthorization;
 
     public AuthController(
         IAuthService authService,
@@ -43,6 +44,7 @@ public class AuthController : ApiControllerBase
         ITwoFactorService twoFactorService,
         ICurrentUserService currentUser,
         IEffectivePermissionService permissions,
+        IGeographicAuthorizationService geographicAuthorization,
         ILogger<AuthController> logger)
         : base(logger)
     {
@@ -51,6 +53,7 @@ public class AuthController : ApiControllerBase
         _twoFactorService = twoFactorService;
         _currentUser = currentUser;
         _permissions = permissions;
+        _geographicAuthorization = geographicAuthorization;
     }
 
     /* --- Oturum -------------------------------------------------------------- */
@@ -236,6 +239,58 @@ public class AuthController : ApiControllerBase
                 UserId = userId.Value,
                 Permissions = codes
             });
+        });
+
+    /// <summary>
+    /// Çağıranın KENDİ yürürlükteki coğrafi sınırı — haritanın çizim alanını
+    /// göstermesi ve izinsiz bir çizimi başlamadan durdurabilmesi için.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Hedef parametresi YOKTUR ve olamaz.</b> Cevap daima
+    /// <see cref="ICurrentUserService.UserId"/> içindir; rota, query ya da
+    /// gövde üzerinden bir kullanıcı id'si kabul edilmez. Bu, ucun bir
+    /// keşif aracına dönüşmesini yapısal olarak imkânsız kılar — "başkasının
+    /// alanını sorma" kuralını bir kontrole değil, imzanın kendisine bağlar.
+    /// </para>
+    /// <para>
+    /// <b><c>geography.view</c> ARANMAZ</b> ve bu bilinçlidir. O yetki
+    /// BAŞKALARININ alanlarını yönetmek içindir; kişinin kendi çizim sınırını
+    /// bilmesi bir yönetim yeteneği değil, haritayı doğru kullanabilmesinin
+    /// ön koşuludur. Şart koşulsaydı, sıradan bir GIS kullanıcısı sınırını
+    /// ancak sunucudan 403 yiyerek — yani çizimi bittikten sonra —
+    /// öğrenebilirdi.
+    /// </para>
+    /// <para>
+    /// <b>MFA da ARANMAZ</b>, <c>me/permissions</c> ile aynı gerekçeyle:
+    /// zorunlu ikinci faktör yönetim rolleri içindir, sıradan kullanıcı
+    /// password-only token taşır ve haritası çalışmak zorundadır.
+    /// </para>
+    /// <para>
+    /// <b>Bu uç bir güvenlik sınırı DEĞİLDİR.</b> Cevabı yalnızca haritayı
+    /// biçimlendirir; çizim uçları kendi coğrafi denetimini (tam geometri,
+    /// <c>Covers</c>) aynen uygular ve alan dışındaki isteğe 403 döner. Uç hiç
+    /// çağrılmasa da güvenlik değişmez.
+    /// </para>
+    /// <para>
+    /// Uygun olmayan hesap (pasif, askıya alınmış, silinmiş) için bu uç bir
+    /// coğrafi sınır uydurmaz: hesabın erişimi zaten yetki tarafında kapalıdır
+    /// ve haritada çizilecek bir şey kalmaz.
+    /// </para>
+    /// </remarks>
+    [Authorize]
+    [HttpGet("me/geographic-scope")]
+    public Task<ActionResult<SelfGeographicScopeResponse>> MyGeographicScope(CancellationToken cancellationToken) =>
+        Guard<SelfGeographicScopeResponse>(nameof(MyGeographicScope), async () =>
+        {
+            var userId = _currentUser.UserId;
+
+            if (userId is null)
+            {
+                return Unauthorized(new { message = "Geçersiz oturum." });
+            }
+
+            return Ok(await _geographicAuthorization.GetSelfScopeAsync(userId.Value, cancellationToken));
         });
 
     /* --- Kayıt ve e-posta doğrulama ------------------------------------------ */

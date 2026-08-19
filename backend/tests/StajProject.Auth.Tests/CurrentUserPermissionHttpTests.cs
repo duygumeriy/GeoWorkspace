@@ -330,6 +330,10 @@ public class CurrentUserPermissionHttpTests
 
                 // Yetki çözümü GERÇEK: testin konusu tam olarak bu.
                 services.AddScoped<IEffectivePermissionService, EffectivePermissionService>();
+                /* AuthController Phase 9'da coğrafi kapsam ucunu da taşır;
+                   controller kurulabilsin diye bağımlılığı burada da kayıtlı
+                   olmalıdır. Bu testlerin konusu değişmez. */
+                services.AddScoped<IGeographicAuthorizationService, GeographicAuthorizationService>();
 
                 services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
                 services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();

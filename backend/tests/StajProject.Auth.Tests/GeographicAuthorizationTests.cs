@@ -488,8 +488,19 @@ public class GeographicAuthorizationTests
         Assert.False(property.IsNullable);
     }
 
+    /// <summary>
+    /// Hedef başına ÇOK alan (Phase 9): hedef kolonlarındaki indeksler
+    /// benzersiz OLMAMALIDIR.
+    /// </summary>
+    /// <remarks>
+    /// Bu test, kaldırılan bir kuralın geri gelmesini engeller. Eski kısmi
+    /// UNIQUE indeksler yerinde bırakılsaydı, servis ikinci alanı eklemeye
+    /// çalıştığında veritabanı reddederdi ve hata yalnızca çalışma zamanında,
+    /// yöneticinin ekranında görünürdü. İndekslerin kendileri KORUNUR: çizim
+    /// yolu her istekte "bu hedefin alanları" sorgusunu çalıştırır.
+    /// </remarks>
     [Fact]
-    public void The_model_enforces_one_area_per_user_and_per_role()
+    public void The_model_allows_many_areas_per_user_and_per_role()
     {
         using var scope = CreateModelScope();
 
@@ -500,9 +511,9 @@ public class GeographicAuthorizationTests
             var index = entity.GetIndexes().Single(i =>
                 i.Properties.Count == 1 && i.Properties[0].GetColumnName() == column);
 
-            Assert.True(index.IsUnique);
-            // Kısmi filtre şart: PostgreSQL NULL'ları benzersizlikte farklı sayar,
-            // filtresiz bir index diğer hedef türünün satırlarını hiç bağlamazdı.
+            Assert.False(index.IsUnique);
+            // Kısmi filtre korunur: kolonlardan biri her satırda NULL'dur ve
+            // filtresiz bir indeks o yarıyı boşuna taşırdı.
             Assert.Equal($"{column} IS NOT NULL", index.GetFilter());
         }
     }

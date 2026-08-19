@@ -206,6 +206,7 @@ public class ControllerExceptionBoundaryTests
             Substitute.For<ITwoFactorService>(),
             Substitute.For<ICurrentUserService>(),
             Substitute.For<IEffectivePermissionService>(),
+            Substitute.For<IGeographicAuthorizationService>(),
             NullLogger<AuthController>.Instance));
 
     private static AdminUsersController AdminControllerWith(IUserManagementService userManagement) =>
