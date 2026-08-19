@@ -32,6 +32,8 @@ import {
   isSameStyle,
   normalizeStyle,
 } from '../map/drawingTypes.js'
+import { isGeometryInsideScope, isMapCoordinateInsideScope, isSegmentInsideScope } from '../map/geographicScope.js'
+import { toLonLat } from 'ol/proj'
 import { featureKeysInSelection } from '../map/spatialSelect.js'
 import useHistory from './useHistory.js'
 
@@ -93,6 +95,14 @@ export default function useDrawingWorkspace(
     canViewDrawings = true,
     hasPermissions = null,
     onPolygonSaved = null,
+    /* Kullanıcının yürürlükteki coğrafi sınırı (ayrıştırılmış) ya da kısıt
+       yoksa null. Bu bir GÜVENLİK denetimi değildir — backend aynı soruyu her
+       istekte yeniden sorar — yalnızca izinsiz bir çizimin hiç başlamaması
+       içindir. */
+    geographicScope = null,
+    /* Sunucu coğrafi bir ret döndürdüğünde çağrılır: tarayıcının elindeki
+       sınır eskimiş olabilir ve tazelenmelidir. */
+    onForbidden = null,
   },
 ) {
   const sourceRef = useRef(null)
@@ -163,6 +173,22 @@ export default function useDrawingWorkspace(
   // re-creates the Draw interaction — doing so mid-drawing would abort it.
   const toolStylesRef = useRef(toolStyles)
   toolStylesRef.current = toolStyles
+
+  /* Coğrafi sınır da ref üzerinden okunur ve AYNI sebeple: yönetici sınırı
+     tam da kullanıcı çizerken değiştirirse, etkileşimi yeniden kurmak yarım
+     kalmış bir poligonu silerdi. Bir sonraki tıklama zaten güncel sınırı
+     okur. */
+  const scopeRef = useRef(geographicScope)
+  scopeRef.current = geographicScope
+
+  const onForbiddenRef = useRef(onForbidden)
+  onForbiddenRef.current = onForbidden
+
+  /* Kabul edilen SON köşe (boylam/enlem). Yeni bir köşenin kendisi sınırın
+     içinde olsa bile, önceki köşeden ona giden PARÇA dışarı taşabilir —
+     içbükey bir alanın girintisinden ya da kopuk iki bölgenin arasından
+     geçerek. Köşe denetimi tek başına bunu yakalayamaz. */
+  const lastVertexRef = useRef(null)
 
   const refreshLayer = useCallback(() => {
     layerRef.current?.changed()
@@ -378,7 +404,14 @@ export default function useDrawingWorkspace(
   const persistCreate = useCallback(
     async ({ type, wkt, style, name, description, category, tags, clientKey }) => {
       const res = await createDrawing(type, wkt, { name, style, description, category, tags })
-      if (!res.ok) throw new Error(await readApiError(res, 'Çizim kaydedilemedi'))
+      if (!res.ok) {
+        const error = new Error(await readApiError(res, 'Çizim kaydedilemedi'))
+        /* Durum kodu HATAYA İLİŞTİRİLİR: çağıran, coğrafi bir reddi (403)
+           sıradan bir doğrulama hatasından ayırt edebilmelidir — ilki
+           tarayıcının elindeki sınırın eskidiği anlamına gelir. */
+        error.status = res.status
+        throw error
+      }
 
       const saved = await res.json()
       const source = sourceRef.current
@@ -617,9 +650,46 @@ export default function useDrawingWorkspace(
     if (!pendingSource) return undefined
 
     const type = DRAWING_TYPES[activeDrawTool]
+
+    /* --- Coğrafi kapsam: çizim BAŞLAMADAN önce -----------------------------
+       Kural, backend'in reddedeceği bir çizimi kullanıcıya hiç yaptırmamaktır.
+       Reddi çizim bittikten ve kullanıcı ad/renk girdikten SONRA bildirmek,
+       emeği harcandıktan sonra "olmadı" demek olurdu.
+
+       `condition` OpenLayers'ın köşe eklemeyi kabul edip etmeyeceğine karar
+       verdiği yerdir: false döndüğünde tık HİÇ işlenmez — ilk köşede eskiz
+       başlamaz, sonraki köşelerde köşe eklenmez. */
+    const rejectVertex = (message) => {
+      /* Toast SABİT kimliklidir: alan dışına art arda tıklamak onlarca bildirim
+         yığmaz, aynı bildirimi tazeler. */
+      showToast('error', message, { id: 'geographic-scope', timeout: 3000 })
+      return false
+    }
+
+    const acceptsVertex = (event) => {
+      const scope = scopeRef.current
+      if (!scope) return true
+
+      const candidate = toLonLat(event.coordinate)
+
+      if (!isMapCoordinateInsideScope(scope, event.coordinate)) {
+        return rejectVertex('Bu konum coğrafi yetki alanınızın dışında.')
+      }
+
+      const previous = lastVertexRef.current
+      if (previous && !isSegmentInsideScope(scope, previous, candidate)) {
+        /* İki köşe de içeride ama aradaki kenar dışarı taşıyor. Yalnızca
+           köşelere bakan bir denetim bunu kabul ederdi. */
+        return rejectVertex('Bu kenar coğrafi yetki alanınızın dışından geçiyor.')
+      }
+
+      lastVertexRef.current = candidate
+      return true
+    }
+
     // The finished shape lands in the PENDING source, not the persisted one:
     // nothing exists in the database until the attribute popup is confirmed.
-    const draw = new Draw({ source: pendingSource, type: type.geometryType })
+    const draw = new Draw({ source: pendingSource, type: type.geometryType, condition: acceptsVertex })
     drawRef.current = draw
     map.addInteraction(draw)
 
@@ -628,10 +698,36 @@ export default function useDrawingWorkspace(
       pendingSource.clear()
     })
 
+    draw.on('drawabort', () => {
+      lastVertexRef.current = null
+    })
+
     draw.on('drawend', (event) => {
       const feature = event.feature
+      const geometry = feature.getGeometry()
+      lastVertexRef.current = null
+
+      /* --- Tamamlanan geometrinin BÜTÜNÜ sınanır -------------------------
+         Köşe köşe denetim yeterli değildir ve buradaki son denetim onu
+         tamamlar: kapanış kenarı (poligonun son köşesinden ilkine dönen
+         kenar) hiçbir tıklamayla üretilmediği için köşe denetiminden hiç
+         geçmez ve pekâlâ alanın dışından geçebilir.
+
+         Reddedilen çizim için AttributePopup AÇILMAZ ve hiçbir istek
+         gönderilmez: kullanıcıdan, kaydedilmeyeceği belli olan bir şekil için
+         ad ve renk istemek anlamsızdır. */
+      if (!isGeometryInsideScope(scopeRef.current, geometry)) {
+        pendingSource.clear()
+        showToast(
+          'error',
+          'Çizim coğrafi yetki alanınızın dışında kaldığı için oluşturulmadı.',
+          { id: 'geographic-scope', timeout: 5000 },
+        )
+        return
+      }
+
       // Real reprojection 3857 -> 4326; the on-map geometry stays 3857.
-      const wkt = geometryToWkt4326(feature.getGeometry())
+      const wkt = geometryToWkt4326(geometry)
       const style = toolStylesRef.current[activeDrawTool]
       const clientKey = nextClientKey()
 
@@ -650,11 +746,15 @@ export default function useDrawingWorkspace(
       map.removeInteraction(draw)
       draw.dispose()
       drawRef.current = null
+      lastVertexRef.current = null
     }
     // `activeDrawTool` comes from useWorkspaceMode; switching tools there tears
     // this interaction down and builds the new one, which is exactly what makes
     // the style panel's type tabs change what the map actually draws.
-  }, [map, activeDrawTool])
+    //
+    // `geographicScope` is deliberately NOT a dependency: it is read from a ref
+    // so that a scope change mid-drawing cannot abort the sketch in progress.
+  }, [map, activeDrawTool, showToast])
 
   // While the popup is open the map must not start another shape underneath it.
   // The interaction is only suspended, never rebuilt, so the tool stays exactly
@@ -754,6 +854,13 @@ export default function useDrawingWorkspace(
 
         return true
       } catch (error) {
+        /* Coğrafi bir ret, tarayıcının sınırının ESKİDİĞİNİ gösterir: yönetici
+           alanı bu oturum sırasında daraltmış olabilir. Sınır tazelenir, böylece
+           kullanıcı yeniden giriş yapmadan doğru alanı görür. Tazeleme tek
+           uçuşludur (bkz. useGeographicScope), dolayısıyla art arda gelen
+           retler bir döngü kuramaz. */
+        if (error?.status === 403) onForbiddenRef.current?.()
+
         // The geometry stays on the pending layer and the popup stays open, so
         // a failed save never costs the user the shape they drew.
         showToast('error', error?.message || 'Kaydedilemedi. Lütfen tekrar deneyin.')

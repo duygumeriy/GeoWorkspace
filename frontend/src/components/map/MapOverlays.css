@@ -202,3 +202,14 @@
     opacity: 1;
   }
 }
+
+/* Coğrafi kısıt notu ipucunun ALTINDA, kendi satırında durur: araç
+   talimatıyla karışmamalı ama onunla birlikte okunmalıdır. */
+.map-hint-scope {
+  display: block;
+  margin-top: 0.35rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--border-soft);
+  color: var(--cyan);
+  font-size: var(--font-small);
+}

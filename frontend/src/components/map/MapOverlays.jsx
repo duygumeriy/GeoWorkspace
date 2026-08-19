@@ -9,8 +9,15 @@ import './MapOverlays.css'
  * readout and the "saving" indicator.
  */
 
-/** Contextual instructions for the active tool. */
-export function DrawingHint({ activeTool, measureMode, selectionTool, analysisActive }) {
+/**
+ * Contextual instructions for the active tool.
+ *
+ * Coğrafi kısıtı olan bir kullanıcıya, çizim aracını SEÇTİĞİ anda sınırın
+ * varlığı hatırlatılır. Bunu ilk geçersiz tıklamaya bırakmak, kuralı ancak
+ * ihlal edildiğinde öğretmek olurdu; kural önce söylenir, sonra uygulanır.
+ * Ölçüm ve seçim araçları veri üretmediği için not onlarda görünmez.
+ */
+export function DrawingHint({ activeTool, measureMode, selectionTool, analysisActive, scopeRestricted = false }) {
   let text = ''
 
   if (activeTool) text = DRAWING_TYPES[activeTool]?.hint ?? ''
@@ -27,11 +34,18 @@ export function DrawingHint({ activeTool, measureMode, selectionTool, analysisAc
     text = SELECTION_TOOLS.find((tool) => tool.id === selectionTool)?.hint ?? ''
   }
 
-  if (!text) return null
+  const showScopeNote = scopeRestricted && Boolean(activeTool)
+
+  if (!text && !showScopeNote) return null
 
   return (
     <div className="map-hint" role="status">
       {text}
+      {showScopeNote && (
+        <span className="map-hint-scope">
+          Yalnızca haritada gösterilen yetki alanınız içinde çizim yapabilirsiniz.
+        </span>
+      )}
     </div>
   )
 }
