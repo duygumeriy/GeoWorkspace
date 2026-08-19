@@ -191,7 +191,19 @@ public static class PermissionCatalog
         new(PermissionCodes.PermissionsAssign,
             "Yetki Atama",
             "Rollere ve kullanıcılara yetki verebilir veya geri alabilir.",
-            PermissionCategories.Permissions, 910)
+            PermissionCategories.Permissions, 910),
+
+        /* --- Coğrafi yetkilendirme --------------------------------------------- */
+
+        new(PermissionCodes.GeographyView,
+            "Coğrafi Yetkileri Görüntüleme",
+            "Kullanıcı ve rol bazlı coğrafi yetki alanlarını görüntüleme yetkisi.",
+            PermissionCategories.Geography, 1000),
+
+        new(PermissionCodes.GeographyManage,
+            "Coğrafi Yetkileri Yönetme",
+            "Kullanıcı ve rol bazlı coğrafi yetki alanlarını oluşturma, düzenleme ve kaldırma yetkisi.",
+            PermissionCategories.Geography, 1010)
     ];
 
     /// <summary>Katalogdaki tüm kodlar.</summary>

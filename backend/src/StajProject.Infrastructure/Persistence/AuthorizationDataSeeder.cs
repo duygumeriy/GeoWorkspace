@@ -27,6 +27,13 @@ namespace StajProject.Infrastructure.Persistence;
 /// <b>Hiçbir şey silmez.</b> Katalog dışında kalan yetkiler, tanınmayan roller
 /// ve matriste olmayan grant satırları olduğu gibi bırakılır.
 /// </para>
+/// <para>
+/// <b>Tek istisna: katalog genişlemeleri.</b> Kataloğa sonradan eklenen bir
+/// yetki, zaten provision edilmiş bir role ilk kural yüzünden hiç ulaşamazdı.
+/// <see cref="RolePermissionExpansions"/> bu boşluğu, yalnızca orada açıkça
+/// sayılan kod/rol çiftleriyle sınırlı biçimde kapatır — rolün tam profili
+/// yeniden hesaplanmaz.
+/// </para>
 /// </remarks>
 public static class AuthorizationDataSeeder
 {
@@ -41,6 +48,8 @@ public static class AuthorizationDataSeeder
         var permissionIdsByCode = await EnsurePermissionCatalogAsync(dbContext, logger, cancellationToken);
 
         await EnsureRolePermissionsAsync(dbContext, roleManager, permissionIdsByCode, logger, cancellationToken);
+
+        await EnsureCatalogExpansionGrantsAsync(dbContext, roleManager, permissionIdsByCode, logger, cancellationToken);
     }
 
     /* --- Hedef roller ---------------------------------------------------------- */
@@ -221,6 +230,87 @@ public static class AuthorizationDataSeeder
 
             logger.LogInformation(
                 "'{Role}' rolüne {Count} başlangıç yetkisi verildi.", roleName, grants.Length);
+        }
+    }
+
+    /* --- Katalog genişlemeleri -------------------------------------------------- */
+
+    /// <summary>
+    /// <see cref="RolePermissionExpansions"/> içinde AÇIKÇA sayılan yeni
+    /// kodları, ilgili rollere eksikse ekler.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Neden gerekli.</b> <see cref="EnsureRolePermissionsAsync"/> yalnızca
+    /// hiç yetkisi olmayan rolleri doldurur. Mevcut bir kurulumda Administrator
+    /// çoktan provision edilmiştir; kataloğa sonradan eklenen bir yetki ona
+    /// başka türlü hiç ulaşmazdı.
+    /// </para>
+    /// <para>
+    /// <b>Kapsam bilinçli olarak dardır.</b> Rolün matristeki tam profili
+    /// hesaplanmaz ve eksikler tamamlanmaz — yalnızca genişleme listesindeki
+    /// kodlara bakılır. Böylece yöneticinin daha önce geri aldığı ESKİ yetkiler
+    /// geri gelmez; dokunulan tek şey yeni tanıtılan kodlardır.
+    /// </para>
+    /// <para>
+    /// Idempotent: eksik olan eklenir, var olan olduğu gibi bırakılır, hiçbir
+    /// satır silinmez.
+    /// </para>
+    /// </remarks>
+    private static async Task EnsureCatalogExpansionGrantsAsync(
+        AppDbContext dbContext,
+        RoleManager<IdentityRole<int>> roleManager,
+        IReadOnlyDictionary<string, int> permissionIdsByCode,
+        ILogger logger,
+        CancellationToken cancellationToken)
+    {
+        foreach (var (roleName, codes) in RolePermissionExpansions.All)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var role = await roleManager.FindByNameAsync(roleName);
+
+            if (role is null)
+            {
+                logger.LogWarning(
+                    "'{Role}' rolü bulunamadı; katalog genişlemesi yetkileri atanmadı.", roleName);
+                continue;
+            }
+
+            var wanted = codes
+                .Distinct(StringComparer.Ordinal)
+                .Where(permissionIdsByCode.ContainsKey)
+                .Select(code => permissionIdsByCode[code])
+                .ToArray();
+
+            if (wanted.Length == 0)
+            {
+                continue;
+            }
+
+            var existing = await dbContext.RolePermissions
+                .Where(rp => rp.RoleId == role.Id && wanted.Contains(rp.PermissionId))
+                .Select(rp => rp.PermissionId)
+                .ToListAsync(cancellationToken);
+
+            var missing = wanted.Except(existing).ToArray();
+
+            if (missing.Length == 0)
+            {
+                continue;
+            }
+
+            dbContext.RolePermissions.AddRange(
+                missing.Select(permissionId => new RolePermission
+                {
+                    RoleId = role.Id,
+                    PermissionId = permissionId
+                }));
+
+            await dbContext.SaveChangesAsync(cancellationToken);
+
+            logger.LogInformation(
+                "'{Role}' rolüne {Count} katalog genişlemesi yetkisi eklendi.", roleName, missing.Length);
         }
     }
 }

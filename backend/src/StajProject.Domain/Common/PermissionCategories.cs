@@ -20,6 +20,7 @@ public static class PermissionCategories
     public const string Users = "Users";
     public const string Roles = "Roles";
     public const string Permissions = "Permissions";
+    public const string Geography = "Geography";
 
     /// <summary>EF <c>HasMaxLength</c> ile aynı sınır.</summary>
     public const int MaxLength = 64;

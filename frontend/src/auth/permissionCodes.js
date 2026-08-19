@@ -59,6 +59,14 @@ export const PERMISSIONS = Object.freeze({
   /* --- Yetkiler ----------------------------------------------------------- */
   PERMISSIONS_VIEW: 'permissions.view',
   PERMISSIONS_ASSIGN: 'permissions.assign',
+
+  /* --- Coğrafi yetkilendirme ---------------------------------------------- */
+  /* Katalog eksiksiz tutulur: bu kodları HENÜZ hiçbir ekran tüketmiyor —
+     coğrafi yetki arayüzü sonraki fazda gelir. Sabitin burada durması, o ekran
+     yazılırken kodun elle yeniden yazılmasını (ve sessizce yanlış yazılmasını)
+     önler. */
+  GEOGRAPHY_VIEW: 'geography.view',
+  GEOGRAPHY_MANAGE: 'geography.manage',
 })
 
 /**
