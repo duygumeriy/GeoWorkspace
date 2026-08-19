@@ -8,11 +8,13 @@ import Fill from 'ol/style/Fill'
 import Stroke from 'ol/style/Stroke'
 import CircleStyle from 'ol/style/Circle'
 import { fromLonLat } from 'ol/proj'
+import { TURKEY_CENTER_LON_LAT, TURKEY_ZOOM } from '../map/turkey.js'
 import useReducedMotion from './useReducedMotion.js'
 
-/** Türkiye'nin yaklaşık coğrafi merkezi (Longitude, Latitude) — the initial view. */
-export const TURKEY_CENTER_LON_LAT = [35.2433, 38.9637]
-export const TURKEY_ZOOM = 6
+/* Türkiye açılış görünümü tek yerde tanımlıdır (`map/turkey.js`) ve buradan
+   yeniden dışa aktarılır: mevcut çağıranların içe aktarma yolu değişmez, ama
+   sayılar artık yönetim panelindeki coğrafi yetki haritasıyla paylaşılır. */
+export { TURKEY_CENTER_LON_LAT, TURKEY_ZOOM } from '../map/turkey.js'
 
 const FIT_PADDING = [80, 80, 120, 80]
 const POINT_ZOOM = 15

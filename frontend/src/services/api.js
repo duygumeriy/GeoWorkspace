@@ -433,6 +433,67 @@ export function updateAdminUserPermissions(userId, permissionCodes) {
   })
 }
 
+/* --- Coğrafi yetki alanı (Phase 8A uçları) -----------------------------------
+   Hedef başına TEK bir poligon vardır ve uçlar upsert semantiğiyle çalışır:
+   PUT gönderilen alanı yazar, DELETE kaldırır. İkisi de hedefin GÜNCEL coğrafi
+   durumunu geri döndürür, bu yüzden çağıran taraf ayrıca bir GET açmak zorunda
+   değildir — ve iyimser bir yerel duruma da ihtiyaç duymaz.
+
+   Uçların aradığı yetkiler ikilidir ve arayüz bunları birebir yansıtır:
+     okuma     users.view / roles.view   + geography.view
+     yazma     users.update / roles.update + geography.manage
+
+   WKT daima EPSG:4326'dır; dönüşümü harita bileşeni yapar (bkz.
+   `geometryToWkt4326`). Buradan Web Mercator metre değeri geçirmek, sunucunun
+   koordinat aralığı denetimine takılırdı. */
+
+export function fetchAdminUserGeographicAuthorization(userId) {
+  return authFetch(`/api/admin/users/${userId}/geographic-authorization`)
+}
+
+/**
+ * Kullanıcının KENDİNE ÖZEL alanını gönderilen poligona eşitler.
+ *
+ * Kaydedilen alan, kullanıcının rollerinden gelen alanların yerine geçer —
+ * birleşmez. Bu Phase 8A'nın öncelik kuralıdır ve arayüz bunu kaydetmeden önce
+ * açıkça söyler.
+ */
+export function updateAdminUserGeographicAuthorization(userId, wkt) {
+  return authFetch(`/api/admin/users/${userId}/geographic-authorization`, {
+    method: 'PUT',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ wkt }),
+  })
+}
+
+/**
+ * Kullanıcıya özel alanı kaldırır; kullanıcı rollerinden gelen alanlara DÜŞER,
+ * kısıtsız hâle gelmesi şart değildir. Dönen yanıt yürürlükteki durumu taşır.
+ */
+export function deleteAdminUserGeographicAuthorization(userId) {
+  return authFetch(`/api/admin/users/${userId}/geographic-authorization`, { method: 'DELETE' })
+}
+
+export function fetchAdminRoleGeographicAuthorization(roleId) {
+  return authFetch(`/api/admin/roles/${roleId}/geographic-authorization`)
+}
+
+/**
+ * Rolün alanını gönderilen poligona eşitler. Alan, o rolü taşıyan ve kendi
+ * alanı olmayan her kullanıcıyı anında etkiler.
+ */
+export function updateAdminRoleGeographicAuthorization(roleId, wkt) {
+  return authFetch(`/api/admin/roles/${roleId}/geographic-authorization`, {
+    method: 'PUT',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ wkt }),
+  })
+}
+
+export function deleteAdminRoleGeographicAuthorization(roleId) {
+  return authFetch(`/api/admin/roles/${roleId}/geographic-authorization`, { method: 'DELETE' })
+}
+
 /* --- Drawings ---------------------------------------------------------------
    All calls go through authFetch, so the Bearer token, the 401 handler and the
    automatic logout keep working exactly as they do for /api/auth/me. The WKT
