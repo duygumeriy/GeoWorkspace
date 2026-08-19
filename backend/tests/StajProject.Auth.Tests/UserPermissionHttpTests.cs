@@ -288,6 +288,7 @@ public class UserPermissionHttpTests
                 /* İş servisleri GERÇEK: bu testin konusu filtrenin geçirdiği
                    isteğin serviste de doğru karşılanması. */
                 services.AddScoped<IEffectivePermissionService, EffectivePermissionService>();
+                services.AddScoped<IGeographicAuthorizationService, GeographicAuthorizationService>();
                 services.AddScoped<IRoleManagementService, RoleManagementService>();
                 services.AddScoped<IUserManagementService, UserManagementService>();
                 services.AddScoped<IUserPermissionManagementService, UserPermissionManagementService>();

@@ -352,6 +352,7 @@ public class PermissionEnforcementTests
 
                 /* Üretimdeki kayıtların AYNISI. Test kendi yetkilendirme
                    mantığını kurmaz; Program.cs'teki hattı çalıştırır. */
+                services.AddScoped(_ => Substitute.For<IGeographicAuthorizationService>());
                 services.AddScoped<IEffectivePermissionService, EffectivePermissionService>();
                 services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
                 services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();

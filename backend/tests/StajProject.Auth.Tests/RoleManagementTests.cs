@@ -718,6 +718,7 @@ public class RoleManagementTests
             .AddDefaultTokenProviders();
 
         services.AddScoped<IEffectivePermissionService, EffectivePermissionService>();
+        services.AddScoped<IGeographicAuthorizationService, GeographicAuthorizationService>();
         services.AddScoped<IRoleManagementService, RoleManagementService>();
         services.AddSingleton(Substitute.For<ILogger<RoleManagementService>>());
 

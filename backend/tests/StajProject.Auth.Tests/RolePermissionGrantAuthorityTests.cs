@@ -697,6 +697,8 @@ public class RolePermissionGrantAuthorityTests
             sp.GetRequiredService<EffectivePermissionService>(),
             sp.GetRequiredService<EffectivePermissionCallCounter>()));
 
+        services.AddScoped<IGeographicAuthorizationService, GeographicAuthorizationService>();
+
         services.AddScoped<IRoleManagementService, RoleManagementService>();
         services.AddSingleton(Substitute.For<ILogger<RoleManagementService>>());
 

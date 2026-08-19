@@ -34,15 +34,18 @@ public class AdminRolesController : ApiControllerBase
 {
     private readonly IRoleManagementService _roles;
     private readonly ICurrentUserService _currentUser;
+    private readonly IGeographicAuthorizationService _geographicAuthorization;
 
     public AdminRolesController(
         IRoleManagementService roles,
         ICurrentUserService currentUser,
+        IGeographicAuthorizationService geographicAuthorization,
         ILogger<AdminRolesController> logger)
         : base(logger)
     {
         _roles = roles;
         _currentUser = currentUser;
+        _geographicAuthorization = geographicAuthorization;
     }
 
     /// <summary>
@@ -144,6 +147,61 @@ public class AdminRolesController : ApiControllerBase
             nameof(ReplaceRolePermissions),
             async () => Respond(await _roles.ReplaceRolePermissionsAsync(
                 ActingUserId, id, request, cancellationToken)));
+
+    /* --- Coğrafi yetki alanı ---------------------------------------------------
+       Kullanıcı hedefindeki ile aynı ikili kural: rol yetkisi (roles.view /
+       roles.update) + coğrafi yönetim yeteneği (geography.view /
+       geography.manage). */
+
+    /// <summary>
+    /// Rolün coğrafi yetki alanı.
+    /// </summary>
+    /// <remarks>
+    /// Rol için "kendi alanı" ile "yürürlükteki alan" daima aynıdır: bir rol
+    /// başka bir yerden alan devralmaz. Miras yalnızca kullanıcı tarafında,
+    /// rollerden kullanıcıya doğru işler.
+    /// </remarks>
+    [RequirePermission(PermissionCodes.RolesView)]
+    [RequirePermission(PermissionCodes.GeographyView)]
+    [HttpGet("{id:int}/geographic-authorization")]
+    public Task<ActionResult<GeographicAuthorizationResponse>> GetRoleGeographicAuthorization(
+        int id,
+        CancellationToken cancellationToken) =>
+        Guard<GeographicAuthorizationResponse>(
+            nameof(GetRoleGeographicAuthorization),
+            async () => Respond(await _geographicAuthorization.GetRoleAuthorizationAsync(id, cancellationToken)));
+
+    /// <summary>
+    /// Rolün alanını gönderilen poligona eşitler (upsert).
+    /// </summary>
+    /// <remarks>
+    /// Alan, o rolü taşıyan ve kendi alanı olmayan HER kullanıcıyı anında
+    /// etkiler. Legacy rollerin yetki matrisi dondurulmuştur ama coğrafi alan
+    /// ayrı bir eksendir: burada rol adına bakan bir kural YOKTUR.
+    /// </remarks>
+    [RequirePermission(PermissionCodes.RolesUpdate)]
+    [RequirePermission(PermissionCodes.GeographyManage)]
+    [HttpPut("{id:int}/geographic-authorization")]
+    public Task<ActionResult<GeographicAuthorizationResponse>> ReplaceRoleGeographicAuthorization(
+        int id,
+        [FromBody] UpdateGeographicAuthorizationRequest request,
+        CancellationToken cancellationToken) =>
+        Guard<GeographicAuthorizationResponse>(
+            nameof(ReplaceRoleGeographicAuthorization),
+            async () => Respond(
+                await _geographicAuthorization.UpsertRoleAuthorizationAsync(id, request, cancellationToken)));
+
+    /// <summary>Rolün alanını kaldırır.</summary>
+    [RequirePermission(PermissionCodes.RolesUpdate)]
+    [RequirePermission(PermissionCodes.GeographyManage)]
+    [HttpDelete("{id:int}/geographic-authorization")]
+    public Task<ActionResult<GeographicAuthorizationResponse>> DeleteRoleGeographicAuthorization(
+        int id,
+        CancellationToken cancellationToken) =>
+        Guard<GeographicAuthorizationResponse>(
+            nameof(DeleteRoleGeographicAuthorization),
+            async () => Respond(await _geographicAuthorization.DeleteRoleAuthorizationAsync(id, cancellationToken)));
+
 
     /* --- Sonuç eşlemesi --------------------------------------------------------
        İş kuralı sonuçlarının HTTP karşılığı tek yerde tutulur; her action

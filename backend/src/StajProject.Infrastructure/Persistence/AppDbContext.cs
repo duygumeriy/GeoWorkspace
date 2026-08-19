@@ -40,6 +40,9 @@ public class AppDbContext : IdentityDbContext<User, IdentityRole<int>, int>
 
     public DbSet<UserPermission> UserPermissions => Set<UserPermission>();
 
+    /// <summary>Kullanıcı/rol coğrafi yetki alanları (hedef başına en fazla bir satır).</summary>
+    public DbSet<GeographicAuthorization> GeographicAuthorizations => Set<GeographicAuthorization>();
+
     public override int SaveChanges()
     {
         StampAuditDates();

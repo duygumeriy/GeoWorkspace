@@ -222,6 +222,7 @@ public class RolePermissionGrantAuthorityHttpTests
                 /* İş servisi GERÇEK: açık tam olarak "filtre geçirdi, servis
                    sormadı" biçimindeydi. Substitute bunu göremezdi. */
                 services.AddScoped<IEffectivePermissionService, EffectivePermissionService>();
+                services.AddScoped<IGeographicAuthorizationService, GeographicAuthorizationService>();
                 services.AddScoped<IRoleManagementService, RoleManagementService>();
 
                 services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();

@@ -922,6 +922,8 @@ public class UserPermissionManagementTests
             sp.GetRequiredService<EffectivePermissionService>(),
             sp.GetRequiredService<EffectivePermissionCallCounter>()));
 
+        services.AddScoped<IGeographicAuthorizationService, GeographicAuthorizationService>();
+
         services.AddScoped<IUserPermissionManagementService, UserPermissionManagementService>();
         services.AddSingleton(Substitute.For<ILogger<UserPermissionManagementService>>());
 

@@ -34,7 +34,7 @@ public class GisRegressionTests
         owner.UserId.Returns(11);
         owner.UserName.Returns("drawing-owner");
         var ownerAuthorization = AuthorizationFor(owner);
-        var drawings = new DrawingService(db, owner, ownerAuthorization);
+        var drawings = new DrawingService(db, owner, ownerAuthorization, new GeographicAuthorizationService(db));
 
         var point = await drawings.CreatePointAsync(
             Create("POINT (30 40)", "Point"),
@@ -54,7 +54,7 @@ public class GisRegressionTests
         var otherUser = Substitute.For<ICurrentUserService>();
         otherUser.UserId.Returns(12);
         otherUser.UserName.Returns("other-user");
-        var forbiddenDrawings = new DrawingService(db, otherUser, AuthorizationFor(otherUser));
+        var forbiddenDrawings = new DrawingService(db, otherUser, AuthorizationFor(otherUser), new GeographicAuthorizationService(db));
         var forbiddenDelete = await forbiddenDrawings.DeleteAsync(
             DrawingKind.Point,
             point.Value!.Id,
