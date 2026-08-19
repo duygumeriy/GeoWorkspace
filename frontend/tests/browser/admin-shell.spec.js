@@ -101,7 +101,9 @@ test('the shell renders one sidebar with the three admin destinations', async ({
      arayüz eklemez: coğrafi yetki ekranı sonraki fazın işidir. Menüde
      şimdiden bir giriş belirmesi, arkasında hiçbir şey olmayan bir kapı
      olurdu. */
-  await expect(nav(page).getByRole('link')).toHaveCount(3)
+  // Üç bölüm + haritaya dönüş bağlantısı. Sayı, yeni bir girişin fark
+  // edilmeden eklenmesine karşı bir bekçidir.
+  await expect(nav(page).getByRole('link')).toHaveCount(4)
   await expect(nav(page).getByText(/coğraf/i)).toHaveCount(0)
 })
 
