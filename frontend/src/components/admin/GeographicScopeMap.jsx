@@ -16,67 +16,89 @@ import { geometryToWkt4326, wkt4326ToFeature } from '../../map/drawing.js'
 import { turkeyExtent } from '../../map/turkey.js'
 
 /**
- * Coğrafi yetki alanının haritası: tek bir düzenlenebilir poligon.
+ * Coğrafi yetki alanlarının haritası: KAYITLI alanların tamamı, seçili olan
+ * vurgulu, üzerine bir de düzenlenmekte olan taslak.
  *
  * <b>Üretim haritasının kopyası DEĞİLDİR.</b> Çizim araç çubuğu, envanter,
  * katman listesi, seçim, geçmiş yığını ve gezinme burada yoktur; bu ekranın tek
- * işi bir alanı göstermek ve düzenlemektir. Ana haritayı yeniden kullanmak,
- * yönetim kipinde anlamı olmayan onlarca kontrolü de beraberinde getirirdi.
+ * işi alanları göstermek ve birini düzenlemektir.
+ *
+ * <b>Ekleme, var olanı GİZLEMEZ.</b> (Phase 9) Yeni bir alan çizilirken diğer
+ * alanlar haritada durmaya devam eder. Aksi hâlde yönetici, ikinci bölgeyi
+ * birincisini göremeden çizmek zorunda kalırdı — ve iki bölgenin çakışıp
+ * çakışmadığını ancak kaydettikten sonra görürdü.
  *
  * <b>Geometri YEREL kalır.</b> Çizim ve düzenleme yalnızca bu bileşenin
  * kaynağını değiştirir ve sonucu WKT olarak yukarı bildirir; hiçbir istek
  * açılmaz. Kaydetme kararı üst bileşenindir — köşe sürüklerken sunucuya
  * yazmak, yarım bırakılan bir düzenlemeyi kalıcı hâle getirirdi.
  *
- * <b>İki kaynak ayrı durur.</b> Düzenlenebilir kaynak hedefin KENDİ alanıdır;
- * referans kaynağı ise kullanıcının rollerinden gelen ve buradan
- * değiştirilemeyen alandır. Tek katmanda birleştirmek, yöneticinin silemeyeceği
+ * <b>Üç kaynak ayrı durur.</b> Kayıtlı alanlar, taslak ve miras alınan alan
+ * kendi katmanlarındadır. Tek katmanda birleştirmek, yöneticinin silemeyeceği
  * bir poligonu kendi alanıymış gibi göstermek olurdu.
  *
  * @param {object} props
- * @param {string|null} props.baselineWkt sunucunun onayladığı doğrudan alan
- *   (EPSG:4326). Değiştiğinde çalışma geometrisi buna sıfırlanır.
- * @param {string|null} props.inheritedWkt rol(ler)den gelen referans alan.
- * @param {'idle'|'draw'|'modify'} props.mode etkin etkileşim.
- * @param {number} props.clearToken artırıldığında çalışma geometrisi silinir
- *   ve harita boş bırakılır ("yeniden çiz"). Sunucudan HİÇBİR ŞEY silmez.
+ * @param {{id:number,name:string,wkt:string}[]} props.areas kayıtlı alanlar
+ * @param {number|null} props.selectedId vurgulanan kayıtlı alan
+ * @param {string|null} props.inheritedWkt rol(ler)den gelen referans alan
+ * @param {string[]} props.draftWkts düzenlenmekte olan geometriler. Serbest
+ *   çizim ve koordinat girişi tek eleman üretir; il/bölge seçimi kopuk
+ *   parçalar için birden çok eleman üretebilir ve hiçbiri atılmaz.
+ * @param {number} props.draftToken artınca taslak kaynağı `draftWkts`'ten
+ *   YENİDEN kurulur. Her render'da kurmak, kullanıcının sürüklediği köşeyi
+ *   elinden alırdı.
+ * @param {'idle'|'draw'|'modify'} props.mode etkin etkileşim
+ * @param {{token:number, areaId:number|null}} props.fit kamera hedefi
  * @param {(wkt: string|null) => void} props.onWorkingChange
  * @param {() => void} props.onDrawEnd
+ * @param {(areaId: number) => void} props.onSelectArea
  */
 export default function GeographicScopeMap({
-  baselineWkt = null,
+  areas = [],
+  selectedId = null,
   inheritedWkt = null,
+  draftWkts = [],
+  draftToken = 0,
   mode = 'idle',
-  clearToken = 0,
+  fit = { token: 0, areaId: null },
   onWorkingChange,
   onDrawEnd,
+  onSelectArea,
 }) {
   const containerRef = useRef(null)
   const mapRef = useRef(null)
-  const editableSourceRef = useRef(null)
+  const savedSourceRef = useRef(null)
+  const draftSourceRef = useRef(null)
   const inheritedSourceRef = useRef(null)
+  const savedLayerRef = useRef(null)
   /* Sığdırılmayı BEKLEYEN kapsam. Kip penceresi açılırken kapsayıcının
      ölçüsü bir kare boyunca 0 olabilir ve o ölçüyle yapılan bir `fit`
      geçersiz bir çözünürlük üretir — harita boş görünürdü. Hedef burada
      bekletilir ve ölçü gerçekleşir gerçekleşmez uygulanır. */
   const pendingFitRef = useRef(null)
 
-  /* Geri çağrılar ref üzerinden okunur: üst bileşen her render'da yeni bir
-     fonksiyon üretse bile harita yeniden kurulmaz. Haritayı yeniden kurmak,
+  /* Geri çağrılar ve seçim ref üzerinden okunur: üst bileşen her render'da yeni
+     bir fonksiyon üretse bile harita yeniden kurulmaz. Haritayı yeniden kurmak,
      kullanıcının kaydırdığı görünümü ve çizmekte olduğu poligonu silerdi. */
-  const handlersRef = useRef({ onWorkingChange, onDrawEnd })
-  handlersRef.current = { onWorkingChange, onDrawEnd }
+  const handlersRef = useRef({ onWorkingChange, onDrawEnd, onSelectArea })
+  handlersRef.current = { onWorkingChange, onDrawEnd, onSelectArea }
+
+  const selectedRef = useRef(selectedId)
+  selectedRef.current = selectedId
+
+  const draftWktsRef = useRef(draftWkts)
+  draftWktsRef.current = draftWkts
 
   /**
    * Haritanın durumunu kapsayıcının veri niteliklerine yazar.
    *
-   * Kameranın NEREDE olduğu ve düzenlenebilir kaynakta KAÇ alan bulunduğu, bu
-   * ekranın iki temel kuralıdır: alan yokken görünüm Türkiye'ye odaklanır ve
-   * hedef başına yalnızca tek bir poligon tutulur. İkisi de tuvale çizilir,
-   * yani DOM'dan okunamaz; burada okunabilir hâle getirilirler.
+   * Kameranın NEREDE olduğu ve hangi kaynakta KAÇ alan bulunduğu bu ekranın
+   * gözlenebilir gerçekleridir; ikisi de tuvale çizilir, yani DOM'dan
+   * okunamaz. Burada okunabilir hâle getirilirler — hem testler hem de elle
+   * inceleme için.
    *
    * Merkez, haritanın çalıştığı EPSG:3857 metre değerlerinde değil boylam/enlem
-   * olarak yazılır — "Türkiye'ye odaklı mı" sorusunun cevabı ancak coğrafi
+   * olarak yazılır: "Türkiye'ye odaklı mı" sorusunun cevabı ancak coğrafi
    * birimlerde anlamlıdır.
    */
   const publishState = useCallback(() => {
@@ -91,8 +113,10 @@ export default function GeographicScopeMap({
     container.dataset.centerLon = center[0].toFixed(4)
     container.dataset.centerLat = center[1].toFixed(4)
     container.dataset.zoom = zoom == null ? '' : zoom.toFixed(2)
-    container.dataset.areaCount = String(editableSourceRef.current?.getFeatures().length ?? 0)
+    container.dataset.areaCount = String(savedSourceRef.current?.getFeatures().length ?? 0)
+    container.dataset.draftCount = String(draftSourceRef.current?.getFeatures().length ?? 0)
     container.dataset.inheritedCount = String(inheritedSourceRef.current?.getFeatures().length ?? 0)
+    container.dataset.selectedId = selectedRef.current == null ? '' : String(selectedRef.current)
   }, [])
 
   /**
@@ -123,8 +147,30 @@ export default function GeographicScopeMap({
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return undefined
 
-    const editableSource = new VectorSource()
+    const savedSource = new VectorSource()
+    const draftSource = new VectorSource()
     const inheritedSource = new VectorSource()
+
+    /* Kayıtlı alanların stili SEÇİLİ OLANA göre değişir. Seçim yalnızca renkle
+       değil, çizgi KALINLIĞIYLA da anlatılır; renk ayırt edemeyen biri için tek
+       başına ton farkı yeterli olmazdı. */
+    const savedStyle = (feature) => {
+      const isSelected = feature.getId() === selectedRef.current
+      return new Style({
+        fill: new Fill({ color: isSelected ? 'rgba(99, 102, 241, 0.22)' : 'rgba(99, 102, 241, 0.08)' }),
+        stroke: new Stroke({
+          color: isSelected ? '#4f46e5' : '#818cf8',
+          width: isSelected ? 3.5 : 1.75,
+        }),
+      })
+    }
+
+    const savedLayer = new VectorLayer({
+      source: savedSource,
+      className: 'geo-scope-layer',
+      zIndex: 11,
+      style: savedStyle,
+    })
 
     const map = new Map({
       target: containerRef.current,
@@ -139,7 +185,7 @@ export default function GeographicScopeMap({
           source: inheritedSource,
           className: 'geo-scope-layer',
           zIndex: 10,
-          /* Miras alınan alan KESİKLİ ve nötr çizilir: düzenlenebilir alandan
+          /* Miras alınan alan KESİKLİ ve nötr çizilir: kayıtlı alanlardan
              yalnızca renkle değil, çizgi biçimiyle de ayrılır. Efsane ayrıca
              metinle de anlatır. */
           style: new Style({
@@ -147,13 +193,17 @@ export default function GeographicScopeMap({
             stroke: new Stroke({ color: '#64748b', width: 2, lineDash: [8, 6] }),
           }),
         }),
+        savedLayer,
         new VectorLayer({
-          source: editableSource,
+          source: draftSource,
           className: 'geo-scope-layer',
-          zIndex: 12,
+          zIndex: 13,
+          /* Taslak, kayıtlı alanlardan AYRI bir renkle ve noktalı çizgiyle
+             gösterilir: henüz kaydedilmemiş bir alanı kayıtlıymış gibi
+             göstermek, yöneticinin kaydetmeyi unutmasına davetiye olurdu. */
           style: new Style({
-            fill: new Fill({ color: 'rgba(99, 102, 241, 0.18)' }),
-            stroke: new Stroke({ color: '#6366f1', width: 2.5 }),
+            fill: new Fill({ color: 'rgba(217, 155, 22, 0.18)' }),
+            stroke: new Stroke({ color: '#d99b16', width: 3, lineDash: [10, 5] }),
           }),
         }),
       ],
@@ -161,14 +211,32 @@ export default function GeographicScopeMap({
     })
 
     mapRef.current = map
-    editableSourceRef.current = editableSource
+    savedSourceRef.current = savedSource
+    draftSourceRef.current = draftSource
     inheritedSourceRef.current = inheritedSource
+    savedLayerRef.current = savedLayer
 
     /* Kamera ve kaynaklar bağımsız değişir: kip düğmesi geometriyi, tekerlek
-       görünümü oynatır. İkisi de aynı yayımı tetikler. */
+       görünümü oynatır. Hepsi aynı yayımı tetikler. */
     map.on('moveend', publishState)
-    editableSource.on('change', publishState)
+    savedSource.on('change', publishState)
+    draftSource.on('change', publishState)
     inheritedSource.on('change', publishState)
+
+    /* Haritadaki bir poligona tıklamak onu SEÇER. Alan kartlarına tıklamakla
+       aynı sonucu verir: iki yüzey tek bir seçim durumunu paylaşır, ikisi
+       birbirinden farklı bir alanı gösteremez. */
+    const handleClick = (event) => {
+      const hit = map.forEachFeatureAtPixel(
+        event.pixel,
+        (feature) => feature,
+        { layerFilter: (layer) => layer === savedLayerRef.current },
+      )
+      const id = hit?.getId()
+      if (id != null) handlersRef.current.onSelectArea?.(id)
+    }
+    map.on('singleclick', handleClick)
+
     publishState()
 
     /* Kip penceresi açılırken kapsayıcının ölçüsü henüz sıfır olabilir;
@@ -186,15 +254,42 @@ export default function GeographicScopeMap({
          açıldığında geride çalışan bir harita, dinleyici ya da ikinci bir
          tuval bırakmamak için. */
       map.un('moveend', publishState)
-      editableSource.un('change', publishState)
+      map.un('singleclick', handleClick)
+      savedSource.un('change', publishState)
+      draftSource.un('change', publishState)
       inheritedSource.un('change', publishState)
       map.setTarget(undefined)
       map.dispose()
       mapRef.current = null
-      editableSourceRef.current = null
+      savedSourceRef.current = null
+      draftSourceRef.current = null
       inheritedSourceRef.current = null
+      savedLayerRef.current = null
     }
   }, [applyPendingFit, publishState])
+
+  /* --- Kayıtlı alanlar ----------------------------------------------------- */
+  useEffect(() => {
+    const source = savedSourceRef.current
+    if (!source) return
+
+    source.clear()
+
+    for (const area of areas) {
+      const feature = wkt4326ToFeature(area.wkt)
+      if (!feature) continue
+      // Kimlik, haritadaki poligonu alan kaydına bağlar: tıklanan şey hangi
+      // satırsa seçilen de odur.
+      feature.setId(area.id)
+      source.addFeature(feature)
+    }
+  }, [areas])
+
+  /* Seçim değişince yalnızca STİL yenilenir; kaynak yeniden kurulmaz. */
+  useEffect(() => {
+    savedLayerRef.current?.changed()
+    publishState()
+  }, [selectedId, publishState])
 
   /* --- Referans (miras) alanı --------------------------------------------- */
   useEffect(() => {
@@ -208,53 +303,46 @@ export default function GeographicScopeMap({
     if (feature) source.addFeature(feature)
   }, [inheritedWkt])
 
-  /* --- Çalışma geometrisi: sunucunun onayladığı alandan kurulur ------------ */
+  /* --- Taslak: yalnızca token değiştiğinde yeniden kurulur ----------------- */
   useEffect(() => {
-    const source = editableSourceRef.current
+    const source = draftSourceRef.current
     if (!source) return
 
     source.clear()
 
-    if (!baselineWkt) {
-      handlersRef.current.onWorkingChange?.(null)
-      return
-    }
+    const features = (draftWktsRef.current ?? [])
+      .map((wkt) => wkt4326ToFeature(wkt))
+      .filter(Boolean)
 
-    const feature = wkt4326ToFeature(baselineWkt)
-    if (!feature) {
-      handlersRef.current.onWorkingChange?.(null)
-      return
-    }
+    for (const feature of features) source.addFeature(feature)
 
-    source.addFeature(feature)
-    /* Bildirilen değer, sunucudan gelen dizgenin AYNISI değil OpenLayers'ın
-       yeniden yazdığı hâlidir. "Kirli mi" sorusu iki dizgeyi karşılaştırır;
-       biri sunucunun, diğeri tarayıcının biçimlendirmesiyle yazılırsa hiç
-       dokunulmamış bir alan bile değişmiş görünürdü. */
-    handlersRef.current.onWorkingChange?.(geometryToWkt4326(feature.getGeometry()))
-  }, [baselineWkt])
+    /* <b>Buradan GERİ BİLDİRİM YAPILMAZ</b> ve bu bilinçlidir. Taslağın sahibi
+       üst bileşendir; harita onu yalnızca ÇİZER. Kurulumda geometriyi
+       OpenLayers'ın yeniden yazdığı hâliyle geri bildirmek, üst bileşenin az
+       önce kurduğu taslağın üzerine yazardı — ve o taslakla birlikte gelen
+       kaynak bilgisini (il kodu, bölge anahtarı, koordinat girişi) silerdi.
+       Yukarıya yalnızca KULLANICININ ürettiği geometri bildirilir: drawend ve
+       modifyend. */
+  }, [draftToken])
 
-  /* --- "Yeniden çiz": yerel geometriyi boşaltır ---------------------------- */
+  /* --- Kamera -------------------------------------------------------------- */
   useEffect(() => {
-    if (!clearToken) return
-    const source = editableSourceRef.current
-    if (!source) return
-    source.clear()
-    handlersRef.current.onWorkingChange?.(null)
-  }, [clearToken])
+    if (!mapRef.current) return
 
-  /* --- Kamera: var olan alana sığdır, yoksa Türkiye ------------------------ */
-  useEffect(() => {
-    const map = mapRef.current
-    if (!map) return
-
-    /* Kamera yalnızca AÇILIŞTA ve veri değiştiğinde konumlanır. Her çizim
-       sonrası yeniden sığdırmak, yöneticinin kaydırdığı görünümü elinden
-       almak olurdu. */
+    /* Kamera yalnızca AÇIKÇA istendiğinde konumlanır. Her çizimden ya da her
+       seçim değişikliğinden sonra yeniden sığdırmak, yöneticinin kaydırdığı
+       görünümü elinden almak olurdu. */
     const extent = createEmpty()
-    for (const source of [editableSourceRef.current, inheritedSourceRef.current]) {
-      const sourceExtent = source?.getExtent()
-      if (sourceExtent && !isEmptyExtent(sourceExtent)) extendExtent(extent, sourceExtent)
+
+    if (fit.areaId != null) {
+      const feature = savedSourceRef.current?.getFeatureById(fit.areaId)
+      const featureExtent = feature?.getGeometry()?.getExtent()
+      if (featureExtent && !isEmptyExtent(featureExtent)) extendExtent(extent, featureExtent)
+    } else {
+      for (const source of [savedSourceRef.current, draftSourceRef.current, inheritedSourceRef.current]) {
+        const sourceExtent = source?.getExtent()
+        if (sourceExtent && !isEmptyExtent(sourceExtent)) extendExtent(extent, sourceExtent)
+      }
     }
 
     pendingFitRef.current = isEmptyExtent(extent)
@@ -263,19 +351,19 @@ export default function GeographicScopeMap({
       : { extent, padding: [48, 48, 48, 48], maxZoom: 15 }
 
     applyPendingFit()
-  }, [baselineWkt, inheritedWkt, applyPendingFit])
+  }, [fit, applyPendingFit])
 
   /* --- Çizim --------------------------------------------------------------- */
   useEffect(() => {
     const map = mapRef.current
-    const source = editableSourceRef.current
+    const source = draftSourceRef.current
     if (!map || !source || mode !== 'draw') return undefined
 
     const draw = new Draw({ source, type: 'Polygon' })
 
-    /* Hedef başına TEK poligon kuralı burada uygulanır: yeni çizim başlarken
-       eski geometri düşer. İkincisini eklemek, sunucunun kabul etmediği bir
-       durumu ekranda mümkün göstermek olurdu. */
+    /* Taslak başına TEK poligon: yeni çizim başlarken eski taslak düşer.
+       KAYITLI alanlara dokunulmaz — onlar başka bir kaynaktadır ve ekranda
+       kalmaya devam ederler. */
     draw.on('drawstart', () => source.clear())
 
     draw.on('drawend', (event) => {
@@ -295,9 +383,11 @@ export default function GeographicScopeMap({
   /* --- Düzenleme ----------------------------------------------------------- */
   useEffect(() => {
     const map = mapRef.current
-    const source = editableSourceRef.current
+    const source = draftSourceRef.current
     if (!map || !source || mode !== 'modify') return undefined
 
+    // Modify YALNIZCA taslak kaynağına bağlanır: kayıtlı bir alanın köşesi
+    // kazara sürüklenip kaydedilmemiş bir değişiklik üretemez.
     const modify = new Modify({ source })
 
     modify.on('modifyend', () => {
@@ -315,5 +405,13 @@ export default function GeographicScopeMap({
     }
   }, [mode])
 
-  return <div ref={containerRef} className="geo-scope-map" data-testid="geographic-scope-map" role="application" aria-label="Coğrafi yetki alanı haritası" />
+  return (
+    <div
+      ref={containerRef}
+      className="geo-scope-map"
+      data-testid="geographic-scope-map"
+      role="application"
+      aria-label="Coğrafi yetki alanları haritası"
+    />
+  )
 }

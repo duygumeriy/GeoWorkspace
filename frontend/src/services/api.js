@@ -433,7 +433,12 @@ export function updateAdminUserPermissions(userId, permissionCodes) {
   })
 }
 
-/* --- Coğrafi yetki alanı (Phase 8A uçları) -----------------------------------
+/* --- Coğrafi yetki alanı (Phase 8A uçları — UYUMLULUK) -----------------------
+   <b>Bu altı fonksiyonu HİÇBİR ekran kullanmaz.</b> Hedef başına tek alanın
+   olduğu dönemden kalmışlardır; Phase 9 arayüzü aşağıdaki ÇOĞUL uçları
+   kullanır. Tekil PUT, hedefin TÜM alanlarını gönderilen tek alanla değiştirir
+   — çok alanlı bir hedefte ikinci ve sonraki alanları sessizce silerdi.
+
    Hedef başına TEK bir poligon vardır ve uçlar upsert semantiğiyle çalışır:
    PUT gönderilen alanı yazar, DELETE kaldırır. İkisi de hedefin GÜNCEL coğrafi
    durumunu geri döndürür, bu yüzden çağıran taraf ayrıca bir GET açmak zorunda
@@ -492,6 +497,116 @@ export function updateAdminRoleGeographicAuthorization(roleId, wkt) {
 
 export function deleteAdminRoleGeographicAuthorization(roleId) {
   return authFetch(`/api/admin/roles/${roleId}/geographic-authorization`, { method: 'DELETE' })
+}
+
+/* --- Coğrafi yetki alanları (Phase 9 — ÇOĞUL uçlar) --------------------------
+   Bir kullanıcı ya da rol BİRDEN ÇOK alana sahip olabilir ve her alanın kendi
+   kimliği vardır. Kimlik üzerinden adreslemek, "listedeki üçüncüyü sil"
+   demekten farklıdır: liste bu arada ikinci bir sekmede değişmiş olsa bile
+   doğru alan silinir.
+
+   Dört ucun DÖRDÜ DE hedefin GÜNCEL coğrafi durumunu geri döndürür (alanlar +
+   yürürlükteki sınır), bu yüzden çağıran taraf ayrıca bir GET açmak zorunda
+   değildir ve iyimser bir yerel duruma ihtiyaç duymaz.
+
+   Yetkiler tekil uçlarla BİREBİR aynıdır:
+     okuma     users.view / roles.view     + geography.view
+     yazma     users.update / roles.update + geography.manage
+
+   WKT daima EPSG:4326'dır. */
+
+export function fetchAdminUserGeographicAreas(userId) {
+  return authFetch(`/api/admin/users/${userId}/geographic-authorizations`)
+}
+
+/**
+ * Kullanıcıya YENİ bir alan ekler.
+ *
+ * Var olan alanlara DOKUNMAZ — "ikinci bölgeyi ekle" isteği, birinci bölgeyi
+ * silmek anlamına gelmez.
+ */
+export function createAdminUserGeographicArea(userId, area) {
+  return authFetch(`/api/admin/users/${userId}/geographic-authorizations`, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(area),
+  })
+}
+
+/** Kullanıcının TEK bir alanını değiştirir; diğerleri yerinde kalır. */
+export function updateAdminUserGeographicArea(userId, areaId, area) {
+  return authFetch(`/api/admin/users/${userId}/geographic-authorizations/${areaId}`, {
+    method: 'PUT',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(area),
+  })
+}
+
+/**
+ * Kullanıcının TEK bir alanını kaldırır.
+ *
+ * Son doğrudan alan da kaldırılırsa kullanıcı rollerinden gelen alanlara DÜŞER;
+ * kısıtsız hâle gelmesi şart değildir. Dönen yanıt yürürlükteki durumu taşır.
+ */
+export function deleteAdminUserGeographicArea(userId, areaId) {
+  return authFetch(`/api/admin/users/${userId}/geographic-authorizations/${areaId}`, { method: 'DELETE' })
+}
+
+export function fetchAdminRoleGeographicAreas(roleId) {
+  return authFetch(`/api/admin/roles/${roleId}/geographic-authorizations`)
+}
+
+/**
+ * Role YENİ bir alan ekler. Alan, o rolü taşıyan ve kendi alanı olmayan her
+ * kullanıcıyı anında etkiler.
+ */
+export function createAdminRoleGeographicArea(roleId, area) {
+  return authFetch(`/api/admin/roles/${roleId}/geographic-authorizations`, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(area),
+  })
+}
+
+export function updateAdminRoleGeographicArea(roleId, areaId, area) {
+  return authFetch(`/api/admin/roles/${roleId}/geographic-authorizations/${areaId}`, {
+    method: 'PUT',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(area),
+  })
+}
+
+export function deleteAdminRoleGeographicArea(roleId, areaId) {
+  return authFetch(`/api/admin/roles/${roleId}/geographic-authorizations/${areaId}`, { method: 'DELETE' })
+}
+
+/* --- Çağıranın KENDİ coğrafi kapsamı -----------------------------------------
+   Haritanın "nereye çizebilirim" sorusunun cevabı. Hedef parametresi YOKTUR:
+   cevap daima token sahibinindir.
+
+   Bu uç `geography.view` ARAMAZ — o yetki başkalarının alanını yönetmek
+   içindir; kişinin kendi çizim sınırını bilmesi haritayı doğru kullanabilmesinin
+   ön koşuludur. Kapsam CANLI okunur ve JWT'ye yazılmaz, dolayısıyla yönetici
+   bir alanı değiştirdiğinde yeniden giriş gerekmez. */
+
+export function fetchMyGeographicScope() {
+  return authFetch('/api/auth/me/geographic-scope')
+}
+
+/* --- Aktivite geçmişi --------------------------------------------------------
+   Yalnızca OKUMA. `activity.view` + yönetim uçlarının MFA şartı geçerlidir.
+   Sayfalama sunucu tarafındadır; sayfa boyutu sunucuda sınırlanır. */
+
+export function fetchAdminActivity({ page, pageSize, actorUserId, action, succeeded } = {}) {
+  const query = new URLSearchParams()
+  if (page) query.set('page', String(page))
+  if (pageSize) query.set('pageSize', String(pageSize))
+  if (actorUserId) query.set('actorUserId', String(actorUserId))
+  if (action) query.set('action', action)
+  if (succeeded !== undefined && succeeded !== null) query.set('succeeded', String(succeeded))
+
+  const suffix = query.toString()
+  return authFetch(`/api/admin/activity${suffix ? `?${suffix}` : ''}`)
 }
 
 /* --- Drawings ---------------------------------------------------------------
