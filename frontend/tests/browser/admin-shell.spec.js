@@ -96,6 +96,13 @@ test('the shell renders one sidebar with the three admin destinations', async ({
 
   // Exactly one navigation: a page growing its own copy would show two.
   await expect(page.getByRole('navigation', { name: 'Yönetim menüsü' })).toHaveCount(1)
+
+  /* Phase 8-P kataloğa geography.view / geography.manage ekler ama HİÇBİR
+     arayüz eklemez: coğrafi yetki ekranı sonraki fazın işidir. Menüde
+     şimdiden bir giriş belirmesi, arkasında hiçbir şey olmayan bir kapı
+     olurdu. */
+  await expect(nav(page).getByRole('link')).toHaveCount(3)
+  await expect(nav(page).getByText(/coğraf/i)).toHaveCount(0)
 })
 
 test('/admin redirects to the users screen', async ({ page }) => {

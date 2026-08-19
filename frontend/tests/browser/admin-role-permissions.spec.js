@@ -85,6 +85,10 @@ const CATALOG = [
   /* sortOrder 300 önce gelir; Türkçe alfabede "Çizim Silme" öne geçerdi. */
   permission(23, 'drawings.view', 'Çizimleri Görüntüleme', 'DrawingManagement', 300),
   permission(24, 'drawings.delete', 'Çizim Silme', 'DrawingManagement', 340),
+  /* Coğrafi yetkilendirme (Phase 8-P). Kategori sırası alfabetiktir:
+     DrawingManagement -> Geography -> Inventory. */
+  permission(33, 'geography.view', 'Coğrafi Yetkileri Görüntüleme', 'Geography', 1000),
+  permission(34, 'geography.manage', 'Coğrafi Yetkileri Yönetme', 'Geography', 1010),
   permission(25, 'inventory.view', 'Envanteri Görüntüleme', 'Inventory', 500),
   permission(26, 'inventory.analysis', 'Envanter Analizi', 'Inventory', 510),
   // Kullanımdan kaldırılmış yetkiler katalogta KALIR, isActive=false ile.
@@ -263,6 +267,7 @@ test('permissions are grouped by the categories the server sent', async ({ page 
   expect(headings).toEqual([
     'Çizim Oluşturma',
     'Çizim Yönetimi',
+    'Coğrafi Yetkilendirme',
     'Envanter',
     'Katmanlar',
     'Harita',
@@ -283,6 +288,25 @@ test('the server sort order inside a category is preserved', async ({ page }) =>
     'Çizimleri Görüntüleme',
     'Çizim Silme',
   ])
+})
+
+test('the geographic authorization permissions form their own assignable group', async ({ page }) => {
+  const { panel } = await open(page, 'GIS Editor')
+
+  /* Phase 8-P'de yeni kodlar için ekranda ÖZEL bir şey yoktur: sıradan
+     kanonik yetkiler olarak, kendi kategori başlıkları altında ve
+     işaretlenebilir hâlde gelirler. Varsayılan olarak hiçbir GIS rolüne
+     verilmedikleri için işaretsizdirler. */
+  const group = panel.locator('.admin-permission-group', { hasText: 'Coğrafi Yetkilendirme' })
+  await expect(group.locator('h4')).toHaveText('Coğrafi Yetkilendirme')
+
+  for (const name of ['Coğrafi Yetkileri Görüntüleme', 'Coğrafi Yetkileri Yönetme']) {
+    await expect(box(panel, name)).toBeEnabled()
+    await expect(box(panel, name)).not.toBeChecked()
+  }
+
+  await expect(group.getByText('geography.view', { exact: true })).toBeVisible()
+  await expect(group.getByText('geography.manage', { exact: true })).toBeVisible()
 })
 
 test('assigned permissions are checked and unassigned ones are not', async ({ page }) => {
