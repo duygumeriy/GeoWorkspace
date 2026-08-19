@@ -25,6 +25,7 @@ const CATEGORY_LABELS = {
   Users: 'Kullanıcı Yönetimi',
   Roles: 'Rol Yönetimi',
   Permissions: 'Yetki Yönetimi',
+  Geography: 'Coğrafi Yetkilendirme',
 }
 
 export function categoryLabel(category) {

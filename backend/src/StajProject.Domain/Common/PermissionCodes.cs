@@ -74,6 +74,18 @@ public static class PermissionCodes
     public const string PermissionsView = "permissions.view";
     public const string PermissionsAssign = "permissions.assign";
 
+    /* --- Coğrafi yetkilendirme ------------------------------------------------- */
+
+    /* Coğrafi yetki alanı yönetimi ayrı bir güvenlik yeteneğidir ve bilinçli
+       olarak users.update / roles.update altına GİZLENMEZ: coğrafi alan
+       yalnızca bir kullanıcı alanı değil, o kullanıcının nerede veri
+       üretebileceğini belirleyen bir sınırdır. Kullanıcı düzenleme yetkisinin
+       sessizce bu sınırı da kaldırabilmesi, yetki yükseltmeye açık kapı
+       bırakırdı. */
+
+    public const string GeographyView = "geography.view";
+    public const string GeographyManage = "geography.manage";
+
     /// <summary>EF <c>HasMaxLength</c> ile aynı sınır.</summary>
     public const int MaxLength = 128;
 }

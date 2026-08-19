@@ -7,7 +7,10 @@ namespace StajProject.Domain.Common;
 /// <para>
 /// <b>Başlangıç değeridir, kural değil.</b> Matris yalnızca rol ilk kez
 /// yetkilendirilirken uygulanır; bir yöneticinin sonradan yaptığı yetki
-/// değişiklikleri yeniden başlatmada geri alınmaz (bkz. seeder).
+/// değişiklikleri yeniden başlatmada geri alınmaz (bkz. seeder). Kataloğa
+/// sonradan eklenen bir yetkinin mevcut kurulumlardaki ayrıcalıklı rollere
+/// ulaşması ayrı ve dar kapsamlı bir yoldan olur:
+/// <see cref="RolePermissionExpansions"/>.
 /// </para>
 /// <para>
 /// <b>Legacy roller.</b> <c>Admin</c> ve <c>User</c> hâlâ çalışan kimlik

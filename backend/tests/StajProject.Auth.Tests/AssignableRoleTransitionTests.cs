@@ -153,7 +153,7 @@ public class AssignableRoleTransitionTests
            geçersiz kılmaz. Yetkileri Phase 1'deki eşitliğe göre aynen durur. */
         var codes = await Effective(scope).GetEffectivePermissionCodesAsync(user.Id);
 
-        Assert.Equal(role == ApplicationRoles.Admin ? 27 : 14, codes.Count);
+        Assert.Equal(role == ApplicationRoles.Admin ? 29 : 14, codes.Count);
         Assert.Equal([role], await RolesOfAsync(scope, user));
 
         // Yönetim listesinde de rolü doğru görünür.

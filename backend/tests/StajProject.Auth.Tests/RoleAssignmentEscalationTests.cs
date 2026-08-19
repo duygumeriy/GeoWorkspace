@@ -213,7 +213,7 @@ public class RoleAssignmentEscalationTests
         var actor = await CreateUserAsync(scope, "legacy-admin-actor", ApplicationRoles.Admin);
         var pending = await CreatePendingUserAsync(scope, "legacy-approved");
 
-        // 27 yetkiye gerçekten sahip olduğu için geçer.
+        // 29 yetkiye gerçekten sahip olduğu için geçer.
         Assert.True((await Management(scope).ApproveAsync(
             pending.Id, new ApproveUserRequest { Role = GisRoles.GisManager }, actor.Id)).IsSuccess);
     }

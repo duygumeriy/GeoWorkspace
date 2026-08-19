@@ -49,6 +49,10 @@ const CATALOG = [
   /* sortOrder 300 önce gelir; Türkçe alfabede "Çizim Silme" öne geçerdi. */
   permission(23, 'drawings.view', 'Çizimleri Görüntüleme', 'DrawingManagement', 300),
   permission(24, 'drawings.delete', 'Çizim Silme', 'DrawingManagement', 340),
+  /* Coğrafi yetkilendirme (Phase 8-P). Kategori sırası alfabetiktir:
+     DrawingManagement -> Geography -> Inventory. */
+  permission(33, 'geography.view', 'Coğrafi Yetkileri Görüntüleme', 'Geography', 1000),
+  permission(34, 'geography.manage', 'Coğrafi Yetkileri Yönetme', 'Geography', 1010),
   // Açıklama nullable'dır: bu satır boş açıklamanın nasıl çizildiğini ölçer.
   permission(25, 'inventory.analysis', 'Envanter Analizi', 'Inventory', 500, { description: null }),
   permission(26, 'inventory.view', 'Envanteri Görüntüleme', 'Inventory', 510),
@@ -63,8 +67,8 @@ const CATALOG = [
   permission(32, 'roles.view', 'Rolleri Görüntüleme', 'Roles', 800),
 ]
 
-const TOTAL = CATALOG.length                                   // 12
-const ACTIVE = CATALOG.filter((p) => p.isActive).length        // 11
+const TOTAL = CATALOG.length                                   // 14
+const ACTIVE = CATALOG.filter((p) => p.isActive).length        // 13
 const INACTIVE = TOTAL - ACTIVE                                // 1
 
 /* --- Kurulum ------------------------------------------------------------------ */
@@ -290,6 +294,7 @@ test('the category options come from the loaded data, deduplicated and in server
     'Tüm kategoriler',
     'Çizim Oluşturma',   // DrawingCreate — iki satır, tek seçenek
     'Çizim Yönetimi',
+    'Coğrafi Yetkilendirme',
     'Envanter',
     'Katmanlar',
     'Harita',
@@ -305,6 +310,26 @@ test('choosing a category shows only that category', async ({ page }) => {
 
   await categoryFilter(page).selectOption('DrawingManagement')
   await expect(names(page)).toHaveText(['Çizimleri Görüntüleme', 'Çizim Silme'])
+})
+
+test('the geographic authorization permissions are listed with a Turkish category label', async ({ page }) => {
+  await openCatalog(page)
+
+  /* Phase 8-P yalnızca KATALOĞU büyütür: iki yeni satır, kendi kategorisiyle,
+     hiçbir ekran değişikliği olmadan görünür. Katalog salt okunurdur —
+     "Coğrafi Yetki Tanımla" gibi bir eylem bu fazda YOKTUR. */
+  const view = rowFor(page, 'Coğrafi Yetkileri Görüntüleme')
+  await expect(view.getByText('geography.view', { exact: true })).toBeVisible()
+  await expect(view.getByText('Coğrafi Yetkilendirme', { exact: true })).toBeVisible()
+  await expect(view.getByText('Aktif', { exact: true })).toBeVisible()
+
+  const manage = rowFor(page, 'Coğrafi Yetkileri Yönetme')
+  await expect(manage.getByText('geography.manage', { exact: true })).toBeVisible()
+  await expect(manage.getByText('Coğrafi Yetkilendirme', { exact: true })).toBeVisible()
+
+  // Sunucu sırası korunur: görüntüleme, yönetmeden önce gelir.
+  await categoryFilter(page).selectOption('Geography')
+  await expect(names(page)).toHaveText(['Coğrafi Yetkileri Görüntüleme', 'Coğrafi Yetkileri Yönetme'])
 })
 
 test('an unknown category is selectable and filters correctly', async ({ page }) => {
@@ -342,6 +367,7 @@ test('search, category and status combine with AND semantics', async ({ page }) 
   await searchBox(page).fill('görüntüleme')
   await expect(names(page)).toHaveText([
     'Çizimleri Görüntüleme',
+    'Coğrafi Yetkileri Görüntüleme',
     'Envanteri Görüntüleme',
     'Katmanları Görüntüleme',
     'Haritayı Görüntüleme',

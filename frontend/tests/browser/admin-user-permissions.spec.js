@@ -90,6 +90,13 @@ const PERMISSIONS = [
     // Pasif ama tarihsel bir kişiye özel kaydı var; korunmalı.
     isActive: false, directAssigned: true, canAssignDirect: false, canRemoveDirect: false,
   }),
+  /* Coğrafi yetkilendirme (Phase 8-P): sıradan kanonik yetkiler. Görüntüleme
+     çağıranda VAR, yönetme YOK — sunucunun satır başına verdiği
+     `canAssignDirect` kararının ekranda ayrı ayrı okunduğunu gösterir. */
+  perm(9, 'geography.view', 'Coğrafi Yetkileri Görüntüleme', 'Geography'),
+  perm(10, 'geography.manage', 'Coğrafi Yetkileri Yönetme', 'Geography', {
+    canAssignDirect: false,
+  }),
 ]
 
 const payload = (overrides = {}) => ({
@@ -241,6 +248,20 @@ test('technical codes are shown and grouped by the server category', async ({ pa
   await expect(page.getByRole('group', { name: 'Çizim Oluşturma' })).toBeVisible()
   await expect(page.getByRole('group', { name: 'Envanter' })).toBeVisible()
   await expect(page.getByRole('group', { name: 'Kullanıcı Yönetimi' })).toBeVisible()
+})
+
+test('the geographic authorization permissions are ordinary rows in their own group', async ({ page }) => {
+  await openPermissions(page)
+
+  await expect(page.getByRole('group', { name: 'Coğrafi Yetkilendirme' })).toBeVisible()
+  await expect(row(page, 'Coğrafi Yetkileri Görüntüleme').locator('code')).toHaveText('geography.view')
+  await expect(row(page, 'Coğrafi Yetkileri Yönetme').locator('code')).toHaveText('geography.manage')
+
+  /* Atanabilirlik kararı SUNUCUDAN gelir, koddan çıkarılmaz: aynı kategorideki
+     iki satırdan biri açık, diğeri kapalıdır. İstemci "coğrafya" diye bir
+     kural bilmez. */
+  await expect(box(page, 'Coğrafi Yetkileri Görüntüleme')).toBeEnabled()
+  await expect(box(page, 'Coğrafi Yetkileri Yönetme')).toBeDisabled()
 })
 
 test('the historical overlap shows both sources at once', async ({ page }) => {

@@ -74,10 +74,10 @@ public class ActorAwareAssignableRoleTests
 
         var offered = await OfferedAsync(scope, actor);
 
-        /* 27 yetkinin tamamına sahip olmak legacy geçiş rollerini AÇMAZ: bunlar
+        /* 29 yetkinin tamamına sahip olmak legacy geçiş rollerini AÇMAZ: bunlar
            yetki yetersizliğinden değil, genel olarak yeni atamalara kapalı
            oldukları için listede yoktur. İki filtre bağımsızdır. */
-        Assert.Equal(27, (await Effective(scope).GetEffectivePermissionCodesAsync(actor.Id)).Count);
+        Assert.Equal(29, (await Effective(scope).GetEffectivePermissionCodesAsync(actor.Id)).Count);
         Assert.DoesNotContain(ApplicationRoles.Admin, offered);
         Assert.DoesNotContain(ApplicationRoles.User, offered);
     }

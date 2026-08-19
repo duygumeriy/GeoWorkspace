@@ -118,7 +118,7 @@ public class UserPermissionManagementTests
         var rows = response.Permissions.Where(p => p.Code == PermissionCodes.DrawingsPointCreate).ToArray();
 
         /* Katalog satırı TEKTİR: çift kaynak iki satır üretmez, tek satırda iki
-           kaynak olarak görünür. Aksi hâlde 27'lik liste sessizce büyürdü. */
+           kaynak olarak görünür. Aksi hâlde 29'luk liste sessizce büyürdü. */
         Assert.Single(rows);
         Assert.Equal([GisRoles.GisEditor], rows[0].InheritedFromRoles);
         Assert.True(rows[0].DirectAssigned);
@@ -463,7 +463,7 @@ public class UserPermissionManagementTests
     {
         await using var scope = await CreateScopeAsync();
 
-        /* Legacy Admin 27 yetkiyle gelir ve bu yüzden her şeyi dağıtabilir. Tek
+        /* Legacy Admin 29 yetkiyle gelir ve bu yüzden her şeyi dağıtabilir. Tek
            satır silindiğinde otoritesi GERÇEKTEN kaybolmalıdır; kaybolmuyorsa
            bir yerde ada bakan bir kestirme var demektir. Admin rolünün yetkileri
            uçtan düzenlenemediği için satır doğrudan veritabanından kaldırılır. */
