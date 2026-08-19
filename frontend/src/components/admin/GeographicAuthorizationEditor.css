@@ -1,0 +1,69 @@
+/* Coğrafi yetki düzenleyicisi.
+   Yönetim panelinin mevcut dilini kullanır: aynı yüzey renkleri, aynı köşe
+   yarıçapları, aynı mor vurgu ve aynı düğme sınıfları (`admin-button`).
+   Kendi görsel dili olan ikinci bir mini uygulama DEĞİLDİR.
+
+   Kip penceresi, kullanıcı/rol detay çekmecesinin (z-index 90) ÜSTÜNDE durur;
+   onay penceresi ise `admin-dialog-backdrop`'un kendi katmanındadır (100). */
+
+/* Kullanıcı ve rol çekmecelerindeki giriş düğmesinin kabı. */
+.geo-entry-actions{display:flex;flex-wrap:wrap;gap:.75rem}
+
+.geo-editor-backdrop{position:fixed;inset:0;z-index:95;display:grid;place-items:center;padding:1.5rem;background:rgba(0,0,0,.55)}
+.geo-editor{display:flex;flex-direction:column;gap:.9rem;box-sizing:border-box;width:min(1060px,100%);max-height:min(88vh,900px);padding:1.5rem;overflow-y:auto;background:var(--surface-solid);color:var(--text-primary);border:1px solid var(--border-soft);border-radius:var(--radius-lg);box-shadow:var(--shadow-panel)}
+.geo-editor-head{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem}
+.geo-editor-head h2{margin:0;font-size:1.25rem}
+.geo-editor-head p{margin:.35rem 0 0;color:var(--text-secondary);font-size:var(--font-small);line-height:1.5}
+.geo-editor-close{flex:none;width:44px;height:44px;border:1px solid var(--border-soft);border-radius:50%;background:var(--surface-soft);color:var(--text-primary);font-size:1.6rem;line-height:1;cursor:pointer}
+
+/* Durum, harita YÜKLENDİKTEN sonra yazılır: yükleme ya da hata sırasında
+   "kısıt yok" demek, bilinmeyen bir durumu bilinen bir duruma çevirirdi. */
+.geo-editor-state{display:grid;justify-items:start;gap:1rem;min-height:220px;align-content:center;padding:1rem;color:var(--text-secondary);background:var(--surface-soft);border:1px solid var(--border-soft);border-radius:var(--radius-sm)}
+.geo-editor-state p{margin:0}
+
+.geo-editor-status{margin:0;padding:.8rem;border-radius:var(--radius-sm);font-size:var(--font-small);line-height:1.5}
+.geo-editor-status.is-direct{background:rgba(99,102,241,.12);border:1px solid rgba(99,102,241,.4)}
+.geo-editor-status.is-inherited{background:rgba(100,116,139,.12);border:1px solid rgba(100,116,139,.4)}
+.geo-editor-status.is-none{color:var(--text-secondary);background:var(--surface-soft);border:1px solid var(--border-soft)}
+
+.geo-editor-body{display:flex;flex-direction:column;gap:.6rem}
+/* Harita EKRANIN ASIL İÇERİĞİDİR: yükseklik viewport'a göre verilir, sabit
+   birkaç yüz piksellik bir kutuya sıkıştırılmaz. */
+.geo-scope-map{position:relative;width:100%;height:clamp(320px,52vh,560px);overflow:hidden;background:var(--surface-soft);border:1px solid var(--border-soft);border-radius:var(--radius-sm)}
+.geo-scope-map .ol-attribution{font-size:11px}
+/* Koyu tema, ana haritadaki ile AYNI numarayı kullanır: sokak döşemeleri
+   sağlayıcı değiştirmeden ters çevrilir. Vektör katmanları kendi tuvallerine
+   çizildiği için (VectorLayer `className`) bu filtreden muaf tutulur —
+   olmasaydı alanların moru ve grisi de ters dönerdi. */
+[data-theme='dark'] .geo-scope-map canvas{filter:invert(0.9) hue-rotate(180deg) brightness(0.95) contrast(0.9) saturate(0.85)}
+[data-theme='dark'] .geo-scope-map .geo-scope-layer canvas{filter:none}
+
+.geo-editor-legend{display:flex;flex-wrap:wrap;gap:1rem;margin:0;padding:0;list-style:none;color:var(--text-secondary);font-size:var(--font-small)}
+.geo-editor-legend li{display:flex;align-items:center;gap:.4rem}
+.geo-swatch{width:18px;height:12px;border-radius:3px}
+.geo-swatch.is-direct{background:rgba(99,102,241,.25);border:2px solid #6366f1}
+.geo-swatch.is-inherited{background:rgba(100,116,139,.2);border:2px dashed #64748b}
+
+.geo-editor-warning,.geo-editor-notice,.geo-editor-error,.geo-editor-readonly{margin:0;padding:.8rem;border-radius:var(--radius-sm);font-size:var(--font-small);line-height:1.5}
+.geo-editor-warning{background:rgba(217,155,22,.1);border:1px solid rgba(217,155,22,.4)}
+.geo-editor-notice{background:rgba(34,197,94,.13);border:1px solid rgba(34,197,94,.45)}
+.geo-editor-error{background:var(--danger-soft);border:1px solid var(--danger)}
+.geo-editor-readonly{color:var(--text-secondary);background:var(--surface-soft);border:1px solid var(--border-soft)}
+
+.geo-editor-actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.75rem}
+.geo-editor-tools,.geo-editor-submit{display:flex;flex-wrap:wrap;gap:.75rem}
+.admin-button.is-active{border-color:var(--primary-light);background:rgba(99,102,241,.18);color:var(--text-primary)}
+
+/* Dar ekran: pencere neredeyse tam ekran olur, düğmeler alt alta dizilir ve
+   harita kullanılabilir bir yükseklikte kalır. Yatay taşma YOKTUR. */
+@media (max-width:768px){
+  .geo-editor-backdrop{padding:0}
+  .geo-editor{width:100%;max-height:100vh;height:100vh;border:0;border-radius:0}
+  .geo-editor-tools,.geo-editor-submit{flex-direction:column}
+  .geo-editor-tools .admin-button,.geo-editor-submit .admin-button{width:100%}
+  .geo-scope-map{height:clamp(260px,40vh,420px)}
+  /* Düğmeler alt alta dizilince kaydetme ekranın altına düşüyordu: ana eylem,
+     ulaşmak için kaydırma isteyen bir yerde duramaz. Eylem çubuğu kaydırılan
+     pencerenin dibine sabitlenir ve daima görünür kalır. */
+  .geo-editor-actions{position:sticky;bottom:0;z-index:1;flex-direction:column;align-items:stretch;margin:0 -1.5rem -1.5rem;padding:.75rem 1.5rem 1.5rem;background:var(--surface-solid);border-top:1px solid var(--border-soft)}
+}

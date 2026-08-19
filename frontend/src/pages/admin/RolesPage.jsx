@@ -41,6 +41,12 @@ export default function RolesPage() {
   const canDeleteRole = can(PERMISSIONS.ROLES_DELETE)
   /* Yetki matrisini KAYDETMEK, ucun aradığı gibi iki yetki ister. */
   const canAssignRolePermissions = canUpdateRole && can(PERMISSIONS.PERMISSIONS_ASSIGN)
+  /* Coğrafi alan da aynı ikili kuralı izler: okuma roles.view + geography.view,
+     yazma roles.update + geography.manage. `geography.manage` tek başına
+     yetmez; yetseydi rol düzenleme yetkisi olmayan biri rolün coğrafi sınırını
+     değiştirebilirdi. */
+  const canViewGeography = can(PERMISSIONS.GEOGRAPHY_VIEW)
+  const canManageGeography = canUpdateRole && can(PERMISSIONS.GEOGRAPHY_MANAGE)
 
   const [roles, setRoles] = useState([])
   const [selectedId, setSelectedId] = useState(null)
@@ -262,6 +268,7 @@ export default function RolesPage() {
           onDelete={() => setDialog('delete')}
           canRename={canUpdateRole}
           canDelete={canDeleteRole}
+          geography={{ canView: canViewGeography, canManage: canManageGeography }}
         />
       )}
 
