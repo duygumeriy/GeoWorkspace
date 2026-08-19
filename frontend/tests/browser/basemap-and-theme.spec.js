@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { mockPermissions } from './permissions.js'
 
 /**
  * Browser cover for the basemap system and the theme scope.
@@ -61,6 +62,11 @@ const POLYGON = {
  */
 async function openMap(page, { theme = null, basemap = null } = {}) {
   const tiles = []
+
+  /* Yetki ucu da yanıtlanmalı: arayüz küme gelene kadar korumalı hiçbir şeyi
+     çizmez (fail-closed). Bu spec yetki KURALLARINI ölçmüyor, bu yüzden tam
+     küme verilir; kuralların kendisi permission-aware-ui.spec.js'in işidir. */
+  await mockPermissions(page)
 
   await page.route('**/api/auth/me', (route) =>
     route.fulfill(json({ userId: USER_ID, username: 'browser-user', role: 'User' })),
@@ -273,6 +279,11 @@ test('the picker closes on Escape and on an outside click', async ({ page }) => 
 /* --- Theme scope -------------------------------------------------------------- */
 
 test('the sign-in screen has no theme control and the map does', async ({ page }) => {
+  /* Yetki ucu da yanıtlanmalı: arayüz küme gelene kadar korumalı hiçbir şeyi
+     çizmez (fail-closed). Bu spec yetki KURALLARINI ölçmüyor, bu yüzden tam
+     küme verilir; kuralların kendisi permission-aware-ui.spec.js'in işidir. */
+  await mockPermissions(page)
+
   await page.route('**/api/auth/me', (route) =>
     route.fulfill(json({ userId: USER_ID, username: 'browser-user', role: 'User' })),
   )

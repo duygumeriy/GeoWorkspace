@@ -3,12 +3,6 @@ import { fetchMe, setUnauthorizedHandler } from '../services/api'
 
 const AuthContext = createContext(null)
 
-/* Yönetim panelini görebilen rol adları (geçiş dönemi).
-   `Admin` legacy köprü rolü, `Administrator` ise Phase 4'ün kanonik hedef
-   rolüdür; ikisi de 27 yetkinin tamamını taşır. Liste bilinçli olarak bu ikisiyle
-   sınırlıdır ve başka rollere genişletilmez. */
-const ADMIN_PANEL_ROLES = ['Admin', 'Administrator']
-
 function readStoredAuth() {
   const token = sessionStorage.getItem('token')
   const expiresAt = sessionStorage.getItem('expiresAt')
@@ -165,24 +159,18 @@ export function AuthProvider({ children }) {
     user,
     userId: user?.userId ?? null,
     username: user?.username ?? '',
-    // Single derived source: isAdmin is computed from the role the server
-    // reported, never stored separately.
+    /* Rol yalnızca GÖSTERİLEN bir bilgidir. Hiçbir korumalı eylemin
+       görünürlüğü buna bakarak kararlaştırılmaz — o soruyu `usePermissions()`
+       üzerinden etkin yetki kodları yanıtlar. Rol adına bakan bir kural,
+       yetkisi elinden alınmış bir "Administrator"a arayüzü açık tutardı. */
     role: user?.role ?? null,
+    /* Haritanın çizim SAHİPLİK kuralı (canManageDrawing) için. Backend'in
+       DrawingAuthorizationHandler'ı ile birebir aynı kuralı yansıtır:
+       `Admin OR kaydın sahibi`. Bu bir yetki (ne yapabilir) değil, KAPSAM
+       (hangi kayıtlar üzerinde) sorusudur ve kapsam ekseni bilinçli olarak
+       sonraki bir fazın konusudur; burada değiştirmek, frontend'i backend'in
+       hâlâ uyguladığı kuraldan sessizce ayırırdı. */
     isAdmin: user?.role === 'Admin',
-    /* Yalnızca yönetim panelinin GÖRÜNÜRLÜĞÜ için geçici bir uyumluluk kuralı.
-       Phase 4 ile `Administrator` gerçek bir hedef rol oldu ve backend'in admin
-       uçları ona rol ADINA değil yetki satırlarına bakarak izin veriyor. Bu
-       liste olmasaydı, backend'in kabul ettiği bir yönetici React tarafında
-       /admin'e giremezdi.
-
-       `isAdmin` bilinçli olarak DEĞİŞTİRİLMEDİ: onu haritadaki çizim sahiplik
-       kuralı (canManageDrawing) kullanıyor ve burada genişletmek, bu fazın
-       kapsamı dışında sessiz bir yetki değişikliği olurdu.
-
-       Bu bir güvenlik sınırı DEĞİLDİR — gerçek karar backend'de verilir ve
-       yetkisiz bir istek 403 alır. Yetki tabanlı frontend kararları (can(...))
-       ayrı bir fazın konusu; o geldiğinde bu rol adı listesi kaldırılacak. */
-    canAccessAdminPanel: ADMIN_PANEL_ROLES.includes(user?.role),
     profileLoading,
     login,
     logout,

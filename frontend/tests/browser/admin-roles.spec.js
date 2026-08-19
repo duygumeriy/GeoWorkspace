@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { mockPermissions } from './permissions.js'
 
 /**
  * Role management against the global inventory.
@@ -49,6 +50,11 @@ const ROLES = [LEGACY_ADMIN, LEGACY_USER, VIEWER, GIS_EDITOR, ADMINISTRATOR, CUS
  * is how "the list re-reads from the server" gets proven.
  */
 async function openRoles(page, { onList, onCreate, onRename, onDelete, listStatus, onPermissions } = {}) {
+  /* Yetki ucu da yanıtlanmalı: arayüz küme gelene kadar korumalı hiçbir şeyi
+     çizmez (fail-closed). Bu spec yetki KURALLARINI ölçmüyor, bu yüzden tam
+     küme verilir; kuralların kendisi permission-aware-ui.spec.js'in işidir. */
+  await mockPermissions(page)
+
   await page.route('**/api/auth/me', (route) =>
     route.fulfill(json({ userId: 1, username: 'admin', emailConfirmed: true, twoFactorEnabled: true, role: 'Admin', roles: ['Admin'] })),
   )
@@ -126,6 +132,11 @@ test('the list does not fetch each role separately', async ({ page }) => {
 test('a loading state is shown before the roles arrive', async ({ page }) => {
   let release
   const held = new Promise((resolve) => { release = resolve })
+  /* Yetki ucu da yanıtlanmalı: arayüz küme gelene kadar korumalı hiçbir şeyi
+     çizmez (fail-closed). Bu spec yetki KURALLARINI ölçmüyor, bu yüzden tam
+     küme verilir; kuralların kendisi permission-aware-ui.spec.js'in işidir. */
+  await mockPermissions(page)
+
   await page.route('**/api/auth/me', (route) =>
     route.fulfill(json({ userId: 1, username: 'admin', emailConfirmed: true, twoFactorEnabled: true, role: 'Admin', roles: ['Admin'] })),
   )

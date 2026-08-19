@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { mockPermissions } from './permissions.js'
 
 /**
  * Yetki kataloğu ekranı (/admin/permissions).
@@ -77,6 +78,11 @@ const INACTIVE = TOTAL - ACTIVE                                // 1
  */
 async function openCatalog(page, { catalog = CATALOG, onGet } = {}) {
   const calls = []
+
+  /* Yetki ucu da yanıtlanmalı: arayüz küme gelene kadar korumalı hiçbir şeyi
+     çizmez (fail-closed). Bu spec yetki KURALLARINI ölçmüyor, bu yüzden tam
+     küme verilir; kuralların kendisi permission-aware-ui.spec.js'in işidir. */
+  await mockPermissions(page)
 
   await page.route('**/api/auth/me', (route) =>
     route.fulfill(json({ userId: 1, username: 'admin', emailConfirmed: true, twoFactorEnabled: true, role: 'Admin', roles: ['Admin'] })),

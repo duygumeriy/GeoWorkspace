@@ -67,6 +67,10 @@ export default function DrawingsPanel({
   onEdit,
   onDelete,
   canManage,
+  /* Sahiplik (`canManage`) ile yetki ayrı eksenlerdir: satır size ait olsa da
+     silme yetkiniz yoksa silme düğmesi çizilmez. */
+  canEdit = true,
+  canDelete = true,
 }) {
   const [selectMode, setSelectMode] = useState(false)
   const [search, setSearch] = useState('')
@@ -390,24 +394,28 @@ export default function DrawingsPanel({
                             </button>
                             {manageable && (
                               <>
-                                <button
-                                  type="button"
-                                  className="drawings-action"
-                                  title="Düzenle"
-                                  aria-label={`${item.name || config.label} çizimini düzenle`}
-                                  onClick={() => onEdit?.(item.key)}
-                                >
-                                  <PaletteIcon size={14} />
-                                </button>
-                                <button
-                                  type="button"
-                                  className="drawings-action drawings-action--danger"
-                                  title="Sil"
-                                  aria-label={`${item.name || config.label} çizimini sil`}
-                                  onClick={() => onDelete?.(item.key)}
-                                >
-                                  <TrashIcon size={14} />
-                                </button>
+                                {canEdit && (
+                                  <button
+                                    type="button"
+                                    className="drawings-action"
+                                    title="Düzenle"
+                                    aria-label={`${item.name || config.label} çizimini düzenle`}
+                                    onClick={() => onEdit?.(item.key)}
+                                  >
+                                    <PaletteIcon size={14} />
+                                  </button>
+                                )}
+                                {canDelete && (
+                                  <button
+                                    type="button"
+                                    className="drawings-action drawings-action--danger"
+                                    title="Sil"
+                                    aria-label={`${item.name || config.label} çizimini sil`}
+                                    onClick={() => onDelete?.(item.key)}
+                                  >
+                                    <TrashIcon size={14} />
+                                  </button>
+                                )}
                               </>
                             )}
                           </span>

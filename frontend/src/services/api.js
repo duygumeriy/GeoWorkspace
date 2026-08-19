@@ -4,10 +4,31 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5154
 
 let unauthorizedHandler = null
 let connectionHandler = null
+let forbiddenHandler = null
+
+/** Declared next to the handlers because `authFetch` excludes it from the 403 hook. */
+const ME_PERMISSIONS_PATH = '/api/auth/me/permissions'
 
 /** AuthProvider registers its logout function here so any 401 can trigger it. */
 export function setUnauthorizedHandler(handler) {
   unauthorizedHandler = handler
+}
+
+/**
+ * PermissionProvider registers a permission refresh here.
+ *
+ * Authorization is LIVE: a permission can be withdrawn while a screen is open,
+ * so an unexpected 403 usually means the browser's picture is stale rather than
+ * that anything went wrong. Refreshing lets the UI catch up on its own.
+ *
+ * This is NOT a logout path and must never become one — 403 means "signed in
+ * but not allowed", and the 401/403 distinction below stays exactly as it was.
+ * The handler itself rate-limits; this only reports the event.
+ *
+ * @param {(() => void)|null} handler
+ */
+export function setForbiddenHandler(handler) {
+  forbiddenHandler = handler
 }
 
 /**
@@ -170,11 +191,34 @@ export async function authFetch(path, options = {}) {
     unauthorizedHandler()
   }
 
+  /* A 403 lets the permission state re-sync, and nothing more. The permission
+     endpoint itself is excluded: a 403 from it would otherwise ask for the very
+     request that just failed, and the two would keep calling each other. */
+  if (res.status === 403 && forbiddenHandler && path !== ME_PERMISSIONS_PATH) {
+    forbiddenHandler()
+  }
+
   return res
 }
 
 export function fetchMe() {
   return authFetch('/api/auth/me')
+}
+
+/**
+ * The caller's own effective permission codes: role grants UNION direct grants,
+ * resolved live from the database.
+ *
+ * Read separately from `fetchMe` because the two change on different clocks:
+ * the profile is stable, while authorization is live and has to be refreshable
+ * on its own after an admin changes something. Merging them would mean
+ * re-downloading the profile on every permission refresh.
+ *
+ * Answers only for the authenticated caller — the endpoint takes no user id,
+ * so there is nothing here that could ask about somebody else.
+ */
+export function fetchMyPermissions() {
+  return authFetch(ME_PERMISSIONS_PATH)
 }
 
 /* --- Admin (AuthorizationPolicies.AdminMfaRequired) --------------------------

@@ -35,12 +35,14 @@ public class AuthController : ApiControllerBase
     private readonly IAccountService _accountService;
     private readonly ITwoFactorService _twoFactorService;
     private readonly ICurrentUserService _currentUser;
+    private readonly IEffectivePermissionService _permissions;
 
     public AuthController(
         IAuthService authService,
         IAccountService accountService,
         ITwoFactorService twoFactorService,
         ICurrentUserService currentUser,
+        IEffectivePermissionService permissions,
         ILogger<AuthController> logger)
         : base(logger)
     {
@@ -48,6 +50,7 @@ public class AuthController : ApiControllerBase
         _accountService = accountService;
         _twoFactorService = twoFactorService;
         _currentUser = currentUser;
+        _permissions = permissions;
     }
 
     /* --- Oturum -------------------------------------------------------------- */
@@ -177,6 +180,62 @@ public class AuthController : ApiControllerBase
             }
 
             return Ok(user);
+        });
+
+    /// <summary>
+    /// Çağıranın o anki etkin yetki kodları — arayüzün "neyi gösterebilirim"
+    /// sorusunun tek kaynağı.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Neden ayrı bir uç.</b> <c>me</c> hesabın kim olduğunu anlatır ve
+    /// nadiren değişir; yetkiler ise canlıdır ve bir yönetici değişikliğinden
+    /// sonra tek başına tazelenmeleri gerekir. Aynı gövdeye koymak, her yetki
+    /// tazelemesinde profili de yeniden indirmek olurdu.
+    /// </para>
+    /// <para>
+    /// <b>Kimlik istemciden GELMEZ.</b> Hedef daima
+    /// <see cref="ICurrentUserService.UserId"/>'dir; query, gövde veya route
+    /// üzerinden bir kullanıcı id'si kabul edilmez.
+    /// </para>
+    /// <para>
+    /// <b>MFA şartı YOKTUR</b> ve bu bilinçlidir. Yönetim uçları
+    /// <see cref="AuthorizationPolicies.MfaRequired"/> ile korunmaya DEVAM
+    /// eder; ama zorunlu 2FA yalnızca <c>Admin</c> rolü içindir, dolayısıyla
+    /// sıradan bir GIS kullanıcısı password-only token taşır. Buraya MFA
+    /// koymak, o kullanıcıların yetkilerini hiç okuyamaması ve arayüzün
+    /// tamamının fail-closed kapanması demek olurdu.
+    /// </para>
+    /// <para>
+    /// <b>Bu uç bir güvenlik sınırı değildir.</b> Yanıtı yalnızca arayüzü
+    /// biçimlendirir; her korumalı uç kendi <c>RequirePermission</c> kapısını
+    /// aynen uygular ve yetkisiz isteğe 403 döner.
+    /// </para>
+    /// </remarks>
+    [Authorize]
+    [HttpGet("me/permissions")]
+    public Task<ActionResult<CurrentUserPermissionsResponse>> MyPermissions(CancellationToken cancellationToken) =>
+        Guard<CurrentUserPermissionsResponse>(nameof(MyPermissions), async () =>
+        {
+            var userId = _currentUser.UserId;
+
+            if (userId is null)
+            {
+                return Unauthorized(new { message = "Geçersiz oturum." });
+            }
+
+            /* Servis TEK kez çağrılır ve tüm kümeyi birlikte çözer: yetki
+               başına sorgu, 27 kodluk katalogda 27 gidiş-geliş olurdu.
+               Uygun olmayan hesap (pasif, askıya alınmış, silinmiş) için boş
+               liste döner — istisna değil; yetkilendirmenin güvenli cevabı
+               "hiçbiri"dir. */
+            var codes = await _permissions.GetEffectivePermissionCodesAsync(userId.Value, cancellationToken);
+
+            return Ok(new CurrentUserPermissionsResponse
+            {
+                UserId = userId.Value,
+                Permissions = codes
+            });
         });
 
     /* --- Kayıt ve e-posta doğrulama ------------------------------------------ */

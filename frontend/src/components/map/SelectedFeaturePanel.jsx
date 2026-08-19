@@ -93,6 +93,13 @@ export default function SelectedFeaturePanel({
   // False for drawings owned by someone else. Viewing, zooming and analysing
   // stay available — only mutation is withheld.
   canManage = true,
+  /* Eylem bazlı yetkiler. Tek bir `canManage` yetmez: silme yetkisi olup
+     düzenleme yetkisi olmayan biri için "Düzenle"yi göstermek, kaydetmenin
+     garanti 403 aldığı bir oturum açmak olurdu. Sahiplik (`canManage`) ile
+     yetki AYRI eksenlerdir ve ikisi birden gerekir. */
+  canEdit = true,
+  canRestyle = true,
+  canDelete = true,
 }) {
   // On phones the sheet opens as a one-line summary so it barely covers the
   // map; the full detail list is one tap away. Desktop has the room to show
@@ -223,18 +230,24 @@ export default function SelectedFeaturePanel({
             </Button>
             {canManage && (
               <>
-                <Button variant="ghost" className="selected-action" onClick={onStartEdit}>
-                  <PaletteIcon size={16} />
-                  Düzenle
-                </Button>
-                <Button variant="ghost" className="selected-action" onClick={onEditStyle}>
-                  <PaletteIcon size={16} />
-                  Stili Değiştir
-                </Button>
-                <Button variant="ghost" className="selected-action selected-action--danger" onClick={onDelete}>
-                  <TrashIcon size={16} />
-                  Sil
-                </Button>
+                {canEdit && (
+                  <Button variant="ghost" className="selected-action" onClick={onStartEdit}>
+                    <PaletteIcon size={16} />
+                    Düzenle
+                  </Button>
+                )}
+                {canRestyle && (
+                  <Button variant="ghost" className="selected-action" onClick={onEditStyle}>
+                    <PaletteIcon size={16} />
+                    Stili Değiştir
+                  </Button>
+                )}
+                {canDelete && (
+                  <Button variant="ghost" className="selected-action selected-action--danger" onClick={onDelete}>
+                    <TrashIcon size={16} />
+                    Sil
+                  </Button>
+                )}
               </>
             )}
           </div>

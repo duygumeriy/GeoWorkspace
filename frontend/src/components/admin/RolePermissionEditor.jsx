@@ -5,11 +5,16 @@ import './permissionMatrix.css'
 /**
  * Rolün yetki matrisi: okuma ve — sunucu izin veriyorsa — düzenleme.
  *
- * Düzenlenebilirliği tek bir şey belirler: sunucunun `canEditPermissions`
- * bayrağı. Rol ADINA bakılmaz. "Admin ise dondur" gibi bir kural burada ikinci
- * bir kural kitabı kurar ve backend'in RoleCatalog'u değiştiği gün sessizce
- * onunla çelişirdi. Devre dışı bir onay kutusu zaten yalnızca nezakettir:
- * sunucu, tarayıcının ne çizdiğine bakmadan reddeder.
+ * Düzenlenebilirlik İKİ ayrı sorunun kesişimidir:
+ *
+ *   sunucunun `canEditPermissions` bayrağı — "BU rolün yetkileri değişebilir mi"
+ *   aktörün `canEdit` yetkisi           — "ben yetki atayabiliyor muyum"
+ *
+ * PUT ucu roles.update + permissions.assign'ın İKİSİNİ birden arar, bu yüzden
+ * `canEdit` de öyle kurulur. Rol ADINA bakılmaz: "Admin ise dondur" gibi bir
+ * kural burada ikinci bir kural kitabı kurar ve backend'in RoleCatalog'u
+ * değiştiği gün sessizce onunla çelişirdi. Devre dışı bir onay kutusu zaten
+ * yalnızca nezakettir: sunucu, tarayıcının ne çizdiğine bakmadan reddeder.
  *
  * Pasif (kullanımdan kaldırılmış) yetkiler görünür ama SEÇİLEMEZ. Atanmış bir
  * pasif yetki de işaretli görünür; istek gövdesine hiç girmez ve sunucu bu bağı
@@ -24,6 +29,7 @@ export default function RolePermissionEditor({
   saving,
   saveError,
   dirty,
+  canEdit = true,
   onToggle,
   onSetCategory,
   onReset,
@@ -31,7 +37,7 @@ export default function RolePermissionEditor({
   onRetry,
 }) {
   const headingId = useId()
-  const editable = role.canEditPermissions === true
+  const editable = role.canEditPermissions === true && canEdit
 
   const groups = useMemo(() => groupByCategory(permissions), [permissions])
   const selectableTotal = useMemo(() => activeCount(permissions), [permissions])
@@ -73,11 +79,17 @@ export default function RolePermissionEditor({
         {dirty && <span className="admin-permission-dirty"> · Kaydedilmemiş değişiklik var</span>}
       </p>
 
+      {/* Sebep hangi kapının kapalı olduğuna göre değişir: rolün kendisi
+          dondurulmuş olabilir ya da kişinin yetki atama yetkisi olmayabilir.
+          İkisini aynı cümleyle geçiştirmek, yöneticiyi olmayan bir rol
+          kısıtını aramaya iterdi. */}
       {!editable && (
         <p className="admin-policy-note">
-          {role.isLegacy
-            ? 'Bu legacy rolün yetkileri geriye dönük uyumluluk nedeniyle değiştirilemez.'
-            : 'Bu rolün yetkileri sistem tarafından dondurulmuştur ve değiştirilemez.'}
+          {role.canEditPermissions === true
+            ? 'Yetkileri görüntüleyebilirsiniz, ancak değiştirmek için rol düzenleme ve yetki atama yetkileri gerekir.'
+            : role.isLegacy
+              ? 'Bu legacy rolün yetkileri geriye dönük uyumluluk nedeniyle değiştirilemez.'
+              : 'Bu rolün yetkileri sistem tarafından dondurulmuştur ve değiştirilemez.'}
         </p>
       )}
 

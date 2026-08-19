@@ -6,6 +6,8 @@ import {
   readApiError,
   renameAdminRole,
 } from '../../services/api.js'
+import { usePermissions } from '../../auth/permissionStore.js'
+import { PERMISSIONS } from '../../auth/permissionCodes.js'
 import { useRolePermissions } from '../../hooks/useRolePermissions.js'
 import AdminPageHeader from '../../components/admin/AdminPageHeader.jsx'
 import RoleDetailPanel from '../../components/admin/RoleDetailPanel.jsx'
@@ -28,6 +30,18 @@ import './RolesPage.css'
  * it instead of paying for a second round trip.
  */
 export default function RolesPage() {
+  /* İKİ kapı ve ikisi de gereklidir:
+       aktör yetkisi  — "rol silebilir miyim"      (roles.delete)
+       hedef yeteneği — "BU rol silinebilir mi"    (sunucunun canDelete'i)
+     Sunucunun yetenek bayrakları legacy/sistem rolü kısıtlarını taşır ve rol
+     ADINDAN türetilmez; ikisini birleştirmek yerine yan yana durur. */
+  const { can, refreshPermissions } = usePermissions()
+  const canCreateRole = can(PERMISSIONS.ROLES_CREATE)
+  const canUpdateRole = can(PERMISSIONS.ROLES_UPDATE)
+  const canDeleteRole = can(PERMISSIONS.ROLES_DELETE)
+  /* Yetki matrisini KAYDETMEK, ucun aradığı gibi iki yetki ister. */
+  const canAssignRolePermissions = canUpdateRole && can(PERMISSIONS.PERMISSIONS_ASSIGN)
+
   const [roles, setRoles] = useState([])
   const [selectedId, setSelectedId] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -114,6 +128,10 @@ export default function RolesPage() {
     const saved = await permissions.save()
     if (!saved) return
     setRoles((current) => current.map((row) => (row.id === saved.id ? saved : row)))
+    /* Değişen rol AKTÖRÜN kendi rolü olabilir. Hedefin kim olduğuna bakıp
+       koşullu tazelemek, "aktör bu rolde mi" sorusunu tarayıcıda ikinci kez
+       cevaplamak olurdu; tek bir okuma bundan ucuzdur ve yanılmaz. */
+    refreshPermissions()
     setNotice({ type: 'success', message: `'${saved.name}' rolünün yetkileri güncellendi.` })
   }
 
@@ -189,12 +207,15 @@ export default function RolesPage() {
         description="Kullanıcı rollerini görüntüleyin ve özel roller oluşturup yönetin."
       />
 
-      <div className="admin-roles-toolbar">
-        {/* Yalnızca backend'in gerçekten desteklediği eylem sunulur. */}
-        <button type="button" className="admin-button" onClick={() => { setDialogError(''); setDialog('create') }}>
-          + Yeni Rol
-        </button>
-      </div>
+      {/* Yalnızca backend'in gerçekten desteklediği eylem sunulur — ve yalnızca
+          yetkisi olana. Boşalan araç çubuğu hiç çizilmez. */}
+      {canCreateRole && (
+        <div className="admin-roles-toolbar">
+          <button type="button" className="admin-button" onClick={() => { setDialogError(''); setDialog('create') }}>
+            + Yeni Rol
+          </button>
+        </div>
+      )}
 
       {notice && (
         <div className={`admin-notice is-${notice.type}`} role="status">
@@ -229,6 +250,7 @@ export default function RolesPage() {
             saving: permissions.saving,
             saveError: permissions.saveError,
             dirty: permissions.dirty,
+            canEdit: canAssignRolePermissions,
             onToggle: permissions.toggle,
             onSetCategory: permissions.setCategorySelection,
             onReset: permissions.reset,
@@ -238,6 +260,8 @@ export default function RolesPage() {
           onClose={() => guard({ type: 'close' })}
           onRename={() => { setDialogError(''); setDialog('rename') }}
           onDelete={() => setDialog('delete')}
+          canRename={canUpdateRole}
+          canDelete={canDeleteRole}
         />
       )}
 

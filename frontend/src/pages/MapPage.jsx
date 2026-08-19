@@ -7,6 +7,8 @@ import { defaults as defaultControls, ScaleLine } from 'ol/control'
 import { fromLonLat, toLonLat } from 'ol/proj'
 import { useAuth } from '../auth/AuthContext'
 import { canManageAll, canManageDrawing } from '../auth/permissions.js'
+import { usePermissions } from '../auth/permissionStore.js'
+import { PERMISSIONS } from '../auth/permissionCodes.js'
 import { useTransition } from '../transition/TransitionContext.jsx'
 import { setConnectionHandler } from '../services/api'
 import Sidebar from '../components/map/Sidebar.jsx'
@@ -39,6 +41,7 @@ import useTrash from '../hooks/useTrash.js'
 import useBasemap from '../hooks/useBasemap.js'
 import useInventoryAnalysis from '../hooks/useInventoryAnalysis.js'
 import useWorkspaceMode, { STYLE_PANEL_MODES } from '../hooks/useWorkspaceMode.js'
+import useWorkspacePermissions from '../hooks/useWorkspacePermissions.js'
 import useMapView, { TURKEY_CENTER_LON_LAT, TURKEY_ZOOM } from '../hooks/useMapView.js'
 import useMeasurement from '../hooks/useMeasurement.js'
 import useFeatureInteraction from '../hooks/useFeatureInteraction.js'
@@ -75,6 +78,7 @@ export default function MapPage() {
   const mapContainerRef = useRef(null)
   const mapRef = useRef(null)
   const { logout, expiresAt, username, isAdmin, userId } = useAuth()
+  const { can, canAll } = usePermissions()
   const { reportMapReady, isIdle } = useTransition()
   const navigate = useNavigate()
 
@@ -105,11 +109,17 @@ export default function MapPage() {
   // it — so the bar, the panel and the OpenLayers interaction cannot disagree.
   const workspaceMode = useWorkspaceMode()
 
+  /* Yetki katmanı modun ÜSTÜNDE durur, yanına ikinci bir araç durumu koymaz.
+     Yetkisiz bir aracın hem açılmasını engeller hem de yetki harita açıkken
+     kaldırıldığında çalışan etkileşimi söker — düğmeyi gizlemek tek başına
+     OpenLayers etkileşimini durdurmazdı. */
+  const allowed = useWorkspacePermissions(workspaceMode)
+
   // Declared before the drawing workspace because saving a polygon feeds
   // straight into it: one analysis engine serves both the temporary tool and
   // the automatic run after a polygon record is created.
   const analysis = useInventoryAnalysis(mapInstance, {
-    active: Boolean(workspaceMode.activeAnalysisTool),
+    active: Boolean(workspaceMode.activeAnalysisTool) && allowed.canAnalyze,
     showToast,
   })
   const { analyzeSaved } = analysis
@@ -117,6 +127,11 @@ export default function MapPage() {
   const workspace = useDrawingWorkspace(mapInstance, {
     showToast,
     activeDrawTool: workspaceMode.activeDrawTool,
+    canViewDrawings: allowed.canViewDrawings,
+    /* Geri/ileri al adım BAZINDA denetlenir: her komutun iki yönü de gerçek
+       birer API mutasyonudur ve farklı yetkiler isteyebilir (bir silmeyi geri
+       almak `drawings.restore` ister, ileri almak `drawings.delete`). */
+    hasPermissions: canAll,
     onPolygonSaved: analyzeSaved,
   })
   /* The trash is fetched only while its panel is open, and a successful restore
@@ -124,7 +139,7 @@ export default function MapPage() {
      back where the user deleted it from, not only leave this list. That is also
      why there is no second "add it to the map" code path here. */
   const trash = useTrash({
-    active: activePanel === 'trash',
+    active: activePanel === 'trash' && allowed.canViewDrawings && allowed.canRestoreDrawings,
     showToast,
     onRestored: workspace.reloadDrawings,
   })
@@ -143,7 +158,7 @@ export default function MapPage() {
   // Click-to-select runs in select mode only, and not while an area polygon is
   // being drawn — there a click is a vertex, not a selection.
   const clickSelectEnabled =
-    workspaceMode.isSelecting && workspaceMode.activeSelectionTool !== 'polygon'
+    allowed.canSelect && workspaceMode.isSelecting && workspaceMode.activeSelectionTool !== 'polygon'
 
   const { hovered } = useFeatureInteraction(mapInstance, {
     enabled: clickSelectEnabled,
@@ -164,8 +179,12 @@ export default function MapPage() {
 
   useSelectionTools(mapInstance, {
     // Non-null only in select mode, so a box drag can never be live while a
-    // draw or measure interaction is.
-    tool: workspaceMode.activeSelectionTool === 'single' ? null : workspaceMode.activeSelectionTool,
+    // draw or measure interaction is — and null outright without `selection.use`,
+    // so losing the permission tears the box/lasso interaction down too.
+    tool:
+      !allowed.canSelect || workspaceMode.activeSelectionTool === 'single'
+        ? null
+        : workspaceMode.activeSelectionTool,
     onSelect: handleSpatialSelect,
     selectKeysIn: workspace.selectKeysIn,
   })
@@ -332,11 +351,24 @@ export default function MapPage() {
 
   const selectedGeometry = selectedFeature ? featureByKey(selectedFeature.key)?.getGeometry() ?? null : null
 
-  /* Ownership-driven UI state. This only decides which controls are offered —
-     the backend independently re-checks ownership on every mutation and
-     answers 403, so nothing here is load-bearing for security. */
-  const canManageSelected = canManageDrawing({ isAdmin, userId }, selectedFeature)
-  const canManageSelection = canManageAll({ isAdmin, userId }, selectedFeatures)
+  /* İKİ ayrı eksen ve ikisi de gereklidir:
+
+       yetki  — "bu kişi çizim silebilir mi"   (etkin yetki kodu)
+       sahiplik — "BU kaydı yönetebilir mi"    (Admin veya kaydın sahibi)
+
+     Backend her mutasyonda ikisini de bağımsız olarak yeniden denetler ve
+     yetkisiz isteğe 403 döner; buradaki hesap yalnızca hangi kontrolün
+     sunulacağına karar verir. Sahiplik ekseni (KAPSAM) bilinçli olarak
+     backend'in DrawingAuthorizationHandler'ı ile aynı kuralı yansıtır. */
+  const ownsSelected = canManageDrawing({ isAdmin, userId }, selectedFeature)
+  const ownsSelection = canManageAll({ isAdmin, userId }, selectedFeatures)
+
+  /* Tek bir kaydın panelinde en az bir eylem sunulabiliyorsa yönetim bölümü
+     görünür. "Düzenle" üç yetkiyi birden ister, çünkü tek bir PUT gönderir. */
+  const canManageSelected =
+    ownsSelected && (allowed.canEditDrawing || allowed.canUpdateStyle || allowed.canDeleteDrawings)
+  const canManageSelection =
+    ownsSelection && (allowed.canUpdateStyle || allowed.canDeleteDrawings)
   const foreignSelectedCount = selectedFeatures.filter(
     (item) => !canManageDrawing({ isAdmin, userId }, item),
   ).length
@@ -751,15 +783,17 @@ export default function MapPage() {
   ])
 
   const handleMeasureShortcut = useCallback(
-    () => workspaceMode.selectMeasureTool(workspaceMode.activeMeasureTool ?? 'distance'),
-    [workspaceMode],
+    () => allowed.selectMeasureTool(workspaceMode.activeMeasureTool ?? 'distance'),
+    [allowed, workspaceMode.activeMeasureTool],
   )
 
   useKeyboardShortcuts({
     lettersEnabled: hasFinePointer,
-    // The shortcuts drive the same canonical actions the toolbar does; there is
-    // no second code path that could leave the two out of step.
-    onTool: workspaceMode.selectDrawTool,
+    /* The shortcuts drive the same canonical actions the toolbar does; there is
+       no second code path that could leave the two out of step. They go through
+       the SAME permission guard for that reason — a hidden Point button would
+       otherwise still be reachable by pressing P. */
+    onTool: allowed.selectDrawTool,
     onMeasure: handleMeasureShortcut,
     onEscape: handleEscape,
     onUndo: workspace.undo,
@@ -848,18 +882,22 @@ export default function MapPage() {
                   no component keeps its own idea of the active tool. */}
               <DrawToolbar
                 activeTool={workspaceMode.activeDrawTool}
-                onSelectTool={workspaceMode.selectDrawTool}
+                /* Guarded actions, not the raw mode ones: the bar, the letter
+                   shortcuts and the style panel's tabs all pass through the
+                   same gate, so a hidden tool has no second way in. */
+                onSelectTool={allowed.selectDrawTool}
                 measureMode={workspaceMode.activeMeasureTool}
-                onSelectMeasure={(mode) => workspaceMode.selectMeasureTool(mode ?? 'distance')}
+                onSelectMeasure={(mode) => allowed.selectMeasureTool(mode ?? 'distance')}
                 selectionTool={workspaceMode.activeSelectionTool}
-                onSelectSelectionTool={workspaceMode.selectSelectionTool}
+                onSelectSelectionTool={allowed.selectSelectionTool}
                 analysisActive={Boolean(workspaceMode.activeAnalysisTool)}
-                onToggleAnalysis={workspaceMode.toggleAnalysisTool}
+                onToggleAnalysis={allowed.toggleAnalysisTool}
                 onOpenStyle={openStyleForTool}
                 canUndo={workspace.canUndo}
                 canRedo={workspace.canRedo}
                 onUndo={workspace.undo}
                 onRedo={workspace.redo}
+                permissions={allowed}
               />
 
               <DrawingHint
@@ -888,7 +926,7 @@ export default function MapPage() {
                 mode={workspaceMode.activeMeasureTool}
                 liveLabel={measurement.liveLabel}
                 results={measurement.results}
-                onSelectMode={workspaceMode.selectMeasureTool}
+                onSelectMode={allowed.selectMeasureTool}
                 onClear={measurement.clear}
                 onClose={() => {
                   measurement.clear()
@@ -916,7 +954,9 @@ export default function MapPage() {
                 // The type the panel edits and the tool the map draws with are
                 // the same value, read from and written back to one place.
                 activeType={workspaceMode.styleToolType}
-                onSelectDrawTool={workspaceMode.setDrawTool}
+                /* Tip sekmeleri de aracı DEĞİŞTİRİR; aynı kapıdan geçerler,
+                   aksi hâlde gizli bir araç panelden açılabilirdi. */
+                onSelectDrawTool={allowed.setDrawTool}
                 onSetToolStyle={workspace.setToolStyle}
                 onPreview={workspace.previewStyle}
                 onPreviewPatch={workspace.previewStylePatch}
@@ -945,6 +985,9 @@ export default function MapPage() {
                 onCopyText={copyText}
                 onNotify={showToast}
                 canManage={canManageSelected}
+                canEdit={allowed.canEditDrawing}
+                canRestyle={allowed.canUpdateStyle}
+                canDelete={allowed.canDeleteDrawings}
               />
 
               <MultiSelectionPanel
@@ -957,11 +1000,13 @@ export default function MapPage() {
                 onDelete={requestDelete}
                 onClear={workspace.clearSelection}
                 canManageAll={canManageSelection}
+                canRestyle={allowed.canUpdateStyle}
+                canDelete={allowed.canDeleteDrawings}
                 foreignCount={foreignSelectedCount}
               />
 
               <DrawingsPanel
-                open={activePanel === 'drawings'}
+                open={activePanel === 'drawings' && allowed.canViewDrawings}
                 onClose={() => setActivePanel(null)}
                 drawings={workspace.drawings}
                 selectedKeys={selectedKeys}
@@ -980,12 +1025,14 @@ export default function MapPage() {
                 onEdit={editFromList}
                 onDelete={deleteFromList}
                 canManage={(item) => canManageDrawing({ isAdmin, userId }, item)}
+                canEdit={allowed.canEditDrawing}
+                canDelete={allowed.canDeleteDrawings}
               />
 
               {/* Soft delete made visible: the rows the database kept, with
                   the one action that puts them back. No permanent delete. */}
               <TrashPanel
-                open={activePanel === 'trash'}
+                open={activePanel === 'trash' && allowed.canViewDrawings && allowed.canRestoreDrawings}
                 onClose={() => setActivePanel(null)}
                 items={trash.items}
                 loading={trash.loading}
@@ -996,7 +1043,7 @@ export default function MapPage() {
               />
 
               <LayersPanel
-                open={activePanel === 'layers'}
+                open={activePanel === 'layers' && can(PERMISSIONS.LAYERS_VIEW)}
                 onClose={() => setActivePanel(null)}
                 visibility={workspace.visibility}
                 counts={layerCounts}

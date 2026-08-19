@@ -9,17 +9,30 @@ import { roleType } from './roleType.js'
  * returns the SAME shape as a list row (RoleDetail extends RoleListItem and adds
  * nothing), so opening a detail needs no second request.
  *
- * Which actions appear is the SERVER'S answer — `canRename` / `canDelete` /
- * `canEditPermissions` — not a name comparison here. If the backend ever
- * unfreezes a role, this screen follows without an edit. Disabling a button is
- * only ever a courtesy: the backend refuses the request regardless of what the
- * browser rendered.
+ * Which actions appear needs BOTH answers, and they are different questions:
+ * the actor's own permission ("may I rename roles at all") and the server's
+ * per-role capability — `canRename` / `canDelete` / `canEditPermissions` —
+ * which carries the legacy/system-role constraints. Neither is derived from a
+ * role NAME here. If the backend ever unfreezes a role, this screen follows
+ * without an edit. Hiding a button is only ever a courtesy: the backend
+ * refuses the request regardless of what the browser rendered.
  *
  * The permission matrix is a section of this same drawer, not a second screen
  * or a tab strip: it is the one thing an administrator opens a role to see, and
  * hiding it behind a tab would cost a click to reach the main content.
  */
-export default function RoleDetailPanel({ role, busy, permissions, onClose, onRename, onDelete }) {
+export default function RoleDetailPanel({
+  role,
+  busy,
+  permissions,
+  onClose,
+  onRename,
+  onDelete,
+  /* Aktörün global yetkisi. Rolün kendi yetenek bayrağıyla BİRLİKTE aranır —
+     biri "bu işi yapabilir misin", diğeri "bu rol buna açık mı" der. */
+  canRename: actorCanRename = true,
+  canDelete: actorCanDelete = true,
+}) {
   useEffect(() => {
     const onKeyDown = (event) => { if (event.key === 'Escape' && !busy) onClose() }
     document.addEventListener('keydown', onKeyDown)
@@ -29,6 +42,9 @@ export default function RoleDetailPanel({ role, busy, permissions, onClose, onRe
   if (!role) return null
 
   const type = roleType(role)
+
+  const showRename = actorCanRename && role.canRename
+  const showDelete = actorCanDelete && role.canDelete
 
   return (
     <>
@@ -61,19 +77,19 @@ export default function RoleDetailPanel({ role, busy, permissions, onClose, onRe
 
         <section className="admin-management">
           <h3>Yönetim</h3>
-          {role.canRename || role.canDelete ? (
+          {showRename || showDelete ? (
             <>
               {/* Kirli bir yetki seçimi varken yeniden adlandırma ve silme
                   KAPALIDIR. İkisi de listeyi sunucudan yeniden okur ve açık
                   düzenleyiciyi tazelenmiş veriyle ezerdi; kaydedilmemiş
                   işaretlemeler sessizce kaybolurdu. */}
               <div className="admin-role-actions">
-                {role.canRename && (
+                {showRename && (
                   <button type="button" className="admin-button secondary" disabled={busy || permissions.dirty} onClick={onRename}>
                     Yeniden Adlandır
                   </button>
                 )}
-                {role.canDelete && (
+                {showDelete && (
                   <button type="button" className="admin-button danger" disabled={busy || permissions.dirty} onClick={onDelete}>
                     Rolü Sil
                   </button>
@@ -88,11 +104,15 @@ export default function RoleDetailPanel({ role, busy, permissions, onClose, onRe
             </>
           ) : (
             /* Devre dışı düğme yığını yerine tek cümle: kullanılamayan bir
-               kontrolü göstermek, sebebini söylemekten daha az bilgi verir. */
+               kontrolü göstermek, sebebini söylemekten daha az bilgi verir.
+               Sebep hangi kapının kapalı olduğuna göre değişir — rolün kendisi
+               korumalı olabilir ya da kişinin yetkisi olmayabilir. */
             <p className="admin-policy-note">
-              {type.key === 'legacy'
-                ? 'Geçiş dönemi rolüdür: adı değiştirilemez, silinemez ve yeni atamalarda kullanılamaz.'
-                : 'Sistem rolüdür: adı değiştirilemez ve silinemez.'}
+              {role.canRename || role.canDelete
+                ? 'Bu rolü yeniden adlandırmak veya silmek için gerekli yetkiye sahip değilsiniz.'
+                : type.key === 'legacy'
+                  ? 'Geçiş dönemi rolüdür: adı değiştirilemez, silinemez ve yeni atamalarda kullanılamaz.'
+                  : 'Sistem rolüdür: adı değiştirilemez ve silinemez.'}
             </p>
           )}
         </section>

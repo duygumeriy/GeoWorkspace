@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../auth/AuthContext.jsx'
+import { usePermissions } from '../auth/permissionStore.js'
+import { PERMISSIONS } from '../auth/permissionCodes.js'
 import { approveUser, fetchAdminUser, fetchAdminUserPermissions, fetchAdminUsers, fetchAssignableRoles, readApiError, rejectUser, updateAdminUserPermissions, updateUserRole, updateUserStatus } from '../services/api.js'
 import AdminPageHeader from '../components/admin/AdminPageHeader.jsx'
 import UserDetailPanel from '../components/admin/UserDetailPanel.jsx'
@@ -13,6 +15,18 @@ const conflictMessage = 'Sistemde en az bir aktif Admin bulunmalıdır. Son akti
 
 export default function AdminPage() {
   const { userId } = useAuth()
+  /* Ekrandaki her eylem, ARKASINDAKİ ucun aradığı yetkiyi ister. Rol değişimi,
+     hesap durumu, onay ve red hepsi aynı uçtan (users.update) geçer — backend
+     users.create / users.deactivate / users.delete için bir uç TANIMLAMAZ, bu
+     yüzden burada onlara karşılık gelen bir düğme de uydurulmaz. */
+  const { can, refreshPermissions } = usePermissions()
+  const canUpdateUser = can(PERMISSIONS.USERS_UPDATE)
+  const canViewPermissions = can(PERMISSIONS.PERMISSIONS_VIEW)
+  /* Doğrudan yetki KAYDETME ucu users.update + permissions.assign ister. */
+  const canAssignDirect = canUpdateUser && can(PERMISSIONS.PERMISSIONS_ASSIGN)
+  /* Atanabilir rol listesi roles.view ile korunur; yetkisi olmayana rol
+     açılır listesi sunmak, doldurulamayacak bir alan göstermek olurdu. */
+  const canViewRoles = can(PERMISSIONS.ROLES_VIEW)
   const [users, setUsers] = useState([])
   const [roles, setRoles] = useState([])
   const [selectedId, setSelectedId] = useState(null)
@@ -51,6 +65,10 @@ export default function AdminPage() {
   }, [])
 
   const loadPermissions = useCallback(async (id) => {
+    /* GET .../permissions users.view + permissions.view ister. İkincisi yoksa
+       istek 403 döner; hiç açmamak, sekmeyi bir hata mesajıyla doldurmaktan
+       dürüsttür — sekme zaten gösterilmiyor. */
+    if (!canViewPermissions) return
     setPermissionLoading(true); setPermissionError('')
     try {
       const res = await fetchAdminUserPermissions(id)
@@ -58,7 +76,7 @@ export default function AdminPage() {
       adoptPermissions(await res.json())
     } catch (err) { setPermissionError(err.message || 'Kullanıcı yetkileri yüklenemedi.') }
     finally { setPermissionLoading(false) }
-  }, [adoptPermissions])
+  }, [adoptPermissions, canViewPermissions])
 
   const loadUsers = useCallback(async () => {
     setLoading(true); setError('')
@@ -74,7 +92,10 @@ export default function AdminPage() {
   /* Assignable roles come from the server so the approval dropdown and the
      backend's validation share one source. A failure here is not fatal for the
      rest of the screen, so it does not take over the page-level error slot. */
-  useEffect(() => { fetchAssignableRoles().then(async (res) => { if (res.ok) setRoles(await res.json()) }).catch(() => {}) }, [])
+  useEffect(() => {
+    if (!canViewRoles) return
+    fetchAssignableRoles().then(async (res) => { if (res.ok) setRoles(await res.json()) }).catch(() => {})
+  }, [canViewRoles])
 
   const openDetail = useCallback(async (id) => {
     setSelectedId(id); setDetail(null); setDetailLoading(true); setError('')
@@ -128,6 +149,10 @@ export default function AdminPage() {
          Bayat bir "GIS Editor rolünden" etiketi bırakmak, yöneticiye artık
          doğru olmayan bir kaynak göstermek olurdu. */
       loadPermissions(updated.id)
+      /* Rol değişimi AKTÖRÜN kendi hesabını da hedefliyor olabilir ve rol,
+         etkin yetkilerin kaynağıdır. Hedefin kim olduğuna bakıp koşullu
+         tazelemek aynı soruyu tarayıcıda ikinci kez cevaplamak olurdu. */
+      refreshPermissions()
       /* The account really did change even when the notification e-mail could
          not be delivered, so that case is a warning on a completed action —
          never an error that would invite the admin to retry. */
@@ -183,6 +208,8 @@ export default function AdminPage() {
          "başarılı saymak", sunucunun koruduğu pasif kayıtları ve tazelenmiş
          kaynak etiketlerini kaçırırdı. */
       adoptPermissions(await res.json())
+      // Hedef, aktörün kendisi olabilir: doğrudan yetkiler de etkin kümeye girer.
+      refreshPermissions()
       setNotice({ type: 'success', message: 'Kullanıcıya özel yetkiler güncellendi.' })
     } catch (err) {
       /* Başarısız kaydetmede seçim KORUNUR: yönetici 27 satırı yeniden
@@ -200,6 +227,7 @@ export default function AdminPage() {
     saving: permissionSaving,
     saveError: permissionSaveError,
     dirty: !sameSet(permissionBaseline, permissionSelected),
+    canEdit: canAssignDirect,
     onToggle: togglePermission,
     onReset: resetPermissions,
     onSave: savePermissions,
@@ -222,6 +250,6 @@ export default function AdminPage() {
     </section>
     {error && <div className="admin-error" role="alert"><span>{error}</span><button type="button" onClick={loadUsers}>Tekrar dene</button></div>}
     <UserManagementList users={filteredUsers} currentUserId={userId} loading={loading} selectedId={selectedId} onSelect={openDetail} emptyMessage={emptyMessage} />
-    {(selectedId || detailLoading) && <UserDetailPanel user={detail} currentUserId={userId} loading={detailLoading} mutating={mutating} roles={roles} permissions={permissionSection} onClose={() => { setSelectedId(null); setDetail(null) }} onChangeRole={changeRole} onChangeStatus={changeStatus} onApprove={approve} onReject={reject} />}
+    {(selectedId || detailLoading) && <UserDetailPanel user={detail} currentUserId={userId} loading={detailLoading} mutating={mutating} roles={roles} permissions={permissionSection} canUpdate={canUpdateUser} canViewPermissions={canViewPermissions} onClose={() => { setSelectedId(null); setDetail(null) }} onChangeRole={changeRole} onChangeStatus={changeStatus} onApprove={approve} onReject={reject} />}
   </div>
 }

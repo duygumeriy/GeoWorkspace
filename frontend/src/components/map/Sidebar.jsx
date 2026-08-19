@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAuth } from '../../auth/AuthContext.jsx'
+import { usePermissions } from '../../auth/permissionStore.js'
+import { ADMIN_ENTRY_PERMISSIONS, PERMISSIONS } from '../../auth/permissionCodes.js'
 import useMediaQuery from '../../hooks/useMediaQuery.js'
 import IconButton from '../ui/IconButton.jsx'
 import {
@@ -37,10 +38,11 @@ export default function Sidebar({
   onLogout,
 }) {
   const navigate = useNavigate()
-  /* Yönetim girişinin GÖRÜNÜRLÜĞÜ; `isAdmin` değil, çünkü Phase 4'ten beri
-     kanonik `Administrator` de backend'in kabul ettiği bir yöneticidir.
-     Haritanın çizim sahiplik kuralı `isAdmin`'i kullanmaya devam eder. */
-  const { canAccessAdminPanel } = useAuth()
+  /* Görünürlük kararı ETKİN YETKİ KODLARINDAN gelir, rol adından değil: yetki
+     satırı kaldırılmış bir "Administrator" burada da giriş görmemelidir, buna
+     karşılık özel bir rol ya da kullanıcıya özel bir yetki kendiliğinden
+     çalışmalıdır. */
+  const { can, canAny } = usePermissions()
   const asideRef = useRef(null)
   const isMobile = useMediaQuery('(max-width: 640px)')
 
@@ -64,21 +66,34 @@ export default function Sidebar({
     }
   }, [mobileOpen, onCloseMobile])
 
+  /* Her satır AÇTIĞI ekranın yetkisini ister. Yetkisi olmayan satır hiç
+     çizilmez — devre dışı bir satır bırakmak, kişiyi yalnızca hata gösterecek
+     bir panele davet etmek olurdu ve klavye sırasında da yer kaplardı.
+     `Harita`, `Ayarlar` ve `Hakkında` korumalı değildir: ilki paneli kapatır,
+     diğer ikisi kişinin kendi hesabını ve uygulama bilgisini gösterir. */
   const items = [
     { id: null, label: 'Harita', Icon: MapIcon },
-    { id: 'drawings', label: 'Çizimlerim', Icon: ListIcon },
-    { id: 'layers', label: 'Katmanlar', Icon: LayersIcon },
+    ...(can(PERMISSIONS.DRAWINGS_VIEW) ? [{ id: 'drawings', label: 'Çizimlerim', Icon: ListIcon }] : []),
+    ...(can(PERMISSIONS.LAYERS_VIEW) ? [{ id: 'layers', label: 'Katmanlar', Icon: LayersIcon }] : []),
     // Right after "Çizimlerim"/"Katmanlar" because it is the same subject seen
     // from the other side: the drawings that are no longer on the map.
-    { id: 'trash', label: 'Çöp Kutusu', Icon: TrashIcon },
-    ...(canAccessAdminPanel ? [{ id: 'admin-users', label: 'Kullanıcı Yönetimi', Icon: ShieldIcon }] : []),
+    // Çöp Kutusu'nun tek eylemi geri yüklemedir; listesi de silinmiş ÇİZİMLERDİR.
+    ...(can(PERMISSIONS.DRAWINGS_VIEW) && can(PERMISSIONS.DRAWINGS_RESTORE)
+      ? [{ id: 'trash', label: 'Çöp Kutusu', Icon: TrashIcon }]
+      : []),
+    ...(canAny(ADMIN_ENTRY_PERMISSIONS)
+      ? [{ id: 'admin-users', label: 'Kullanıcı Yönetimi', Icon: ShieldIcon }]
+      : []),
     { id: 'settings', label: 'Ayarlar', Icon: SettingsIcon },
     { id: 'about', label: 'Hakkında', Icon: InfoIcon },
   ]
 
   const handleSelect = (panelId) => {
     if (panelId === 'admin-users') {
-      navigate('/admin/users')
+      /* Kök yönlendirmesi aktörün açabileceği İLK bölümü seçer; buradan
+         doğrudan /admin/users'a gitmek, yalnızca roles.view taşıyan bir
+         yöneticiyi yetkisizlik ekranına düşürürdü. */
+      navigate('/admin')
       if (isMobile) onCloseMobile?.()
       return
     }
