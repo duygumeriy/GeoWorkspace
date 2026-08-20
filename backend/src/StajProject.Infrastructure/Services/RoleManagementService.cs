@@ -426,11 +426,35 @@ public class RoleManagementService : IRoleManagementService
             /* Tek transaction: yarısı uygulanmış bir yetki kümesi, rolün hiç
                olmadığı bir güvenlik durumunda kalması demek olurdu. */
             await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+            await AdministratorSafety.AcquireMutationLockAsync(_dbContext, cancellationToken);
 
             _dbContext.RolePermissions.RemoveRange(toRemove);
             _dbContext.RolePermissions.AddRange(toAdd);
 
             await _dbContext.SaveChangesAsync(cancellationToken);
+
+            var removesCriticalAdministrativePermission =
+                AdministrativeRoleSemantics.IsAdministrativeRole(role.Name)
+                && toRemove.Any(grant => AdministrativeRoleSemantics.CriticalPermissionCodes.Contains(
+                    catalog.Single(permission => permission.Id == grant.PermissionId).Code));
+
+            if (removesCriticalAdministrativePermission
+                && !await AdministratorSafety.HasUsableAdministratorAsync(
+                    _dbContext,
+                    _effectivePermissions,
+                    cancellationToken))
+            {
+                if (!_dbContext.Database.IsRelational())
+                {
+                    _dbContext.RolePermissions.RemoveRange(toAdd);
+                    _dbContext.RolePermissions.AddRange(toRemove);
+                    await _dbContext.SaveChangesAsync(cancellationToken);
+                }
+
+                return ServiceResult<RolePermissionsResponse>.Conflict(
+                    "Bu yetki değişikliği sistemde kullanılabilir yönetici bırakmayacaktır.");
+            }
+
             await transaction.CommitAsync(cancellationToken);
 
             _logger.LogInformation(

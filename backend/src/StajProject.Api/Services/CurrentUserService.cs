@@ -65,7 +65,7 @@ public class CurrentUserService : ICurrentUserService
     /// </remarks>
     public string? Role => Roles.FirstOrDefault();
 
-    public bool IsAdmin => IsInRole(ApplicationRoles.Admin);
+    public bool IsAdmin => AdministrativeRoleSemantics.RoleNames.Any(IsInRole);
 
     public bool IsInRole(string role) => Principal?.IsInRole(role) ?? false;
 }

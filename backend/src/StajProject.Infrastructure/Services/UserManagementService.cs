@@ -29,8 +29,6 @@ public class UserManagementService : IUserManagementService
     /// bırakılır.
     /// </para>
     /// </summary>
-    private const long RoleMutationLockKey = 8314927001L;
-
     /// <summary>
     /// Yönetici notu için üst sınır. Entity tarafındaki kolon uzunluğuyla
     /// aynıdır; doğrulama, veritabanı hatasından önce anlaşılır bir mesaj verir.
@@ -44,6 +42,7 @@ public class UserManagementService : IUserManagementService
        kendi doğrulamalarını yazmaz; ikisi de buraya sorar, böylece iki uç
        zamanla farklı kurallara kayamaz. */
     private readonly IRoleManagementService _roleManagement;
+    private readonly IEffectivePermissionService _effectivePermissions;
     private readonly IEmailSender _emailSender;
     private readonly ClientAppOptions _clientApp;
     private readonly ILogger<UserManagementService> _logger;
@@ -54,11 +53,13 @@ public class UserManagementService : IUserManagementService
         IRoleManagementService roleManagement,
         IEmailSender emailSender,
         ClientAppOptions clientApp,
-        ILogger<UserManagementService> logger)
+        ILogger<UserManagementService> logger,
+        IEffectivePermissionService? effectivePermissions = null)
     {
         _dbContext = dbContext;
         _userManager = userManager;
         _roleManagement = roleManagement;
+        _effectivePermissions = effectivePermissions ?? new EffectivePermissionService(dbContext);
         _emailSender = emailSender;
         _clientApp = clientApp;
         _logger = logger;
@@ -157,10 +158,15 @@ public class UserManagementService : IUserManagementService
             return await ReloadAsync(userId, cancellationToken);
         }
 
-        // Admin'likten düşürülüyorsa sistemin adminsiz kalmadığını doğrula.
-        if (IsLosingActiveAdmin(user, currentRoles, targetRole))
+        if (AdministrativeRoleSemantics.HasAdministrativeRole(currentRoles)
+            && !AdministrativeRoleSemantics.IsAdministrativeRole(targetRole))
         {
-            var guard = await GuardLastActiveAdminAsync(userId, actingUserId, cancellationToken);
+            var guard = await GuardLastActiveAdminAsync(
+                userId,
+                actingUserId,
+                cancellationToken,
+                excludeTarget: true);
+
             if (guard is not null)
             {
                 return guard;
@@ -172,6 +178,16 @@ public class UserManagementService : IUserManagementService
         if (assignment is not null)
         {
             return assignment;
+        }
+
+        if (AdministrativeRoleSemantics.HasAdministrativeRole(currentRoles)
+            || AdministrativeRoleSemantics.IsAdministrativeRole(targetRole))
+        {
+            var guard = await GuardLastActiveAdminAsync(userId, actingUserId, cancellationToken);
+            if (guard is not null)
+            {
+                return guard;
+            }
         }
 
         await transaction.CommitAsync(cancellationToken);
@@ -229,10 +245,17 @@ public class UserManagementService : IUserManagementService
             return await ReloadAsync(userId, cancellationToken);
         }
 
-        // Pasifleştirme, son aktif Admin'i devre dışı bırakıyorsa engellenir.
-        if (!request.IsActive && await _userManager.IsInRoleAsync(user, ApplicationRoles.Admin))
+        var wasAdministrative = !request.IsActive
+            && AdministrativeRoleSemantics.HasAdministrativeRole(await _userManager.GetRolesAsync(user));
+
+        if (wasAdministrative)
         {
-            var guard = await GuardLastActiveAdminAsync(userId, actingUserId, cancellationToken);
+            var guard = await GuardLastActiveAdminAsync(
+                userId,
+                actingUserId,
+                cancellationToken,
+                excludeTarget: true);
+
             if (guard is not null)
             {
                 return guard;
@@ -249,7 +272,6 @@ public class UserManagementService : IUserManagementService
         {
             return Failed<AdminUserDetail>("Kullanıcı durumu güncellenemedi.", update);
         }
-
         await transaction.CommitAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -528,12 +550,7 @@ public class UserManagementService : IUserManagementService
     /// çalışıldığı için korunacak bir yarış zaten yoktur.
     /// </remarks>
     private Task AcquireRoleMutationLockAsync(CancellationToken cancellationToken) =>
-        _dbContext.Database.IsNpgsql()
-            ? _dbContext.Database.ExecuteSqlRawAsync(
-                "SELECT pg_advisory_xact_lock({0})",
-                [RoleMutationLockKey],
-                cancellationToken)
-            : Task.CompletedTask;
+        AdministratorSafety.AcquireMutationLockAsync(_dbContext, cancellationToken);
 
     private Task<User?> FindManageableUserAsync(int userId, CancellationToken cancellationToken) =>
         _userManager.Users.SingleOrDefaultAsync(u => u.Id == userId && !u.IsDeleted, cancellationToken);
@@ -576,11 +593,6 @@ public class UserManagementService : IUserManagementService
             : Failed<AdminUserDetail>("Rol atanamadı.", assignment);
     }
 
-    private static bool IsLosingActiveAdmin(User user, IList<string> currentRoles, string targetRole) =>
-        user.IsActive
-        && currentRoles.Contains(ApplicationRoles.Admin)
-        && !string.Equals(targetRole, ApplicationRoles.Admin, StringComparison.Ordinal);
-
     /// <summary>
     /// Hedef kullanıcı dışında en az bir aktif Admin kalmıyorsa 409 döner.
     /// Kural hem başkası hem de kişinin kendisi için aynıdır: sistemin son
@@ -589,13 +601,14 @@ public class UserManagementService : IUserManagementService
     private async Task<ServiceResult<AdminUserDetail>?> GuardLastActiveAdminAsync(
         int targetUserId,
         int actingUserId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool excludeTarget = false)
     {
-        var admins = await _userManager.GetUsersInRoleAsync(ApplicationRoles.Admin);
-
-        var otherActiveAdmins = admins.Count(a => a.Id != targetUserId && a.IsActive && !a.IsDeleted);
-
-        if (otherActiveAdmins > 0)
+        if (await AdministratorSafety.HasUsableAdministratorAsync(
+                _dbContext,
+                _effectivePermissions,
+                cancellationToken,
+                excludeTarget ? targetUserId : null))
         {
             return null;
         }

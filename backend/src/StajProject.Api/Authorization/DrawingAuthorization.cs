@@ -44,7 +44,7 @@ public class DrawingAuthorizationHandler
         }
 
         // Admin her kaydı yönetebilir.
-        if (context.User.IsInRole(ApplicationRoles.Admin))
+        if (AdministrativeRoleSemantics.RoleNames.Any(context.User.IsInRole))
         {
             context.Succeed(requirement);
             return Task.CompletedTask;
