@@ -295,11 +295,10 @@ public class RoleManagementService : IRoleManagementService
 
         if (!RoleCatalog.CanEditPermissions(role.Name))
         {
-            /* Legacy rollerin yetkileri dondurulmuştur: mevcut kullanıcıların
-               erişimi onlara bağlı ve Admin ≡ Administrator / User ≡ GIS Editor
-               eşitliği migrasyon fazına kadar korunmalıdır. */
+            /* Retired role tombstones stay immutable until the deletion
+               migration is applied. */
             return ServiceResult<RolePermissionsResponse>.Conflict(
-                $"'{role.Name}' geçiş dönemi rolüdür; yetkileri bu aşamada değiştirilemez. " +
+                $"'{role.Name}' emekli bir rol adıdır; yetkileri değiştirilemez. " +
                 "Hedef rollerin (Viewer, GIS Editor, GIS Analyst, GIS Manager, Administrator) yetkileri düzenlenebilir.");
         }
 
@@ -512,12 +511,8 @@ public class RoleManagementService : IRoleManagementService
             {
                 Name = role.Name,
                 Description = DescribeRole(role.Name),
-                /* Yönetim yetkilerine sahip roller için ikinci faktör bilgisi
-                   istemciye gösterilir. Kaynak rol ADI değil, rolün gerçekten
-                   yönetim yetkisi taşıyıp taşımadığıdır — ama bu bilgi burada
-                   sunucu tarafında hesaplanmadığı için kanonik yönetici rolü
-                   ile legacy Admin işaretlenir; yetki bazlı ayrıntı yönetim
-                   ekranının kendi sorumluluğudur. */
+                /* The canonical Administrator requires MFA. Permission-based
+                   endpoint authorization remains a separate concern. */
                 RequiresTwoFactor = RoleCatalog.IsCanonical(role.Name)
                     && string.Equals(role.Name, GisRoles.Administrator, StringComparison.OrdinalIgnoreCase)
             })
@@ -582,9 +577,8 @@ public class RoleManagementService : IRoleManagementService
     /// <b>Rol hiyerarşisi YOKTUR.</b> Karar rol adına, sırasına veya bir
     /// seviye/rank alanına değil, canlı yetki kümelerine bakılarak verilir.
     /// Özel roller var olduğu için isme dayalı bir hiyerarşi zaten
-    /// tanımlanamazdı. Aynı sebeple <c>Admin</c>/<c>Administrator</c> için
-    /// kestirme bir geçiş de yoktur: legacy Admin bu kontrolü, adı yüzünden
-    /// değil, 27 yetkiye gerçekten sahip olduğu için geçer.
+    /// tanımlanamazdı. Administrator için de ad tabanlı bir yetki yükseltme
+    /// kestirmesi yoktur.
     /// </para>
     /// <para>
     /// <b>Karşılaştırmanın kendisi burada yazılmaz</b>; hem bu mutasyon yolu

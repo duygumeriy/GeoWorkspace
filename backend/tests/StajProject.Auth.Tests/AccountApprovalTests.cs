@@ -576,7 +576,7 @@ public class AccountApprovalTests
         /* Üretimdeki gibi hem legacy hem hedef roller var olur: Phase 4'te onay
            akışı hedef rolleri kullanır, legacy roller yalnızca mevcut
            kullanıcılar için durmaya devam eder. */
-        foreach (var role in seedRoles ?? [.. ApplicationRoles.All, .. GisRoles.All])
+        foreach (var role in seedRoles ?? [.. ApplicationRoles.Retired, .. GisRoles.All])
         {
             roles.CreateAsync(new IdentityRole<int>(role)).GetAwaiter().GetResult();
         }

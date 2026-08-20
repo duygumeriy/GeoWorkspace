@@ -151,11 +151,10 @@ public class IdentityTwoFactorFlowTests
         Assert.Equal(AuthenticationMethods.Password, ReadAuthenticationMethod(nextLogin.Response.Token!));
     }
 
-    [Theory]
-    [InlineData(ApplicationRoles.Admin)]
-    [InlineData(GisRoles.Administrator)]
-    public async Task Administrative_role_without_mfa_must_bootstrap_and_cannot_disable(string role)
+    [Fact]
+    public async Task Administrator_without_mfa_must_bootstrap_and_cannot_disable()
     {
+        const string role = GisRoles.Administrator;
         await using var scope = CreateScope();
         var users = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
         var roles = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<int>>>();
@@ -210,11 +209,11 @@ public class IdentityTwoFactorFlowTests
         var promoted = await CreateUserAsync(users, roles, "promoted-user", ApplicationRoles.User);
 
         Assert.True((await users.RemoveFromRoleAsync(promoted, ApplicationRoles.User)).Succeeded);
-        if (!await roles.RoleExistsAsync(ApplicationRoles.Admin))
+        if (!await roles.RoleExistsAsync(GisRoles.Administrator))
         {
-            Assert.True((await roles.CreateAsync(new IdentityRole<int>(ApplicationRoles.Admin))).Succeeded);
+            Assert.True((await roles.CreateAsync(new IdentityRole<int>(GisRoles.Administrator))).Succeeded);
         }
-        Assert.True((await users.AddToRoleAsync(promoted, ApplicationRoles.Admin)).Succeeded);
+        Assert.True((await users.AddToRoleAsync(promoted, GisRoles.Administrator)).Succeeded);
         var promotedLogin = await auth.LoginAsync(Login(promoted.UserName!, InitialPassword));
         Assert.True(promotedLogin.Response!.RequiresTwoFactorSetup);
         Assert.Null(promotedLogin.Response.Token);
@@ -233,7 +232,7 @@ public class IdentityTwoFactorFlowTests
         });
         Assert.True(promotedCompletion.IsSuccess, promotedCompletion.Error);
         var promotedJwt = new JwtSecurityTokenHandler().ReadJwtToken(promotedCompletion.Value!.Token);
-        Assert.Contains(promotedJwt.Claims, claim => claim.Type == System.Security.Claims.ClaimTypes.Role && claim.Value == ApplicationRoles.Admin);
+        Assert.Contains(promotedJwt.Claims, claim => claim.Type == System.Security.Claims.ClaimTypes.Role && claim.Value == GisRoles.Administrator);
         Assert.Equal(AuthenticationMethods.MultiFactor, ReadAuthenticationMethod(promotedCompletion.Value.Token));
 
         var protectedUser = await CreateUserAsync(users, roles, "reset-user", ApplicationRoles.User);

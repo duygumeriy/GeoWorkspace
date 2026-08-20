@@ -146,25 +146,19 @@ public class AuthorizationFoundationTests
 
         var roles = await Roles(scope).Roles.Select(r => r.Name).ToListAsync();
 
-        // Yeni rollerin gelmesi eskileri DÜŞÜRMEZ: çalışan kimlik doğrulama
-        // kodu (AdminOnly, AdminMfaRequired, JWT rol claim'i) hâlâ bunlara bağlı.
+        // Seeder does not delete rows; the explicit hard-retirement migration owns deletion.
         Assert.Contains(ApplicationRoles.Admin, roles);
         Assert.Contains(ApplicationRoles.User, roles);
     }
 
     [Fact]
-    public async Task Seeding_does_not_widen_the_assignable_role_list()
+    public async Task Retired_names_are_tombstones_not_assignable_roles()
     {
         await using var scope = CreateScope();
 
         await SeedAsync(scope);
 
-        /* Yönetici onay ekranındaki rol listesi ApplicationRoles.All'dan türer.
-           Hedef roller veritabanında var ama o listeye GİRMEZ; dolayısıyla onay
-           ekranı bu fazda değişmez ve TryParse yeni rolleri kabul etmez. */
-        Assert.Equal(new[] { ApplicationRoles.Admin, ApplicationRoles.User }, ApplicationRoles.All);
-        Assert.False(ApplicationRoles.TryParse(GisRoles.GisManager, out _));
-        Assert.False(ApplicationRoles.TryParse(GisRoles.Administrator, out _));
+        Assert.Equal(new[] { ApplicationRoles.Admin, ApplicationRoles.User }, ApplicationRoles.Retired);
     }
 
     /* --- Rol yetki matrisi ----------------------------------------------------- */
@@ -299,28 +293,24 @@ public class AuthorizationFoundationTests
             await PermissionCodesOfAsync(scope, GisRoles.Administrator));
     }
 
-    /* --- Legacy rol uyumluluğu ------------------------------------------------- */
+    /* --- Retired roles are not provisioned ------------------------------------ */
 
     [Fact]
-    public async Task Legacy_admin_matches_the_administrator_permission_set()
+    public async Task Retired_Admin_receives_no_seeded_permissions()
     {
         await using var scope = CreateScope();
         await SeedAsync(scope);
 
-        Assert.Equal(
-            await PermissionCodesOfAsync(scope, GisRoles.Administrator),
-            await PermissionCodesOfAsync(scope, ApplicationRoles.Admin));
+        Assert.Empty(await PermissionCodesOfAsync(scope, ApplicationRoles.Admin));
     }
 
     [Fact]
-    public async Task Legacy_user_matches_the_gis_editor_permission_set()
+    public async Task Retired_User_receives_no_seeded_permissions()
     {
         await using var scope = CreateScope();
         await SeedAsync(scope);
 
-        Assert.Equal(
-            await PermissionCodesOfAsync(scope, GisRoles.GisEditor),
-            await PermissionCodesOfAsync(scope, ApplicationRoles.User));
+        Assert.Empty(await PermissionCodesOfAsync(scope, ApplicationRoles.User));
     }
 
     /* --- Idempotency ----------------------------------------------------------- */
@@ -515,7 +505,7 @@ public class AuthorizationFoundationTests
            doğrulanabilmesi için aynı sıra burada da kurulur. */
         var roles = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<int>>>();
 
-        foreach (var role in ApplicationRoles.All)
+        foreach (var role in ApplicationRoles.Retired)
         {
             roles.CreateAsync(new IdentityRole<int>(role)).GetAwaiter().GetResult();
         }

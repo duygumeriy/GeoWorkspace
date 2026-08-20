@@ -54,18 +54,15 @@ public class ActorAwareAssignableRoleTests
     }
 
     [Fact]
-    public async Task A_fully_privileged_legacy_admin_is_offered_every_target_role()
+    public async Task A_retired_Admin_is_not_granted_any_assignable_roles_by_its_name()
     {
         await using var scope = await CreateScopeAsync();
         var actor = await CreateUserAsync(scope, "legacy-admin", ApplicationRoles.Admin);
 
-        /* Mevcut onay ekranı ve testleri tam yetkili yöneticinin beş hedef
-           rolün tamamını gördüğünü varsayar; daraltma bu beklentiyi bozmamalı. */
-        Assert.Equal(CanonicalOrder, await OfferedAsync(scope, actor));
+        Assert.Empty(await OfferedAsync(scope, actor));
     }
 
     [Theory]
-    [InlineData(ApplicationRoles.Admin)]
     [InlineData(GisRoles.Administrator)]
     public async Task The_legacy_roles_are_never_offered_even_to_a_fully_privileged_actor(string actorRole)
     {
@@ -136,26 +133,15 @@ public class ActorAwareAssignableRoleTests
     /* --- Rol adı kestirmesi yok ----------------------------------------------------- */
 
     [Fact]
-    public async Task A_legacy_admin_loses_a_role_from_its_list_once_a_permission_is_revoked()
+    public async Task A_retired_Admin_role_name_has_no_assignment_shortcut()
     {
         await using var scope = await CreateScopeAsync();
         var actor = await CreateUserAsync(scope, "shrinking-admin", ApplicationRoles.Admin);
 
-        Assert.Contains(GisRoles.GisEditor, await OfferedAsync(scope, actor));
-
-        // Tek bir role_permissions satırı kaldırılıyor; rolün ADI hâlâ "Admin".
-        await RevokeRoleGrantAsync(scope, ApplicationRoles.Admin, PermissionCodes.DrawingsDelete);
-
-        /* Kodda "Admin ise hepsini görsün" gibi bir kestirme olsaydı GIS Editor
-           listede kalırdı. Düşmesi, listenin gerçekten veri güdümlü olduğunun
-           kanıtıdır. */
         var offered = await OfferedAsync(scope, actor);
         Assert.DoesNotContain(GisRoles.GisEditor, offered);
         Assert.DoesNotContain(GisRoles.Administrator, offered);
-
-        // Bu yetkiye ihtiyaç duymayan roller etkilenmez.
-        Assert.Contains(GisRoles.Viewer, offered);
-        Assert.Contains(GisRoles.GisAnalyst, offered);
+        Assert.Empty(await Effective(scope).GetEffectivePermissionCodesAsync(actor.Id));
     }
 
     /* --- Canlı veri ----------------------------------------------------------------- */
@@ -491,7 +477,7 @@ public class ActorAwareAssignableRoleTests
 
         var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<int>>>();
 
-        foreach (var role in ApplicationRoles.All)
+        foreach (var role in ApplicationRoles.Retired)
         {
             await roleManager.CreateAsync(new IdentityRole<int>(role));
         }
@@ -512,7 +498,7 @@ public class ActorAwareAssignableRoleTests
             IsActive = true
         };
         await users.CreateAsync(keeper, "Str0ng!Password");
-        await users.AddToRoleAsync(keeper, ApplicationRoles.Admin);
+        await users.AddToRoleAsync(keeper, GisRoles.Administrator);
 
         return scope;
     }

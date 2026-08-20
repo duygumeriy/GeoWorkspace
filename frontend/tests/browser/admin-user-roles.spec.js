@@ -86,16 +86,16 @@ const rows = (page) => page.getByRole('button', { name: /kullanıcısının deta
 test('the role filter offers every role represented in the loaded users', async ({ page }) => {
   await openUsers(page)
 
-  /* Sıra da iddianın parçası: legacy köprü önce, sonra hedef profiller kendi
-     ilerleyişinde, en sonda özel roller alfabetik. */
+  /* Canonical roles keep their product order. Every remaining role is treated
+     generically and sorted afterward; retired names get no special priority. */
   await expect(roleFilter(page).locator('option')).toHaveText([
     'Tümü',
-    'Admin',
-    'User',
     'Viewer',
     'GIS Editor',
     'Administrator',
+    'Admin',
     'Saha Ekibi',
+    'User',
   ])
 
   /* `GIS Analyst` sunucunun atanabilir listesinde VAR ama bu kullanıcı

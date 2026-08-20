@@ -385,16 +385,16 @@ public class RoleManagementTests
     }
 
     [Fact]
-    public async Task Legacy_role_permissions_can_be_inspected()
+    public async Task Retired_role_has_no_new_seeded_permissions()
     {
         await using var scope = await CreateScopeAsync();
         var role = await FindRoleAsync(scope, ApplicationRoles.Admin);
 
         var result = await Service(scope).GetRolePermissionsAsync(role.Id);
 
-        // Okuma serbesttir; yasak olan yalnızca değiştirmektir.
+        // Okuma serbesttir; seeder emekli role yeni grant vermez.
         Assert.True(result.IsSuccess);
-        Assert.Equal(30, result.Value!.Permissions.Count(p => p.Assigned));
+        Assert.Empty(result.Value!.Permissions.Where(p => p.Assigned));
         Assert.False(result.Value.Role.CanEditPermissions);
     }
 
@@ -748,7 +748,7 @@ public class RoleManagementTests
 
         var roles = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<int>>>();
 
-        foreach (var role in ApplicationRoles.All)
+        foreach (var role in ApplicationRoles.Retired)
         {
             await roles.CreateAsync(new IdentityRole<int>(role));
         }

@@ -41,11 +41,12 @@ public class AdministratorStartupRecoveryTests
     }
 
     [Fact]
-    public async Task Existing_legacy_rows_and_memberships_are_preserved_without_migration()
+    public async Task Startup_does_not_modify_retired_rows_when_a_canonical_admin_exists()
     {
         await using var scope = await CreateScopeAsync(includeLegacyRoles: true);
         var users = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
         var roles = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<int>>>();
+        await CreateUserAsync(users, "canonical-admin", GisRoles.Administrator);
         var legacyAdmin = await CreateUserAsync(users, "legacy-admin", ApplicationRoles.Admin);
         var legacyUser = await CreateUserAsync(users, "legacy-user", ApplicationRoles.User);
         var options = new AdminSeedOptions

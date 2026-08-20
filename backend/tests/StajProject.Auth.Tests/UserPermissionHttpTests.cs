@@ -348,7 +348,7 @@ public class UserPermissionHttpTests
             await using var scope = _host.Services.CreateAsyncScope();
             var roles = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<int>>>();
 
-            foreach (var role in ApplicationRoles.All)
+            foreach (var role in ApplicationRoles.Retired)
             {
                 await roles.CreateAsync(new IdentityRole<int>(role));
             }

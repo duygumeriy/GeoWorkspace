@@ -122,12 +122,10 @@ export default function UserDetailPanel({ user, currentUserId, loading, mutating
               : !canUpdate
                 ? <p className="admin-policy-note">Rol ve hesap durumu yalnızca görüntülenir; değiştirmek için kullanıcı düzenleme yetkisi gerekir.</p>
               : <><label>Rol<select value={user.role || ''} disabled={mutating} onChange={(e) => requestRole(e.target.value)}>
-                  {/* Seçenekler sunucudan gelen ATANABİLİR rollerdir; sabit
-                      Admin/User listesi, Phase 4 backend'inin yeni atamalarda
-                      reddettiği iki rolden başka bir şey sunmuyordu. */}
+                  {/* Seçenekler sunucudan gelen atanabilir rollerdir. */}
                   {!user.role && <option value="">Rol seçin…</option>}
                   {/* Kullanıcının MEVCUT rolü atanabilir listede olmayabilir
-                      (legacy Admin/User gibi). Seçenek olarak eklenmezse
+                      (örneğin artık emekli edilmiş bir rol). Seçenek olarak eklenmezse
                       açılır liste kullanıcının gerçek rolünü göstermez; devre
                       dışı bırakılır çünkü geri dönülebilir bir seçim değildir. */}
                   {user.role && !roles.some((r) => r.name === user.role) && <option value={user.role} disabled>{user.role}</option>}

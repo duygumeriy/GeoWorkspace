@@ -140,11 +140,11 @@ public class AuthService : IAuthService
                 _challenges.Create(user.Id, securityStamp, TwoFactorChallengePurpose.Verify));
         }
 
-        /* Admin'de 2FA zorunludur. Hesap henüz kurulum yapmamışsa oturum
+        /* Administrator'da 2FA zorunludur. Hesap henüz kurulum yapmamışsa oturum
            AÇILMAZ; bunun yerine yalnızca kurulum yapmaya yarayan bir bilet
            verilir. Bu, rollout sonrasında yöneticinin "2FA zorunlu ama kurmak
            için giriş yapmam gerekiyor" çıkmazına düşmesini önleyen yoldur —
-           ve aynı zamanda User → Admin yükseltmesinin doğal karşılığıdır. */
+           ve aynı zamanda Administrator'a yükseltmenin doğal karşılığıdır. */
         if (AdministrativeRoleSemantics.HasAdministrativeRole(roles))
         {
             return LoginResult.TwoFactorSetupRequired(

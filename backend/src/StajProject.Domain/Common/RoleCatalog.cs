@@ -15,9 +15,9 @@ namespace StajProject.Domain.Common;
 /// <para>
 /// <b>Üç sınıf vardır:</b>
 /// <list type="bullet">
-/// <item><b>Legacy</b> (<c>Admin</c>, <c>User</c>) — geçiş dönemi köprüsü.
-/// Mevcut kullanıcılar hâlâ bunlarda; silinemez, yeniden adlandırılamaz ve
-/// yetkileri bu fazda DEĞİŞTİRİLEMEZ. Yeni atamalara da kapalıdır.</item>
+/// <item><b>Retired</b> (<c>Admin</c>, <c>User</c>) — isimleri yeniden
+/// oluşturulamasın diye tutulan tombstone'lardır; provision edilmez ve
+/// atanamazlar.</item>
 /// <item><b>Kanonik</b> (<see cref="GisRoles.All"/>) — hedef görev profilleri.
 /// Silinemez ve yeniden adlandırılamaz, ama yetki matrisleri dinamik olarak
 /// düzenlenebilir; Phase 4'ün asıl amacı budur.</item>
@@ -34,16 +34,16 @@ namespace StajProject.Domain.Common;
 /// </remarks>
 public static class RoleCatalog
 {
-    /// <summary>Geçiş dönemi rolleri. Korunur ama yeni atamalara kapalıdır.</summary>
-    public static readonly IReadOnlyList<string> Legacy = ApplicationRoles.All;
+    /// <summary>Emekli rol adları. Yalnızca yeniden oluşturmayı engeller.</summary>
+    public static readonly IReadOnlyList<string> Retired = ApplicationRoles.Retired;
 
     /// <summary>Hedef görev profilleri. Korunur, yetkileri düzenlenebilir.</summary>
     public static readonly IReadOnlyList<string> Canonical = GisRoles.All;
 
     /// <summary>Silinemeyen ve yeniden adlandırılamayan rollerin tamamı.</summary>
-    public static readonly IReadOnlyList<string> Reserved = [.. Legacy, .. Canonical];
+    public static readonly IReadOnlyList<string> Reserved = [.. Retired, .. Canonical];
 
-    public static bool IsLegacy(string? roleName) => Contains(Legacy, roleName);
+    public static bool IsLegacy(string? roleName) => Contains(Retired, roleName);
 
     public static bool IsCanonical(string? roleName) => Contains(Canonical, roleName);
 
@@ -73,14 +73,11 @@ public static class RoleCatalog
     public static bool CanDelete(string? roleName) => IsCustom(roleName);
 
     /// <summary>
-    /// Yetki matrisi düzenlenebilir mi? Legacy roller hariç her rol için evet.
+    /// Yetki matrisi düzenlenebilir mi? Emekli adlar hariç her rol için evet.
     /// </summary>
     /// <remarks>
-    /// Legacy rollerin yetkileri dondurulmuştur çünkü mevcut kullanıcıların
-    /// erişimi onlara bağlıdır ve doğrulanmış uyumluluk temelini korurlar
-    /// (<c>Admin ≡ Administrator</c>, <c>User ≡ GIS Editor</c>). Bu eşitlik,
-    /// legacy rollerin bilinçli olarak emekliye ayrılacağı ayrı bir faza kadar
-    /// bozulmamalıdır.
+    /// Emekli rol satırları migration uygulanana kadar salt okunurdur; yeniden
+    /// yetkilendirilmez ve normal yönetim akışına geri alınamaz.
     /// </remarks>
     public static bool CanEditPermissions(string? roleName) =>
         !string.IsNullOrWhiteSpace(roleName) && !IsLegacy(roleName);

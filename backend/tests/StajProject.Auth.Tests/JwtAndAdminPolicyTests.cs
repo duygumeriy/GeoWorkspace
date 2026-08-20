@@ -50,10 +50,11 @@ public class JwtAndAdminPolicyTests
     }
 
     [Theory]
-    [InlineData(ApplicationRoles.Admin, AuthenticationMethods.MultiFactor, true)]
+    [InlineData(GisRoles.Administrator, AuthenticationMethods.MultiFactor, true)]
+    [InlineData(ApplicationRoles.Admin, AuthenticationMethods.MultiFactor, false)]
     [InlineData(ApplicationRoles.Admin, AuthenticationMethods.Password, false)]
     [InlineData(ApplicationRoles.User, AuthenticationMethods.MultiFactor, false)]
-    public async Task Admin_policy_requires_both_admin_role_and_mfa(
+    public async Task Admin_policy_requires_canonical_Administrator_and_mfa(
         string role,
         string authenticationMethod,
         bool expected)
@@ -64,7 +65,7 @@ public class JwtAndAdminPolicyTests
             options.AddPolicy(AuthorizationPolicies.AdminMfaRequired, policy =>
             {
                 policy.RequireAuthenticatedUser();
-                policy.RequireRole(ApplicationRoles.Admin);
+                policy.RequireRole(AdministrativeRoleSemantics.RoleNames);
                 policy.RequireAssertion(context => AuthenticationMethods.IsMultiFactor(context.User));
             }));
         await using var provider = services.BuildServiceProvider();

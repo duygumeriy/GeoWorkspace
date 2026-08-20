@@ -67,9 +67,9 @@ public class RoleAdminEnforcementTests
     public async Task A_token_without_a_completed_second_factor_is_rejected()
     {
         await using var host = await CreateHostAsync();
-        var admin = await host.CreateUserAsync("admin-no-mfa", ApplicationRoles.Admin);
+        var admin = await host.CreateUserAsync("admin-no-mfa", GisRoles.Administrator);
 
-        // Yetki tam (legacy Admin 29 yetkiye sahip) ama ikinci faktör yok.
+        // Yetki tam ama ikinci faktör yok.
         var response = await host.Client(admin, AuthenticationLevel.Password).GetAsync("/api/admin/roles");
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
@@ -165,19 +165,12 @@ public class RoleAdminEnforcementTests
     }
 
     [Fact]
-    public async Task Legacy_admin_is_not_a_bypass_when_the_permission_row_is_removed()
+    public async Task Retired_Admin_is_not_a_role_or_permission_bypass()
     {
         await using var host = await CreateHostAsync();
         var user = await host.CreateUserAsync("legacy-admin", ApplicationRoles.Admin);
         var client = host.Client(user);
 
-        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/api/admin/roles")).StatusCode);
-
-        await host.RevokeRoleGrantAsync(ApplicationRoles.Admin, PermissionCodes.RolesView);
-
-        /* Rol adı hâlâ "Admin". Kodda bir süper kullanıcı kestirmesi olsaydı
-           istek yine geçerdi; 403 dönmesi erişimin veri güdümlü olduğunu
-           kanıtlar. */
         Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync("/api/admin/roles")).StatusCode);
     }
 
@@ -293,7 +286,7 @@ public class RoleAdminEnforcementTests
             await using var scope = _host.Services.CreateAsyncScope();
             var roles = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<int>>>();
 
-            foreach (var role in ApplicationRoles.All)
+            foreach (var role in ApplicationRoles.Retired)
             {
                 await roles.CreateAsync(new IdentityRole<int>(role));
             }

@@ -37,7 +37,7 @@ public class LoginResponse
     public bool RequiresTwoFactor { get; set; }
 
     /// <summary>
-    /// Şifre doğru; hesap 2FA'sı zorunlu olan bir Admin ama henüz kurulum
+    /// Şifre doğru; hesap 2FA'sı zorunlu olan bir Administrator ama henüz kurulum
     /// yapmamış. İstemci kurulum akışını başlatmalıdır.
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]

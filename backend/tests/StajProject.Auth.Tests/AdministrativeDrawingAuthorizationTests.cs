@@ -10,7 +10,7 @@ namespace StajProject.Auth.Tests;
 public class AdministrativeDrawingAuthorizationTests
 {
     [Theory]
-    [InlineData(ApplicationRoles.Admin, true)]
+    [InlineData(ApplicationRoles.Admin, false)]
     [InlineData(GisRoles.Administrator, true)]
     [InlineData(GisRoles.GisEditor, false)]
     [InlineData(GisRoles.Viewer, false)]

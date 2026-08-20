@@ -74,10 +74,7 @@ public static class RolePermissionExpansions
     /// </summary>
     public static readonly IReadOnlyList<Expansion> All =
     [
-        new(GisRoles.Administrator, [.. GeographyPermissions, .. AuditPermissions]),
-
-        // Geçiş dönemi: legacy Admin, Administrator profiliyle birebir kalır.
-        new(ApplicationRoles.Admin, [.. GeographyPermissions, .. AuditPermissions])
+        new(GisRoles.Administrator, [.. GeographyPermissions, .. AuditPermissions])
     ];
 
     /// <summary>Genişlemelerde geçen tüm kodlar (tekrarsız).</summary>

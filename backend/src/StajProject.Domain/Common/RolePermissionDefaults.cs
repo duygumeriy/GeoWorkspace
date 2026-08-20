@@ -12,19 +12,6 @@ namespace StajProject.Domain.Common;
 /// ulaşması ayrı ve dar kapsamlı bir yoldan olur:
 /// <see cref="RolePermissionExpansions"/>.
 /// </para>
-/// <para>
-/// <b>Legacy roller.</b> <c>Admin</c> ve <c>User</c> hâlâ çalışan kimlik
-/// doğrulama/yetkilendirme kodunun bağlı olduğu gerçek rollerdir. Yetki
-/// denetimi sonraki fazda devreye girdiğinde bu hesapların erişimi bir anda
-/// kesilmesin diye, legacy roller hedef karşılıklarıyla <b>birebir aynı</b>
-/// yetki profilini alır:
-/// <list type="bullet">
-/// <item><c>Admin</c> → <see cref="GisRoles.Administrator"/> profili</item>
-/// <item><c>User</c> → <see cref="GisRoles.GisEditor"/> profili</item>
-/// </list>
-/// Bu, legacy rollerin kalıcı olduğu anlamına gelmez; rol geçişi
-/// tamamlandığında kaldırılmaları ayrı ve bilinçli bir adımdır.
-/// </para>
 /// </remarks>
 public static class RolePermissionDefaults
 {
@@ -79,8 +66,7 @@ public static class RolePermissionDefaults
         [.. PermissionCatalog.AllCodes];
 
     /// <summary>
-    /// Rol adı → o role verilecek yetki kodları. Hem hedef hem legacy rolleri
-    /// içerir; seed tek bir yerden çalışsın diye ayrı tutulmazlar.
+    /// Rol adı → o role verilecek başlangıç yetki kodları.
     /// </summary>
     public static readonly IReadOnlyDictionary<string, IReadOnlyList<string>> Matrix =
         new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
@@ -89,11 +75,7 @@ public static class RolePermissionDefaults
             [GisRoles.GisEditor] = GisEditorPermissions,
             [GisRoles.GisAnalyst] = GisAnalystPermissions,
             [GisRoles.GisManager] = GisManagerPermissions,
-            [GisRoles.Administrator] = AdministratorPermissions,
-
-            // Geçiş dönemi: legacy roller hedef karşılıklarının profilini alır.
-            [ApplicationRoles.Admin] = AdministratorPermissions,
-            [ApplicationRoles.User] = GisEditorPermissions
+            [GisRoles.Administrator] = AdministratorPermissions
         };
 
     /// <summary>

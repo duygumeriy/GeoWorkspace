@@ -298,8 +298,8 @@ builder.Services.AddAuthorization(options =>
         policy.RequireRole(AdministrativeRoleSemantics.RoleNames);
     });
 
-    /* AUTH-5: Admin rolü + tamamlanmış ikinci faktör.
-       Token üretimi zaten password-only bir Admin token'ı vermiyor; bu policy
+    /* Administrator rolü + tamamlanmış ikinci faktör.
+       Token üretimi zaten password-only bir Administrator token'ı vermiyor; bu policy
        aynı kuralı authorization tarafında bir kez daha uygular. İki bağımsız
        katman: birinde bir regresyon olsa bile güçlü admin uçları korunur.
 
@@ -318,9 +318,9 @@ builder.Services.AddAuthorization(options =>
        MFA şartı gevşetilmez, yalnızca rol adı bağı kaldırılır.
 
        Yönetim uçları bunu "gerekli yetki" ile birlikte kullanır. Böylece
-       erişim, rol adının Admin olmasına değil, kullanıcının gerçekten o
-       yetkiye sahip olmasına bağlanır; 27 yetkiye sahip bir Administrator
-       da geçebilir. AdminMfaRequired geriye dönük uyumluluk için KORUNUR. */
+       erişim, rol adına değil, kullanıcının gerçekten o
+       yetkiye sahip olmasına bağlanır; gerekli yetkilere sahip özel roller de
+       geçebilir. */
     options.AddPolicy(AuthorizationPolicies.MfaRequired, policy =>
     {
         policy.RequireAuthenticatedUser();

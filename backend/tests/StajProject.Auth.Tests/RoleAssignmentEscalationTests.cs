@@ -204,38 +204,20 @@ public class RoleAssignmentEscalationTests
             target.Id, new ApproveUserRequest { Role = "Intern GIS" }, actor.Id)).IsSuccess);
     }
 
-    /* --- Legacy Admin: veriyle uyumluluk, adla değil -------------------------------- */
+    /* --- Retired names have no authority -------------------------------------------- */
 
     [Fact]
-    public async Task A_legacy_admin_can_still_assign_target_roles_through_its_permission_data()
+    public async Task A_retired_Admin_cannot_assign_target_roles_by_name()
     {
         await using var scope = await CreateScopeAsync();
         var actor = await CreateUserAsync(scope, "legacy-admin-actor", ApplicationRoles.Admin);
         var pending = await CreatePendingUserAsync(scope, "legacy-approved");
 
-        // 29 yetkiye gerçekten sahip olduğu için geçer.
-        Assert.True((await Management(scope).ApproveAsync(
-            pending.Id, new ApproveUserRequest { Role = GisRoles.GisManager }, actor.Id)).IsSuccess);
-    }
+        var result = await Management(scope).ApproveAsync(
+            pending.Id, new ApproveUserRequest { Role = GisRoles.GisManager }, actor.Id);
 
-    [Fact]
-    public async Task A_legacy_admin_is_rejected_once_it_loses_a_permission_the_target_role_needs()
-    {
-        await using var scope = await CreateScopeAsync();
-        var actor = await CreateUserAsync(scope, "stripped-admin", ApplicationRoles.Admin);
-        var victim = await CreateUserAsync(scope, "target", GisRoles.Viewer);
-
-        // Rol adı değişmiyor; yalnızca tek bir yetki satırı kaldırılıyor.
-        await RevokeRoleGrantAsync(scope, ApplicationRoles.Admin, PermissionCodes.LayersManage);
-
-        var result = await Management(scope).ChangeRoleAsync(
-            victim.Id, new UpdateUserRoleRequest { Role = GisRoles.GisManager }, actor.Id);
-
-        /* Kodda "Admin ise geç" kestirmesi olsaydı bu istek yine geçerdi.
-           403 dönmesi, uyumluluğun VERİDEN geldiğini kanıtlar. */
         Assert.False(result.IsSuccess);
         Assert.Equal(ServiceErrorKind.Forbidden, result.ErrorKind);
-        Assert.Equal([GisRoles.Viewer], await RolesOfAsync(scope, victim));
     }
 
     /* --- Doğrudan kullanıcı yetkisi sayılır ---------------------------------------- */
@@ -496,7 +478,7 @@ public class RoleAssignmentEscalationTests
 
         var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<int>>>();
 
-        foreach (var role in ApplicationRoles.All)
+        foreach (var role in ApplicationRoles.Retired)
         {
             await roleManager.CreateAsync(new IdentityRole<int>(role));
         }
@@ -517,7 +499,7 @@ public class RoleAssignmentEscalationTests
             IsActive = true
         };
         await users.CreateAsync(keeper, "Str0ng!Password");
-        await users.AddToRoleAsync(keeper, ApplicationRoles.Admin);
+        await users.AddToRoleAsync(keeper, GisRoles.Administrator);
 
         return scope;
     }

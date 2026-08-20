@@ -53,15 +53,9 @@ public class CurrentUserService : ICurrentUserService
     /// Kullanıcının primary application role'ü.
     /// </summary>
     /// <remarks>
-    /// Kaynak artık sabit <see cref="ApplicationRoles.All"/> listesi DEĞİL,
-    /// token'daki gerçek rol claim'idir. Roller dinamikleştiği için sabit
+    /// Kaynak token'daki gerçek rol claim'idir. Roller dinamik olduğu için sabit
     /// listeye bakmak, Viewer veya özel bir role sahip kullanıcıyı "rolsüz"
     /// göstererek mevcut ekranları bozardı.
-    /// <para>
-    /// <b>Tanınan rol ile atanabilir rol ayrı kavramlardır:</b> legacy
-    /// <c>Admin</c>/<c>User</c> yeni atamalara kapalıdır ama bu rollere sahip
-    /// mevcut kullanıcılar burada eskisi gibi tanınmaya devam eder.
-    /// </para>
     /// </remarks>
     public string? Role => Roles.FirstOrDefault();
 

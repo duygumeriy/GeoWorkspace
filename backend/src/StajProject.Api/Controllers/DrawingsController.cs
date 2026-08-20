@@ -188,7 +188,7 @@ public class DrawingsController : ApiControllerBase
     /// Yeni kayıt OLUŞTURMAZ. Kayıt sunucuda zaten mevcut olduğu için sahiplik,
     /// geometry, ad ve stil korunur; istek yalnızca hangi kayıtların geri
     /// açılacağını (tür + id) taşır. Yetki kaydın orijinal sahibine göre
-    /// değerlendirilir: sahibi veya Admin geri açabilir, başkası 403 alır.
+    /// değerlendirilir: sahibi veya Administrator geri açabilir, başkası 403 alır.
     /// </remarks>
     [RequirePermission(PermissionCodes.DrawingsRestore)]
     [HttpPost("restore")]

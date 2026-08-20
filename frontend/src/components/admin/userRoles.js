@@ -10,14 +10,11 @@
  */
 
 /**
- * Preferred order for the roles the system ships with: the legacy bridge first,
- * then the target profiles in their own progression. Roles the administrator
+ * Preferred order for the canonical system roles. Roles the administrator
  * defined later are unknown here by definition and fall in alphabetically after
  * these.
  */
 const KNOWN_ROLE_ORDER = [
-  'Admin',
-  'User',
   'Viewer',
   'GIS Editor',
   'GIS Analyst',
