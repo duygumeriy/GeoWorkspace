@@ -218,16 +218,13 @@ public class EffectivePermissionServiceTests
     }
 
     [Fact]
-    public async Task Legacy_admin_permissions_come_from_rows_not_from_the_role_name()
+    public async Task Retired_Admin_role_name_has_no_seeded_permissions()
     {
         await using var scope = await CreateScopeAsync();
         var user = await CreateUserAsync(scope, "legacy-admin-rows", ApplicationRoles.Admin);
 
         var service = Service(scope);
-        Assert.Equal(30, (await service.GetEffectivePermissionCodesAsync(user.Id)).Count);
-
-        await RevokeRoleGrantAsync(scope, ApplicationRoles.Admin, PermissionCodes.UsersDelete);
-
+        Assert.Empty(await service.GetEffectivePermissionCodesAsync(user.Id));
         Assert.False(await service.HasPermissionAsync(user.Id, PermissionCodes.UsersDelete));
     }
 
@@ -456,7 +453,7 @@ public class EffectivePermissionServiceTests
            çalışan seeder'ın ürettiği veriyle çalışır. */
         var roles = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<int>>>();
 
-        foreach (var role in ApplicationRoles.All)
+        foreach (var role in ApplicationRoles.Retired)
         {
             await roles.CreateAsync(new IdentityRole<int>(role));
         }

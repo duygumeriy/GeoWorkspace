@@ -474,26 +474,18 @@ public class UserPermissionManagementTests
     }
 
     [Fact]
-    public async Task The_legacy_admin_role_name_is_not_a_bypass()
+    public async Task The_retired_Admin_role_name_has_no_permission_authority()
     {
         await using var scope = await CreateScopeAsync();
 
-        /* Legacy Admin 29 yetkiyle gelir ve bu yüzden her şeyi dağıtabilir. Tek
-           satır silindiğinde otoritesi GERÇEKTEN kaybolmalıdır; kaybolmuyorsa
-           bir yerde ada bakan bir kestirme var demektir. Admin rolünün yetkileri
-           uçtan düzenlenemediği için satır doğrudan veritabanından kaldırılır. */
         var actor = await CreateUserAsync(scope, "legacy-admin", ApplicationRoles.Admin);
-        await RevokeRoleGrantAsync(scope, ApplicationRoles.Admin, PermissionCodes.InventoryAnalysis);
 
         var target = await CreateUserAsync(scope, "viewer", GisRoles.Viewer);
         var result = await SaveAsync(scope, actor.Id, target.Id, PermissionCodes.InventoryAnalysis);
 
         Assert.Equal(ServiceErrorKind.Forbidden, result.ErrorKind);
 
-        // Kapı yetkileri hâlâ duruyor: reddin sebebi ulaşamamak değil, otorite.
-        var effective = await EffectiveAsync(scope, actor.Id);
-        Assert.Contains(PermissionCodes.PermissionsAssign, effective);
-        Assert.Contains(PermissionCodes.UsersUpdate, effective);
+        Assert.Empty(await EffectiveAsync(scope, actor.Id));
     }
 
     /* --- Kural yalnızca EKLEMELERE uygulanır ------------------------------------------- */
@@ -945,7 +937,7 @@ public class UserPermissionManagementTests
         var scope = services.BuildServiceProvider().CreateAsyncScope();
         var roles = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<int>>>();
 
-        foreach (var role in ApplicationRoles.All)
+        foreach (var role in ApplicationRoles.Retired)
         {
             await roles.CreateAsync(new IdentityRole<int>(role));
         }

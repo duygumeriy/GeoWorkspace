@@ -130,8 +130,6 @@ public class AssignableRoleTransitionTests
         await using var scope = await CreateScopeAsync();
         var users = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
         var keeper = (await users.FindByNameAsync("keeper-admin"))!;
-        Assert.True((await users.RemoveFromRoleAsync(keeper, ApplicationRoles.Admin)).Succeeded);
-        Assert.True((await users.AddToRoleAsync(keeper, GisRoles.Administrator)).Succeeded);
         var legacy = await CreateActiveUserAsync(scope, "legacy-transition", ApplicationRoles.Admin);
 
         var result = await Management(scope).ChangeRoleAsync(
@@ -143,11 +141,10 @@ public class AssignableRoleTransitionTests
         Assert.Equal([GisRoles.Administrator], await RolesOfAsync(scope, legacy));
     }
 
-    [Theory]
-    [InlineData(ApplicationRoles.Admin)]
-    [InlineData(GisRoles.Administrator)]
-    public async Task Final_usable_administrative_role_cannot_be_lost(string role)
+    [Fact]
+    public async Task Final_usable_Administrator_cannot_be_lost()
     {
+        const string role = GisRoles.Administrator;
         await using var scope = await CreateScopeAsync();
         await DisableKeeperAsync(scope);
         var administrator = await CreateActiveUserAsync(scope, $"final-{role.Replace(" ", "-")}", role);
@@ -190,7 +187,7 @@ public class AssignableRoleTransitionTests
         await DisableKeeperAsync(scope);
         var users = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
         var candidate = await CreateActiveUserAsync(scope, $"candidate-{condition}", GisRoles.Administrator);
-        var finalLegacy = await CreateActiveUserAsync(scope, $"protected-{condition}", ApplicationRoles.Admin);
+        var finalAdministrator = await CreateActiveUserAsync(scope, $"protected-{condition}", GisRoles.Administrator);
 
         if (condition == "suspended")
         {
@@ -219,9 +216,9 @@ public class AssignableRoleTransitionTests
         }
 
         var result = await Management(scope).ChangeRoleAsync(
-            finalLegacy.Id,
+            finalAdministrator.Id,
             new UpdateUserRoleRequest { Role = GisRoles.Viewer },
-            finalLegacy.Id);
+            finalAdministrator.Id);
 
         Assert.False(result.IsSuccess);
         Assert.Equal(ServiceErrorKind.Conflict, result.ErrorKind);
@@ -242,21 +239,19 @@ public class AssignableRoleTransitionTests
         Assert.Equal([GisRoles.Viewer], await RolesOfAsync(scope, user));
     }
 
-    /* --- Mevcut legacy kullanıcılar bozulmaz -------------------------------------- */
+    /* --- Retired role tombstones --------------------------------------------------- */
 
     [Theory]
     [InlineData(ApplicationRoles.Admin)]
     [InlineData(ApplicationRoles.User)]
-    public async Task An_existing_legacy_user_stays_valid_and_keeps_its_permissions(string role)
+    public async Task A_retired_role_receives_no_new_seeded_permissions(string role)
     {
         await using var scope = await CreateScopeAsync();
         var user = await CreateActiveUserAsync(scope, $"legacy-{role}", role);
 
-        /* Rolün yeni atamalara kapalı olması, o role SAHİP kullanıcıyı
-           geçersiz kılmaz. Yetkileri Phase 1'deki eşitliğe göre aynen durur. */
         var codes = await Effective(scope).GetEffectivePermissionCodesAsync(user.Id);
 
-        Assert.Equal(role == ApplicationRoles.Admin ? 30 : 14, codes.Count);
+        Assert.Empty(codes);
         Assert.Equal([role], await RolesOfAsync(scope, user));
 
         // Yönetim listesinde de rolü doğru görünür.
@@ -271,7 +266,7 @@ public class AssignableRoleTransitionTests
         await using var scope = await CreateScopeAsync();
         var user = await CreateActiveUserAsync(scope, "viewer-user", GisRoles.Viewer);
 
-        /* Rol çözümlemesi sabit ApplicationRoles.All listesine bakmayı bıraktı;
+        /* Rol çözümlemesi sabit legacy rol listesine bakmayı bıraktı;
            aksi hâlde Viewer kullanıcısı yönetim ekranında "rolsüz" görünürdü. */
         var detail = await Management(scope).GetUserAsync(user.Id);
 
@@ -330,8 +325,6 @@ public class AssignableRoleTransitionTests
         var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<int>>>();
         var keeper = (await users.FindByNameAsync("keeper-admin"))!;
 
-        Assert.True((await users.RemoveFromRoleAsync(keeper, ApplicationRoles.Admin)).Succeeded);
-        Assert.True((await users.AddToRoleAsync(keeper, GisRoles.Administrator)).Succeeded);
         Assert.True((await Roles(scope).CreateRoleAsync(new CreateRoleRequest { Name = "Field Surveyor" })).IsSuccess);
 
         Assert.True(await roleManager.RoleExistsAsync(ApplicationRoles.Admin));
@@ -346,8 +339,12 @@ public class AssignableRoleTransitionTests
         Assert.Equal([.. GisRoles.All, "Field Surveyor"], offered);
         Assert.DoesNotContain(ApplicationRoles.Admin, offered);
         Assert.DoesNotContain(ApplicationRoles.User, offered);
+        Assert.Equal(new[] { GisRoles.Administrator }, AdministrativeRoleSemantics.RoleNames);
+        Assert.Equal(GisRoles.All.ToArray(), RoleCatalog.Canonical.ToArray());
         Assert.True(AdministrativeRoleSemantics.IsAdministrativeRole(GisRoles.Administrator));
-        Assert.True(AdministrativeRoleSemantics.IsAdministrativeRole(ApplicationRoles.Admin));
+        Assert.False(AdministrativeRoleSemantics.IsAdministrativeRole(ApplicationRoles.Admin));
+        Assert.False(AdministrativeRoleSemantics.IsAdministrativeRole(ApplicationRoles.User));
+        Assert.True(RoleCatalog.IsCustom("Field Surveyor"));
         Assert.True(AdministrativeRoleSemantics.HasCriticalPermissions(
             await Effective(scope).GetEffectivePermissionCodesAsync(keeper.Id)));
     }
@@ -450,7 +447,7 @@ public class AssignableRoleTransitionTests
 
         var roles = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<int>>>();
 
-        foreach (var role in ApplicationRoles.All)
+        foreach (var role in ApplicationRoles.Retired)
         {
             await roles.CreateAsync(new IdentityRole<int>(role));
         }
@@ -460,7 +457,7 @@ public class AssignableRoleTransitionTests
             roles,
             scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("seed"));
 
-        // Son aktif Admin koruması rol değiştirme testlerini engellemesin.
+        // Son kullanılabilir Administrator koruması rol değiştirme testlerini engellemesin.
         var users = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
         var keeper = new User
         {
@@ -471,7 +468,7 @@ public class AssignableRoleTransitionTests
             IsActive = true
         };
         await users.CreateAsync(keeper, "Str0ng!Password");
-        await users.AddToRoleAsync(keeper, ApplicationRoles.Admin);
+        await users.AddToRoleAsync(keeper, GisRoles.Administrator);
 
         return scope;
     }

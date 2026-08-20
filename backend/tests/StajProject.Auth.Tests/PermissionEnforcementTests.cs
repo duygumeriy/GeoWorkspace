@@ -219,9 +219,9 @@ public class PermissionEnforcementTests
     public async Task An_admin_endpoint_rejects_a_token_without_a_completed_second_factor()
     {
         await using var host = await CreateHostAsync();
-        var user = await host.CreateUserAsync("admin-no-mfa", ApplicationRoles.Admin);
+        var user = await host.CreateUserAsync("admin-no-mfa", GisRoles.Administrator);
 
-        // Yetki tam (legacy Admin 29 yetkiye sahip) ama ikinci faktör yok.
+        // Yetki tam ama ikinci faktör yok.
         var response = await host.Client(user, AuthenticationLevel.Password).GetAsync("/api/admin/users");
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
@@ -242,14 +242,14 @@ public class PermissionEnforcementTests
     }
 
     [Fact]
-    public async Task Legacy_admin_with_mfa_can_read_the_user_list()
+    public async Task Retired_Admin_with_mfa_cannot_read_the_user_list_by_role_name()
     {
         await using var host = await CreateHostAsync();
         var user = await host.CreateUserAsync("legacy-admin", ApplicationRoles.Admin);
 
         var response = await host.Client(user).GetAsync("/api/admin/users");
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]
@@ -269,20 +269,12 @@ public class PermissionEnforcementTests
     }
 
     [Fact]
-    public async Task Legacy_admin_is_not_a_bypass_when_the_permission_row_is_removed()
+    public async Task Retired_Admin_is_not_a_permission_bypass()
     {
         await using var host = await CreateHostAsync();
         var user = await host.CreateUserAsync("legacy-admin-stripped", ApplicationRoles.Admin);
         var client = host.Client(user);
 
-        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/api/admin/users")).StatusCode);
-
-        // Tek bir role_permissions satırı kaldırılıyor; rol adı aynı kalıyor.
-        await host.RevokeRoleGrantAsync(ApplicationRoles.Admin, PermissionCodes.UsersView);
-
-        /* Kodda bir "Admin ise geç" kestirmesi olsaydı bu istek yine geçerdi.
-           403 dönmesi, yönetim erişiminin gerçekten veri güdümlü olduğunun
-           kanıtıdır. */
         Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync("/api/admin/users")).StatusCode);
     }
 
@@ -295,7 +287,7 @@ public class PermissionEnforcementTests
         Assert.Equal(HttpStatusCode.Forbidden,
             (await host.Client(manager).GetAsync("/api/admin/users/roles")).StatusCode);
 
-        var admin = await host.CreateUserAsync("roles-admin", ApplicationRoles.Admin);
+        var admin = await host.CreateUserAsync("roles-admin", GisRoles.Administrator);
         Assert.Equal(HttpStatusCode.OK,
             (await host.Client(admin).GetAsync("/api/admin/users/roles")).StatusCode);
     }
@@ -431,7 +423,7 @@ public class PermissionEnforcementTests
             await using var scope = _host.Services.CreateAsyncScope();
             var roles = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<int>>>();
 
-            foreach (var role in ApplicationRoles.All)
+            foreach (var role in ApplicationRoles.Retired)
             {
                 await roles.CreateAsync(new IdentityRole<int>(role));
             }

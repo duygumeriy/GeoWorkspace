@@ -268,20 +268,12 @@ public class RolePermissionGrantAuthorityTests
     /* --- Rol adı bir kestirme değildir ------------------------------------------------ */
 
     [Fact]
-    public async Task The_legacy_admin_role_name_is_not_a_bypass()
+    public async Task The_retired_Admin_role_name_has_no_grant_authority()
     {
         await using var scope = await CreateScopeAsync();
 
-        /* Legacy Admin normalde 29 yetkiyle gelir ve bu yüzden her şeyi
-           dağıtabilir. Tek bir satır silindiğinde otoritesi GERÇEKTEN
-           kaybolmalıdır — aksi hâlde bir yerde ada bakan bir kestirme var
-           demektir. Admin rolünün KENDİ yetkileri düzenlenemez (legacy), bu
-           yüzden satır doğrudan veritabanından kaldırılır. */
         var actor = await CreateUserAsync(scope, "legacy-admin", ApplicationRoles.Admin);
-        var adminRoleId = await RoleIdAsync(scope, ApplicationRoles.Admin);
-
-        await RevokeGrantAsync(scope, adminRoleId, PermissionCodes.InventoryAnalysis);
-        Assert.DoesNotContain(PermissionCodes.InventoryAnalysis, await EffectiveAsync(scope, actor.Id));
+        Assert.Empty(await EffectiveAsync(scope, actor.Id));
 
         var targetId = await RoleIdAsync(scope, GisRoles.Viewer);
 
@@ -292,8 +284,6 @@ public class RolePermissionGrantAuthorityTests
         Assert.False(result.IsSuccess);
         Assert.Equal(ServiceErrorKind.Forbidden, result.ErrorKind);
 
-        // Kapı yetkileri hâlâ duruyor: reddin sebebi ulaşamamak değil, otorite.
-        Assert.Contains(PermissionCodes.PermissionsAssign, await EffectiveAsync(scope, actor.Id));
     }
 
     [Fact]
@@ -705,7 +695,7 @@ public class RolePermissionGrantAuthorityTests
         var scope = services.BuildServiceProvider().CreateAsyncScope();
         var roles = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<int>>>();
 
-        foreach (var role in ApplicationRoles.All)
+        foreach (var role in ApplicationRoles.Retired)
         {
             await roles.CreateAsync(new IdentityRole<int>(role));
         }

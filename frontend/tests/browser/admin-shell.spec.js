@@ -25,7 +25,7 @@ const admin = {
   id: 1,
   username: 'admin',
   email: 'admin@example.invalid',
-  role: 'Admin',
+  role: 'Administrator',
   isActive: true,
   emailConfirmed: true,
   accountStatus: 'Active',
@@ -39,7 +39,7 @@ const admin = {
  *
  * @param {string} role the role the server reports for the current user
  */
-async function signIn(page, { role = 'Admin' } = {}) {
+async function signIn(page, { role = 'Administrator' } = {}) {
   /* Yetki ucu da yanıtlanmalı: arayüz küme gelene kadar korumalı hiçbir şeyi
      çizmez (fail-closed). Bu spec yetki KURALLARINI ölçmüyor, bu yüzden tam
      küme verilir; kuralların kendisi permission-aware-ui.spec.js'in işidir. */
@@ -186,8 +186,7 @@ test('all three destinations are real screens now, with no placeholder left', as
    ederken React'in onu kapıda durdurması, sunucunun izin verdiği bir yöneticiyi
    arayüzden kilitlemek olurdu. */
 
-/* Phase 7'den önce bu karar rol ADINA bakıyordu ('Admin' | 'Administrator').
-   Artık etkin yetki kodlarına bakıyor: aynı ekran, farklı ve doğru sebep.
+/* Yönetim paneli etkin yetki kodlarına bakar: aynı ekran, doğru sebep.
    Rol adının kendi başına hiçbir şey açmadığı permission-aware-ui.spec.js'te
    ayrıca kanıtlanır. */
 test('the panel opens on an admin view permission, whatever the role is called', async ({ page }) => {

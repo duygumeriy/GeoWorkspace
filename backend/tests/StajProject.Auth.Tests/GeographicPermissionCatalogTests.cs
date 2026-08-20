@@ -141,17 +141,24 @@ public class GeographicPermissionCatalogTests
 
     /* --- 7-14: varsayılan grant politikası -------------------------------------------- */
 
-    [Theory]
-    [InlineData(GisRoles.Administrator)]
-    [InlineData(ApplicationRoles.Admin)]
-    public async Task Privileged_roles_receive_both_geography_permissions(string roleName)
+    [Fact]
+    public async Task Administrator_receives_both_geography_permissions()
     {
+        const string roleName = GisRoles.Administrator;
         await using var scope = await CreateScopeAsync();
 
         var codes = await CodesOfAsync(scope, roleName);
 
         Assert.Contains(PermissionCodes.GeographyView, codes);
         Assert.Contains(PermissionCodes.GeographyManage, codes);
+    }
+
+    [Fact]
+    public async Task Retired_Admin_receives_no_geography_permissions()
+    {
+        await using var scope = await CreateScopeAsync();
+
+        Assert.Empty(await CodesOfAsync(scope, ApplicationRoles.Admin));
     }
 
     [Theory]
@@ -581,7 +588,7 @@ public class GeographicPermissionCatalogTests
 
         /* Legacy roller normalde IdentityDataSeeder tarafından oluşturulur ve
            yetki seed'i onlardan SONRA çalışır; aynı sıra burada da kurulur. */
-        foreach (var role in ApplicationRoles.All)
+        foreach (var role in ApplicationRoles.Retired)
         {
             await RoleManager(scope).CreateAsync(new IdentityRole<int>(role));
         }

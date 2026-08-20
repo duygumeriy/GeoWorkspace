@@ -28,9 +28,9 @@ public class AuthServiceTests
     }
 
     [Fact]
-    public async Task Admin_without_mfa_gets_setup_challenge_without_access_token()
+    public async Task Administrator_without_mfa_gets_setup_challenge_without_access_token()
     {
-        var (service, _, tokens, challenges, user) = CreateService(twoFactorEnabled: false, roles: [ApplicationRoles.Admin]);
+        var (service, _, tokens, challenges, user) = CreateService(twoFactorEnabled: false, roles: [GisRoles.Administrator]);
 
         var result = await service.LoginAsync(new LoginRequest { Username = user.UserName!, Password = "correct" });
 
@@ -39,6 +39,23 @@ public class AuthServiceTests
         Assert.Null(result.Response.Token);
         tokens.DidNotReceiveWithAnyArgs().GenerateToken(default, default!, default!, default);
         challenges.Received(1).Create(user.Id, user.SecurityStamp!, TwoFactorChallengePurpose.Setup);
+    }
+
+    [Fact]
+    public async Task Retired_Admin_without_mfa_has_no_administrative_login_semantics()
+    {
+        var (service, users, _, challenges, user) = CreateService(
+            twoFactorEnabled: false,
+            roles: [ApplicationRoles.Admin]);
+        user.AccessFailedCount = 2;
+
+        var result = await service.LoginAsync(new LoginRequest { Username = user.UserName!, Password = "correct" });
+
+        Assert.True(result.IsSuccess);
+        Assert.NotNull(result.Response!.Token);
+        Assert.False(result.Response.RequiresTwoFactorSetup);
+        await users.Received(1).ResetAccessFailedCountAsync(user);
+        challenges.DidNotReceiveWithAnyArgs().Create(default, default!, default);
     }
 
     [Fact]

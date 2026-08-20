@@ -294,7 +294,7 @@ public class ActorAwareRoleDiscoveryHttpTests
             await using var scope = _host.Services.CreateAsyncScope();
             var roles = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<int>>>();
 
-            foreach (var role in ApplicationRoles.All)
+            foreach (var role in ApplicationRoles.Retired)
             {
                 await roles.CreateAsync(new IdentityRole<int>(role));
             }
@@ -305,7 +305,7 @@ public class ActorAwareRoleDiscoveryHttpTests
                 scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("seed"));
 
             // Son aktif Admin koruması rol değiştirme senaryolarını engellemesin.
-            await CreateUserAsync("keeper-admin", ApplicationRoles.Admin);
+            await CreateUserAsync("keeper-admin", GisRoles.Administrator);
         }
 
         /// <summary>Verilen yetkilere sahip özel bir rol ve o roldeki aktif kullanıcı.</summary>
