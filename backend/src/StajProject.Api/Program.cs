@@ -350,26 +350,21 @@ using (var scope = app.Services.CreateScope())
     var effectivePermissions = scope.ServiceProvider.GetRequiredService<IEffectivePermissionService>();
     var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("IdentitySeed");
 
-    /* Yalnızca bootstrap/first-run provisioning yapar. Mevcut bir hesabın
-       rolünü, şifresini veya durumunu ezmez — bir yöneticinin bilinçli
-       kararı restart sonrasında geri alınmaz (AUTH-3.1). */
-    await IdentityDataSeeder.SeedAsync(
-        userManager,
-        roleManager,
-        effectivePermissions,
-        adminSeedOptions,
-        logger);
-
     /* Yetki kataloğu, hedef GIS rolleri ve rollerin başlangıç yetkileri.
-       Identity seed'inden SONRA çalışır: legacy Admin/User rolleri orada
-       oluşur ve geçiş dönemi yetkileri ancak var olan bir role verilebilir.
-
-       Bu adım yalnızca TANIM üretir — hiçbir kullanıcının rolünü değiştirmez
-       ve hiçbir uçta yetki denetimi başlatmaz. Denetim sonraki fazın işidir. */
+       Identity seed'inden ÖNCE çalışır; böylece bootstrap ve rolsüz hesap
+       recovery yollarının atadığı kanonik roller önceden vardır. */
     var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     var authzLogger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("AuthorizationSeed");
 
     await AuthorizationDataSeeder.SeedAsync(dbContext, roleManager, authzLogger);
+
+    /* Yalnızca bootstrap/first-run provisioning ve dar recovery davranışını
+       uygular. Rol oluşturmaz; mevcut hesaplardaki legacy üyelikleri migrate etmez. */
+    await IdentityDataSeeder.SeedAsync(
+        userManager,
+        effectivePermissions,
+        adminSeedOptions,
+        logger);
 }
 
 // Configure the HTTP request pipeline.
