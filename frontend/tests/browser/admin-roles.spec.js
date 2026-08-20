@@ -34,14 +34,16 @@ const role = (id, name, flags) => ({
   ...flags,
 })
 
-const LEGACY_ADMIN = role(1, 'Admin', { userCount: 2, permissionCount: 27, isSystem: true, isLegacy: true, isAssignable: false, canEditPermissions: false })
-const LEGACY_USER = role(2, 'User', { userCount: 6, permissionCount: 14, isSystem: true, isLegacy: true, isAssignable: false, canEditPermissions: false })
+const LEGACY_ADMIN = role(1, 'Admin', { userCount: 0, permissionCount: 27, isSystem: true, isLegacy: true, isAssignable: false, canEditPermissions: false })
+const LEGACY_USER = role(2, 'User', { userCount: 0, permissionCount: 14, isSystem: true, isLegacy: true, isAssignable: false, canEditPermissions: false })
 const VIEWER = role(3, 'Viewer', { userCount: 1, permissionCount: 6, isSystem: true })
 const GIS_EDITOR = role(4, 'GIS Editor', { userCount: 3, permissionCount: 14, isSystem: true })
+const GIS_ANALYST = role(5, 'GIS Analyst', { userCount: 1, permissionCount: 7, isSystem: true })
+const GIS_MANAGER = role(6, 'GIS Manager', { userCount: 1, permissionCount: 16, isSystem: true })
 const ADMINISTRATOR = role(7, 'Administrator', { userCount: 0, permissionCount: 27, isSystem: true })
 const CUSTOM = role(9, 'Saha Ekibi', { userCount: 0, permissionCount: 0, canRename: true, canDelete: true })
 
-const ROLES = [LEGACY_ADMIN, LEGACY_USER, VIEWER, GIS_EDITOR, ADMINISTRATOR, CUSTOM]
+const ROLES = [LEGACY_ADMIN, LEGACY_USER, VIEWER, GIS_EDITOR, GIS_ANALYST, GIS_MANAGER, ADMINISTRATOR, CUSTOM]
 
 /**
  * Signs in and stubs the role inventory.
@@ -103,18 +105,17 @@ test('the page lists the global role inventory with server-supplied counts', asy
   await expect(page.getByText('Bu ekran hazırlanıyor')).toHaveCount(0)
 })
 
-test('classification comes from the server flags, not from role names', async ({ page }) => {
+test('legacy roles are hidden while all canonical and custom roles remain visible', async ({ page }) => {
   await openRoles(page)
 
-  await expect(rowFor(page, 'Admin')).toContainText('Legacy')
-  await expect(rowFor(page, 'User')).toContainText('Legacy')
+  await expect(rowFor(page, 'Admin')).toHaveCount(0)
+  await expect(rowFor(page, 'User')).toHaveCount(0)
   await expect(rowFor(page, 'Viewer')).toContainText('Sistem')
   await expect(rowFor(page, 'GIS Editor')).toContainText('Sistem')
+  await expect(rowFor(page, 'GIS Analyst')).toContainText('Sistem')
+  await expect(rowFor(page, 'GIS Manager')).toContainText('Sistem')
   await expect(rowFor(page, 'Administrator')).toContainText('Sistem')
   await expect(rowFor(page, 'Saha Ekibi')).toContainText('Özel')
-
-  // Legacy roles are shown as closed to new assignments.
-  await expect(rowFor(page, 'Admin')).toContainText('Kapalı')
   await expect(rowFor(page, 'Viewer')).toContainText('Atanabilir')
 })
 
@@ -185,17 +186,6 @@ test('a system role offers neither rename nor delete', async ({ page }) => {
 
   const detail = page.getByRole('dialog', { name: 'GIS Editor' })
   await expect(detail).toContainText('Sistem rolüdür')
-  await expect(detail.getByRole('button', { name: 'Yeniden Adlandır' })).toHaveCount(0)
-  await expect(detail.getByRole('button', { name: 'Rolü Sil' })).toHaveCount(0)
-})
-
-test('a legacy role explains that it is preserved, not broken', async ({ page }) => {
-  await openRoles(page)
-  await rowFor(page, 'Admin').click()
-
-  const detail = page.getByRole('dialog', { name: 'Admin' })
-  await expect(detail).toContainText('Geçiş dönemi rolüdür')
-  await expect(detail).toContainText('yeni atamalarda kullanılamaz')
   await expect(detail.getByRole('button', { name: 'Yeniden Adlandır' })).toHaveCount(0)
   await expect(detail.getByRole('button', { name: 'Rolü Sil' })).toHaveCount(0)
 })

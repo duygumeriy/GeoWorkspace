@@ -73,7 +73,10 @@ export default function RolesPage() {
           ? 'Rolleri görüntüleme yetkiniz bulunmuyor. Yönetici oturumunuzda MFA doğrulaması gerekli olabilir.'
           : await readApiError(res, 'Roller yüklenemedi.'))
       }
-      setRoles(await res.json())
+      /* Legacy rows remain in the backend inventory for rollback compatibility,
+         but are soft-retired from the normal management presentation. The
+         server owns the classification; custom roles are never name-filtered. */
+      setRoles((await res.json()).filter((role) => role.isLegacy !== true))
     } catch (err) {
       setError(err.message || 'Roller yüklenemedi.')
     } finally {

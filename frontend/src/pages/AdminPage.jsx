@@ -11,7 +11,7 @@ import { directActiveCodes, sameSet } from '../components/admin/userPermissions.
 import { STATUS_FILTERS } from '../components/admin/userStatus.js'
 import './AdminPage.css'
 
-const conflictMessage = 'Sistemde en az bir aktif Admin bulunmalıdır. Son aktif yönetici User yapılamaz veya pasifleştirilemez.'
+const conflictMessage = 'Sistemde en az bir kullanılabilir yönetici bulunmalıdır. Son kullanılabilir yöneticinin rolü düşürülemez veya hesabı pasifleştirilemez.'
 
 export default function AdminPage() {
   const { userId } = useAuth()

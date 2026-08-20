@@ -44,9 +44,9 @@ const ADMIN_USER = {
 
 const ROLE_ROWS = [
   {
-    id: 1, name: 'Admin', userCount: 1, permissionCount: 27,
-    isSystem: true, isLegacy: true, isAssignable: false,
-    canRename: false, canDelete: false, canEditPermissions: false,
+    id: 1, name: 'Administrator', userCount: 1, permissionCount: 27,
+    isSystem: true, isLegacy: false, isAssignable: true,
+    canRename: false, canDelete: false, canEditPermissions: true,
   },
   {
     id: 9, name: 'Field Wizard', userCount: 2, permissionCount: 4,
@@ -376,7 +376,7 @@ test('a role the server marks unrenamable stays unrenamable even with roles.upda
 
   /* Sunucunun hedefe özgü bayrağı ayrı bir eksendir: aktörün global yetkisi
      onu geçersiz kılmaz. */
-  await page.getByRole('button', { name: /Admin/ }).first().click()
+  await page.getByRole('button', { name: /Administrator/ }).first().click()
 
   await expect(page.getByRole('button', { name: 'Yeniden Adlandır' })).toBeHidden()
   await expect(page.getByRole('button', { name: 'Rolü Sil' })).toBeHidden()
