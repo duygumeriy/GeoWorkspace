@@ -18,7 +18,7 @@ public class CurrentUserResponse
     public bool TwoFactorEnabled { get; set; }
 
     /// <summary>
-    /// Primary application role ("User" / "Admin"). Frontend'in tek rol
+    /// Primary application role (canonical system or custom). Frontend'in tek rol
     /// varsayımıyla çalışabilmesi için kolaylık alanıdır.
     /// </summary>
     public string? Role { get; set; }

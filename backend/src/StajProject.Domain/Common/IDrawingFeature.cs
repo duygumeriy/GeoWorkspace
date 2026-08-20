@@ -113,7 +113,7 @@ public interface IStyledDrawingFeature
 
     /// <summary>
     /// Silme işlemini yapan kullanıcı (denetim izi). Sahiplikten bağımsızdır:
-    /// bir Admin başkasının çizimini silebilir, bu kaydın sahibini değiştirmez.
+    /// bir Administrator başkasının çizimini silebilir, bu kaydın sahibini değiştirmez.
     /// </summary>
     int? DeletedByUserId { get; set; }
 }

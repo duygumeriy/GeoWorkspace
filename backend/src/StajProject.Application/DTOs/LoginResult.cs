@@ -85,7 +85,7 @@ public sealed class LoginResult
 
     /// <summary>
     /// Şifre doğrulandı fakat hesap, 2FA'sı zorunlu olup henüz kurulum
-    /// yapmamış bir Admin. Yine access token ÜRETİLMEZ; dönen bilet yalnızca
+    /// yapmamış bir Administrator. Yine access token ÜRETİLMEZ; dönen bilet yalnızca
     /// authenticator kurulumunu yapmaya yarar.
     /// </summary>
     public static LoginResult TwoFactorSetupRequired(string challengeToken) =>

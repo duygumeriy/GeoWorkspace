@@ -7,16 +7,6 @@ namespace StajProject.Domain.Common;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Bu liste <see cref="ApplicationRoles.All"/> DEĞİLDİR ve ona eklenmez.</b>
-/// <c>ApplicationRoles.All</c> hâlâ "yönetici onay ekranında atanabilecek
-/// roller" anlamına gelir; onay akışı, rol değiştirme ucu ve
-/// <c>ApplicationRoles.TryParse</c> hep oradan okur. Hedef roller bu fazda
-/// yalnızca <i>tanımlanır ve yetkilendirilir</i>; atanabilir hale gelmeleri,
-/// rol geçişinin bilinçli olarak yapılacağı sonraki bir fazın işidir.
-/// İki listeyi şimdiden birleştirmek, onay ekranındaki rol listesini bu fazda
-/// sessizce değiştirirdi.
-/// </para>
-/// <para>
 /// Rol adları veritabanındaki <c>roles.Name</c> değerleridir ve
 /// değiştirilemez: mevcut atamalar bu adlara bağlıdır.
 /// </para>

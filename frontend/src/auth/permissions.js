@@ -11,7 +11,7 @@
 /**
  * Can the current user edit or delete this drawing?
  *
- * Mirrors the backend rule exactly: Admin, or the drawing's owner.
+ * Mirrors the backend rule exactly: Administrator, or the drawing's owner.
  *
  * @param {{ isAdmin?: boolean, userId?: number|null }} user from useAuth()
  * @param {{ createdByUserId?: number }|null|undefined} drawing

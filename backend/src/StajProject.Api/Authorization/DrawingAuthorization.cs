@@ -23,7 +23,7 @@ public sealed class DrawingOperationRequirement : IAuthorizationRequirement
 
 /// <summary>
 /// Çizim mutation kuralının <b>tek</b> tanımı:
-/// <c>Admin OR drawing.CreatedByUserId == current user id</c>.
+/// <c>Administrator OR drawing.CreatedByUserId == current user id</c>.
 /// </summary>
 /// <remarks>
 /// Karar yalnızca doğrulanmış token'daki kimlik/rol ile kaydın veritabanındaki
@@ -43,7 +43,7 @@ public class DrawingAuthorizationHandler
             return Task.CompletedTask;
         }
 
-        // Admin her kaydı yönetebilir.
+        // Administrator her kaydı yönetebilir.
         if (AdministrativeRoleSemantics.RoleNames.Any(context.User.IsInRole))
         {
             context.Succeed(requirement);

@@ -159,14 +159,14 @@ public class TwoFactorService : ITwoFactorService
             return ServiceResult<AccountResult>.NotFound("Hesap bulunamadı.");
         }
 
-        /* Admin için 2FA bir tercih değil, kuralın kendisidir. Kullanıcı bunu
-           kendi kararıyla kaldıramaz: önce BAŞKA bir Admin tarafından User
-           rolüne alınması gerekir. Böylece "Admin ⇒ 2FA zorunlu" önermesi
+        /* Administrator için 2FA bir tercih değil, kuralın kendisidir. Kullanıcı bunu
+           kendi kararıyla kaldıramaz: önce BAŞKA bir Administrator tarafından farklı
+           bir role alınması gerekir. Böylece "Administrator ⇒ 2FA zorunlu" önermesi
            sistemde hiçbir zaman bozulmaz. */
         if (await IsMfaMandatoryAsync(user))
         {
             _logger.LogWarning(
-                "Admin hesabında 2FA devre dışı bırakma girişimi reddedildi. UserId={UserId}", user.Id);
+                "Administrator hesabında 2FA devre dışı bırakma girişimi reddedildi. UserId={UserId}", user.Id);
 
             return ServiceResult<AccountResult>.Conflict(
                 "Yönetici hesaplarında iki faktörlü doğrulama zorunludur ve kapatılamaz. " +

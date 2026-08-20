@@ -1,12 +1,11 @@
 namespace StajProject.Domain.Common;
 
 /// <summary>
-/// Canonical administrative-role semantics during the legacy-role transition.
+/// Canonical administrative-role semantics.
 /// </summary>
 public static class AdministrativeRoleSemantics
 {
-    public static readonly IReadOnlyList<string> RoleNames =
-        [ApplicationRoles.Admin, GisRoles.Administrator];
+    public static readonly IReadOnlyList<string> RoleNames = [GisRoles.Administrator];
 
     public static readonly IReadOnlySet<string> CriticalPermissionCodes =
         new HashSet<string>(StringComparer.Ordinal)

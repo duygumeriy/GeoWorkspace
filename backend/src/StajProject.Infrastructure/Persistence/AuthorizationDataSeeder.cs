@@ -57,13 +57,7 @@ public static class AuthorizationDataSeeder
     /// <summary>
     /// <see cref="GisRoles.All"/> rollerinin var olmasını sağlar.
     /// </summary>
-    /// <remarks>
-    /// Bu roller şu an yalnızca <b>tanımlıdır</b>: onay ekranında atanabilir
-    /// hale gelmeleri için <see cref="ApplicationRoles.All"/> içine girmeleri
-    /// gerekir ve bu, bilinçli bir rol geçişi adımı olarak sonraki faza
-    /// bırakılmıştır. Dolayısıyla mevcut yönetici onay akışı bu rollerden
-    /// etkilenmez.
-    /// </remarks>
+    /// <remarks>Bunlar uygulamanın kalıcı beş sistem rolüdür.</remarks>
     private static async Task EnsureTargetRolesAsync(
         RoleManager<IdentityRole<int>> roleManager,
         ILogger logger,
