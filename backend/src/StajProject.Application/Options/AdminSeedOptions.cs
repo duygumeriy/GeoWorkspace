@@ -24,16 +24,17 @@ public class AdminSeedOptions
     public string? Email { get; set; }
 
     /// <summary>
-    /// Startup'ta sistemde hiç <b>aktif Admin</b> kalmadıysa bootstrap hesabının
-    /// Admin rolüne yükseltilip yükseltilmeyeceği. Varsayılan <c>true</c>:
+    /// Startup'ta sistemde hiç kullanılabilir yönetici kalmadıysa bootstrap
+    /// hesabının Administrator rolüne yükseltilip yükseltilmeyeceği. Varsayılan
+    /// <c>true</c>:
     /// aksi hâlde yönetim uçlarına hiç erişilemeyen bir çıkmaz oluşabilir.
     /// </summary>
     /// <remarks>
-    /// Bu kurtarma yolu <b>yalnızca</b> aktif Admin sayısı sıfırken çalışır;
-    /// "bootstrap hesabı Admin değil" durumunda çalışmaz. Dolayısıyla bir
-    /// yöneticinin bilinçli rol değişikliğini geri almaz. Kurtarma her zaman
-    /// yüksek seviyede loglanır. Sıkı yönetilen ortamlarda kapatılıp kurtarma
-    /// manuel bir operasyon hâline getirilebilir.
+    /// Bu kurtarma yolu <b>yalnızca</b> kullanılabilir yönetici sayısı sıfırken
+    /// çalışır; "bootstrap hesabı yönetici değil" durumunda çalışmaz.
+    /// Dolayısıyla bir yöneticinin bilinçli rol değişikliğini geri almaz.
+    /// Kurtarma her zaman yüksek seviyede loglanır. Sıkı yönetilen ortamlarda
+    /// kapatılıp kurtarma manuel bir operasyon hâline getirilebilir.
     /// </remarks>
     public bool EnableZeroAdminRecovery { get; set; } = true;
 }
