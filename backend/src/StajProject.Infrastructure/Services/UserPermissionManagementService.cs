@@ -213,14 +213,51 @@ public class UserPermissionManagementService : IUserPermissionManagementService
 
         if (toRemove.Length > 0 || toAdd.Length > 0)
         {
+            await using var transaction = _dbContext.Database.IsRelational()
+                ? await _dbContext.Database.BeginTransactionAsync(cancellationToken)
+                : null;
+
+            await AdministratorSafety.AcquireMutationLockAsync(_dbContext, cancellationToken);
+
+            var directToAdd = toAdd
+                .Select(id => new UserPermission { UserId = targetUserId, PermissionId = id })
+                .ToArray();
+
             _dbContext.UserPermissions.RemoveRange(toRemove);
-            _dbContext.UserPermissions.AddRange(
-                toAdd.Select(id => new UserPermission { UserId = targetUserId, PermissionId = id }));
+            _dbContext.UserPermissions.AddRange(directToAdd);
 
             /* Tek SaveChanges tek transaction'dır: silme ve ekleme aynı komut
                kümesinde gider. Ayrıca açık bir transaction sarmalamak burada
                hiçbir şey eklemezdi. */
             await _dbContext.SaveChangesAsync(cancellationToken);
+
+            var targetRoles = await LoadRoleNamesAsync(targetUserId, cancellationToken);
+            var removesCriticalAdministrativePermission =
+                AdministrativeRoleSemantics.HasAdministrativeRole(targetRoles)
+                && toRemove.Any(grant => AdministrativeRoleSemantics.CriticalPermissionCodes.Contains(
+                    catalog.Single(permission => permission.Id == grant.PermissionId).Code));
+
+            if (removesCriticalAdministrativePermission
+                && !await AdministratorSafety.HasUsableAdministratorAsync(
+                    _dbContext,
+                    _effectivePermissions,
+                    cancellationToken))
+            {
+                if (!_dbContext.Database.IsRelational())
+                {
+                    _dbContext.UserPermissions.RemoveRange(directToAdd);
+                    _dbContext.UserPermissions.AddRange(toRemove);
+                    await _dbContext.SaveChangesAsync(cancellationToken);
+                }
+
+                return ServiceResult<UserPermissionsResponse>.Conflict(
+                    "Bu yetki değişikliği sistemde kullanılabilir yönetici bırakmayacaktır.");
+            }
+
+            if (transaction is not null)
+            {
+                await transaction.CommitAsync(cancellationToken);
+            }
 
             _logger.LogInformation(
                 "Doğrudan yetkiler güncellendi: UserId={TargetUserId} Eklenen={Added} Kaldırılan={Removed} " +

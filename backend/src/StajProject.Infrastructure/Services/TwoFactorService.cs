@@ -448,7 +448,7 @@ public class TwoFactorService : ITwoFactorService
     }
 
     private async Task<bool> IsMfaMandatoryAsync(User user) =>
-        await _userManager.IsInRoleAsync(user, ApplicationRoles.Admin);
+        AdministrativeRoleSemantics.HasAdministrativeRole(await _userManager.GetRolesAsync(user));
 
     /// <summary>
     /// Yeni bir authenticator anahtarı üretir ve QR verisini hazırlar.

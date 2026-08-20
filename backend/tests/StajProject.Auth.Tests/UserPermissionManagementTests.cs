@@ -35,6 +35,21 @@ public class UserPermissionManagementTests
     /* Çağıranı uca taşıyan yetkiler; dağıtma otoritesi bunlardan bağımsızdır. */
     private static readonly string[] Gate = [PermissionCodes.UsersUpdate, PermissionCodes.PermissionsAssign];
 
+    [Fact]
+    public async Task Critical_direct_permission_cannot_be_removed_from_the_final_usable_administrator()
+    {
+        await using var scope = await CreateScopeAsync();
+        var administrator = await CreateUserAsync(scope, "direct-critical-admin", GisRoles.Administrator);
+        await RevokeRoleGrantAsync(scope, GisRoles.Administrator, PermissionCodes.RolesView);
+        await GrantDirectAsync(scope, administrator, PermissionCodes.RolesView);
+
+        var result = await SaveAsync(scope, administrator.Id, administrator.Id);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ServiceErrorKind.Conflict, result.ErrorKind);
+        Assert.True(await HasDirectAsync(scope, administrator, PermissionCodes.RolesView));
+    }
+
     /* --- Okuma modeli: kaynak ---------------------------------------------------------- */
 
     [Fact]

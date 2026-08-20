@@ -124,6 +124,109 @@ public class AssignableRoleTransitionTests
         Assert.Equal(["Field Surveyor"], await RolesOfAsync(scope, user));
     }
 
+    [Fact]
+    public async Task Legacy_admin_can_move_to_Administrator_when_another_usable_Administrator_exists()
+    {
+        await using var scope = await CreateScopeAsync();
+        var users = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
+        var keeper = (await users.FindByNameAsync("keeper-admin"))!;
+        Assert.True((await users.RemoveFromRoleAsync(keeper, ApplicationRoles.Admin)).Succeeded);
+        Assert.True((await users.AddToRoleAsync(keeper, GisRoles.Administrator)).Succeeded);
+        var legacy = await CreateActiveUserAsync(scope, "legacy-transition", ApplicationRoles.Admin);
+
+        var result = await Management(scope).ChangeRoleAsync(
+            legacy.Id,
+            new UpdateUserRoleRequest { Role = GisRoles.Administrator },
+            keeper.Id);
+
+        Assert.True(result.IsSuccess, result.Error);
+        Assert.Equal([GisRoles.Administrator], await RolesOfAsync(scope, legacy));
+    }
+
+    [Theory]
+    [InlineData(ApplicationRoles.Admin)]
+    [InlineData(GisRoles.Administrator)]
+    public async Task Final_usable_administrative_role_cannot_be_lost(string role)
+    {
+        await using var scope = await CreateScopeAsync();
+        await DisableKeeperAsync(scope);
+        var administrator = await CreateActiveUserAsync(scope, $"final-{role.Replace(" ", "-")}", role);
+
+        var result = await Management(scope).ChangeRoleAsync(
+            administrator.Id,
+            new UpdateUserRoleRequest { Role = GisRoles.Viewer },
+            administrator.Id);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ServiceErrorKind.Conflict, result.ErrorKind);
+        Assert.Equal([role], await RolesOfAsync(scope, administrator));
+    }
+
+    [Fact]
+    public async Task Final_usable_Administrator_cannot_be_suspended()
+    {
+        await using var scope = await CreateScopeAsync();
+        await DisableKeeperAsync(scope);
+        var administrator = await CreateActiveUserAsync(scope, "final-status-admin", GisRoles.Administrator);
+
+        var result = await Management(scope).ChangeStatusAsync(
+            administrator.Id,
+            new UpdateUserStatusRequest { IsActive = false },
+            administrator.Id);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ServiceErrorKind.Conflict, result.ErrorKind);
+        Assert.True((await ReloadAsync(scope, administrator)).IsActive);
+    }
+
+    [Theory]
+    [InlineData("suspended")]
+    [InlineData("deleted")]
+    [InlineData("not-active")]
+    [InlineData("missing-critical")]
+    public async Task Unusable_Administrator_does_not_satisfy_the_guard(string condition)
+    {
+        await using var scope = await CreateScopeAsync();
+        await DisableKeeperAsync(scope);
+        var users = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
+        var candidate = await CreateActiveUserAsync(scope, $"candidate-{condition}", GisRoles.Administrator);
+        var finalLegacy = await CreateActiveUserAsync(scope, $"protected-{condition}", ApplicationRoles.Admin);
+
+        if (condition == "suspended")
+        {
+            candidate.AccountStatus = AccountStatus.Suspended;
+        }
+        else if (condition == "deleted")
+        {
+            candidate.IsDeleted = true;
+        }
+        else if (condition == "not-active")
+        {
+            candidate.IsActive = false;
+        }
+        else
+        {
+            var permission = await Db(scope).Permissions.SingleAsync(p => p.Code == PermissionCodes.RolesView);
+            var role = await Db(scope).Roles.SingleAsync(r => r.Name == GisRoles.Administrator);
+            Db(scope).RolePermissions.Remove(await Db(scope).RolePermissions.SingleAsync(
+                rp => rp.RoleId == role.Id && rp.PermissionId == permission.Id));
+            await Db(scope).SaveChangesAsync();
+        }
+
+        if (condition != "missing-critical")
+        {
+            await users.UpdateAsync(candidate);
+        }
+
+        var result = await Management(scope).ChangeRoleAsync(
+            finalLegacy.Id,
+            new UpdateUserRoleRequest { Role = GisRoles.Viewer },
+            finalLegacy.Id);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ServiceErrorKind.Conflict, result.ErrorKind);
+    }
+
     [Theory]
     [InlineData(ApplicationRoles.Admin)]
     [InlineData(ApplicationRoles.User)]
@@ -278,6 +381,15 @@ public class AssignableRoleTransitionTests
 
     private static async Task<User> ReloadAsync(AsyncServiceScope scope, User user) =>
         await Db(scope).Users.AsNoTracking().SingleAsync(u => u.Id == user.Id);
+
+    private static async Task DisableKeeperAsync(AsyncServiceScope scope)
+    {
+        var users = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
+        var keeper = (await users.FindByNameAsync("keeper-admin"))!;
+        keeper.IsActive = false;
+        keeper.AccountStatus = AccountStatus.Suspended;
+        Assert.True((await users.UpdateAsync(keeper)).Succeeded);
+    }
 
     private static async Task<AsyncServiceScope> CreateScopeAsync()
     {

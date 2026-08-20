@@ -1,5 +1,7 @@
+import { isAdministrativeRole } from '../../auth/roles.js'
+
 export function mfaLabel(user) {
-  if (user.role === 'Admin') {
+  if (isAdministrativeRole(user.role)) {
     return user.twoFactorEnabled ? 'Etkin / Zorunlu' : 'Kurulum Bekliyor'
   }
   return user.twoFactorEnabled ? 'Etkin' : 'Kapalı'
