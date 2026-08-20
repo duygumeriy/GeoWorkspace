@@ -16,6 +16,7 @@ using Microsoft.AspNetCore.Authorization.Policy;
 using StajProject.Api.Activity;
 using StajProject.Infrastructure.Authentication;
 using StajProject.Infrastructure.Email;
+using StajProject.Infrastructure.GeoServer;
 using StajProject.Infrastructure.Persistence;
 using StajProject.Infrastructure.Services;
 
@@ -64,6 +65,15 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(connectionString, npgsql => npgsql.UseNetTopologySuite()));
+
+/* Normal harita çizimleri GeoServer WFS üzerinden okunur. Bu ayarlar secret
+   değildir; SQL-view katmanları SELECT-only'dir ve hiçbir admin credential'ı
+   uygulamaya verilmez. */
+var geoServerOptions = builder.Configuration.GetSection(GeoServerOptions.SectionName).Get<GeoServerOptions>()
+    ?? new GeoServerOptions();
+geoServerOptions.Validate();
+builder.Services.AddSingleton(geoServerOptions);
+builder.Services.AddHttpClient<IGeoServerDrawingReadService, GeoServerDrawingReadService>();
 
 /* --- Secret'lar --------------------------------------------------------------
    Jwt:Key ve AdminSeed:Password hiçbir appsettings dosyasında TUTULMAZ.
