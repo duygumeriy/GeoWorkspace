@@ -581,7 +581,12 @@ public class GeographicAuthorizationTests
             .Returns(call => call.Arg<IEnumerable<IStyledDrawingFeature>>()
                 .All(d => d.CreatedByUserId == user.Id));
 
-        return new DrawingService(Db(scope), currentUser, authorization, Geographic(scope));
+        return new DrawingService(
+            Db(scope),
+            currentUser,
+            authorization,
+            Geographic(scope),
+            new DatabaseDrawingReadService(Db(scope)));
     }
 
     private static async Task AssignUserAreaAsync(AsyncServiceScope scope, int userId, string wkt)

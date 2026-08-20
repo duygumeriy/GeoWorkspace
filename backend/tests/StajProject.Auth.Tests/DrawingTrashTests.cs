@@ -235,7 +235,12 @@ public class DrawingTrashTests
         currentUser.UserName.Returns(userName);
         currentUser.IsAdmin.Returns(isAdmin);
 
-        return new DrawingService(db, currentUser, AuthorizationFor(userId, isAdmin), new GeographicAuthorizationService(db));
+        return new DrawingService(
+            db,
+            currentUser,
+            AuthorizationFor(userId, isAdmin),
+            new GeographicAuthorizationService(db),
+            new DatabaseDrawingReadService(db));
     }
 
     /// <summary>Production kuralının aynısı: <c>Admin OR kaydın sahibi</c>.</summary>
