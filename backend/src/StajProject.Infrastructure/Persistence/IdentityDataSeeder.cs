@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using StajProject.Application.Interfaces;
 using StajProject.Application.Options;
 using StajProject.Domain.Common;
 using StajProject.Domain.Entities;
@@ -37,6 +38,7 @@ public static class IdentityDataSeeder
     public static async Task SeedAsync(
         UserManager<User> userManager,
         RoleManager<IdentityRole<int>> roleManager,
+        IEffectivePermissionService effectivePermissions,
         AdminSeedOptions options,
         ILogger logger,
         CancellationToken cancellationToken = default)
@@ -52,7 +54,12 @@ public static class IdentityDataSeeder
             await PromoteToAdminAsync(userManager, options.Username, logger, "first-run provisioning");
         }
 
-        await RecoverWhenNoActiveAdminAsync(userManager, options, logger, cancellationToken);
+        await RecoverWhenNoActiveAdminAsync(
+            userManager,
+            effectivePermissions,
+            options,
+            logger,
+            cancellationToken);
 
         await AssignDefaultRoleToRolelessUsersAsync(userManager, logger, cancellationToken);
     }
@@ -214,17 +221,34 @@ public static class IdentityDataSeeder
     /// </remarks>
     private static async Task RecoverWhenNoActiveAdminAsync(
         UserManager<User> userManager,
+        IEffectivePermissionService effectivePermissions,
         AdminSeedOptions options,
         ILogger logger,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var admins = await userManager.GetUsersInRoleAsync(ApplicationRoles.Admin);
+        var administrativeUsers = new Dictionary<int, User>();
 
-        if (admins.Any(a => a.IsActive && !a.IsDeleted))
+        foreach (var roleName in AdministrativeRoleSemantics.RoleNames)
         {
-            return;
+            foreach (var user in await userManager.GetUsersInRoleAsync(roleName))
+            {
+                administrativeUsers[user.Id] = user;
+            }
+        }
+
+        foreach (var user in administrativeUsers.Values.Where(user =>
+                     !user.IsDeleted
+                     && user.IsActive
+                     && user.AccountStatus == AccountStatus.Active))
+        {
+            var codes = await effectivePermissions.GetEffectivePermissionCodesAsync(user.Id, cancellationToken);
+
+            if (AdministrativeRoleSemantics.HasCriticalPermissions(codes))
+            {
+                return;
+            }
         }
 
         if (!options.EnableZeroAdminRecovery)

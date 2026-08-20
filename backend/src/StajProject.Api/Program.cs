@@ -295,7 +295,7 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy(AuthorizationPolicies.AdminOnly, policy =>
     {
         policy.RequireAuthenticatedUser();
-        policy.RequireRole(ApplicationRoles.Admin);
+        policy.RequireRole(AdministrativeRoleSemantics.RoleNames);
     });
 
     /* AUTH-5: Admin rolü + tamamlanmış ikinci faktör.
@@ -309,7 +309,7 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy(AuthorizationPolicies.AdminMfaRequired, policy =>
     {
         policy.RequireAuthenticatedUser();
-        policy.RequireRole(ApplicationRoles.Admin);
+        policy.RequireRole(AdministrativeRoleSemantics.RoleNames);
         policy.RequireAssertion(context => AuthenticationMethods.IsMultiFactor(context.User));
     });
 
@@ -347,12 +347,18 @@ using (var scope = app.Services.CreateScope())
 {
     var userManager = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
     var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<int>>>();
+    var effectivePermissions = scope.ServiceProvider.GetRequiredService<IEffectivePermissionService>();
     var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("IdentitySeed");
 
     /* Yalnızca bootstrap/first-run provisioning yapar. Mevcut bir hesabın
        rolünü, şifresini veya durumunu ezmez — bir yöneticinin bilinçli
        kararı restart sonrasında geri alınmaz (AUTH-3.1). */
-    await IdentityDataSeeder.SeedAsync(userManager, roleManager, adminSeedOptions, logger);
+    await IdentityDataSeeder.SeedAsync(
+        userManager,
+        roleManager,
+        effectivePermissions,
+        adminSeedOptions,
+        logger);
 
     /* Yetki kataloğu, hedef GIS rolleri ve rollerin başlangıç yetkileri.
        Identity seed'inden SONRA çalışır: legacy Admin/User rolleri orada

@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { fetchMe, setUnauthorizedHandler } from '../services/api'
+import { isAdministrativeRole } from './roles.js'
 
 const AuthContext = createContext(null)
 
@@ -170,7 +171,7 @@ export function AuthProvider({ children }) {
        (hangi kayıtlar üzerinde) sorusudur ve kapsam ekseni bilinçli olarak
        sonraki bir fazın konusudur; burada değiştirmek, frontend'i backend'in
        hâlâ uyguladığı kuraldan sessizce ayırırdı. */
-    isAdmin: user?.role === 'Admin',
+    isAdmin: isAdministrativeRole(user?.role),
     profileLoading,
     login,
     logout,

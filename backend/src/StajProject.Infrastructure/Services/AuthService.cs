@@ -145,7 +145,7 @@ public class AuthService : IAuthService
            verilir. Bu, rollout sonrasında yöneticinin "2FA zorunlu ama kurmak
            için giriş yapmam gerekiyor" çıkmazına düşmesini önleyen yoldur —
            ve aynı zamanda User → Admin yükseltmesinin doğal karşılığıdır. */
-        if (roles.Contains(ApplicationRoles.Admin))
+        if (AdministrativeRoleSemantics.HasAdministrativeRole(roles))
         {
             return LoginResult.TwoFactorSetupRequired(
                 _challenges.Create(user.Id, securityStamp, TwoFactorChallengePurpose.Setup));

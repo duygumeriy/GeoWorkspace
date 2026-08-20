@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { accountStatusBadge, isPendingApproval, mfaLabel } from './userStatus.js'
+import { isAdministrativeRole } from '../../auth/roles.js'
 import GeographicAuthorizationEditor from './GeographicAuthorizationEditor.jsx'
 import UserPermissionEditor from './UserPermissionEditor.jsx'
 
@@ -131,7 +132,7 @@ export default function UserDetailPanel({ user, currentUserId, loading, mutating
                       dışı bırakılır çünkü geri dönülebilir bir seçim değildir. */}
                   {user.role && !roles.some((r) => r.name === user.role) && <option value={user.role} disabled>{user.role}</option>}
                   {roles.map((role) => <option key={role.name} value={role.name}>{role.name}</option>)}
-                </select></label><label>Hesap Durumu<select value={user.isActive ? 'active' : 'inactive'} disabled={mutating} onChange={(e) => requestStatus(e.target.value === 'active')}><option value="active">Aktif</option><option value="inactive">Pasif</option></select></label>{user.role === 'Admin' && <p className="admin-policy-note">Sistemde en az bir aktif yönetici bulunmalıdır. Son aktif Admin’in rolü düşürülemez veya hesabı pasifleştirilemez.</p>}</>}
+                </select></label><label>Hesap Durumu<select value={user.isActive ? 'active' : 'inactive'} disabled={mutating} onChange={(e) => requestStatus(e.target.value === 'active')}><option value="active">Aktif</option><option value="inactive">Pasif</option></select></label>{isAdministrativeRole(user.role) && <p className="admin-policy-note">Sistemde en az bir kullanılabilir yönetici bulunmalıdır. Son kullanılabilir yöneticinin rolü düşürülemez veya hesabı pasifleştirilemez.</p>}</>}
           {user.accountStatus === 'PendingEmailVerification' && canUpdate && <button type="button" className="admin-button danger" disabled={mutating} onClick={requestRejection}>Başvuruyu Reddet</button>}
         </section>}
     {/* Coğrafi yetki: ayrı bir bölüm, çünkü hesap durumu ve rolden bağımsız
