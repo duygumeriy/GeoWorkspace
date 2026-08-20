@@ -424,6 +424,28 @@ public class RoleManagementTests
     }
 
     [Fact]
+    public async Task Critical_permission_cannot_be_removed_from_the_final_usable_administrator_role()
+    {
+        await using var scope = await CreateScopeAsync();
+        var actorId = await AuthorityAsync(scope);
+        var role = await FindRoleAsync(scope, GisRoles.Administrator);
+        var before = await Service(scope).GetRolePermissionsAsync(role.Id);
+        var desired = before.Value!.Permissions
+            .Where(permission => permission.Assigned && permission.Code != PermissionCodes.RolesView)
+            .Select(permission => permission.Code)
+            .ToArray();
+
+        var result = await Service(scope).ReplaceRolePermissionsAsync(
+            actorId,
+            role.Id,
+            Codes(desired));
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ServiceErrorKind.Conflict, result.ErrorKind);
+        Assert.Contains(PermissionCodes.RolesView, await Effective(scope).GetEffectivePermissionCodesAsync(actorId));
+    }
+
+    [Fact]
     public async Task Replacing_custom_role_permissions_succeeds()
     {
         await using var scope = await CreateScopeAsync();

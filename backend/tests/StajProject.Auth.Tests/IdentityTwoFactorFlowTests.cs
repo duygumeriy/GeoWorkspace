@@ -151,15 +151,17 @@ public class IdentityTwoFactorFlowTests
         Assert.Equal(AuthenticationMethods.Password, ReadAuthenticationMethod(nextLogin.Response.Token!));
     }
 
-    [Fact]
-    public async Task Admin_without_mfa_must_bootstrap_before_receiving_admin_mfa_token_and_cannot_disable()
+    [Theory]
+    [InlineData(ApplicationRoles.Admin)]
+    [InlineData(GisRoles.Administrator)]
+    public async Task Administrative_role_without_mfa_must_bootstrap_and_cannot_disable(string role)
     {
         await using var scope = CreateScope();
         var users = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
         var roles = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<int>>>();
         var auth = scope.ServiceProvider.GetRequiredService<IAuthService>();
         var twoFactor = scope.ServiceProvider.GetRequiredService<ITwoFactorService>();
-        var admin = await CreateUserAsync(users, roles, "bootstrap-admin", ApplicationRoles.Admin);
+        var admin = await CreateUserAsync(users, roles, $"bootstrap-{role.Replace(" ", "-")}", role);
 
         var passwordStep = await auth.LoginAsync(Login(admin.UserName!, InitialPassword));
         Assert.True(passwordStep.Response!.RequiresTwoFactorSetup);
