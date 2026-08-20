@@ -62,17 +62,20 @@ public class DrawingService : IDrawingService
     private readonly ICurrentUserService _currentUser;
     private readonly IDrawingAuthorizationService _drawingAuthorization;
     private readonly IGeographicAuthorizationService _geographicAuthorization;
+    private readonly IGeoServerDrawingReadService _geoServerDrawingRead;
 
     public DrawingService(
         AppDbContext dbContext,
         ICurrentUserService currentUser,
         IDrawingAuthorizationService drawingAuthorization,
-        IGeographicAuthorizationService geographicAuthorization)
+        IGeographicAuthorizationService geographicAuthorization,
+        IGeoServerDrawingReadService geoServerDrawingRead)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
         _drawingAuthorization = drawingAuthorization;
         _geographicAuthorization = geographicAuthorization;
+        _geoServerDrawingRead = geoServerDrawingRead;
     }
 
     public Task<ServiceResult<DrawingResponse>> CreatePointAsync(CreateDrawingRequest request, CancellationToken cancellationToken) =>
@@ -85,13 +88,13 @@ public class DrawingService : IDrawingService
         CreateAsync<PolygonFeature, Polygon>(request, DrawingKind.Polygon, cancellationToken);
 
     public Task<IReadOnlyList<DrawingResponse>> GetPointsAsync(CancellationToken cancellationToken) =>
-        GetAllAsync<PointFeature, Point>(DrawingKind.Point, cancellationToken);
+        GetAllAsync(DrawingKind.Point, cancellationToken);
 
     public Task<IReadOnlyList<DrawingResponse>> GetLinesAsync(CancellationToken cancellationToken) =>
-        GetAllAsync<LineFeature, LineString>(DrawingKind.Line, cancellationToken);
+        GetAllAsync(DrawingKind.Line, cancellationToken);
 
     public Task<IReadOnlyList<DrawingResponse>> GetPolygonsAsync(CancellationToken cancellationToken) =>
-        GetAllAsync<PolygonFeature, Polygon>(DrawingKind.Polygon, cancellationToken);
+        GetAllAsync(DrawingKind.Polygon, cancellationToken);
 
     /// <summary>
     /// Çöp Kutusu listesi: üç türün silinmiş kayıtları tek listede birleşir.
@@ -743,25 +746,21 @@ public class DrawingService : IDrawingService
         return ServiceResult<DrawingResponse>.Success(ToResponse<TEntity, TGeometry>(entity, kind));
     }
 
-    private async Task<IReadOnlyList<DrawingResponse>> GetAllAsync<TEntity, TGeometry>(
+    private async Task<IReadOnlyList<DrawingResponse>> GetAllAsync(
         DrawingKind kind,
         CancellationToken cancellationToken)
-        where TEntity : class, IDrawingFeature<TGeometry>
-        where TGeometry : Geometry
     {
         /* Veri izolasyonu: harita ve "Çizimlerim" yalnızca ÇAĞIRAN kullanıcının
-           kendi çizimlerini görür. Kapsam DrawingScopes.UserMapScope içinde
-           adlandırılmıştır — envanter analizinin kullandığı paylaşılan kümeden
-           (DrawingScopes.InventoryScope) ayrıldığı yer orasıdır.
-
-           IsDeleted/IsActive koşulunu global query filter ekler.
+           kendi çizimlerini görür. Kimlik burada doğrulanır ve GeoServer portuna
+           int olarak verilir; istemci filtre veya owner değeri gönderemez.
 
            Kimlik yoksa (yapılandırma hatası) boş liste döner: kimliği
            belirlenemeyen bir istek başkasının verisini görmektense hiçbir şey
            görmemelidir.
 
-           Sahip kullanıcı adı ilişkiden türetilir (legacy CreatedBy string'i
-           değil); Include tek sorguda join yapar. */
+           GeoServer read katmanı aynı sahiplik + !is_deleted + is_active
+           koşullarını WFS cql_filter ile PostGIS'e indirir. SQL-view katmanı
+           sahibin güncel kullanıcı adını legacy CreatedBy fallback'iyle üretir. */
         var currentUserId = _currentUser.UserId;
 
         if (currentUserId is null)
@@ -769,14 +768,7 @@ public class DrawingService : IDrawingService
             return [];
         }
 
-        var entities = await _dbContext.Set<TEntity>()
-            .AsNoTracking()
-            .Include(entity => entity.CreatedByUser)
-            .UserMapScope(currentUserId.Value)
-            .OrderBy(entity => EF.Property<int>(entity, nameof(IStyledDrawingFeature.Id)))
-            .ToListAsync(cancellationToken);
-
-        return entities.Select(entity => ToResponse<TEntity, TGeometry>(entity, kind)).ToList();
+        return await _geoServerDrawingRead.GetDrawingsAsync(kind, currentUserId.Value, cancellationToken);
     }
 
     /// <summary>

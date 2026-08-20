@@ -260,7 +260,12 @@ public class DrawingGeometryEditTests
             .Returns(call => call.Arg<IEnumerable<IStyledDrawingFeature>>()
                 .All(drawing => drawing.CreatedByUserId == OwnerId));
 
-        return new DrawingService(db, currentUser, authorization, new GeographicAuthorizationService(db));
+        return new DrawingService(
+            db,
+            currentUser,
+            authorization,
+            new GeographicAuthorizationService(db),
+            new DatabaseDrawingReadService(db));
     }
 
     private static CreateDrawingRequest Create(string wkt, string name) => new()
