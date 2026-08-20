@@ -62,7 +62,7 @@ async function signIn(page, { role = 'Admin' } = {}) {
   /* Roller ekranı artık gerçek envanteri okuyor; kabuk testleri onun içeriğini
      değil, yalnızca rotanın kabuğun içinde açıldığını doğrular. */
   await page.route('**/api/admin/roles', (route) => route.fulfill(json([
-    { id: 1, name: 'Admin', userCount: 1, permissionCount: 27, isSystem: true, isLegacy: true, isAssignable: false, canRename: false, canDelete: false, canEditPermissions: false },
+    { id: 1, name: 'Administrator', userCount: 1, permissionCount: 27, isSystem: true, isLegacy: false, isAssignable: true, canRename: false, canDelete: false, canEditPermissions: true },
   ])))
   /* Yetkiler de Phase 5D'de gerçek bir ekran oldu ve açılışta kataloğu okuyor.
      Kabuk testleri onun davranışını ölçmez (o admin-permissions.spec.js'in

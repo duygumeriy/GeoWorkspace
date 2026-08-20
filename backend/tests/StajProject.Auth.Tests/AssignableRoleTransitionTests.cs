@@ -322,6 +322,36 @@ public class AssignableRoleTransitionTests
         }
     }
 
+    [Fact]
+    public async Task Post_migration_state_needs_no_legacy_memberships_and_keeps_custom_roles()
+    {
+        await using var scope = await CreateScopeAsync();
+        var users = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
+        var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<int>>>();
+        var keeper = (await users.FindByNameAsync("keeper-admin"))!;
+
+        Assert.True((await users.RemoveFromRoleAsync(keeper, ApplicationRoles.Admin)).Succeeded);
+        Assert.True((await users.AddToRoleAsync(keeper, GisRoles.Administrator)).Succeeded);
+        Assert.True((await Roles(scope).CreateRoleAsync(new CreateRoleRequest { Name = "Field Surveyor" })).IsSuccess);
+
+        Assert.True(await roleManager.RoleExistsAsync(ApplicationRoles.Admin));
+        Assert.True(await roleManager.RoleExistsAsync(ApplicationRoles.User));
+        Assert.Empty(await users.GetUsersInRoleAsync(ApplicationRoles.Admin));
+        Assert.Empty(await users.GetUsersInRoleAsync(ApplicationRoles.User));
+
+        var offered = (await Management(scope).GetAssignableRolesAsync(keeper.Id))
+            .Select(role => role.Name)
+            .ToArray();
+
+        Assert.Equal([.. GisRoles.All, "Field Surveyor"], offered);
+        Assert.DoesNotContain(ApplicationRoles.Admin, offered);
+        Assert.DoesNotContain(ApplicationRoles.User, offered);
+        Assert.True(AdministrativeRoleSemantics.IsAdministrativeRole(GisRoles.Administrator));
+        Assert.True(AdministrativeRoleSemantics.IsAdministrativeRole(ApplicationRoles.Admin));
+        Assert.True(AdministrativeRoleSemantics.HasCriticalPermissions(
+            await Effective(scope).GetEffectivePermissionCodesAsync(keeper.Id)));
+    }
+
     /* --- Yardımcılar ---------------------------------------------------------------- */
 
     private static AppDbContext Db(AsyncServiceScope scope) =>
