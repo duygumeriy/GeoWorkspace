@@ -8,6 +8,7 @@ makinesinde tanımlaması gerekir.
 |---|---|---|
 | `Jwt:Key` | JWT imzalama anahtarı (HMAC-SHA256) | **Evet** — tanımlı değilse uygulama başlamaz |
 | `AdminSeed:Password` | İlk yönetici hesabının şifresi | Yalnızca hesap veritabanında henüz yoksa |
+| `Email:Smtp:Password` | SMTP anahtarı/şifresi | Yalnız gerçek SMTP etkinse |
 
 Secret olmayan ayarlar (`Jwt:Issuer`, `Jwt:Audience`, `Jwt:ExpireMinutes`,
 `AdminSeed:Username`, `AdminSeed:Email`, connection string) normal şekilde
@@ -45,6 +46,50 @@ anahtarlarda ayraç çift alt çizgidir:
 export Jwt__Key="..."
 export AdminSeed__Password="..."
 ```
+
+## Brevo Free SMTP (isteğe bağlı gerçek e-posta)
+
+Gerçek e-posta kapalıyken `DevelopmentEmailSender` kullanılmaya devam eder.
+Brevo'nun ücretsiz SMTP/transactional email planıyla gerçek gönderimi açmak için
+önce ücretsiz hesap oluşturun, ücretli plan/credit/add-on satın almayın ve ödeme
+bilgisi girmeyin. Gönderici adresini doğrulayıp bir SMTP key oluşturduktan sonra
+credential'ları yalnızca kendi terminalinizde User Secrets'a girin:
+
+```bash
+dotnet user-secrets set "Email:Smtp:Enabled" "true" --project src/StajProject.Api
+dotnet user-secrets set "Email:Smtp:Host" "<BREVO_SMTP_HOST>" --project src/StajProject.Api
+dotnet user-secrets set "Email:Smtp:Port" "<BREVO_SMTP_PORT>" --project src/StajProject.Api
+dotnet user-secrets set "Email:Smtp:UseSsl" "false" --project src/StajProject.Api
+dotnet user-secrets set "Email:Smtp:Username" "<BREVO_SMTP_LOGIN>" --project src/StajProject.Api
+dotnet user-secrets set "Email:Smtp:Password" "<BREVO_SMTP_KEY>" --project src/StajProject.Api
+dotnet user-secrets set "Email:Smtp:FromAddress" "<VERIFIED_SENDER_EMAIL>" --project src/StajProject.Api
+dotnet user-secrets set "Email:Smtp:FromName" "StajProject" --project src/StajProject.Api
+```
+
+SMTP açıkken zorunlu alanlardan biri eksikse uygulama başlamaz; development
+sink'ine sessizce geri düşmez. Brevo panelindeki güncel SMTP host/port değerlerini
+kullanın. SMTP key'i kaynak dosyaya, appsettings'e veya destek mesajlarına
+yapıştırmayın.
+
+macOS'ta yalnızca sertifika iptal servisine erişilememesinden kaynaklanan
+`incomplete certificate revocation check` hatası görülürse, aşağıdaki yerel
+User Secret kullanılabilir:
+
+```bash
+dotnet user-secrets set "Email:Smtp:CheckCertificateRevocation" "false" --project src/StajProject.Api
+```
+
+Güvenli varsayılan ve tracked appsettings değeri `true` kalır. Bu seçenek
+hostname, sertifika zinciri veya imza doğrulamasını kapatmaz; uygulama hiçbir
+permissive certificate callback kaydetmez.
+
+Manuel doğrulama:
+
+1. Backend'i kendi terminalinizden başlatın.
+2. Ulaşabildiğiniz gerçek bir e-posta adresiyle kayıt olun.
+3. Gelen doğrulama e-postasındaki bağlantıyı açın.
+4. Başarılı doğrulamadan sonra hesabın `PendingApproval` durumuna geçtiğini
+   yönetici ekranından doğrulayın.
 
 Öncelik sırası: `appsettings.json` → `appsettings.{Environment}.json` →
 User Secrets (yalnız Development) → ortam değişkenleri. Yani ortam değişkeni

@@ -167,25 +167,16 @@ builder.Services
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 
-// Doğrulama/sıfırlama bağlantılarının işaret edeceği frontend adresi ve
-// development e-posta sink'i. İkisi de secret değildir.
+// Doğrulama/sıfırlama bağlantılarının işaret edeceği frontend adresi.
 var clientAppOptions = builder.Configuration.GetSection("ClientApp").Get<ClientAppOptions>()
     ?? new ClientAppOptions();
 builder.Services.AddSingleton(clientAppOptions);
 
-var devEmailOptions = builder.Configuration.GetSection("DevEmail").Get<DevEmailOptions>()
-    ?? new DevEmailOptions();
-// Göreli yol content root'a göre çözülür ki çalışma dizininden bağımsız olsun.
-devEmailOptions.SinkPath = Path.IsPathRooted(devEmailOptions.SinkPath)
-    ? devEmailOptions.SinkPath
-    : Path.Combine(builder.Environment.ContentRootPath, devEmailOptions.SinkPath);
-builder.Services.AddSingleton(devEmailOptions);
-
-/* E-posta gönderimi. Gerçek bir sağlayıcı credential'ı bulunmadığı için
-   development'ta iletiler yerel bir sink'e yazılır — gerçek e-posta
-   gönderilmez. Production implementasyonu eklendiğinde yalnızca bu kayıt
-   değişir; çağıran kod IEmailSender'ı görür. */
-builder.Services.AddScoped<IEmailSender, DevelopmentEmailSender>();
+/* Tek e-posta portu, yapılandırmaya göre tek taşıma:
+   Email:Smtp:Enabled=false → yerel development sink'i
+   Email:Smtp:Enabled=true  → TLS zorunlu gerçek SMTP
+   SMTP açıkken eksik ayar varsa startup burada fail-fast olur; sessiz fallback yoktur. */
+builder.Services.AddEmailDelivery(builder.Configuration, builder.Environment.ContentRootPath);
 
 /* --- İki faktörlü doğrulama (AUTH-5) ---------------------------------------
    Challenge bileti Data Protection ile korunur. Anahtar halkası ASP.NET Core

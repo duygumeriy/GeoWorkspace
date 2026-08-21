@@ -86,3 +86,36 @@ test('mandatory Admin setup renders responsive QR then one-time recovery screen 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   expect(consoleErrors).toEqual([])
 })
+
+test('mandatory Administrator setup initializes the authenticator only once', async ({ page }) => {
+  let setupRequests = 0
+
+  await page.route('**/api/auth/login', (route) =>
+    route.fulfill(json({ requiresTwoFactorSetup: true, challengeToken: 'setup-challenge-one' })),
+  )
+  await page.route('**/api/auth/login/2fa/setup', async (route) => {
+    setupRequests += 1
+
+    if (setupRequests > 1) {
+      await route.fulfill(json({
+        message: 'Authenticator kurulumu hazırlanamadı. Lütfen tekrar deneyin.',
+      }, 400))
+      return
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    await route.fulfill(json({
+      sharedKey: 'AAAA BBBB CCCC DDDD',
+      authenticatorUri: 'otpauth://totp/StajProject%3Abrowser-user?secret=AAAAAAAAAAAAAAAA&issuer=StajProject',
+      challengeToken: 'setup-challenge-two',
+    }))
+  })
+
+  await waitForLogin(page)
+  await submitPassword(page)
+
+  await expect(page.getByRole('heading', { name: 'İki faktörlü doğrulama kurulumu' })).toBeVisible()
+  await expect(page.locator('.two-factor-qr svg')).toBeVisible()
+  await expect(page.getByText('Authenticator kurulumu hazırlanamadı. Lütfen tekrar deneyin.')).toHaveCount(0)
+  expect(setupRequests).toBe(1)
+})

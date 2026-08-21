@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { useTransition } from '../transition/TransitionContext.jsx'
@@ -49,6 +49,7 @@ export default function TwoFactorPage() {
   const [pendingSession, setPendingSession] = useState(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const setupRequestRef = useRef(null)
 
   // The mandatory-setup flow needs the QR before it can ask for anything.
   useEffect(() => {
@@ -57,7 +58,12 @@ export default function TwoFactorPage() {
     let cancelled = false
     setLoading(true)
 
-    startMandatoryTwoFactorSetup(challenge.challengeToken)
+    /* Resetting an authenticator key is a destructive initialization, so the
+       StrictMode effect replay must observe the same in-flight request rather
+       than rotate the key twice and race Identity's concurrency stamp. */
+    setupRequestRef.current ??= startMandatoryTwoFactorSetup(challenge.challengeToken)
+
+    setupRequestRef.current
       .then(async (res) => {
         if (cancelled) return
         if (!res.ok) {
