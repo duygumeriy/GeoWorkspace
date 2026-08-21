@@ -507,6 +507,7 @@ public class AccountApprovalTests
         email = Substitute.For<IEmailSender>();
 
         return new AccountService(
+            scope.ServiceProvider.GetRequiredService<AppDbContext>(),
             scope.ServiceProvider.GetRequiredService<UserManager<User>>(),
             email,
             ClientApp,

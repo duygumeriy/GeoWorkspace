@@ -40,6 +40,14 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(x => x.NormalizedEmail)
             .HasMaxLength(256);
 
+        /* Identity'nin RequireUniqueEmail doğrulaması uygulama yarışlarını tek
+           başına kapatmaz. Aynı normalize e-posta için son güvenlik sınırı
+           veritabanındaki bu unique index'tir; PostgreSQL unique index içinde
+           birden fazla NULL değere doğal olarak izin verir. */
+        builder.HasIndex(x => x.NormalizedEmail)
+            .HasDatabaseName("EmailIndex")
+            .IsUnique();
+
         builder.Property(x => x.PhoneNumber)
             .HasMaxLength(32);
 

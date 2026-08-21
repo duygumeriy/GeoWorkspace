@@ -86,6 +86,19 @@ public class UpdateUserRoleRequest
     public string Role { get; set; } = string.Empty;
 }
 
+/// <summary>
+/// Yönetici tarafından oluşturulan parolasız hesabın en küçük sözleşmesi.
+/// Hesap durumu, parola ve erişim alanları sunucunun kararlarıdır.
+/// </summary>
+public class CreateAdminUserRequest
+{
+    public string Username { get; set; } = string.Empty;
+
+    public string Email { get; set; } = string.Empty;
+
+    public string Role { get; set; } = string.Empty;
+}
+
 public class UpdateUserStatusRequest
 {
     public bool IsActive { get; set; }

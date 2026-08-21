@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using StajProject.Api.Authorization;
 using StajProject.Api.Common;
 using StajProject.Application.Common;
@@ -84,6 +85,30 @@ public class AdminUsersController : ApiControllerBase
     [HttpGet("{id:int}")]
     public Task<ActionResult<AdminUserDetail>> GetUser(int id, CancellationToken cancellationToken) =>
         GuardUser(nameof(GetUser), () => _userManagement.GetUserAsync(id, cancellationToken));
+
+    [RequirePermission(PermissionCodes.UsersCreate)]
+    [HttpPost]
+    public Task<ActionResult<AdminUserDetail>> CreateUser(
+        [FromBody] CreateAdminUserRequest request,
+        CancellationToken cancellationToken) =>
+        Guard<AdminUserDetail>(nameof(CreateUser), async () =>
+        {
+            var result = await _userManagement.CreateUserAsync(request, ActingUserId, cancellationToken);
+
+            return result.IsSuccess
+                ? CreatedAtAction(nameof(GetUser), new { id = result.Value!.Id }, result.Value)
+                : Respond(result);
+        });
+
+    [RequirePermission(PermissionCodes.UsersCreate)]
+    [EnableRateLimiting(InvitationRateLimiting.AdminResendPolicy)]
+    [HttpPost("{id:int}/resend-invitation")]
+    public Task<ActionResult<AdminUserDetail>> ResendInvitation(
+        int id,
+        CancellationToken cancellationToken) =>
+        GuardUser(
+            nameof(ResendInvitation),
+            () => _userManagement.ResendInvitationAsync(id, cancellationToken));
 
     /// <summary>
     /// <b>Bu çağıranın</b> şu anda atayabileceği roller. Rota <c>{id:int}</c>

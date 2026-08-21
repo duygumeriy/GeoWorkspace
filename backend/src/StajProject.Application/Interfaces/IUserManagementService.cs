@@ -16,6 +16,23 @@ public interface IUserManagementService
     Task<ServiceResult<AdminUserDetail>> GetUserAsync(int userId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Yönetici adına parolasız ve davet bekleyen bir kullanıcı oluşturur;
+    /// kullanıcı ile ilk rol üyeliği aynı transaction içinde yazılır.
+    /// </summary>
+    Task<ServiceResult<AdminUserDetail>> CreateUserAsync(
+        CreateAdminUserRequest request,
+        int actingUserId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Davet bekleyen hesabın security stamp'ini yeniler ve yeni davet
+    /// e-postası gönderir. Eski bağlantı stamp yenilendiği anda geçersizleşir.
+    /// </summary>
+    Task<ServiceResult<AdminUserDetail>> ResendInvitationAsync(
+        int userId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Kullanıcının primary application role'ünü değiştirir (eski rol kaldırılır).
     /// </summary>
     /// <param name="actingUserId">İşlemi yapan Admin; kendi kendini kilitlemeye karşı kontrol için.</param>

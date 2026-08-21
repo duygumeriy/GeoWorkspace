@@ -83,6 +83,10 @@ export function resetPassword({ email, token, newPassword, confirmPassword }) {
   return publicPost('/api/auth/reset-password', { email, token, newPassword, confirmPassword })
 }
 
+export function activateAccount({ userId, token, password, confirmPassword }) {
+  return publicPost('/api/auth/activate-account', { userId, token, password, confirmPassword })
+}
+
 /** Oturum gerektirir; hangi hesabın şifresi değişeceğini backend token'dan belirler. */
 export function changePassword({ currentPassword, newPassword, confirmPassword }) {
   return authFetch('/api/auth/change-password', {
@@ -232,6 +236,18 @@ export function fetchAdminUsers() {
 
 export function fetchAdminUser(id) {
   return authFetch(`/api/admin/users/${id}`)
+}
+
+export function createAdminUser({ username, email, role }) {
+  return authFetch('/api/admin/users', {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ username, email, role }),
+  })
+}
+
+export function resendAdminInvitation(id) {
+  return authFetch(`/api/admin/users/${id}/resend-invitation`, { method: 'POST' })
 }
 
 export function updateUserRole(id, role) {

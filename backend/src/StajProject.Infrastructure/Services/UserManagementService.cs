@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using StajProject.Application.Common;
@@ -46,6 +47,7 @@ public class UserManagementService : IUserManagementService
     private readonly IEmailSender _emailSender;
     private readonly ClientAppOptions _clientApp;
     private readonly ILogger<UserManagementService> _logger;
+    private readonly IAccountService? _accountService;
 
     public UserManagementService(
         AppDbContext dbContext,
@@ -54,7 +56,8 @@ public class UserManagementService : IUserManagementService
         IEmailSender emailSender,
         ClientAppOptions clientApp,
         ILogger<UserManagementService> logger,
-        IEffectivePermissionService? effectivePermissions = null)
+        IEffectivePermissionService? effectivePermissions = null,
+        IAccountService? accountService = null)
     {
         _dbContext = dbContext;
         _userManager = userManager;
@@ -63,6 +66,7 @@ public class UserManagementService : IUserManagementService
         _emailSender = emailSender;
         _clientApp = clientApp;
         _logger = logger;
+        _accountService = accountService;
     }
 
     /* --- Okuma --------------------------------------------------------------- */
@@ -80,6 +84,126 @@ public class UserManagementService : IUserManagementService
         return item is null
             ? ServiceResult<AdminUserDetail>.NotFound("Kullanıcı bulunamadı.")
             : ServiceResult<AdminUserDetail>.Success(item);
+    }
+
+    /* --- Oluşturma ------------------------------------------------------------ */
+
+    public async Task<ServiceResult<AdminUserDetail>> CreateUserAsync(
+        CreateAdminUserRequest request,
+        int actingUserId,
+        CancellationToken cancellationToken = default)
+    {
+        var resolved = await _roleManagement.ResolveAssignableRoleAsync(
+            request.Role,
+            actingUserId,
+            cancellationToken);
+
+        if (!resolved.IsSuccess)
+        {
+            return Rejected(resolved);
+        }
+
+        var username = request.Username?.Trim() ?? string.Empty;
+        var email = request.Email?.Trim() ?? string.Empty;
+
+        if (username.Length == 0)
+        {
+            return ServiceResult<AdminUserDetail>.Failure("Kullanıcı adı zorunludur.");
+        }
+
+        if (email.Length == 0)
+        {
+            return ServiceResult<AdminUserDetail>.Failure("E-posta adresi zorunludur.");
+        }
+
+        var user = new User
+        {
+            UserName = username,
+            Email = email,
+            EmailConfirmed = false,
+            IsActive = false,
+            IsDeleted = false,
+            AccountStatus = AccountStatus.InvitationPending
+        };
+
+        await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+
+        // Bilerek parola overload'u kullanılmaz: parolayı ileride kullanıcı belirler.
+        var creation = await _userManager.CreateAsync(user);
+
+        if (!creation.Succeeded)
+        {
+            return CreationFailed(creation);
+        }
+
+        var assignment = await _userManager.AddToRoleAsync(user, resolved.Value!);
+
+        if (!assignment.Succeeded)
+        {
+            /* Relational sağlayıcıda transaction dispose edilirken kullanıcı
+               eklemesi geri alınır. Hesap o ana kadar da doğrulanmamış, pasif
+               ve InvitationPending olduğundan hiçbir erişim kazanamaz. */
+            return Failed<AdminUserDetail>("Kullanıcı rolü atanamadı; hesap oluşturulmadı.", assignment);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+
+        _logger.LogInformation(
+            "Yönetici parolasız kullanıcı oluşturdu: acting UserId={ActingUserId} target UserId={TargetUserId} Rol={Role}",
+            actingUserId,
+            user.Id,
+            resolved.Value);
+
+        var result = await ReloadAsync(user.Id, cancellationToken);
+        var warning = await TrySendInvitationAsync(
+            user.Id,
+            "create",
+            "Kullanıcı oluşturuldu ancak davet e-postası gönderilemedi.",
+            cancellationToken);
+
+        return WithWarning(result, warning);
+    }
+
+    public async Task<ServiceResult<AdminUserDetail>> ResendInvitationAsync(
+        int userId,
+        CancellationToken cancellationToken = default)
+    {
+        await using (var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken))
+        {
+            await AcquireRoleMutationLockAsync(cancellationToken);
+
+            var user = await _userManager.Users.SingleOrDefaultAsync(
+                candidate => candidate.Id == userId,
+                cancellationToken);
+
+            if (!await IsValidInvitationAccountAsync(user, cancellationToken))
+            {
+                return ServiceResult<AdminUserDetail>.Conflict(
+                    "Yalnızca geçerli ve davet bekleyen hesaplara yeniden davet gönderilebilir.");
+            }
+
+            // Supported Identity API hem yeni security stamp üretir hem de
+            // persist eder. Başarısızsa yeni token üretilmez.
+            var stamp = await _userManager.UpdateSecurityStampAsync(user!);
+
+            if (!stamp.Succeeded)
+            {
+                return Failed<AdminUserDetail>("Davet yenilenemedi.", stamp);
+            }
+
+            await transaction.CommitAsync(cancellationToken);
+        }
+
+        /* SMTP transaction dışında çalışır. Teslimat başarısız olsa bile yeni
+           stamp korunur; böylece eski bağlantı tekrar geçerli hâle gelmez. */
+        var result = await ReloadAsync(userId, cancellationToken);
+        var warning = await TrySendInvitationAsync(
+            userId,
+            "resend",
+            "Yeni davet oluşturuldu ancak davet e-postası gönderilemedi.",
+            cancellationToken);
+
+        return WithWarning(result, warning);
     }
 
     /// <summary>
@@ -456,6 +580,70 @@ public class UserManagementService : IUserManagementService
 
     /* --- Bildirim ------------------------------------------------------------- */
 
+    private async Task<string?> TrySendInvitationAsync(
+        int userId,
+        string kind,
+        string warning,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (_accountService is null)
+            {
+                return warning;
+            }
+
+            var invitation = await _accountService.GenerateAccountInvitationAsync(userId, cancellationToken);
+
+            if (!invitation.IsSuccess)
+            {
+                return warning;
+            }
+
+            var user = await ReloadAsync(userId, cancellationToken);
+            if (!user.IsSuccess || string.IsNullOrWhiteSpace(user.Value!.Email))
+            {
+                return warning;
+            }
+
+            var actionUrl = QueryHelpers.AddQueryString(
+                $"{_clientApp.BaseUrl.TrimEnd('/')}/activate-account",
+                new Dictionary<string, string?>
+                {
+                    ["userId"] = invitation.Value!.UserId.ToString(),
+                    ["token"] = invitation.Value.Token
+                });
+
+            await _emailSender.SendAsync(new EmailMessage
+            {
+                To = user.Value.Email,
+                Subject = "StajProject hesabınız oluşturuldu",
+                Body =
+                    $"Merhaba {user.Value.Username},\n\n" +
+                    "Sistem yöneticisi sizin için bir StajProject hesabı oluşturdu.\n\n" +
+                    "Hesabınızı etkinleştirmek ve kendi şifrenizi belirlemek için aşağıdaki bağlantıyı kullanın.",
+                ActionUrl = actionUrl
+            }, cancellationToken);
+
+            return null;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            // Token, URL, e-posta adresi ve SMTP ayrıntıları loglanmaz.
+            _logger.LogError(
+                "Davet e-postası gönderilemedi. UserId={UserId} Tür={Kind} HataTürü={ErrorType}",
+                userId,
+                kind,
+                exception.GetType().Name);
+
+            return warning;
+        }
+    }
+
     /// <summary>
     /// Bilgilendirme e-postasını gönderir. Gönderim başarısız olursa
     /// <b>exception yukarı taşınmaz</b>; yalnızca yöneticiye gösterilecek
@@ -551,6 +739,25 @@ public class UserManagementService : IUserManagementService
     /// </remarks>
     private Task AcquireRoleMutationLockAsync(CancellationToken cancellationToken) =>
         AdministratorSafety.AcquireMutationLockAsync(_dbContext, cancellationToken);
+
+    private async Task<bool> IsValidInvitationAccountAsync(
+        User? user,
+        CancellationToken cancellationToken)
+    {
+        if (user is null
+            || user.IsDeleted
+            || user.IsActive
+            || user.EmailConfirmed
+            || user.PasswordHash is not null
+            || user.AccountStatus != AccountStatus.InvitationPending)
+        {
+            return false;
+        }
+
+        var roles = await _userManager.GetRolesAsync(user);
+        cancellationToken.ThrowIfCancellationRequested();
+        return roles.Count == 1 && RoleCatalog.IsAssignable(roles[0]);
+    }
 
     private Task<User?> FindManageableUserAsync(int userId, CancellationToken cancellationToken) =>
         _userManager.Users.SingleOrDefaultAsync(u => u.Id == userId && !u.IsDeleted, cancellationToken);
@@ -735,6 +942,21 @@ public class UserManagementService : IUserManagementService
             ServiceErrorKind.Conflict => ServiceResult<AdminUserDetail>.Conflict(resolved.Error!),
             _ => ServiceResult<AdminUserDetail>.Failure(resolved.Error!)
         };
+
+    private static ServiceResult<AdminUserDetail> CreationFailed(IdentityResult result)
+    {
+        if (result.Errors.Any(error => error.Code == nameof(IdentityErrorDescriber.DuplicateUserName)))
+        {
+            return ServiceResult<AdminUserDetail>.Conflict("Bu kullanıcı adı zaten kullanılıyor.");
+        }
+
+        if (result.Errors.Any(error => error.Code == nameof(IdentityErrorDescriber.DuplicateEmail)))
+        {
+            return ServiceResult<AdminUserDetail>.Conflict("Bu e-posta adresi zaten kullanılıyor.");
+        }
+
+        return Failed<AdminUserDetail>("Kullanıcı oluşturulamadı.", result);
+    }
 
     private static ServiceResult<T> Failed<T>(string message, IdentityResult result) =>
         ServiceResult<T>.Failure($"{message} {string.Join(" ", result.Errors.Select(e => e.Description))}".Trim());

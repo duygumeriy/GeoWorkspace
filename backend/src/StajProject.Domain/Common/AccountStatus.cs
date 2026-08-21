@@ -40,5 +40,10 @@ public enum AccountStatus
     Suspended = 3,
 
     /// <summary>Başvurusu yönetici tarafından reddedilmiş.</summary>
-    Rejected = 4
+    Rejected = 4,
+
+    /// <summary>
+    /// Yönetici tarafından parolasız oluşturulmuş, davet kabulünü bekleyen hesap.
+    /// </summary>
+    InvitationPending = 5
 }

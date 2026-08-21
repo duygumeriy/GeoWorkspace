@@ -18,6 +18,7 @@ export function mfaLabel(user) {
 const ACCOUNT_STATUS = {
   PendingEmailVerification: { label: 'E-posta Bekleniyor', tone: 'warning' },
   PendingApproval: { label: 'Onay Bekliyor', tone: 'warning' },
+  InvitationPending: { label: 'Davet Bekliyor', tone: 'warning' },
   Active: { label: 'Aktif', tone: 'success' },
   Suspended: { label: 'Askıya Alındı', tone: 'danger' },
   Rejected: { label: 'Reddedildi', tone: 'danger' },
@@ -41,6 +42,7 @@ export const STATUS_FILTERS = [
   { value: 'Active', label: 'Aktif' },
   { value: 'PendingApproval', label: 'Onay Bekleyen' },
   { value: 'PendingEmailVerification', label: 'E-posta Bekleyen' },
+  { value: 'InvitationPending', label: 'Davet Bekleyen' },
   { value: 'Suspended', label: 'Pasif' },
   { value: 'Rejected', label: 'Reddedilen' },
 ]
