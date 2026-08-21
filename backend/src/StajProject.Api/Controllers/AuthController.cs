@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using StajProject.Api.Common;
 using StajProject.Application.Common;
 using StajProject.Application.DTOs;
@@ -303,9 +304,21 @@ public class AuthController : ApiControllerBase
     public Task<IActionResult> ConfirmEmail([FromBody] ConfirmEmailRequest request, CancellationToken cancellationToken) =>
         GuardAccount(nameof(ConfirmEmail), () => _accountService.ConfirmEmailAsync(request, cancellationToken));
 
+    [EnableRateLimiting(InvitationRateLimiting.PublicConfirmationResendPolicy)]
     [HttpPost("resend-confirmation")]
     public Task<IActionResult> ResendConfirmation([FromBody] ResendConfirmationRequest request, CancellationToken cancellationToken) =>
         GuardAccount(nameof(ResendConfirmation), () => _accountService.ResendConfirmationAsync(request, cancellationToken));
+
+    /// <summary>
+    /// Yönetici tarafından parolasız oluşturulan hesabı özel davet token'ıyla
+    /// etkinleştirir. JWT üretmez; giriş ve yönetici MFA akışı ayrı kalır.
+    /// </summary>
+    [AllowAnonymous]
+    [HttpPost("activate-account")]
+    public Task<IActionResult> ActivateAccount(
+        [FromBody] ActivateAccountRequest request,
+        CancellationToken cancellationToken) =>
+        GuardAccount(nameof(ActivateAccount), () => _accountService.ActivateAccountAsync(request, cancellationToken));
 
     /* --- Şifre --------------------------------------------------------------- */
 

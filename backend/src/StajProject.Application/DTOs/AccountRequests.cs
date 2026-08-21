@@ -60,3 +60,30 @@ public class ChangePasswordRequest
 
     public string ConfirmPassword { get; set; } = string.Empty;
 }
+
+/// <summary>
+/// Yönetici tarafından parolasız oluşturulan hesabın davet bağlantısıyla
+/// etkinleştirilmesi için gereken tek istemci girdileri.
+/// </summary>
+public class ActivateAccountRequest
+{
+    public int UserId { get; set; }
+
+    /// <summary>Base64Url kodlanmış, özel AccountInvitation Identity token'ı.</summary>
+    public string Token { get; set; } = string.Empty;
+
+    public string Password { get; set; } = string.Empty;
+
+    public string ConfirmPassword { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Phase 13D'nin e-posta bağlantısını kurabilmesi için üretilen stateless
+/// davet bilgisi. Rol içermez; aktivasyonda güncel rol veritabanından okunur.
+/// </summary>
+public sealed class AccountInvitationToken
+{
+    public int UserId { get; init; }
+
+    public string Token { get; init; } = string.Empty;
+}

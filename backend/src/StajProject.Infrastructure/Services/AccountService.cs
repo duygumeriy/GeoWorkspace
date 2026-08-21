@@ -1,12 +1,15 @@
 using System.Text;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using StajProject.Application.Common;
 using StajProject.Application.DTOs;
 using StajProject.Application.Interfaces;
 using StajProject.Application.Options;
 using StajProject.Domain.Common;
 using StajProject.Domain.Entities;
+using StajProject.Infrastructure.Persistence;
 
 namespace StajProject.Infrastructure.Services;
 
@@ -26,27 +29,152 @@ namespace StajProject.Infrastructure.Services;
 public class AccountService : IAccountService
 {
     /// <summary>
+    /// Davet token'ını diğer Identity token türlerinden kriptografik olarak
+    /// ayıran tek amaç değeri. E-posta doğrulama/sıfırlama amacı kullanılmaz.
+    /// </summary>
+    public const string AccountInvitationPurpose = "AccountInvitation";
+
+    /// <summary>
     /// E-posta adresi alan akışlarda adresin kayıtlı olup olmadığından
     /// bağımsız olarak dönen tek mesaj.
     /// </summary>
     private const string GenericEmailDispatchMessage =
         "Bu adresle eşleşen bir hesap varsa, e-posta gönderildi. Lütfen gelen kutunuzu kontrol edin.";
 
+    private const string InvalidInvitationMessage =
+        "Davet bağlantısı geçersiz veya süresi dolmuş.";
+
+    private const string InvalidInvitationError =
+        "Bağlantı geçersiz. Yöneticinizden yeni bir davet isteyin.";
+
+    private readonly AppDbContext _dbContext;
     private readonly UserManager<User> _userManager;
     private readonly IEmailSender _emailSender;
     private readonly ClientAppOptions _clientApp;
     private readonly ILogger<AccountService> _logger;
 
     public AccountService(
+        AppDbContext dbContext,
         UserManager<User> userManager,
         IEmailSender emailSender,
         ClientAppOptions clientApp,
         ILogger<AccountService> logger)
     {
+        _dbContext = dbContext;
         _userManager = userManager;
         _emailSender = emailSender;
         _clientApp = clientApp;
         _logger = logger;
+    }
+
+    /* --- Yönetici daveti ---------------------------------------------------- */
+
+    public async Task<ServiceResult<AccountInvitationToken>> GenerateAccountInvitationAsync(
+        int userId,
+        CancellationToken cancellationToken = default)
+    {
+        if (userId <= 0)
+        {
+            return ServiceResult<AccountInvitationToken>.Failure(InvalidInvitationMessage);
+        }
+
+        var user = await _userManager.FindByIdAsync(userId.ToString());
+
+        if (!await IsValidInvitationAccountAsync(user, cancellationToken))
+        {
+            return ServiceResult<AccountInvitationToken>.Failure(InvalidInvitationMessage);
+        }
+
+        var rawToken = await _userManager.GenerateUserTokenAsync(
+            user!,
+            TokenOptions.DefaultProvider,
+            AccountInvitationPurpose);
+
+        return ServiceResult<AccountInvitationToken>.Success(new AccountInvitationToken
+        {
+            UserId = user!.Id,
+            Token = EncodeToken(rawToken)
+        });
+    }
+
+    public async Task<AccountResult> ActivateAccountAsync(
+        ActivateAccountRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (!string.Equals(request.Password, request.ConfirmPassword, StringComparison.Ordinal))
+        {
+            return AccountResult.Failure("Hesap etkinleştirilemedi.", "Şifreler eşleşmiyor.");
+        }
+
+        if (request.UserId <= 0 || string.IsNullOrWhiteSpace(request.Token))
+        {
+            return InvalidInvitation();
+        }
+
+        var user = await _userManager.FindByIdAsync(request.UserId.ToString());
+
+        if (!await IsValidInvitationAccountAsync(user, cancellationToken)
+            || !TryDecodeToken(request.Token, out var rawToken)
+            || !await _userManager.VerifyUserTokenAsync(
+                user!,
+                TokenOptions.DefaultProvider,
+                AccountInvitationPurpose,
+                rawToken))
+        {
+            return InvalidInvitation();
+        }
+
+        await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+
+        // Yönetici rol mutasyonlarıyla aynı transaction-scoped kilit: güncel
+        // rol doğrulamasından commit'e kadar primary role değişemez.
+        await AdministratorSafety.AcquireMutationLockAsync(_dbContext, cancellationToken);
+
+        // Token doğrulamasından sonra durumu ve rolü transaction içinde tekrar
+        // okuyarak aradaki bir yönetici değişikliğini eski veriyle ezmeyiz.
+        await _dbContext.Entry(user!).ReloadAsync(cancellationToken);
+
+        if (!await IsValidInvitationAccountAsync(user, cancellationToken)
+            || !await _userManager.VerifyUserTokenAsync(
+                user!,
+                TokenOptions.DefaultProvider,
+                AccountInvitationPurpose,
+                rawToken))
+        {
+            return InvalidInvitation();
+        }
+
+        // PasswordHash'e dokunulmaz: politika, hash ve security stamp tamamen
+        // Identity'nin AddPasswordAsync akışına aittir.
+        var password = await _userManager.AddPasswordAsync(user!, request.Password);
+
+        if (!password.Succeeded)
+        {
+            return AccountResult.Failure("Hesap etkinleştirilemedi.", TranslateErrors(password.Errors));
+        }
+
+        /* Phase 13D daveti yalnızca kayıtlı posta kutusuna gönderecek; özel
+           davet token'ına sahip olmak bu akışta mailbox possession kanıtıdır.
+           Self-registration ConfirmEmailAsync akışı bundan tamamen ayrıdır. */
+        user!.EmailConfirmed = true;
+        user.AccountStatus = AccountStatus.Active;
+        user.IsActive = true;
+        user.ModifiedDate = DateTime.UtcNow;
+
+        var update = await _userManager.UpdateAsync(user);
+
+        if (!update.Succeeded)
+        {
+            return AccountResult.Failure(
+                "Hesap etkinleştirilemedi.",
+                "Lütfen daha sonra tekrar deneyin veya yöneticinizle iletişime geçin.");
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+
+        _logger.LogInformation("Davet edilen hesap etkinleştirildi. UserId={UserId}", user.Id);
+
+        return AccountResult.Success("Hesabınız etkinleştirildi. Yeni şifrenizle giriş yapabilirsiniz.");
     }
 
     /* --- Register ----------------------------------------------------------- */
@@ -377,6 +505,32 @@ public class AccountService : IAccountService
     private static bool CanUseAccountRecovery(User user) =>
         !user.IsDeleted
         && user.AccountStatus is not (AccountStatus.Suspended or AccountStatus.Rejected);
+
+    private async Task<bool> IsValidInvitationAccountAsync(
+        User? user,
+        CancellationToken cancellationToken)
+    {
+        if (user is null
+            || user.IsDeleted
+            || user.IsActive
+            || user.EmailConfirmed
+            || user.PasswordHash is not null
+            || user.AccountStatus != AccountStatus.InvitationPending)
+        {
+            return false;
+        }
+
+        // GetRolesAsync yalnızca var olan Identity rolüyle eşleşen üyelikleri
+        // döndürür. Tam bir rol şarttır; legacy Admin/User davetle aktive
+        // edilemez. Rol adı token/request'ten hiçbir zaman okunmaz.
+        var roles = await _userManager.GetRolesAsync(user);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        return roles.Count == 1 && RoleCatalog.IsAssignable(roles[0]);
+    }
+
+    private static AccountResult InvalidInvitation() =>
+        AccountResult.Failure(InvalidInvitationMessage, InvalidInvitationError);
 
     private async Task SendConfirmationEmailAsync(User user, CancellationToken cancellationToken)
     {

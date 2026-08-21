@@ -14,6 +14,7 @@ using StajProject.Domain.Common;
 using StajProject.Domain.Entities;
 using Microsoft.AspNetCore.Authorization.Policy;
 using StajProject.Api.Activity;
+using StajProject.Api.Common;
 using StajProject.Infrastructure.Authentication;
 using StajProject.Infrastructure.Email;
 using StajProject.Infrastructure.GeoServer;
@@ -32,6 +33,7 @@ builder.Services.AddControllers(options => options.Filters.Add<ActivityLogFilter
 
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddInvitationRateLimiting();
 builder.Services.AddSwaggerGen(options =>
 {
     options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
@@ -367,10 +369,12 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+app.UseRouting();
 app.UseCors(DevCorsPolicy);
 
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 
 app.MapControllers();
 
