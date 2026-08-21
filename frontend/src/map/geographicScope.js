@@ -1,4 +1,5 @@
 import WKT from 'ol/format/WKT'
+import Polygon from 'ol/geom/Polygon'
 import { toLonLat } from 'ol/proj'
 import booleanPointInPolygon from '@turf/boolean-point-in-polygon'
 import lineIntersect from '@turf/line-intersect'
@@ -132,12 +133,10 @@ function isPathInsideScope(scope, path) {
 /**
  * Haritadaki bir OpenLayers geometrisinin TAMAMI alanın içinde mi.
  *
- * <b>Bilinen sınır.</b> Alanın bir DELİĞİ, aday poligonun tamamen içinde
- * kalıyor ve aday hiçbir yerde sınırı kesmiyorsa bu hesap onu içeride sayar.
- * Böyle bir kapsam ancak birleşimin ortasında bir boşluk bırakmasıyla oluşur ve
- * pratikte görülmez; görülse bile backend'in <c>Covers</c> denetimi kaydı
- * reddeder. Buradaki hesap kullanıcıyı erken uyarmak içindir, son sözü söylemek
- * için değil.
+ * Aday sınırının tamamı yetkili alanda olmalı ve aday yüzey, yetki alanındaki
+ * hiçbir iç deliği kapsamamalıdır. İkinci koşul özellikle önemlidir: büyük bir
+ * aday poligonun bütün köşeleri ve kenarları yetkili alanda kalırken, ortasında
+ * bütünüyle çevrelediği küçük bir yasak delik bulunabilir.
  *
  * @param {import('ol/geom/Geometry').default|null|undefined} geometry EPSG:3857
  */
@@ -155,13 +154,12 @@ export function isGeometryInsideScope(scope, geometry) {
       return isPathInsideScope(scope, toLonLatPath(geometry.getCoordinates()))
 
     case 'Polygon':
-      // Delikler de sınanır: bir deliğin kenarı da alanın dışına taşabilir.
-      return geometry.getCoordinates().every((ring) => isPathInsideScope(scope, toLonLatPath(ring)))
+      return isPolygonInsideScope(scope, geometry.getCoordinates().map(toLonLatPath))
 
     case 'MultiPolygon':
       return geometry
         .getCoordinates()
-        .every((rings) => rings.every((ring) => isPathInsideScope(scope, toLonLatPath(ring))))
+        .every((rings) => isPolygonInsideScope(scope, rings.map(toLonLatPath)))
 
     default:
       /* Tanınmayan tip için "içeride" demek, bilinmeyen bir şeyi güvenli
@@ -169,6 +167,25 @@ export function isGeometryInsideScope(scope, geometry) {
          çıkarmamak için izin verilir ve karar sunucuya bırakılır. */
       return true
   }
+}
+
+function isPolygonInsideScope(scope, rings) {
+  // Dış halka ve varsa adayın kendi delikleri sınırdan dışarı taşmamalıdır.
+  if (!rings.every((ring) => isPathInsideScope(scope, ring))) return false
+
+  const candidate = turfPolygon(rings)
+
+  /* Aday sınırı bir yetki deliğine hiç dokunmadan onu bütünüyle çevreleyebilir.
+     Her yetki deliğinin OpenLayers tarafından hesaplanan gerçek bir iç noktası
+     aday yüzeydeyse, backend Covers ile aynı nedenle aday reddedilir. */
+  for (const scopePolygon of scope.polygons) {
+    for (const hole of scopePolygon.slice(1)) {
+      const interior = new Polygon([hole]).getInteriorPoint().getCoordinates()
+      if (booleanPointInPolygon(interior, candidate)) return false
+    }
+  }
+
+  return true
 }
 
 /**

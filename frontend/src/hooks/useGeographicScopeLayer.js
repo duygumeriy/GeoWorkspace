@@ -30,24 +30,57 @@ export const SCOPE_LAYER_CLASSNAME = 'scope-layer'
 export const SCOPE_STYLE = Object.freeze({
   /** Kenar rengi: uygulamanın mor vurgusuyla aynı aile, altlıkta kaybolmaz. */
   strokeColor: '#a855f7',
-  /** Kenarın altındaki koyu taban: açık altlıkta da kontrast bırakır. */
-  haloColor: 'rgba(76, 29, 149, 0.55)',
-  /** Öncekinden belirgin biçimde kalın; sınır aranmadan görülmelidir. */
-  strokeWidth: 4,
-  haloWidth: 7,
-  /** Okunur, seyrek bir desen: sürekli çizgi bir çizim sanılabilirdi. */
-  lineDash: [14, 8],
+  /** İnce kesikli kenar, çizimlerin önüne görsel bir duvar örmez. */
+  strokeWidth: 1.5,
+  lineDash: [8, 6],
   /** Dolgu haritayı örtmez; sınırı çerçeveler, perde çekmez. */
-  fillColor: 'rgba(168, 85, 247, 0.10)',
+  fillColor: 'rgba(168, 85, 247, 0.04)',
 })
+
+export const EXCLUDED_SCOPE_STYLE = Object.freeze({
+  strokeColor: '#f59e0b',
+  strokeWidth: 1.5,
+  lineDash: [4, 4],
+  fillColor: 'rgba(245, 158, 11, 0.08)',
+})
+
+export const SCOPE_FEATURE_KINDS = Object.freeze({ authorized: 'authorized', excluded: 'excluded' })
+
+/** Builds both the effective polygon and explicit overlay features for its holes. */
+export function buildScopeFeatures(scope) {
+  if (!scope) return []
+
+  const features = []
+  for (const rings of scope.polygons) {
+    const authorized = wkt4326ToFeature(polygonWkt(rings))
+    if (authorized) {
+      authorized.set('scopeKind', SCOPE_FEATURE_KINDS.authorized)
+      features.push(authorized)
+    }
+
+    for (const hole of rings.slice(1)) {
+      const excluded = wkt4326ToFeature(polygonWkt([hole]))
+      if (!excluded) continue
+      excluded.set('scopeKind', SCOPE_FEATURE_KINDS.excluded)
+      features.push(excluded)
+    }
+  }
+
+  return features
+}
+
+function polygonWkt(rings) {
+  return `POLYGON (${rings
+    .map((ring) => `(${ring.map(([lon, lat]) => `${lon} ${lat}`).join(', ')})`)
+    .join(', ')})`
+}
 
 /**
  * Kullanıcının yetki alanını haritada gösteren katman.
  *
  * <b>Çizimlerin ALTINDA durur ve onları gizlemez.</b> Dolgu bilinçli olarak çok
  * şeffaftır: sınır, haritanın okunmasını zorlaştıran bir perde değil, bir
- * çerçevedir. Kalın kesikli kenar, sınırın nerede olduğunu dolguya bakmadan da
- * söyler.
+ * çerçevedir. İnce kesikli kenar, harita içeriğine baskın çıkmadan sınırı söyler.
  *
  * <b>Kısıtsız kullanıcı için HİÇBİR ŞEY çizilmez.</b> Dünyayı kaplayan sahte
  * bir kutu çizmek, var olmayan bir sınırı varmış gibi göstermek ve kutunun
@@ -67,29 +100,30 @@ export default function useGeographicScopeLayer(map, { scope, visible = true }) 
     if (!map) return undefined
 
     const source = new VectorSource()
+    const authorizedStyle = new Style({
+      fill: new Fill({ color: SCOPE_STYLE.fillColor }),
+      stroke: new Stroke({
+        color: SCOPE_STYLE.strokeColor,
+        width: SCOPE_STYLE.strokeWidth,
+        lineDash: [...SCOPE_STYLE.lineDash],
+      }),
+    })
+    const excludedStyle = new Style({
+      fill: new Fill({ color: EXCLUDED_SCOPE_STYLE.fillColor }),
+      stroke: new Stroke({
+        color: EXCLUDED_SCOPE_STYLE.strokeColor,
+        width: EXCLUDED_SCOPE_STYLE.strokeWidth,
+        lineDash: [...EXCLUDED_SCOPE_STYLE.lineDash],
+      }),
+    })
     const layer = new VectorLayer({
       source,
       className: SCOPE_LAYER_CLASSNAME,
       /* Çizim katmanının ALTINDA: kullanıcının kendi verisi sınırın üstünde
          kalmalıdır. */
       zIndex: 4,
-      /* İKİ çizgi üst üste: koyu bir taban ve onun üstünde mor kesikli kenar.
-         Tek bir çizgi, açık altlıkta parlak bir zemine denk geldiğinde
-         siliniyordu; taban, sınırın her altlıkta ve her temada okunmasını
-         sağlar. Dolgu yalnızca en alttaki stile konur. */
-      style: [
-        new Style({
-          fill: new Fill({ color: SCOPE_STYLE.fillColor }),
-          stroke: new Stroke({ color: SCOPE_STYLE.haloColor, width: SCOPE_STYLE.haloWidth }),
-        }),
-        new Style({
-          stroke: new Stroke({
-            color: SCOPE_STYLE.strokeColor,
-            width: SCOPE_STYLE.strokeWidth,
-            lineDash: [...SCOPE_STYLE.lineDash],
-          }),
-        }),
-      ],
+      style: (feature) =>
+        feature.get('scopeKind') === SCOPE_FEATURE_KINDS.excluded ? excludedStyle : authorizedStyle,
     })
 
     map.addLayer(layer)
@@ -111,15 +145,7 @@ export default function useGeographicScopeLayer(map, { scope, visible = true }) 
     source.clear()
     if (!scope) return
 
-    /* MultiPolygon'un TÜM bileşenleri çizilir. Yalnızca ilkini çizmek,
-       kullanıcının ikinci bölgesini haritada yokmuş gibi göstermek olurdu. */
-    for (const rings of scope.polygons) {
-      const wkt = `POLYGON (${rings
-        .map((ring) => `(${ring.map(([lon, lat]) => `${lon} ${lat}`).join(', ')})`)
-        .join(', ')})`
-      const feature = wkt4326ToFeature(wkt)
-      if (feature) source.addFeature(feature)
-    }
+    source.addFeatures(buildScopeFeatures(scope))
   }, [scope])
 
   useEffect(() => {

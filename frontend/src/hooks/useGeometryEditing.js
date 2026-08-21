@@ -1,6 +1,5 @@
 import { useEffect, useRef } from 'react'
 import Collection from 'ol/Collection'
-import { never } from 'ol/events/condition'
 import Modify from 'ol/interaction/Modify'
 import Translate from 'ol/interaction/Translate'
 
@@ -18,18 +17,9 @@ export const GEOMETRY_EDIT_MODES = Object.freeze({
  *   - `Modify`    drags existing vertices.
  *   - `Translate` drags the shape as a whole, leaving its form untouched.
  *
- * ## Why segment insertion is turned off
- *
- * `Modify` will, by default, create a vertex wherever the pointer goes down on a
- * segment. That fires on a plain CLICK, not just a drag, which made an edge
- * impossible to *select*: every attempt to pick one silently added a point to
- * the geometry instead, and the user was left to work out what had happened from
- * the vertex count.
- *
- * Turning it off makes every insertion an explicit, named action — the row's
- * "Köşe 3–4 Arasına Ekle" or the panel's "Seçili Kenara Köşe Ekle" — and frees a
- * click on an edge to mean "select this edge". The gesture that is lost was the
- * one operation in the editor that changed the shape without saying so.
+ * Native `Modify` segment insertion remains enabled. A segment exposes its
+ * intermediate handle and dragging it creates a real vertex, while the panel's
+ * explicit insertion actions remain available for coordinate-first editing.
  *
  * Exactly one is live at a time, chosen by `mode`, so a drag can never be
  * ambiguous: in "Köşeleri Düzenle" a drag always means a vertex, in "Tüm
@@ -71,7 +61,7 @@ export default function useGeometryEditing(map, { active, feature, mode = GEOMET
     const interaction =
       mode === GEOMETRY_EDIT_MODES.translate
         ? new Translate({ features })
-        : new Modify({ features, insertVertexCondition: never })
+        : new Modify({ features })
 
     const endEvent = mode === GEOMETRY_EDIT_MODES.translate ? 'translateend' : 'modifyend'
 
