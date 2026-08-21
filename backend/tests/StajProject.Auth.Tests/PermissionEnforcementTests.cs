@@ -15,6 +15,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using NSubstitute;
 using StajProject.Api.Authorization;
+using StajProject.Api.Common;
 using StajProject.Api.Controllers;
 using StajProject.Api.Services;
 using StajProject.Application.Common;
@@ -292,9 +293,131 @@ public class PermissionEnforcementTests
             (await host.Client(admin).GetAsync("/api/admin/users/roles")).StatusCode);
     }
 
+    [Fact]
+    public async Task Anonymous_user_creation_is_rejected_with_401()
+    {
+        await using var host = await CreateHostAsync();
+
+        var response = await host.Client().PostAsJsonAsync("/api/admin/users", NewAdminUser());
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        await host.Users.DidNotReceive().CreateUserAsync(
+            Arg.Any<CreateAdminUserRequest>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task User_creation_without_completed_mfa_is_rejected_with_403()
+    {
+        await using var host = await CreateHostAsync();
+        var administrator = await host.CreateUserAsync("create-no-mfa", GisRoles.Administrator);
+
+        var response = await host.Client(administrator, AuthenticationLevel.Password)
+            .PostAsJsonAsync("/api/admin/users", NewAdminUser());
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        await host.Users.DidNotReceive().CreateUserAsync(
+            Arg.Any<CreateAdminUserRequest>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task User_creation_without_users_create_is_rejected_with_403()
+    {
+        await using var host = await CreateHostAsync();
+        var editor = await host.CreateUserAsync("create-no-permission", GisRoles.GisEditor);
+
+        var response = await host.Client(editor)
+            .PostAsJsonAsync("/api/admin/users", NewAdminUser());
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        await host.Users.DidNotReceive().CreateUserAsync(
+            Arg.Any<CreateAdminUserRequest>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Anonymous_invitation_resend_is_rejected_with_401()
+    {
+        await using var host = await CreateHostAsync();
+
+        var response = await host.Client().PostAsync("/api/admin/users/42/resend-invitation", null);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        await host.Users.DidNotReceive().ResendInvitationAsync(42, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Invitation_resend_without_completed_mfa_is_rejected_with_403()
+    {
+        await using var host = await CreateHostAsync();
+        var administrator = await host.CreateUserAsync("resend-no-mfa", GisRoles.Administrator);
+
+        var response = await host.Client(administrator, AuthenticationLevel.Password)
+            .PostAsync("/api/admin/users/42/resend-invitation", null);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        await host.Users.DidNotReceive().ResendInvitationAsync(42, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Invitation_resend_without_users_create_is_rejected_with_403()
+    {
+        await using var host = await CreateHostAsync();
+        var editor = await host.CreateUserAsync("resend-no-permission", GisRoles.GisEditor);
+
+        var response = await host.Client(editor)
+            .PostAsync("/api/admin/users/42/resend-invitation", null);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        await host.Users.DidNotReceive().ResendInvitationAsync(42, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Authorized_invitation_resend_is_accepted_and_rate_limited_per_actor_and_target()
+    {
+        await using var host = await CreateHostAsync();
+        var administrator = await host.CreateUserAsync("resend-authorized", GisRoles.Administrator);
+        var client = host.Client(administrator);
+
+        var accepted = await client.PostAsync("/api/admin/users/42/resend-invitation", null);
+        Assert.Equal(HttpStatusCode.OK, accepted.StatusCode);
+        var body = await accepted.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("token", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("securityStamp", body, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(HttpStatusCode.TooManyRequests,
+            (await client.PostAsync("/api/admin/users/42/resend-invitation", null)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK,
+            (await client.PostAsync("/api/admin/users/43/resend-invitation", null)).StatusCode);
+
+        await host.Users.Received(1).ResendInvitationAsync(42, Arg.Any<CancellationToken>());
+        await host.Users.Received(1).ResendInvitationAsync(43, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Public_confirmation_resend_keeps_generic_response_and_throttles_same_ip()
+    {
+        await using var host = await CreateHostAsync();
+
+        var first = await host.Client().PostAsJsonAsync(
+            "/api/auth/resend-confirmation",
+            new ResendConfirmationRequest { Email = "someone@example.invalid" });
+        var second = await host.Client().PostAsJsonAsync(
+            "/api/auth/resend-confirmation",
+            new ResendConfirmationRequest { Email = "someone@example.invalid" });
+
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        Assert.Contains("hesap varsa", await first.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        Assert.Equal(HttpStatusCode.TooManyRequests, second.StatusCode);
+    }
+
     /* --- Yardımcılar ----------------------------------------------------------- */
 
     private static CreateDrawingRequest NewDrawing() => new() { Name = "test", Wkt = "POINT (1 1)" };
+
+    private static CreateAdminUserRequest NewAdminUser() => new()
+    {
+        Username = "invited-user",
+        Email = "invited-user@example.invalid",
+        Role = GisRoles.Viewer
+    };
 
     private static async Task<TestHostFixture> CreateHostAsync()
     {
@@ -311,6 +434,17 @@ public class PermissionEnforcementTests
         var users = Substitute.For<IUserManagementService>();
         users.GetUsersAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<AdminUserListItem>());
         users.GetAssignableRolesAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(Array.Empty<AssignableRole>());
+        users.ResendInvitationAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(call => ServiceResult<AdminUserDetail>.Success(new AdminUserDetail
+            {
+                Id = call.ArgAt<int>(0),
+                AccountStatus = AccountStatus.InvitationPending
+            }));
+
+        var accounts = Substitute.For<IAccountService>();
+        accounts.ResendConfirmationAsync(Arg.Any<ResendConfirmationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(AccountResult.Success(
+                "Bu adresle eşleşen bir hesap varsa, e-posta gönderildi. Lütfen gelen kutunuzu kontrol edin."));
 
         var analysis = Substitute.For<ISpatialAnalysisService>();
         analysis.CountIntersectionsAsync(Arg.Any<IntersectionAnalysisRequest>(), Arg.Any<CancellationToken>())
@@ -335,6 +469,9 @@ public class PermissionEnforcementTests
                 services.AddSingleton(drawings);
                 services.AddSingleton(users);
                 services.AddSingleton(analysis);
+                services.AddSingleton(accounts);
+                services.AddScoped(_ => Substitute.For<IAuthService>());
+                services.AddScoped(_ => Substitute.For<ITwoFactorService>());
                 services.AddScoped<ICurrentUserService, CurrentUserService>();
                 services.AddScoped<IDrawingAuthorizationService>(_ => Substitute.For<IDrawingAuthorizationService>());
 
@@ -346,6 +483,7 @@ public class PermissionEnforcementTests
                    mantığını kurmaz; Program.cs'teki hattı çalıştırır. */
                 services.AddScoped(_ => Substitute.For<IGeographicAuthorizationService>());
                 services.AddScoped<IEffectivePermissionService, EffectivePermissionService>();
+                services.AddInvitationRateLimiting();
                 services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
                 services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
 
@@ -381,6 +519,7 @@ public class PermissionEnforcementTests
                 app.UseRouting();
                 app.UseAuthentication();
                 app.UseAuthorization();
+                app.UseRateLimiter();
                 app.UseEndpoints(endpoints => endpoints.MapControllers());
             });
         });

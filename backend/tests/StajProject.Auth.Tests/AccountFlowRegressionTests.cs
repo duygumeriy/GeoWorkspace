@@ -27,6 +27,7 @@ public class AccountFlowRegressionTests
         Assert.True((await roles.CreateAsync(new IdentityRole<int>(ApplicationRoles.User))).Succeeded);
         var email = Substitute.For<IEmailSender>();
         var account = new AccountService(
+            scope.ServiceProvider.GetRequiredService<AppDbContext>(),
             users,
             email,
             new ClientAppOptions { BaseUrl = "https://client.example.invalid" },
