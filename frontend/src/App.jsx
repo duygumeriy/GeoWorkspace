@@ -13,6 +13,7 @@ import RegisterPage from './pages/RegisterPage'
 import ConfirmEmailPage from './pages/ConfirmEmailPage'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
+import ActivateAccountPage from './pages/ActivateAccountPage'
 import MapPage from './pages/MapPage'
 import AdminLayout from './components/admin/AdminLayout.jsx'
 import AdminPage from './pages/AdminPage'
@@ -48,6 +49,7 @@ function App() {
                 <Route path="/confirm-email" element={<ConfirmEmailPage />} />
                 <Route path="/forgot-password" element={<ForgotPasswordPage />} />
                 <Route path="/reset-password" element={<ResetPasswordPage />} />
+                <Route path="/activate-account" element={<ActivateAccountPage />} />
                 {/* Harita erişimi `map.view` ile açılır. Yetkisi olmayan
                     kimliği doğrulanmış kullanıcı /login'e DEĞİL, yetkisizlik
                     ekranına düşer — oturumunda bir sorun yok. */}

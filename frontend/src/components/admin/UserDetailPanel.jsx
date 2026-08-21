@@ -52,7 +52,7 @@ function ApprovalSection({ user, roles, selectedRole, onSelectRole, mutating, ca
   </section>
 }
 
-export default function UserDetailPanel({ user, currentUserId, loading, mutating, roles, permissions, geography, canUpdate = true, canViewPermissions = true, onClose, onChangeRole, onChangeStatus, onApprove, onReject }) {
+export default function UserDetailPanel({ user, currentUserId, loading, mutating, roles, permissions, geography, canUpdate = true, canResendInvitation = false, canViewPermissions = true, onClose, onChangeRole, onChangeStatus, onApprove, onReject, onResendInvitation }) {
   const [confirm, setConfirm] = useState(null)
   const [geographyOpen, setGeographyOpen] = useState(false)
   const [selectedRole, setSelectedRole] = useState('')
@@ -106,6 +106,7 @@ export default function UserDetailPanel({ user, currentUserId, loading, mutating
     {tab === 'permissions' && canViewPermissions
       ? <div id="admin-tabpanel-permissions" role="tabpanel" aria-labelledby="admin-tab-permissions"><UserPermissionEditor {...permissions} /></div>
       : <div id="admin-tabpanel-general" role="tabpanel" aria-labelledby="admin-tab-general"><dl className="admin-detail-grid"><div><dt>Kullanıcı adı</dt><dd>{user.username}</dd></div><div><dt>E-posta</dt><dd>{user.email || '—'}</dd></div><div><dt>E-posta durumu</dt><dd>{user.emailConfirmed ? 'Doğrulandı' : 'Doğrulanmadı'}</dd></div><div><dt>Hesap durumu</dt><dd>{status.label}</dd></div><div><dt>Rol</dt><dd>{user.role || 'Atanmamış'}</dd></div><div><dt>İki Faktörlü Doğrulama</dt><dd>{mfaLabel(user)}</dd></div>{user.approvedAt && <div><dt>Onay</dt><dd>{formatDate(user.approvedAt)}{user.approvedByUsername ? ` — ${user.approvedByUsername}` : ''}</dd></div>}{user.rejectedAt && <div><dt>Red</dt><dd>{formatDate(user.rejectedAt)}{user.rejectedByUsername ? ` — ${user.rejectedByUsername}` : ''}{user.rejectionReason ? ` · ${user.rejectionReason}` : ''}</dd></div>}<div><dt>Son güncelleme</dt><dd>{formatDate(user.modifiedDate)}</dd></div></dl>
+    {user.accountStatus === 'InvitationPending' && <section className="admin-management"><h3>Hesap Daveti</h3><p className="admin-policy-note">Kullanıcı davet bağlantısından kendi parolasını belirleyerek hesabını etkinleştirecektir.</p>{canResendInvitation && <button type="button" className="admin-button secondary" disabled={mutating} onClick={onResendInvitation}>{mutating ? 'Gönderiliyor…' : 'Daveti Tekrar Gönder'}</button>}</section>}
     {pending
       ? <ApprovalSection user={user} roles={roles} selectedRole={selectedRole} onSelectRole={setSelectedRole} mutating={mutating} canUpdate={canUpdate} onApprove={requestApproval} onReject={requestRejection} />
       : <section className="admin-management"><h3>Yetki ve hesap durumu</h3>

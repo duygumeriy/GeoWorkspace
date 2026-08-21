@@ -2,10 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../auth/AuthContext.jsx'
 import { usePermissions } from '../auth/permissionStore.js'
 import { PERMISSIONS } from '../auth/permissionCodes.js'
-import { approveUser, fetchAdminUser, fetchAdminUserPermissions, fetchAdminUsers, fetchAssignableRoles, readApiError, rejectUser, updateAdminUserPermissions, updateUserRole, updateUserStatus } from '../services/api.js'
+import { approveUser, createAdminUser, fetchAdminUser, fetchAdminUserPermissions, fetchAdminUsers, fetchAssignableRoles, readApiError, rejectUser, resendAdminInvitation, updateAdminUserPermissions, updateUserRole, updateUserStatus } from '../services/api.js'
 import AdminPageHeader from '../components/admin/AdminPageHeader.jsx'
 import UserDetailPanel from '../components/admin/UserDetailPanel.jsx'
 import UserManagementList from '../components/admin/UserManagementList.jsx'
+import CreateUserDialog from '../components/admin/CreateUserDialog.jsx'
 import { roleFilterOptions } from '../components/admin/userRoles.js'
 import { directActiveCodes, sameSet } from '../components/admin/userPermissions.js'
 import { STATUS_FILTERS } from '../components/admin/userStatus.js'
@@ -21,6 +22,7 @@ export default function AdminPage() {
      yüzden burada onlara karşılık gelen bir düğme de uydurulmaz. */
   const { can, refreshPermissions } = usePermissions()
   const canUpdateUser = can(PERMISSIONS.USERS_UPDATE)
+  const canCreateUser = can(PERMISSIONS.USERS_CREATE)
   const canViewPermissions = can(PERMISSIONS.PERMISSIONS_VIEW)
   /* Doğrudan yetki KAYDETME ucu users.update + permissions.assign ister. */
   const canAssignDirect = canUpdateUser && can(PERMISSIONS.PERMISSIONS_ASSIGN)
@@ -45,6 +47,9 @@ export default function AdminPage() {
   const [mutating, setMutating] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState(null)
+  const [createDialogOpen, setCreateDialogOpen] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [createError, setCreateError] = useState('')
   const mutationInFlight = useRef(false)
 
   /* --- Kullanıcıya özel yetkiler --------------------------------------------
@@ -183,6 +188,44 @@ export default function AdminPage() {
   const approve = (role) => mutate((id) => approveUser(id, role), (u) => `${u.username} onaylandı ve ${role} rolüyle aktifleştirildi. Giriş yapabileceği kendisine e-postayla bildirildi.`)
   const reject = (reason) => mutate((id) => rejectUser(id, reason), (u) => `${u.username} başvurusu reddedildi. Hesap uygulamaya erişemeyecek.`)
 
+  const submitCreate = async (request) => {
+    if (creating) return
+    setCreating(true); setCreateError('')
+    try {
+      const res = await createAdminUser(request)
+      if (!res.ok) throw new Error(await readApiError(res, 'Kullanıcı oluşturulamadı.'))
+      const created = await res.json()
+      setCreateDialogOpen(false)
+      await loadUsers()
+      setNotice(created.notificationWarning
+        ? { type: 'warning', message: created.notificationWarning }
+        : { type: 'success', message: 'Kullanıcı oluşturuldu ve davet e-postası gönderildi.' })
+    } catch (err) { setCreateError(err.message || 'Kullanıcı oluşturulamadı.') }
+    finally { setCreating(false) }
+  }
+
+  const resendInvitation = async () => {
+    if (!detail || mutationInFlight.current) return
+    mutationInFlight.current = true; setMutating(true)
+    try {
+      const res = await resendAdminInvitation(detail.id)
+      if (!res.ok) {
+        throw new Error(res.status === 429
+          ? 'Yeni davet göndermeden önce kısa bir süre bekleyin.'
+          : res.status === 403
+            ? 'Bu işlem için yetkiniz bulunmuyor.'
+            : await readApiError(res, 'Davet e-postası yeniden gönderilemedi.'))
+      }
+      const updated = await res.json()
+      setDetail(updated)
+      setUsers((all) => all.map((user) => user.id === updated.id ? { ...user, ...updated } : user))
+      setNotice(updated.notificationWarning
+        ? { type: 'warning', message: updated.notificationWarning }
+        : { type: 'success', message: 'Davet e-postası yeniden gönderildi.' })
+    } catch (err) { setNotice({ type: 'error', message: err.message || 'Davet e-postası yeniden gönderilemedi.' }) }
+    finally { mutationInFlight.current = false; setMutating(false) }
+  }
+
   const togglePermission = (code) => {
     setPermissionSelected((current) => {
       const next = new Set(current)
@@ -247,6 +290,7 @@ export default function AdminPage() {
      (filtreler, liste, detay çekmecesi, tüm API çağrıları) olduğu gibi durur. */
   return <div className="admin-users-page">
     <AdminPageHeader title="Kullanıcılar" description="Sistemdeki kullanıcıları görüntüleyin ve yönetin." />
+    {canCreateUser && <div className="admin-users-actions"><button type="button" className="admin-button" onClick={() => { setCreateError(''); setCreateDialogOpen(true) }}>+ Kullanıcı Ekle</button></div>}
     {pendingCount > 0 && <button type="button" className="admin-pending-banner" onClick={() => setStatusFilter('PendingApproval')}><strong>{pendingCount} hesap onay bekliyor.</strong><span>Onay bekleyenleri göster →</span></button>}
     {notice && <div className={`admin-notice is-${notice.type}`} role="status">{notice.message}<button type="button" onClick={() => setNotice(null)} aria-label="Bildirimi kapat">×</button></div>}
     <section className="admin-toolbar" aria-label="Kullanıcı filtreleri">
@@ -256,6 +300,7 @@ export default function AdminPage() {
     </section>
     {error && <div className="admin-error" role="alert"><span>{error}</span><button type="button" onClick={loadUsers}>Tekrar dene</button></div>}
     <UserManagementList users={filteredUsers} currentUserId={userId} loading={loading} selectedId={selectedId} onSelect={openDetail} emptyMessage={emptyMessage} />
-    {(selectedId || detailLoading) && <UserDetailPanel user={detail} currentUserId={userId} loading={detailLoading} mutating={mutating} roles={roles} permissions={permissionSection} geography={{ canView: canViewGeography, canManage: canManageGeography }} canUpdate={canUpdateUser} canViewPermissions={canViewPermissions} onClose={() => { setSelectedId(null); setDetail(null) }} onChangeRole={changeRole} onChangeStatus={changeStatus} onApprove={approve} onReject={reject} />}
+    {(selectedId || detailLoading) && <UserDetailPanel user={detail} currentUserId={userId} loading={detailLoading} mutating={mutating} roles={roles} permissions={permissionSection} geography={{ canView: canViewGeography, canManage: canManageGeography }} canUpdate={canUpdateUser} canResendInvitation={canCreateUser} canViewPermissions={canViewPermissions} onClose={() => { setSelectedId(null); setDetail(null) }} onChangeRole={changeRole} onChangeStatus={changeStatus} onApprove={approve} onReject={reject} onResendInvitation={resendInvitation} />}
+    {createDialogOpen && <CreateUserDialog roles={roles} busy={creating} error={createError} onCancel={() => { setCreateDialogOpen(false); setCreateError('') }} onSubmit={submitCreate} />}
   </div>
 }
