@@ -119,6 +119,49 @@ public class GeographicMultiAreaTests
         Assert.True(result.IsSuccess);
     }
 
+    [Fact]
+    public async Task An_existing_drawing_can_move_from_one_authorized_area_to_another()
+    {
+        await using var scope = await CreateScopeAsync();
+        var user = await CreateUserAsync(scope, "area-to-area-editor");
+
+        await AddUserAreaAsync(scope, user.Id, West, "Ankara");
+        await AddUserAreaAsync(scope, user.Id, East, "Kayseri");
+
+        var drawings = Drawings(scope, user);
+        var created = await drawings.CreatePointAsync(Point("POINT (32.5 39.5)"), default);
+        var moved = await drawings.UpdateAsync(
+            DrawingKind.Point,
+            created.Value!.Id,
+            new UpdateDrawingRequest { Wkt = "POINT (35.5 38.5)" },
+            default);
+
+        Assert.True(moved.IsSuccess);
+        Assert.Contains("35.5 38.5", moved.Value!.Wkt);
+    }
+
+    [Fact]
+    public async Task A_failed_move_outside_every_area_keeps_the_persisted_geometry()
+    {
+        await using var scope = await CreateScopeAsync();
+        var user = await CreateUserAsync(scope, "rejected-area-editor");
+
+        await AddUserAreaAsync(scope, user.Id, West, "Ankara");
+        await AddUserAreaAsync(scope, user.Id, East, "Kayseri");
+
+        var drawings = Drawings(scope, user);
+        var created = await drawings.CreatePointAsync(Point("POINT (32.5 39.5)"), default);
+        var rejected = await drawings.UpdateAsync(
+            DrawingKind.Point,
+            created.Value!.Id,
+            new UpdateDrawingRequest { Wkt = "POINT (34 39)" },
+            default);
+
+        Assert.False(rejected.IsSuccess);
+        Assert.Equal(ServiceErrorKind.Forbidden, rejected.ErrorKind);
+        Assert.Contains("32.5 39.5", (await Db(scope).Points.SingleAsync()).Geometry.AsText());
+    }
+
     /* --- Öncelik: doğrudan alanlar rolleri EZER -------------------------------- */
 
     [Fact]
