@@ -42,6 +42,9 @@ const ALL_VISIBLE = Object.freeze({ point: true, line: true, polygon: true })
 
 const EMPTY_SELECTION = Object.freeze(new Set())
 
+const DRAWING_GEOGRAPHIC_AUTHORIZATION_MESSAGE = 'Bu alanda çizim yapma yetkiniz bulunmuyor.'
+const DRAWING_GEOGRAPHIC_AUTHORIZATION_TOAST_ID = 'drawing-geographic-authorization'
+
 /** Turkish plural-aware count phrase: "3 çizim". */
 function countLabel(count) {
   return `${count} çizim`
@@ -91,6 +94,7 @@ export default function useDrawingWorkspace(
   map,
   {
     showToast,
+    dismissToast = null,
     activeDrawTool = null,
     canViewDrawings = true,
     hasPermissions = null,
@@ -121,6 +125,24 @@ export default function useDrawingWorkspace(
   /** Non-null when the last load failed; drives the panel's error state. */
   const [loadError, setLoadError] = useState(null)
   const [savingCount, setSavingCount] = useState(0)
+
+  /* Backend'in çizim mutasyonuna verdiği coğrafi 403 tek, hedefli bir bildirim
+     kimliği taşır. Böylece daha sonraki başarılı çizim mutasyonu yalnızca artık
+     geçersiz olan bu uyarıyı kaldırır; diğer hata/bilgi bildirimlerine dokunmaz. */
+  const showMutationError = useCallback(
+    (error, fallback) => {
+      const message = error?.message || fallback
+      const options = message === DRAWING_GEOGRAPHIC_AUTHORIZATION_MESSAGE
+        ? { id: DRAWING_GEOGRAPHIC_AUTHORIZATION_TOAST_ID }
+        : undefined
+      showToast('error', message, options)
+    },
+    [showToast],
+  )
+
+  const dismissStaleGeographicAuthorization = useCallback(() => {
+    dismissToast?.(DRAWING_GEOGRAPHIC_AUTHORIZATION_TOAST_ID)
+  }, [dismissToast])
 
   /**
    * The shape drawn but not yet saved: `{ type, wkt, clientKey, style }`.
@@ -497,7 +519,11 @@ export default function useDrawingWorkspace(
 
       const type = feature.get('drawingType')
       const res = await updateDrawing(type, feature.get('databaseId'), changes)
-      if (!res.ok) throw new Error(await readApiError(res, 'Çizim güncellenemedi'))
+      if (!res.ok) {
+        const error = new Error(await readApiError(res, 'Çizim güncellenemedi'))
+        error.status = res.status
+        throw error
+      }
 
       const saved = await res.json()
 
@@ -629,16 +655,17 @@ export default function useDrawingWorkspace(
 
   /** Wraps a history handler so any failure surfaces as a toast, never a crash. */
   const guarded = useCallback(
-    (action, failureMessage) => async () => {
+    (action, failureMessage, { clearsGeographicAuthorization = false } = {}) => async () => {
       try {
         await action()
+        if (clearsGeographicAuthorization) dismissStaleGeographicAuthorization()
         return true
       } catch (error) {
-        showToast('error', error?.message || failureMessage)
+        showMutationError(error, failureMessage)
         return false
       }
     },
-    [showToast],
+    [dismissStaleGeographicAuthorization, showMutationError],
   )
 
   /* --- Drawing ------------------------------------------------------------ */
@@ -837,6 +864,7 @@ export default function useDrawingWorkspace(
 
       try {
         const feature = await persistCreate(snapshot)
+        dismissStaleGeographicAuthorization()
 
         // The record exists now, so the pending shape has been replaced by the
         // persisted one and its temporary copy must go.
@@ -848,7 +876,9 @@ export default function useDrawingWorkspace(
           label: `${type.label} çizimi`,
           // Undo a create by deleting it; redo by posting the same snapshot.
           undo: guarded(() => persistDelete(clientKey), 'Geri alınamadı.'),
-          redo: guarded(() => persistCreate(snapshot), 'İleri alınamadı.'),
+          redo: guarded(() => persistCreate(snapshot), 'İleri alınamadı.', {
+            clearsGeographicAuthorization: true,
+          }),
           /* Geri al DELETE, ileri al ise aynı türün POST ucudur — dolayısıyla
              ileri alma tam olarak o türün oluşturma yetkisini ister. */
           undoPermissions: [PERMISSIONS.DRAWINGS_DELETE],
@@ -872,13 +902,23 @@ export default function useDrawingWorkspace(
 
         // The geometry stays on the pending layer and the popup stays open, so
         // a failed save never costs the user the shape they drew.
-        showToast('error', error?.message || 'Kaydedilemedi. Lütfen tekrar deneyin.')
+        showMutationError(error, 'Kaydedilemedi. Lütfen tekrar deneyin.')
         return false
       } finally {
         setSavingCount((count) => Math.max(0, count - 1))
       }
     },
-    [pendingDrawing, persistCreate, persistDelete, pushHistory, guarded, showToast, onPolygonSaved],
+    [
+      pendingDrawing,
+      persistCreate,
+      persistDelete,
+      pushHistory,
+      guarded,
+      showToast,
+      showMutationError,
+      dismissStaleGeographicAuthorization,
+      onPolygonSaved,
+    ],
   )
 
   // Any change of draw tool — leaving draw mode via Esc or the analysis tool,
@@ -1029,11 +1069,16 @@ export default function useDrawingWorkspace(
       setSavingCount((count) => count + 1)
       try {
         await persistUpdate(key, changes)
+        dismissStaleGeographicAuthorization()
         showToast('success', `${DRAWING_TYPES[type].label} güncellendi.`)
         pushHistory({
           label: `${DRAWING_TYPES[type].label} düzenleme`,
-          undo: guarded(() => persistUpdate(key, before), 'Geri alınamadı.'),
-          redo: guarded(() => persistUpdate(key, changes), 'İleri alınamadı.'),
+          undo: guarded(() => persistUpdate(key, before), 'Geri alınamadı.', {
+            clearsGeographicAuthorization: true,
+          }),
+          redo: guarded(() => persistUpdate(key, changes), 'İleri alınamadı.', {
+            clearsGeographicAuthorization: true,
+          }),
           /* Tek bir PUT gönderilir ve o uç üç yetkiyi BİRDEN arar; ikisine
              sahip olmak bu adımı çalıştırmaya yetmez. */
           undoPermissions: UPDATE_PERMISSIONS,
@@ -1041,13 +1086,22 @@ export default function useDrawingWorkspace(
         })
         return true
       } catch (error) {
-        showToast('error', error?.message || 'Çizim güncellenemedi.')
+        if (error?.status === 403) onForbiddenRef.current?.()
+        showMutationError(error, 'Çizim güncellenemedi.')
         return false
       } finally {
         setSavingCount((count) => Math.max(0, count - 1))
       }
     },
-    [featureByKey, persistUpdate, pushHistory, guarded, showToast],
+    [
+      featureByKey,
+      persistUpdate,
+      pushHistory,
+      guarded,
+      showToast,
+      showMutationError,
+      dismissStaleGeographicAuthorization,
+    ],
   )
 
   /** Deletes a feature, keeping a full snapshot so undo can recreate it. */

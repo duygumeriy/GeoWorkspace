@@ -251,6 +251,26 @@ export default function useEditSession({ feature, descriptor, active }) {
   }, [feature, state])
 
   /**
+   * Drops only the rejected geometry draft after a failed save.
+   *
+   * Metadata stays editable, but the map and coordinate panel both return to
+   * the persisted session baseline. The rejected candidate is also removed
+   * from history so undo/redo cannot put an unsaved geometry back on screen.
+   */
+  const restoreOriginalGeometry = useCallback(() => {
+    setState((current) => {
+      if (!current) return current
+      return {
+        ...current,
+        coords: current.original.coords,
+        past: [],
+        future: [],
+        ...selectionForLength(current, current.original.coords.length),
+      }
+    })
+  }, [])
+
+  /**
    * The session's geometry as EPSG:4326 WKT — what "Kaydet" sends.
    *
    * Built from the vertex list rather than read back off the map, so the saved
@@ -263,6 +283,12 @@ export default function useEditSession({ feature, descriptor, active }) {
     if (!state) return null
     return geometryToWkt4326(buildMapGeometry(state.type, state.coords))
   }, [state])
+
+  /** Current canonical draft as a standalone map-projection geometry. */
+  const toMapGeometry = useCallback(
+    () => (state ? buildMapGeometry(state.type, state.coords) : null),
+    [state],
+  )
 
   /* --- Metadata drafts ----------------------------------------------------- */
 
@@ -489,6 +515,8 @@ export default function useEditSession({ feature, descriptor, active }) {
     redo,
     reset,
     revertGeometry,
+    restoreOriginalGeometry,
+    toMapGeometry,
     toWkt,
   }
 }

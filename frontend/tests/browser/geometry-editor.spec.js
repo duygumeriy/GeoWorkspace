@@ -32,6 +32,24 @@ const POLYGON_WKT = 'POLYGON((32.6 39.8, 33.0 39.8, 33.0 40.1, 32.6 40.1, 32.6 3
 /** A three-point line: the middle vertex makes reordering and midpoints visible. */
 const LINE_WKT = 'LINESTRING(29.0 40.0, 29.4 40.2, 29.8 40.0)'
 const POINT_WKT = 'POINT(32.8597 39.9334)'
+const TWO_AREA_SCOPE = {
+  isRestricted: true,
+  effectiveWkt:
+    'MULTIPOLYGON (((32 39, 33 39, 33 40, 32 40, 32 39)), ((35 38, 36 38, 36 39, 35 39, 35 38)))',
+  areaCount: 2,
+}
+const POLYGON_EDIT_CYCLE_SCOPE = {
+  isRestricted: true,
+  effectiveWkt:
+    'MULTIPOLYGON (((32.3 39.4, 33.05 39.4, 33.05 40.4, 32.3 40.4, 32.3 39.4)), ((33.1 39.4, 33.85 39.4, 33.85 40.4, 33.1 40.4, 33.1 39.4)))',
+  areaCount: 2,
+}
+const HOLE_SCOPE = {
+  isRestricted: true,
+  effectiveWkt:
+    'MULTIPOLYGON (((32.4 39.6, 34.2 39.6, 34.2 40.3, 32.4 40.3, 32.4 39.6), (32.72 39.9, 32.84 39.9, 32.78 40.0, 32.72 39.9)))',
+  areaCount: 1,
+}
 
 function record(id, name, wkt) {
   return {
@@ -50,7 +68,7 @@ function record(id, name, wkt) {
 }
 
 /** Signs in without a network round trip and puts one drawing of each type on the map. */
-async function openMap(page) {
+async function openMap(page, geographicScope = { isRestricted: false, effectiveWkt: null, areaCount: 0 }) {
   /* Yetki ucu da yanıtlanmalı: arayüz küme gelene kadar korumalı hiçbir şeyi
      çizmez (fail-closed). Bu spec yetki KURALLARINI ölçmüyor, bu yüzden tam
      küme verilir; kuralların kendisi permission-aware-ui.spec.js'in işidir. */
@@ -58,6 +76,9 @@ async function openMap(page) {
 
   await page.route('**/api/auth/me', (route) =>
     route.fulfill(json({ userId: USER_ID, username: 'browser-user', role: 'User' })),
+  )
+  await page.route('**/api/auth/me/geographic-scope', (route) =>
+    route.fulfill(json(geographicScope)),
   )
   await page.route('**/api/drawings/points', (route) =>
     route.fulfill(json([record(1, 'Test Noktası', POINT_WKT)])),
@@ -141,6 +162,41 @@ function onLeftEdge(centre) {
 /** The longitude currently shown for a row. */
 async function longitudeOf(page, label) {
   return Number(await vertexRow(page, label).locator('input').first().inputValue())
+}
+
+function polygonCoords(wkt) {
+  const pairs = [...String(wkt).matchAll(/([\d.-]+)\s+([\d.-]+)/g)].map((match) => [
+    Number(match[1]),
+    Number(match[2]),
+  ])
+  return pairs.length > 1 && pairs[0][0] === pairs.at(-1)[0] && pairs[0][1] === pairs.at(-1)[1]
+    ? pairs.slice(0, -1)
+    : pairs
+}
+
+async function polygonPanelCoords(page) {
+  return Promise.all(
+    ['Köşe 1', 'Köşe 2', 'Köşe 3', 'Köşe 4'].map(async (label) => {
+      const row = vertexRow(page, label)
+      return [Number(await row.locator('input').first().inputValue()), Number(await row.locator('input').nth(1).inputValue())]
+    }),
+  )
+}
+
+async function expectPolygonPanel(page, expected) {
+  const actual = await polygonPanelCoords(page)
+  expect(actual).toHaveLength(expected.length)
+  actual.forEach((coordinate, index) => {
+    expect(coordinate[0]).toBeCloseTo(expected[index][0], 5)
+    expect(coordinate[1]).toBeCloseTo(expected[index][1], 5)
+  })
+}
+
+function expectInsideLongitudeRange(coords, [minimum, maximum]) {
+  for (const [longitude] of coords) {
+    expect(longitude).toBeGreaterThanOrEqual(minimum)
+    expect(longitude).toBeLessThanOrEqual(maximum)
+  }
 }
 
 async function dragFrom(page, from, dx, dy) {
@@ -241,45 +297,20 @@ test.describe('polygon geometry editor', () => {
     await expect(page.getByText('Polygon için en az 3 köşe gereklidir; silme şu an kapalı.')).toBeVisible()
   })
 
-  test('an edge picked on the map arms the insert button and splits that edge', async ({ page }) => {
+  test('dragging a native segment handle inserts and moves a polygon vertex', async ({ page }) => {
     await openMap(page)
     await startEditing(page, 'Test Alanı')
 
-    // Nothing picked yet: the button says what to do instead of doing nothing.
-    const insert = page.getByRole('button', { name: /Seçili Kenara Köşe Ekle|Önce haritadan bir kenar seçin/ })
-    await expect(insert).toBeDisabled()
-    await expect(page.getByRole('button', { name: 'Önce haritadan bir kenar seçin' })).toBeVisible()
-
-    /* Centre vertex 1, then click partway up the edge leaving it — far enough
-       from either endpoint that it can only be the edge, not a vertex. */
+    /* Centre vertex 1, then drag the native midpoint handle on the closing edge.
+       OpenLayers must create the new vertex itself; no panel insertion action
+       participates in this gesture. */
     await showOnMap(page, 'Köşe 1')
     const centre = await mapCentre(page)
     const edgePoint = onLeftEdge(centre)
-    await page.mouse.click(edgePoint.x, edgePoint.y)
+    await dragFrom(page, edgePoint, -60, 0)
 
-    // The button names the edge it will split — and picking an edge drops the
-    // vertex selection, because the two offer different actions.
-    await expect(page.getByRole('button', { name: /Seçili Kenara Köşe Ekle \(Köşe 4–1\)/ })).toBeEnabled()
-    await expect(page.locator('.vertex-row.is-selected')).toHaveCount(0)
-
-    // A click on an edge must SELECT it, never quietly reshape the polygon.
-    await expect(page.locator('.vertex-row')).toHaveCount(4)
-
-    const latOf = async (label) =>
-      Number(await vertexRow(page, label).locator('input').nth(1).inputValue())
-    const before = { fourth: await latOf('Köşe 4'), first: await latOf('Köşe 1') }
-
-    await page.getByRole('button', { name: /Seçili Kenara Köşe Ekle/ }).click()
-
-    // The new vertex splits exactly the named edge: it lands after Köşe 4, at
-    // the midpoint of the closing edge back to Köşe 1.
     await expect(page.locator('.vertex-row')).toHaveCount(5)
-    expect(await latOf('Köşe 5')).toBeCloseTo((before.fourth + before.first) / 2, 5)
-    await expectSelected(page, 'Köşe 5')
-
-    // The insertion renumbered every edge, so the stale pick is dropped rather
-    // than left pointing at a different edge than the user chose.
-    await expect(page.getByRole('button', { name: 'Önce haritadan bir kenar seçin' })).toBeDisabled()
+    await expect(page.getByRole('button', { name: 'Kaydet' })).toBeEnabled()
   })
 
   test('a typed coordinate moves the Modify handle with it', async ({ page }) => {
@@ -361,6 +392,243 @@ test.describe('polygon geometry editor', () => {
     expect(sent.wkt).toContain('31.5')
     expect(sent.wkt).toMatch(/^POLYGON\(\(/)
   })
+
+  test('translate moves the whole polygon without changing its shape', async ({ page }) => {
+    await openMap(page)
+    await startEditing(page, 'Test Alanı')
+
+    const before = await Promise.all(
+      ['Köşe 1', 'Köşe 2', 'Köşe 3', 'Köşe 4'].map((label) => longitudeOf(page, label)),
+    )
+
+    await page.getByRole('button', { name: 'Tüm Geometriyi Taşı' }).click()
+    const centre = await mapCentre(page)
+    await dragFrom(page, centre, 80, 0)
+
+    const after = await Promise.all(
+      ['Köşe 1', 'Köşe 2', 'Köşe 3', 'Köşe 4'].map((label) => longitudeOf(page, label)),
+    )
+    const deltas = after.map((value, index) => value - before[index])
+
+    expect(deltas[0]).toBeGreaterThan(0)
+    for (const delta of deltas.slice(1)) expect(delta).toBeCloseTo(deltas[0], 5)
+  })
+
+  test('a successful retry clears only the stale geographic authorization warning', async ({ page }) => {
+    await openMap(page)
+    await startEditing(page, 'Test Alanı')
+
+    const original = await longitudeOf(page, 'Köşe 1')
+    await vertexRow(page, 'Köşe 1').locator('input').first().fill('31.5')
+    await vertexRow(page, 'Köşe 1').locator('input').first().blur()
+
+    let attempt = 0
+    await page.route('**/api/drawings/polygon/3', async (route) => {
+      attempt += 1
+      if (attempt === 1) {
+        return route.fulfill(json({ message: 'Bu alanda çizim yapma yetkiniz bulunmuyor.' }, 403))
+      }
+
+      const body = JSON.parse(route.request().postData() ?? '{}')
+      return route.fulfill(json(record(3, 'Test Alanı', body.wkt)))
+    })
+
+    await page.getByRole('button', { name: 'Kaydet' }).click()
+
+    await expect(page.getByText('Bu alanda çizim yapma yetkiniz bulunmuyor.')).toBeVisible()
+    await expect.poll(() => longitudeOf(page, 'Köşe 1')).toBeCloseTo(original, 5)
+
+    await vertexRow(page, 'Köşe 1').locator('input').first().fill('31.6')
+    await vertexRow(page, 'Köşe 1').locator('input').first().blur()
+    await page.getByRole('button', { name: 'Kaydet' }).click()
+
+    await expect(page.getByText('Poligon güncellendi.')).toBeVisible()
+    await expect(page.getByText('Bu alanda çizim yapma yetkiniz bulunmuyor.')).toHaveCount(0)
+
+    await startEditing(page, 'Test Alanı')
+    await expect(page.getByText('Koordinatlar WGS84 (EPSG:4326) formatındadır.')).toBeVisible()
+    await expect(page.getByText('Bu alanda çizim yapma yetkiniz bulunmuyor.')).toHaveCount(0)
+  })
+
+  test('Modify and Translate preserve the latest geometry across repeated Area A and Area B sessions', async ({ page }) => {
+    await openMap(page, POLYGON_EDIT_CYCLE_SCOPE)
+
+    let persisted = polygonCoords(POLYGON_WKT)
+    const requests = []
+
+    await page.route('**/api/drawings/polygon/3', async (route) => {
+      const body = JSON.parse(route.request().postData() ?? '{}')
+      const candidate = polygonCoords(body.wkt)
+      requests.push(candidate)
+      persisted = candidate
+      await route.fulfill(json(record(3, 'Test Alanı', body.wkt)))
+    })
+
+    const openCurrentSession = async () => {
+      await startEditing(page, 'Test Alanı')
+      await expectPolygonPanel(page, persisted)
+    }
+
+    const saveCurrentSession = async (expectedArea) => {
+      const before = requests.length
+      const candidate = await polygonPanelCoords(page)
+      expectInsideLongitudeRange(candidate, expectedArea)
+
+      await page.getByRole('button', { name: 'Kaydet' }).click()
+      await expect.poll(() => requests.length).toBe(before + 1)
+      requests.at(-1).forEach((coordinate, index) => {
+        expect(coordinate[0]).toBeCloseTo(candidate[index][0], 5)
+        expect(coordinate[1]).toBeCloseTo(candidate[index][1], 5)
+      })
+      await expect(page.getByText('Poligon güncellendi.').last()).toBeVisible()
+      await expect(page.getByText('Bu alanda çizim yapma yetkiniz bulunmuyor.')).toHaveCount(0)
+      await expect(page.getByText('Bu geometri mevcut coğrafi yetki alanlarınızın dışında.')).toHaveCount(0)
+    }
+
+    const modifyVertex = async (label, dx, dy) => {
+      await showOnMap(page, label)
+      await dragFrom(page, await mapCentre(page), dx, dy)
+    }
+
+    const translateFirstVertexTo = async (targetLongitude) => {
+      await page.getByRole('button', { name: 'Tüm Geometriyi Taşı' }).click()
+      await expect(page.getByRole('button', { name: 'Tüm Geometriyi Taşı' })).toHaveAttribute('aria-pressed', 'true')
+
+      // Zooming out leaves enough screen room to cross the small gap between
+      // the two disjoint authorization polygons with a real Translate drag.
+      await page.waitForTimeout(700)
+      const centre = await mapCentre(page)
+      await page.mouse.move(centre.x, centre.y)
+      await page.mouse.wheel(0, 1800)
+      await page.waitForTimeout(700)
+
+      const before = (await polygonPanelCoords(page))[0][0]
+      const calibrationPixels = targetLongitude > before ? 40 : -40
+      await dragFrom(page, centre, calibrationPixels, 0)
+
+      const calibrated = (await polygonPanelCoords(page))[0][0]
+      const longitudePerPixel = (calibrated - before) / calibrationPixels
+      const remainingPixels = (targetLongitude - calibrated) / longitudePerPixel
+      await dragFrom(
+        page,
+        { x: centre.x + calibrationPixels, y: centre.y },
+        remainingPixels,
+        0,
+      )
+    }
+
+    // 1. Modify inside A.
+    await openCurrentSession()
+    await modifyVertex('Köşe 1', 18, -12)
+    await saveCurrentSession([32.3, 33.05])
+
+    // 2. Translate A -> B.
+    await openCurrentSession()
+    await translateFirstVertexTo(33.2)
+    await saveCurrentSession([33.1, 33.85])
+
+    // 3. Modify inside B.
+    await openCurrentSession()
+    await modifyVertex('Köşe 2', -16, 10)
+    await saveCurrentSession([33.1, 33.85])
+
+    // 4. Translate B -> A.
+    await openCurrentSession()
+    await translateFirstVertexTo(32.45)
+    await saveCurrentSession([32.3, 33.05])
+
+    // 5. Modify inside A again.
+    await openCurrentSession()
+    await modifyVertex('Köşe 3', -14, 9)
+    await saveCurrentSession([32.3, 33.05])
+
+    // 6. Translate A -> B again.
+    await openCurrentSession()
+    await translateFirstVertexTo(33.2)
+    await saveCurrentSession([33.1, 33.85])
+
+    // 7. Modify inside B again, then prove the next session uses this response.
+    await openCurrentSession()
+    await modifyVertex('Köşe 4', 12, -8)
+    await saveCurrentSession([33.1, 33.85])
+    await openCurrentSession()
+    await expectPolygonPanel(page, persisted)
+
+    expect(requests).toHaveLength(7)
+  })
+})
+
+test('geographic authorization boundaries use the lightweight presentation', async ({ page }) => {
+  await openMap(page)
+
+  const style = await page.evaluate(async () => {
+    const module = await import('/src/hooks/useGeographicScopeLayer.js')
+    return module.SCOPE_STYLE
+  })
+
+  expect(style.strokeWidth).toBe(1.5)
+  expect(style.lineDash).toEqual([8, 6])
+  expect(style.fillColor).toBe('rgba(168, 85, 247, 0.04)')
+})
+
+test('an authorization hole is rendered and blocks a polygon that encloses it', async ({ page }) => {
+  await openMap(page, HOLE_SCOPE)
+
+  const diagnostic = await page.evaluate(async ({ scopeWkt, candidateWkt }) => {
+    const geographic = await import('/src/map/geographicScope.js')
+    const drawing = await import('/src/map/drawing.js')
+    const layer = await import('/src/hooks/useGeographicScopeLayer.js')
+    const scope = geographic.parseScope(scopeWkt)
+    const candidate = drawing.wkt4326ToFeature(candidateWkt).getGeometry()
+    const vertices = candidateWkt
+      .match(/\(\((.*)\)\)/)[1]
+      .split(',')
+      .slice(0, -1)
+      .map((pair) => pair.trim().split(/\s+/).map(Number))
+    const features = layer.buildScopeFeatures(scope)
+
+    return {
+      ringCount: scope.polygons[0].length,
+      verticesInside: vertices.every((vertex) => geographic.isLonLatInsideScope(scope, vertex)),
+      geometryInside: geographic.isGeometryInsideScope(scope, candidate),
+      excludedFeatureCount: features.filter(
+        (feature) => feature.get('scopeKind') === layer.SCOPE_FEATURE_KINDS.excluded,
+      ).length,
+      excludedStyle: layer.EXCLUDED_SCOPE_STYLE,
+    }
+  }, { scopeWkt: HOLE_SCOPE.effectiveWkt, candidateWkt: POLYGON_WKT })
+
+  expect(diagnostic.ringCount).toBe(2)
+  expect(diagnostic.verticesInside).toBe(true)
+  expect(diagnostic.geometryInside).toBe(false)
+  expect(diagnostic.excludedFeatureCount).toBe(1)
+  expect(diagnostic.excludedStyle.lineDash).toEqual([4, 4])
+
+  let putCount = 0
+  await page.route('**/api/drawings/polygon/3', async (route) => {
+    putCount += 1
+    const body = JSON.parse(route.request().postData() ?? '{}')
+    await route.fulfill(json(record(3, 'Test Alanı', body.wkt)))
+  })
+
+  await startEditing(page, 'Test Alanı')
+  await vertexRow(page, 'Köşe 1').locator('input').first().fill('32.55')
+  await vertexRow(page, 'Köşe 1').locator('input').first().blur()
+  await page.getByRole('button', { name: 'Kaydet' }).click()
+
+  await expect(page.getByText('Bu geometri mevcut coğrafi yetki alanlarınızın dışında.')).toBeVisible()
+  expect(putCount).toBe(0)
+
+  // Move the restored draft beside the hole while staying inside the outer ring.
+  for (const label of ['Köşe 1', 'Köşe 2', 'Köşe 3', 'Köşe 4']) {
+    const input = vertexRow(page, label).locator('input').first()
+    await input.fill(String(Number(await input.inputValue()) + 0.8))
+    await input.blur()
+  }
+  await page.getByRole('button', { name: 'Kaydet' }).click()
+
+  await expect.poll(() => putCount).toBe(1)
+  await expect(page.getByText('Poligon güncellendi.').last()).toBeVisible()
 })
 
 /* --- Line ------------------------------------------------------------------- */
@@ -534,6 +802,7 @@ test.describe('point geometry editor', () => {
     await expect(page.getByText('-180 ile 180 arasında olmalı')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Kaydet' })).toBeDisabled()
   })
+
 })
 
 /* --- Visual record ----------------------------------------------------------
@@ -549,15 +818,17 @@ test('captures the edit surfaces for visual review', async ({ page }, testInfo) 
   await page.screenshot({ path: testInfo.outputPath('polygon-vertex-selected.png') })
   await testInfo.attach('polygon-vertex-selected', { path: testInfo.outputPath('polygon-vertex-selected.png'), contentType: 'image/png' })
 
-  // Pick the polygon's closing edge and highlight it.
+  // Drag the polygon's native closing-edge handle and record the inserted vertex.
   await showOnMap(page, 'Köşe 1')
   const edgePoint = onLeftEdge(await mapCentre(page))
-  await page.mouse.click(edgePoint.x, edgePoint.y)
-  await expect(page.getByRole('button', { name: /Seçili Kenara Köşe Ekle/ })).toBeEnabled()
-  await page.screenshot({ path: testInfo.outputPath('polygon-edge-selected.png') })
-  await testInfo.attach('polygon-edge-selected', { path: testInfo.outputPath('polygon-edge-selected.png'), contentType: 'image/png' })
+  await dragFrom(page, edgePoint, -60, 0)
+  await expect(page.locator('.vertex-row')).toHaveCount(5)
+  await page.screenshot({ path: testInfo.outputPath('polygon-native-vertex-inserted.png') })
+  await testInfo.attach('polygon-native-vertex-inserted', { path: testInfo.outputPath('polygon-native-vertex-inserted.png'), contentType: 'image/png' })
 
   await page.getByRole('button', { name: 'İptal' }).click()
+  await page.getByRole('button', { name: 'Değişiklikleri At' }).click()
+  await expect(page.locator('.confirm-scrim')).toBeHidden()
   await startEditing(page, 'Test Çizgisi')
   await showOnMap(page, 'Nokta 2')
   await page.screenshot({ path: testInfo.outputPath('line-vertex-selected.png') })

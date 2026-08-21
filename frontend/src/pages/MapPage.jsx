@@ -54,6 +54,7 @@ import useEditSession from '../hooks/useEditSession.js'
 import useVertexOverlay from '../hooks/useVertexOverlay.js'
 import useAnalysisHighlight from '../hooks/useAnalysisHighlight.js'
 import { DRAWING_TYPES, DRAWING_TYPE_LIST, colorPatchFor, normalizeTags } from '../map/drawingTypes.js'
+import { isGeometryInsideScope } from '../map/geographicScope.js'
 import {
   formatArea,
   formatLength,
@@ -174,6 +175,7 @@ export default function MapPage() {
 
   const workspace = useDrawingWorkspace(mapInstance, {
     showToast,
+    dismissToast,
     activeDrawTool: workspaceMode.activeDrawTool,
     canViewDrawings: allowed.canViewDrawings,
     /* Geri/ileri al adım BAZINDA denetlenir: her komutun iki yönü de gerçek
@@ -566,6 +568,20 @@ export default function MapPage() {
     const wkt = editSession.toWkt()
     if (!draft || !wkt || !selectedFeature || !editSession.canSave) return
 
+    /* Edit/translate sırasında ara konumlar bilinçli olarak sınanmaz: kullanıcı
+       kopuk iki yetkili alan arasındaki boşluktan geçebilmelidir. Yalnızca son
+       aday burada UX amacıyla sınanır; backend aynı adayı yeniden ve otoriter
+       olarak denetlemeye devam eder. Kapsam okunamadıysa istemci karar vermez. */
+    if (
+      editSession.isGeometryDirty &&
+      geographic.scope &&
+      !isGeometryInsideScope(geographic.scope, editSession.toMapGeometry())
+    ) {
+      showToast('error', 'Bu geometri mevcut coğrafi yetki alanlarınızın dışında.')
+      editSession.restoreOriginalGeometry()
+      return
+    }
+
     const ok = await updateFeature(selectedFeature.key, {
       name: draft.name.trim(),
       // Empty strings are meaningful here: they clear the field server-side.
@@ -583,9 +599,9 @@ export default function MapPage() {
       ...(editSession.isGeometryDirty ? { wkt } : {}),
     })
 
-    // On failure the session stays open with the user's edits intact.
     if (ok) stopEditing()
-  }, [editSession, selectedFeature, updateFeature, stopEditing])
+    else editSession.restoreOriginalGeometry()
+  }, [editSession, selectedFeature, geographic.scope, showToast, updateFeature, stopEditing])
 
   /* --- Analysis results -> the map -----------------------------------------
      Every match the analysis returns is, by definition, one of the caller's own
