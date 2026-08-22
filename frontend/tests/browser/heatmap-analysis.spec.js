@@ -35,23 +35,61 @@ async function prepareMap(page, {
       JSON.stringify(window.__heatmapLifecycle),
     )
 
+    /* Sayaçlar ISI HARİTASINA ÖZELDİR.
+
+       Phase 5'ten beri harita, normal çizim görünümü için de kimlik
+       doğrulamalı PNG istekleri açıyor. Bu istekler de AbortController
+       kullanıyor ve kendi Blob URL'lerini üretip serbest bırakıyor; sayaçlar
+       küresel kalsaydı "üstü örtülen istek iptal edildi" ve "Blob URL geri
+       verildi" iddiaları, ısı haritası hiç iptal edilmese bile geçerdi.
+       Bu yüzden her kayıt, isteğin/yanıtın ısı haritası ucuna ait olup
+       olmadığına göre süzülür. İddialar zayıflatılmaz, DARALTILIR. */
+    const HEATMAP_PATH = '/api/heatmap/image'
+    const heatmapSignals = new WeakSet()
+    const heatmapBlobs = new WeakSet()
+
+    const nativeFetch = window.fetch
+    window.fetch = function (input, init) {
+      const url = typeof input === 'string' ? input : (input?.url ?? '')
+      const signal = init?.signal ?? (typeof input === 'object' ? input?.signal : null)
+      if (signal && url.includes(HEATMAP_PATH)) heatmapSignals.add(signal)
+      return nativeFetch.apply(this, arguments)
+    }
+
+    /* Bir Blob'un hangi uçtan geldiği yalnızca onu üreten Response'tan
+       bilinebilir; createObjectURL'e yalnızca Blob ulaşır. */
+    const nativeResponseBlob = Response.prototype.blob
+    Response.prototype.blob = function () {
+      const isHeatmap = (this.url ?? '').includes(HEATMAP_PATH)
+      return nativeResponseBlob.call(this).then((blob) => {
+        if (isHeatmap) heatmapBlobs.add(blob)
+        return blob
+      })
+    }
+
     const nativeAbort = AbortController.prototype.abort
     AbortController.prototype.abort = function (...args) {
-      window.__heatmapLifecycle.aborts += 1
-      persistLifecycle()
+      if (heatmapSignals.has(this.signal)) {
+        window.__heatmapLifecycle.aborts += 1
+        persistLifecycle()
+      }
       return nativeAbort.apply(this, args)
     }
     const nativeCreate = URL.createObjectURL.bind(URL)
     const nativeRevoke = URL.revokeObjectURL.bind(URL)
     URL.createObjectURL = (blob) => {
       const url = nativeCreate(blob)
-      window.__heatmapLifecycle.created.push(url)
-      persistLifecycle()
+      if (heatmapBlobs.has(blob)) {
+        window.__heatmapLifecycle.created.push(url)
+        persistLifecycle()
+      }
       return url
     }
     URL.revokeObjectURL = (url) => {
-      window.__heatmapLifecycle.revoked.push(url)
-      persistLifecycle()
+      if (window.__heatmapLifecycle.created.includes(url)) {
+        window.__heatmapLifecycle.revoked.push(url)
+        persistLifecycle()
+      }
       return nativeRevoke(url)
     }
   }, new Date(Date.now() + 3_600_000).toISOString())
@@ -67,6 +105,18 @@ async function prepareMap(page, {
     effectiveWkt: null,
     areaCount: 0,
   })))
+  /* Phase 5: harita artık kalıcı çizimlerin GENEL GÖSTERİMİ için de kimlik
+     doğrulamalı PNG istekleri açıyor. Bu spec ısı haritasını ölçer, ama fixture
+     hermetik kalmalıdır: taklit edilmeyen bu istekler gerçek ağa düşer,
+     başarısız olur ve uygulamanın genel "Bağlantı kurulamadı." uyarısını
+     doğurur — ısı haritasıyla ilgisi olmayan bir alert. Sunum uçları bu yüzden
+     BAŞARILI birer PNG döndürür; ısı haritası taklidi ve onun hata/yeniden
+     deneme senaryoları olduğu gibi kalır. */
+  await page.route('**/api/map/presentation/**', (route) => route.fulfill({
+    status: 200,
+    contentType: 'image/png',
+    body: PIXEL_PNG,
+  }))
   await page.route('**/api/drawings/points', (route) => route.fulfill(json([])))
   await page.route('**/api/drawings/lines', (route) => route.fulfill(json([])))
   await page.route('**/api/drawings/polygons', (route) => route.fulfill(json([])))
@@ -153,6 +203,7 @@ test('request derives a bounded EPSG:3857 viewport and contains no client author
 test('legend is conditional and preserves the exact normalized color scale', async ({ page }) => {
   await prepareMap(page)
   await openHeatmapPanel(page)
+  // Kapalı bir ısı haritası için yoğunluk ölçeği gösterilmez.
   await expect(page.getByLabel('Isı haritası yoğunluk açıklaması')).toBeHidden()
   await page.getByRole('switch', { name: 'Isı haritasını göster' }).click()
 
@@ -163,6 +214,37 @@ test('legend is conditional and preserves the exact normalized color scale', asy
   for (const rgb of ['44, 123, 182', '0, 166, 202', '249, 208, 87', '215, 25, 28']) {
     expect(gradient).toContain(rgb)
   }
+})
+
+test('the legend is a section of the analysis panel, not a floating map overlay', async ({ page }) => {
+  await prepareMap(page)
+  await activateHeatmap(page)
+
+  const panel = page.getByRole('dialog', { name: 'Isı Haritası Analizi' })
+  const legend = page.getByLabel('Isı haritası yoğunluk açıklaması')
+
+  /* Anlamsal kanıt: ölçek panelin İÇİNDEDİR. Harita üzerinde konumlanmış bir
+     katman olmadığı için hiçbir görünüm genişliğinde harita kontrollerinin
+     üstüne binemez. */
+  await expect(panel.getByLabel('Isı haritası yoğunluk açıklaması')).toBeVisible()
+  await expect(page.locator('.map-container .heatmap-legend')).toHaveCount(0)
+  await expect(legend).toHaveCSS('position', 'static')
+
+  // Ölçek, onu üreten kontrollerin ALTINDA durur.
+  const [switchBox, legendBox] = await Promise.all([
+    panel.getByRole('switch').boundingBox(),
+    legend.boundingBox(),
+  ])
+  expect(legendBox.y).toBeGreaterThan(switchBox.y)
+
+  // Panel kapatıldığında ölçek de gider; ısı haritası KAPANMAZ.
+  await panel.getByRole('button', { name: /panelini kapat/ }).click()
+  await expect(legend).toBeHidden()
+  await expect(page.locator('.heatmap-layer')).toHaveCount(1)
+
+  // Panel yeniden açıldığında ölçek geri gelir.
+  await page.getByRole('button', { name: 'Isı Haritası Analizi' }).click()
+  await expect(legend).toBeVisible()
 })
 
 test('stable move and resize refresh; opacity is presentation-only', async ({ page }) => {
@@ -280,18 +362,41 @@ for (const viewport of [
     await expect(panel.getByRole('switch')).toBeVisible()
     await expect(legend).toBeVisible()
 
+    /* Ölçek artık panelin bir bölümüdür, harita üzerinde yüzen bir katman
+       değil. Beklenti bu yüzden TERSİNE dönmüştür: eskiden panelle çakışmaması
+       aranırdı, şimdi panelin İÇİNDE kalması aranır. */
     const [panelBox, legendBox] = await Promise.all([panel.boundingBox(), legend.boundingBox()])
-    const overlapsLegend = (box) => !(
-      legendBox.x + legendBox.width <= box.x
-      || box.x + box.width <= legendBox.x
-      || legendBox.y + legendBox.height <= box.y
-      || box.y + box.height <= legendBox.y
-    )
-    expect(overlapsLegend(panelBox)).toBe(false)
+    expect(legendBox.x).toBeGreaterThanOrEqual(panelBox.x - 1)
+    expect(legendBox.y).toBeGreaterThanOrEqual(panelBox.y - 1)
+    expect(legendBox.x + legendBox.width).toBeLessThanOrEqual(panelBox.x + panelBox.width + 1)
+    expect(legendBox.y + legendBox.height).toBeLessThanOrEqual(panelBox.y + panelBox.height + 1)
 
-    for (const selector of ['.quick-actions', '.draw-toolbar', '.ol-zoom', '.ol-attribution']) {
-      const box = await page.locator(selector).boundingBox()
-      if (box) expect(overlapsLegend(box), `${selector} must remain clear of the legend`).toBe(false)
+    // Etiketler her genişlikte okunabilir kalır.
+    await expect(legend.locator('.heatmap-legend-labels span')).toHaveText(['0', '0.25', '0.50', '0.75', '1'])
+
+    // Haritanın üzerinde KONUMLANMIŞ bir ölçek hiçbir genişlikte kalmamalı.
+    await expect(page.locator('.map-container .heatmap-legend')).toHaveCount(0)
+
+    /* Harita kontrolleri ölçek tarafından örtülmez.
+       Bu iddia yalnızca panelin SAĞA yerleştiği genişliklerde anlamlıdır: orada
+       `.has-docked-panel` kuralı zoom kontrolünü zaten kenara çeker, dolayısıyla
+       panel de içindeki ölçek de kontrollerden uzaktır. Telefonda panel bir alt
+       sayfadır ve uygulamadaki HER panel gibi haritanın alt kısmını kaplar —
+       orada "ölçek zoom'u örtmemeli" demek, hiçbir panelin sağlamadığı bir şeyi
+       istemek olurdu. Telefonda geçerli kanıt, ölçeğin sayfanın içinde kalması
+       ve haritada konumlanmamasıdır; ikisi de yukarıda doğrulandı. */
+    if (viewport.width >= 641) {
+      const overlapsLegend = (box) => !(
+        legendBox.x + legendBox.width <= box.x
+        || box.x + box.width <= legendBox.x
+        || legendBox.y + legendBox.height <= box.y
+        || box.y + box.height <= legendBox.y
+      )
+
+      for (const selector of ['.quick-actions', '.draw-toolbar', '.ol-zoom', '.ol-attribution']) {
+        const box = await page.locator(selector).boundingBox()
+        if (box) expect(overlapsLegend(box), `${selector} must remain clear of the legend`).toBe(false)
+      }
     }
 
     if (process.env.HEATMAP_VISUAL_REVIEW === '1') {

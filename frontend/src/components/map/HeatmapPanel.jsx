@@ -1,4 +1,5 @@
 import MapSheet from './MapSheet.jsx'
+import HeatmapLegend from './HeatmapLegend.jsx'
 import './HeatmapPanel.css'
 
 export default function HeatmapPanel({
@@ -73,6 +74,12 @@ export default function HeatmapPanel({
       <p className="heatmap-scope-note">
         Yoğunluk yalnızca erişebildiğiniz aktif noktalardan hesaplanır.
       </p>
+
+      {/* Ölçek, onu üreten kontrollerin ALTINDA ve aynı yüzeyin parçası olarak
+          durur. Harita üzerinde yüzen bir katman olsaydı — eskiden olduğu gibi
+          — görünüm genişliğine göre yakınlaştırma düğmelerini, ölçek çubuğunu
+          veya alt araç çubuğunu örtebilirdi. */}
+      <HeatmapLegend visible={enabled} />
     </MapSheet>
   )
 }

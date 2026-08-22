@@ -107,6 +107,12 @@ export default function useDrawingWorkspace(
     /* Sunucu coğrafi bir ret döndürdüğünde çağrılır: tarayıcının elindeki
        sınır eskimiş olabilir ve tazelenmelidir. */
     onForbidden = null,
+    /* Phase 5. Hangi geometry türünün NORMAL görünümünü artık WMS sunum
+       görüntüsü çizdiğini bildiren ref. Prop değil ref'tir çünkü katmanın stil
+       fonksiyonu React'ın dışında çalışır ve cevabı çizim ANINDA okumalıdır.
+       null bırakıldığında hiçbir tür WMS'e devredilmez: vektörler eskisi gibi
+       kendi normal stilini çizer. */
+    presentationActiveRef = null,
   },
 ) {
   const sourceRef = useRef(null)
@@ -191,6 +197,45 @@ export default function useDrawingWorkspace(
   const renderStateRef = useRef({ selectedKeys: EMPTY_SELECTION, visibility: ALL_VISIBLE })
   renderStateRef.current = { selectedKeys, visibility }
 
+  /* Sunum durumu render state'ine KOPYALANMAZ, okunur: WMS görüntüsü bir
+     React render'ı olmadan da yerine oturabilir ve stil fonksiyonu o anki
+     doğru cevabı görmelidir. */
+  const presentationRef = useRef(presentationActiveRef)
+  presentationRef.current = presentationActiveRef
+
+  const getRenderState = useCallback(
+    () => ({
+      ...renderStateRef.current,
+      presentationActive: presentationRef.current?.current,
+    }),
+    [],
+  )
+
+  /* Kalıcı sunum görüntüsünün tazelenmesi gereken durumların sayacı. Yalnızca
+     BAŞARILI bir mutasyondan sonra artar — istek gönderilmiş ama yazılmamış
+     bir değişiklik için görüntü yenilenmez. */
+  const [presentationVersion, setPresentationVersion] = useState(0)
+  const invalidatePresentation = useCallback(() => setPresentationVersion((value) => value + 1), [])
+
+  /**
+   * Yeni yazılmış bir kayıt, kendisini gösteren PNG gelene kadar vektör olarak
+   * görünür kalır. Aksi hâlde kaydedilen çizim, bir isteklik süre boyunca
+   * ortadan kaybolur ve kullanıcı kaydın tutmadığını sanardı.
+   */
+  const markAwaitingPresentation = useCallback((features) => {
+    for (const feature of features) feature?.set('awaitingPresentation', true)
+  }, [])
+
+  /** İlgili türün görüntüsü geldi: geçici vektör görünürlüğü serbest bırakılır. */
+  const releasePresentation = useCallback((typeId, isActive) => {
+    if (isActive) {
+      for (const feature of sourceRef.current?.getFeatures() ?? []) {
+        if (feature.get('drawingType') === typeId) feature.unset('awaitingPresentation')
+      }
+    }
+    layerRef.current?.changed()
+  }, [])
+
   // Read at drawend time. Kept in a ref so changing a tool's style never
   // re-creates the Draw interaction — doing so mid-drawing would abort it.
   const toolStylesRef = useRef(toolStyles)
@@ -216,6 +261,9 @@ export default function useDrawingWorkspace(
     layerRef.current?.changed()
   }, [])
 
+  /** İlk yükleme mi, yeniden yükleme mi — sunum tazelemesi buna bağlıdır. */
+  const hasLoadedRef = useRef(false)
+
   /** Rebuilds the React-side descriptor list from the OpenLayers source. */
   const syncDrawings = useCallback(() => {
     const source = sourceRef.current
@@ -236,7 +284,7 @@ export default function useDrawingWorkspace(
   useEffect(() => {
     if (!map) return undefined
 
-    const { source, layer } = createDrawingLayer(() => renderStateRef.current)
+    const { source, layer } = createDrawingLayer(getRenderState)
     sourceRef.current = source
     layerRef.current = layer
     map.addLayer(layer)
@@ -257,7 +305,7 @@ export default function useDrawingWorkspace(
       pendingSourceRef.current = null
       pendingLayerRef.current = null
     }
-  }, [map])
+  }, [map, getRenderState])
 
   // Selection and visibility are render inputs; nudge the layer when they change.
   useEffect(() => {
@@ -300,14 +348,33 @@ export default function useDrawingWorkspace(
       const source = sourceRef.current
       if (!source) return false
 
+      /* Yeniden yüklemede HANGİ kayıtların yeni olduğu bilinir. Yalnızca onlar
+         görüntü gelene kadar vektör olarak çizilir: çöp kutusundan geri
+         getirilen bir çizim, kendisini içeren PNG hazır olana dek görünmez
+         kalmamalıdır. Zaten var olanlar işaretlenmez, aksi hâlde tazelenmemiş
+         görüntünün üzerine ikinci kez boyanırlardı. */
+      const known = new Set(
+        source.getFeatures().map((feature) => `${feature.get('drawingType')}:${feature.get('databaseId')}`),
+      )
+
       source.clear()
       for (const { type, items } of groups) {
         for (const item of items) {
           const feature = recordToFeature(type, item)
-          if (feature) source.addFeature(feature)
+          if (!feature) continue
+          if (hasLoadedRef.current && !known.has(`${type}:${item.id}`)) {
+            markAwaitingPresentation([feature])
+          }
+          source.addFeature(feature)
         }
       }
       syncDrawings()
+
+      /* İlk yükleme sunum katmanını tazelemez — o zaten kendi ilk isteğini
+         yapar. Sonraki her yükleme (çöp kutusundan geri getirme, "Tekrar
+         Dene") görüntüyü geçersiz kılar. */
+      if (hasLoadedRef.current) invalidatePresentation()
+      hasLoadedRef.current = true
       return true
     } catch (error) {
       // A failed load must not take the map down; drawing still works.
@@ -317,7 +384,7 @@ export default function useDrawingWorkspace(
     } finally {
       setLoadingDrawings(false)
     }
-  }, [showToast, syncDrawings, canViewDrawings])
+  }, [showToast, syncDrawings, canViewDrawings, invalidatePresentation, markAwaitingPresentation])
 
   useEffect(() => {
     if (!map) return undefined
@@ -447,10 +514,12 @@ export default function useDrawingWorkspace(
       tagFeature(feature, type, saved, clientKey ?? feature.getId())
       if (!source.getFeatureById(feature.getId())) source.addFeature(feature)
 
+      markAwaitingPresentation([feature])
       syncDrawings()
+      invalidatePresentation()
       return feature
     },
-    [syncDrawings],
+    [syncDrawings, invalidatePresentation, markAwaitingPresentation],
   )
 
   /** DELETEs a record and removes its feature from the map. */
@@ -474,9 +543,10 @@ export default function useDrawingWorkspace(
         return next.size ? next : EMPTY_SELECTION
       })
       syncDrawings()
+      invalidatePresentation()
       return true
     },
-    [featureByKey, syncDrawings],
+    [featureByKey, syncDrawings, invalidatePresentation],
   )
 
   /** PATCHes style only and writes the server's answer back onto the feature. */
@@ -493,11 +563,13 @@ export default function useDrawingWorkspace(
       feature.set('style', normalizeStyle(type, saved.style))
       feature.set('modifiedDate', saved.modifiedDate)
       feature.unset('previewStyle')
+      markAwaitingPresentation([feature])
       refreshLayer()
       syncDrawings()
+      invalidatePresentation()
       return true
     },
-    [featureByKey, refreshLayer, syncDrawings],
+    [featureByKey, refreshLayer, syncDrawings, invalidatePresentation, markAwaitingPresentation],
   )
 
   /**
@@ -542,11 +614,13 @@ export default function useDrawingWorkspace(
       feature.set('modifiedDate', saved.modifiedDate)
       feature.unset('previewStyle')
 
+      markAwaitingPresentation([feature])
       refreshLayer()
       syncDrawings()
+      invalidatePresentation()
       return true
     },
-    [featureByKey, refreshLayer, syncDrawings],
+    [featureByKey, refreshLayer, syncDrawings, invalidatePresentation, markAwaitingPresentation],
   )
 
   /* --- Atomic bulk primitives ---------------------------------------------
@@ -571,9 +645,10 @@ export default function useDrawingWorkspace(
 
       clearSelection()
       syncDrawings()
+      invalidatePresentation()
       return true
     },
-    [featuresByKeys, clearSelection, syncDrawings],
+    [featuresByKeys, clearSelection, syncDrawings, invalidatePresentation],
   )
 
   /**
@@ -605,12 +680,14 @@ export default function useDrawingWorkspace(
         // matches the database — the owner/non-owner UI stays correct.
         const feature = recordToFeature(snapshot.type, item.drawing, snapshot.clientKey)
         if (feature && !source.getFeatureById(feature.getId())) source.addFeature(feature)
+        if (feature) markAwaitingPresentation([feature])
       })
 
       syncDrawings()
+      invalidatePresentation()
       return true
     },
-    [syncDrawings],
+    [syncDrawings, invalidatePresentation, markAwaitingPresentation],
   )
 
   /**
@@ -646,11 +723,13 @@ export default function useDrawingWorkspace(
         feature.unset('previewStyle')
       })
 
+      markAwaitingPresentation(features)
       refreshLayer()
       syncDrawings()
+      invalidatePresentation()
       return true
     },
-    [featuresByKeys, refreshLayer, syncDrawings],
+    [featuresByKeys, refreshLayer, syncDrawings, invalidatePresentation, markAwaitingPresentation],
   )
 
   /** Wraps a history handler so any failure surfaces as a toast, never a crash. */
@@ -1294,6 +1373,12 @@ export default function useDrawingWorkspace(
     loadingDrawings,
     loadError,
     reloadDrawings: loadDrawings,
+    /* Phase 5 sunum köprüsü. `presentationVersion` yalnızca başarılı bir
+       mutasyondan sonra artar ve WMS görüntüsünü tazeler;
+       `onPresentationChange` görüntü geldiğinde/kaybolduğunda vektör
+       katmanının yeniden çizilmesini sağlar. */
+    presentationVersion,
+    onPresentationChange: releasePresentation,
     isSaving: savingCount > 0,
     toolStyles,
     pendingDrawing,

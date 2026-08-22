@@ -14,11 +14,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
-using NSubstitute;
 using StajProject.Api.Authorization;
 using StajProject.Api.Controllers;
 using StajProject.Api.Services;
-using StajProject.Application.Geographic;
 using StajProject.Application.Interfaces;
 using StajProject.Application.Options;
 using StajProject.Domain.Common;
@@ -29,43 +27,57 @@ using StajProject.Infrastructure.Services;
 
 namespace StajProject.Auth.Tests;
 
-public class HeatmapEndpointTests
+/// <summary>
+/// Phase 5 — <c>/api/map/presentation/*</c> HTTP sınırı. Görüntü uçlarının
+/// yetkisi, normal çizim VERİSİNİ görme yetkisiyle aynıdır
+/// (<c>drawings.view</c>) ve rol adına bakan hiçbir kural yoktur.
+/// </summary>
+public class MapPresentationEndpointTests
 {
-    private const string Issuer = "heatmap-tests";
-    private const string Audience = "heatmap-client";
-    private const string JwtKey = "heatmap-tests-use-a-long-random-key-2026-08-22";
-    private static readonly byte[] Png = [137, 80, 78, 71, 13, 10, 26, 10, 1];
+    private const string Issuer = "presentation-tests";
+    private const string Audience = "presentation-client";
+    private const string JwtKey = "presentation-tests-use-a-long-random-key-2026-08-22";
+    private static readonly byte[] Png = [137, 80, 78, 71, 13, 10, 26, 10, 5];
 
-    [Fact]
-    public async Task Anonymous_request_is_rejected_with_401()
+    public static TheoryData<string> Kinds() => new() { "point", "line", "polygon" };
+
+    [Theory]
+    [MemberData(nameof(Kinds))]
+    public async Task Anonymous_request_is_rejected_with_401(string kind)
     {
         await using var host = await CreateHostAsync();
 
-        var response = await host.Client().GetAsync(Url());
+        var response = await host.Client().GetAsync(Url(kind));
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         Assert.Equal(0, host.GeoServer.CallCount);
     }
 
     [Fact]
-    public async Task Authenticated_user_without_inventory_analysis_is_rejected_with_403()
+    public async Task Authenticated_user_without_drawings_view_is_rejected_with_403()
     {
         await using var host = await CreateHostAsync();
-        var viewer = await host.CreateUserAsync("heatmap-viewer", GisRoles.Viewer);
+        await host.CreateCustomRoleAsync("Map Only", PermissionCodes.MapView);
+        var user = await host.CreateUserAsync("presentation-map-only", "Map Only");
 
-        var response = await host.Client(viewer).GetAsync(Url());
+        var response = await host.Client(user).GetAsync(Url("point"));
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         Assert.Equal(0, host.GeoServer.CallCount);
     }
 
+    /// <summary>
+    /// Görüntü ucu <c>inventory.analysis</c> ARAMAZ: sıradan bir kullanıcının
+    /// kendi çizimlerini görmesi bir analiz yeteneği değildir.
+    /// </summary>
     [Fact]
-    public async Task Canonical_analyst_receives_private_raw_PNG()
+    public async Task Drawings_view_alone_is_enough()
     {
         await using var host = await CreateHostAsync();
-        var analyst = await host.CreateUserAsync("heatmap-analyst", GisRoles.GisAnalyst);
+        await host.CreateCustomRoleAsync("Drawing Reader", PermissionCodes.DrawingsView);
+        var user = await host.CreateUserAsync("presentation-reader", "Drawing Reader");
 
-        var response = await host.Client(analyst).GetAsync(Url());
+        var response = await host.Client(user).GetAsync(Url("polygon"));
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("image/png", response.Content.Headers.ContentType?.MediaType);
@@ -74,35 +86,32 @@ public class HeatmapEndpointTests
         Assert.True(response.Headers.CacheControl.NoStore);
     }
 
+    /// <summary>
+    /// Kullanıcıya DOĞRUDAN verilen yetki de çalışır: yetkilendirme rol adına
+    /// değil, etkin yetki kümesine bakar.
+    /// </summary>
     [Fact]
-    public async Task Custom_role_with_inventory_analysis_is_allowed()
+    public async Task Direct_drawings_view_grant_is_allowed()
     {
         await using var host = await CreateHostAsync();
-        const string role = "Custom Heatmap Analyst";
-        await host.CreateCustomRoleAsync(role, PermissionCodes.InventoryAnalysis);
-        var user = await host.CreateUserAsync("custom-heatmap", role);
+        await host.CreateRoleAsync("No Permissions");
+        var user = await host.CreateUserAsync("presentation-direct", "No Permissions");
 
-        Assert.Equal(HttpStatusCode.OK, (await host.Client(user).GetAsync(Url())).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await host.Client(user).GetAsync(Url("line"))).StatusCode);
+
+        await host.GrantDirectAsync(user, PermissionCodes.DrawingsView);
+
+        Assert.Equal(HttpStatusCode.OK, (await host.Client(user).GetAsync(Url("line"))).StatusCode);
     }
 
     [Fact]
-    public async Task Direct_inventory_analysis_grant_is_allowed()
-    {
-        await using var host = await CreateHostAsync();
-        var user = await host.CreateUserAsync("direct-heatmap", GisRoles.Viewer);
-        await host.GrantDirectAsync(user, PermissionCodes.InventoryAnalysis);
-
-        Assert.Equal(HttpStatusCode.OK, (await host.Client(user).GetAsync(Url())).StatusCode);
-    }
-
-    [Fact]
-    public async Task Retired_Admin_role_is_not_a_heatmap_bypass()
+    public async Task Retired_Admin_role_is_not_a_presentation_bypass()
     {
         await using var host = await CreateHostAsync();
         await host.CreateRoleAsync(ApplicationRoles.Admin);
-        var user = await host.CreateUserAsync("legacy-heatmap-admin", ApplicationRoles.Admin);
+        var user = await host.CreateUserAsync("legacy-presentation-admin", ApplicationRoles.Admin);
 
-        Assert.Equal(HttpStatusCode.Forbidden, (await host.Client(user).GetAsync(Url())).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await host.Client(user).GetAsync(Url("point"))).StatusCode);
     }
 
     [Theory]
@@ -113,34 +122,46 @@ public class HeatmapEndpointTests
     public async Task Invalid_render_inputs_return_400_without_calling_GeoServer(string query)
     {
         await using var host = await CreateHostAsync();
-        var user = await host.CreateUserAsync("invalid-heatmap", GisRoles.GisAnalyst);
+        var user = await host.CreateUserAsync("presentation-invalid", GisRoles.GisAnalyst);
 
-        var response = await host.Client(user).GetAsync($"/api/heatmap/image?{query}");
+        var response = await host.Client(user).GetAsync($"/api/map/presentation/point?{query}");
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Equal(0, host.GeoServer.CallCount);
     }
 
+    /// <summary>
+    /// İstemcinin gönderdiği hiçbir güvenlik/katalog parametresi dikkate
+    /// alınmaz; başka bir kullanıcının çizimleri hedeflenemez.
+    /// </summary>
     [Fact]
     public async Task Client_security_parameters_are_ignored_and_cannot_target_another_user()
     {
         await using var host = await CreateHostAsync();
-        var userA = await host.CreateUserAsync("heatmap-user-a", GisRoles.GisAnalyst);
-        var userB = await host.CreateUserAsync("heatmap-user-b", GisRoles.GisAnalyst);
+        var userA = await host.CreateUserAsync("presentation-a", GisRoles.GisAnalyst);
+        var userB = await host.CreateUserAsync("presentation-b", GisRoles.GisAnalyst);
 
         var response = await host.Client(userA).GetAsync(
-            Url() +
+            Url("point") +
             "&userId=" + userB.Id +
             "&ownerId=" + userB.Id +
             "&cql_filter=INCLUDE" +
+            "&CQL_FILTER=INCLUDE" +
             "&layers=attacker:all" +
             "&styles=attacker-style" +
-            "&workspace=attacker");
+            "&workspace=attacker" +
+            "&service=WFS" +
+            "&request=GetFeature" +
+            "&format=text/html");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
         var form = host.GeoServer.Form();
-        Assert.Equal("geoworkspace:tbl_point_heatmap", form["LAYERS"]);
-        Assert.Equal("point_density_heatmap", form["STYLES"]);
+        Assert.Equal("geoworkspace:tbl_point_read", form["LAYERS"]);
+        Assert.Equal("drawing_point_presentation", form["STYLES"]);
+        Assert.Equal("image/png", form["FORMAT"]);
+        Assert.Equal("WMS", form["SERVICE"]);
+        Assert.Equal("GetMap", form["REQUEST"]);
         Assert.Equal(
             $"inserted_user_id={userA.Id} AND is_deleted=false AND is_active=true",
             form["CQL_FILTER"]);
@@ -148,62 +169,42 @@ public class HeatmapEndpointTests
         Assert.DoesNotContain("INCLUDE", form["CQL_FILTER"], StringComparison.Ordinal);
     }
 
+    /// <summary>Uç yalnızca üç sabit türü tanır; serbest bir katman adı yoktur.</summary>
+    [Fact]
+    public async Task Unknown_kind_is_not_routable()
+    {
+        await using var host = await CreateHostAsync();
+        var user = await host.CreateUserAsync("presentation-unknown", GisRoles.GisAnalyst);
+
+        var response = await host.Client(user).GetAsync(Url("tbl_point"));
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal(0, host.GeoServer.CallCount);
+    }
+
     [Fact]
     public async Task Invalid_upstream_response_returns_502_not_a_blank_PNG()
     {
         await using var host = await CreateHostAsync();
-        var user = await host.CreateUserAsync("bad-upstream", GisRoles.GisAnalyst);
+        var user = await host.CreateUserAsync("presentation-bad-upstream", GisRoles.GisAnalyst);
         host.GeoServer.ResponseFactory = () => new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new StringContent("<ServiceException/>", Encoding.UTF8, "application/xml")
         };
 
-        var response = await host.Client(user).GetAsync(Url());
+        var response = await host.Client(user).GetAsync(Url("line"));
 
         Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
         Assert.NotEqual("image/png", response.Content.Headers.ContentType?.MediaType);
     }
 
-    [Fact]
-    public async Task Live_authenticated_backend_to_GeoServer_smoke()
+    private static string Url(string kind) =>
+        $"/api/map/presentation/{kind}?bbox=-1000,-2000,3000,4000&width=512&height=320";
+
+    private static async Task<PresentationHost> CreateHostAsync()
     {
-        if (!string.Equals(
-                Environment.GetEnvironmentVariable("RUN_LIVE_HEATMAP_SMOKE"),
-                "1",
-                StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        await using var host = await CreateHostAsync(useLiveGeoServer: true);
-        var user = await host.CreateUserAsync("live-heatmap-analyst", GisRoles.GisAnalyst);
-        var response = await host.Client(user).GetAsync(
-            "/api/heatmap/image?bbox=2782987,4163881,5009377,5311972&width=512&height=320");
-        var bytes = await response.Content.ReadAsByteArrayAsync();
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal("image/png", response.Content.Headers.ContentType?.MediaType);
-        Assert.True(bytes.AsSpan().StartsWith(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 }));
-        Assert.Equal(512, ReadBigEndianInt32(bytes, 16));
-        Assert.Equal(320, ReadBigEndianInt32(bytes, 20));
-        Assert.True(response.Headers.CacheControl!.NoStore);
-        Assert.Contains("private", response.Headers.CacheControl.ToString(), StringComparison.OrdinalIgnoreCase);
-        Assert.Contains(
-            $"inserted_user_id={user.Id} AND is_deleted=false AND is_active=true",
-            host.GeoServer.Form()["CQL_FILTER"],
-            StringComparison.Ordinal);
-    }
-
-    private static string Url() =>
-        "/api/heatmap/image?bbox=-1000,-2000,3000,4000&width=512&height=320";
-
-    private static async Task<HeatmapHost> CreateHostAsync(bool useLiveGeoServer = false)
-    {
-        var databaseName = $"heatmap-http-{Guid.NewGuid():N}";
-        var handler = new RecordingHandler(useLiveGeoServer);
-        var geographic = Substitute.For<IGeographicAuthorizationService>();
-        geographic.GetEffectiveAuthorizationAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(EffectiveGeographicAuthorization.Unrestricted);
+        var databaseName = $"presentation-http-{Guid.NewGuid():N}";
+        var handler = new RecordingHandler();
 
         var builder = new HostBuilder().ConfigureWebHost(web =>
         {
@@ -217,19 +218,18 @@ public class HeatmapEndpointTests
                     .AddRoles<IdentityRole<int>>()
                     .AddEntityFrameworkStores<AppDbContext>();
 
-                services.AddSingleton(Options(useLiveGeoServer));
-                services.AddSingleton(geographic);
+                services.AddSingleton(Options());
                 services.AddScoped<ICurrentUserService, CurrentUserService>();
                 services.AddScoped<IEffectivePermissionService, EffectivePermissionService>();
                 services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
                 services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
-                services.AddHttpClient<IGeoServerHeatmapService, GeoServerHeatmapService>()
+                services.AddHttpClient<IGeoServerMapPresentationService, GeoServerMapPresentationService>()
                     .ConfigurePrimaryHttpMessageHandler(() => handler);
 
                 services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                     .AddJwtBearer(options => options.TokenValidationParameters = ValidationParameters());
                 services.AddAuthorization();
-                services.AddControllers().AddApplicationPart(typeof(HeatmapController).Assembly);
+                services.AddControllers().AddApplicationPart(typeof(MapPresentationController).Assembly);
             });
 
             web.Configure(app =>
@@ -242,16 +242,14 @@ public class HeatmapEndpointTests
         });
 
         var host = await builder.StartAsync();
-        var fixture = new HeatmapHost(host, handler);
+        var fixture = new PresentationHost(host, handler);
         await fixture.SeedAsync();
         return fixture;
     }
 
-    private static GeoServerOptions Options(bool useLiveGeoServer) => new()
+    private static GeoServerOptions Options() => new()
     {
-        BaseUrl = useLiveGeoServer
-            ? "http://127.0.0.1:8080/geoserver"
-            : "http://geoserver.test/geoserver",
+        BaseUrl = "http://geoserver.test/geoserver",
         Workspace = "geoworkspace",
         PointLayer = "tbl_point_read",
         LineLayer = "tbl_line_read",
@@ -261,14 +259,9 @@ public class HeatmapEndpointTests
         PointPresentationStyle = "drawing_point_presentation",
         LinePresentationStyle = "drawing_line_presentation",
         PolygonPresentationStyle = "drawing_polygon_presentation",
-        HeatmapTimeoutSeconds = 30
+        HeatmapTimeoutSeconds = 30,
+        PresentationTimeoutSeconds = 30
     };
-
-    private static int ReadBigEndianInt32(byte[] bytes, int offset) =>
-        (bytes[offset] << 24)
-        | (bytes[offset + 1] << 16)
-        | (bytes[offset + 2] << 8)
-        | bytes[offset + 3];
 
     private static TokenValidationParameters ValidationParameters() => new()
     {
@@ -282,11 +275,11 @@ public class HeatmapEndpointTests
         ClockSkew = TimeSpan.Zero
     };
 
-    private sealed class HeatmapHost : IAsyncDisposable
+    private sealed class PresentationHost : IAsyncDisposable
     {
         private readonly IHost _host;
 
-        public HeatmapHost(IHost host, RecordingHandler geoServer)
+        public PresentationHost(IHost host, RecordingHandler geoServer)
         {
             _host = host;
             GeoServer = geoServer;
@@ -313,7 +306,7 @@ public class HeatmapEndpointTests
             await AuthorizationDataSeeder.SeedAsync(
                 scope.ServiceProvider.GetRequiredService<AppDbContext>(),
                 scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<int>>>(),
-                scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("heatmap-seed"));
+                scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("presentation-seed"));
         }
 
         public async Task<User> CreateUserAsync(string userName, string role)
@@ -405,21 +398,11 @@ public class HeatmapEndpointTests
 
     public sealed class RecordingHandler : HttpMessageHandler
     {
-        private readonly HttpMessageInvoker? _liveInvoker;
-
-        public RecordingHandler(bool useLiveGeoServer = false)
-        {
-            if (useLiveGeoServer)
-            {
-                _liveInvoker = new HttpMessageInvoker(new HttpClientHandler());
-            }
-        }
-
         public int CallCount { get; private set; }
 
         public string Body { get; private set; } = string.Empty;
 
-        public Func<HttpResponseMessage> ResponseFactory { get; set; } = () => PngResponse();
+        public Func<HttpResponseMessage> ResponseFactory { get; set; } = PngResponse;
 
         public IReadOnlyDictionary<string, string> Form() => Body
             .Split('&', StringSplitOptions.RemoveEmptyEntries)
@@ -435,19 +418,7 @@ public class HeatmapEndpointTests
         {
             CallCount++;
             Body = await request.Content!.ReadAsStringAsync(cancellationToken);
-            return _liveInvoker is null
-                ? ResponseFactory()
-                : await _liveInvoker.SendAsync(request, cancellationToken);
-        }
-
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing)
-            {
-                _liveInvoker?.Dispose();
-            }
-
-            base.Dispose(disposing);
+            return ResponseFactory();
         }
 
         private static HttpResponseMessage PngResponse()

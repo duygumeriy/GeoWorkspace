@@ -1,29 +1,24 @@
+/* A section of the heatmap panel, not a map overlay: it uses the same border,
+   radius, surface and padding language as `.heatmap-control-row` and
+   `.heatmap-opacity` so it reads as one more row of the same panel. The panel
+   body already scrolls (`.map-sheet-body`), so a short viewport scrolls rather
+   than overflowing. */
 .heatmap-legend {
-  position: absolute;
-  right: 1rem;
-  bottom: 2.25rem;
-  z-index: 28;
-  width: min(230px, calc(100% - 2rem));
-  padding: 0.7rem 0.8rem;
-  box-sizing: border-box;
+  padding: 0.85rem;
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-md);
   background: var(--surface-soft);
-  box-shadow: var(--shadow-panel);
-  backdrop-filter: blur(var(--blur-glass));
-  -webkit-backdrop-filter: blur(var(--blur-glass));
   color: var(--text-primary);
-  pointer-events: none;
 }
 
 .heatmap-legend strong {
   display: block;
-  font-size: 12px;
+  font-size: var(--font-small);
 }
 
 .heatmap-legend-context {
   display: block;
-  margin: 0.15rem 0 0.45rem;
+  margin: 0.15rem 0 0.5rem;
   color: var(--text-secondary);
   font-size: 10px;
 }
@@ -37,7 +32,7 @@
 .heatmap-legend-labels {
   display: flex;
   justify-content: space-between;
-  margin-top: 0.25rem;
+  margin-top: 0.3rem;
   color: var(--text-secondary);
   font-size: 10px;
   font-variant-numeric: tabular-nums;
@@ -45,29 +40,17 @@
 
 .heatmap-legend-caption {
   display: block;
-  margin-top: 0.35rem;
+  margin-top: 0.4rem;
   color: var(--text-tertiary);
   font-size: 10px;
   text-align: center;
 }
 
-@media (max-width: 640px) {
-  .heatmap-legend {
-    right: 0.5rem;
-    bottom: calc(var(--ol-clearance) + 0.25rem);
-    width: min(210px, calc(100% - 1rem));
-  }
-
-  .heatmap-legend.is-panel-open {
-    top: 4.25rem;
-    bottom: auto;
-  }
-}
-
+/* The five labels are the load-bearing part of the scale and stay readable at
+   320px; only the two prose lines give way. */
 @media (max-width: 360px) {
   .heatmap-legend {
-    width: min(210px, calc(100% - 7rem));
-    padding: 0.55rem 0.65rem;
+    padding: 0.65rem;
   }
 
   .heatmap-legend-context,

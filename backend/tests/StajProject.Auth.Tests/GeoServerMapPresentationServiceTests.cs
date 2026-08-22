@@ -1,85 +1,105 @@
 using System.Net;
 using System.Net.Http.Headers;
 using Microsoft.Extensions.Logging.Abstractions;
-using NetTopologySuite.IO;
 using NSubstitute;
 using StajProject.Application.Common;
 using StajProject.Application.DTOs;
-using StajProject.Application.Geographic;
 using StajProject.Application.Interfaces;
 using StajProject.Application.Options;
+using StajProject.Domain.Common;
 using StajProject.Infrastructure.GeoServer;
 
 namespace StajProject.Auth.Tests;
 
-public class GeoServerHeatmapServiceTests
+/// <summary>
+/// Phase 5 — kalıcı çizimlerin WMS genel gösterimi. Sözleşmenin tamamı
+/// backend'e aittir: katman, style, workspace, CRS ve sahiplik filtresi.
+/// </summary>
+public class GeoServerMapPresentationServiceTests
 {
-    private static readonly byte[] Png = [137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3];
+    private static readonly byte[] Png = [137, 80, 78, 71, 13, 10, 26, 10, 9, 9];
 
-    [Fact]
-    public async Task Uses_fixed_WMS_POST_parameters_and_backend_owned_user_filter()
+    [Theory]
+    [InlineData(DrawingKind.Point, "geoworkspace:tbl_point_read", "drawing_point_presentation")]
+    [InlineData(DrawingKind.Line, "geoworkspace:tbl_line_read", "drawing_line_presentation")]
+    [InlineData(DrawingKind.Polygon, "geoworkspace:tbl_polygon_read", "drawing_polygon_presentation")]
+    public async Task Every_kind_uses_its_own_server_owned_layer_and_style(
+        DrawingKind kind,
+        string expectedLayer,
+        string expectedStyle)
     {
         var handler = PngHandler();
-        var service = ServiceWith(handler, userId: 712, EffectiveGeographicAuthorization.Unrestricted);
 
-        var result = await service.GetHeatmapAsync(ValidRequest(), default);
+        var result = await ServiceWith(handler, userId: 512).GetPresentationAsync(kind, ValidRequest(), default);
 
         Assert.True(result.IsSuccess, result.Error);
         Assert.Equal(Png, result.Value!.Content);
+
+        var form = handler.Form();
         Assert.Equal(HttpMethod.Post, handler.Method);
         Assert.Equal("http://localhost:8080/geoserver/wms", handler.RequestUri!.ToString());
         Assert.Equal("application/x-www-form-urlencoded", handler.ContentType);
-
-        var form = handler.Form();
         Assert.Equal("WMS", form["SERVICE"]);
         Assert.Equal("1.3.0", form["VERSION"]);
         Assert.Equal("GetMap", form["REQUEST"]);
-        Assert.Equal("geoworkspace:tbl_point_heatmap", form["LAYERS"]);
-        Assert.Equal("point_density_heatmap", form["STYLES"]);
+        Assert.Equal(expectedLayer, form["LAYERS"]);
+        Assert.Equal(expectedStyle, form["STYLES"]);
         Assert.Equal("EPSG:3857", form["CRS"]);
-        Assert.Equal("-1000,-2000,3000,4000", form["BBOX"]);
-        Assert.Equal("512", form["WIDTH"]);
-        Assert.Equal("320", form["HEIGHT"]);
         Assert.Equal("image/png", form["FORMAT"]);
         Assert.Equal("true", form["TRANSPARENT"]);
-        Assert.Equal(
-            "inserted_user_id=712 AND is_deleted=false AND is_active=true",
-            form["CQL_FILTER"]);
-        Assert.DoesNotContain("INTERSECTS", form["CQL_FILTER"], StringComparison.Ordinal);
+        Assert.Equal("512", form["WIDTH"]);
+        Assert.Equal("320", form["HEIGHT"]);
+    }
+
+    /// <summary>
+    /// Tek istek = tek katman. Çok katmanlı bir istekte tek CQL'in katmanlara
+    /// nasıl dağıtıldığı sunucu sürümüne bağlıdır; bu servis o belirsizliği
+    /// yapısal olarak taşımaz.
+    /// </summary>
+    [Fact]
+    public async Task Request_never_bundles_more_than_one_layer()
+    {
+        var handler = PngHandler();
+
+        foreach (var kind in new[] { DrawingKind.Point, DrawingKind.Line, DrawingKind.Polygon })
+        {
+            await ServiceWith(handler).GetPresentationAsync(kind, ValidRequest(), default);
+
+            var form = handler.Form();
+            Assert.DoesNotContain(",", form["LAYERS"], StringComparison.Ordinal);
+            Assert.DoesNotContain(",", form["STYLES"], StringComparison.Ordinal);
+            Assert.DoesNotContain(";", form["CQL_FILTER"], StringComparison.Ordinal);
+        }
     }
 
     [Fact]
-    public async Task Restricted_polygon_is_added_to_the_server_generated_filter()
+    public async Task Owner_and_status_filter_matches_the_normal_WFS_read_semantics()
     {
         var handler = PngHandler();
-        var polygon = Geometry("POLYGON ((29 39, 31 39, 31 41, 29 41, 29 39))");
 
-        var result = await ServiceWith(handler, 104, EffectiveGeographicAuthorization.Restricted(polygon))
-            .GetHeatmapAsync(ValidRequest(), default);
+        var result = await ServiceWith(handler, userId: 907)
+            .GetPresentationAsync(DrawingKind.Polygon, ValidRequest(), default);
 
         Assert.True(result.IsSuccess, result.Error);
         Assert.Equal(
-            "inserted_user_id=104 AND is_deleted=false AND is_active=true " +
-            "AND INTERSECTS(\"Geometry\",POLYGON ((29 39, 31 39, 31 41, 29 41, 29 39)))",
+            "inserted_user_id=907 AND is_deleted=false AND is_active=true",
             handler.Form()["CQL_FILTER"]);
     }
 
+    /// <summary>
+    /// Normal okuma coğrafi kapsamla DARALTILMAZ — bu, mevcut WFS okumasının
+    /// anlamıdır ve yalnızca ısı haritası analizinde farklıdır.
+    /// </summary>
     [Fact]
-    public async Task Restricted_multipolygon_preserves_every_component()
+    public async Task Normal_read_is_not_geographically_narrowed()
     {
         var handler = PngHandler();
-        var multiPolygon = Geometry(
-            "MULTIPOLYGON (((29 39, 30 39, 30 40, 29 40, 29 39)), " +
-            "((35 38, 36 38, 36 39, 35 39, 35 38)))");
 
-        var result = await ServiceWith(handler, 104, EffectiveGeographicAuthorization.Restricted(multiPolygon))
-            .GetHeatmapAsync(ValidRequest(), default);
+        await ServiceWith(handler).GetPresentationAsync(DrawingKind.Point, ValidRequest(), default);
 
-        Assert.True(result.IsSuccess, result.Error);
         var cql = handler.Form()["CQL_FILTER"];
-        Assert.Contains("MULTIPOLYGON", cql, StringComparison.Ordinal);
-        Assert.Contains("29 39", cql, StringComparison.Ordinal);
-        Assert.Contains("35 38", cql, StringComparison.Ordinal);
+        Assert.DoesNotContain("INTERSECTS", cql, StringComparison.Ordinal);
+        Assert.DoesNotContain("POLYGON", cql, StringComparison.OrdinalIgnoreCase);
     }
 
     [Theory]
@@ -87,7 +107,6 @@ public class GeoServerHeatmapServiceTests
     [InlineData("1,2,3")]
     [InlineData("1,2,3,4,5")]
     [InlineData("NaN,2,3,4")]
-    [InlineData("Infinity,2,3,4")]
     [InlineData("not-a-number,2,3,4")]
     [InlineData("4,2,3,5")]
     [InlineData("1,5,3,4")]
@@ -100,7 +119,7 @@ public class GeoServerHeatmapServiceTests
         var request = ValidRequest();
         request.Bbox = bbox;
 
-        var result = await ServiceWith(handler).GetHeatmapAsync(request, default);
+        var result = await ServiceWith(handler).GetPresentationAsync(DrawingKind.Line, request, default);
 
         Assert.False(result.IsSuccess);
         Assert.Equal(ServiceErrorKind.Validation, result.ErrorKind);
@@ -122,7 +141,7 @@ public class GeoServerHeatmapServiceTests
         request.Width = width;
         request.Height = height;
 
-        var result = await ServiceWith(handler).GetHeatmapAsync(request, default);
+        var result = await ServiceWith(handler).GetPresentationAsync(DrawingKind.Point, request, default);
 
         Assert.False(result.IsSuccess);
         Assert.Equal(ServiceErrorKind.Validation, result.ErrorKind);
@@ -137,40 +156,11 @@ public class GeoServerHeatmapServiceTests
         currentUser.IsAuthenticated.Returns(false);
         currentUser.UserId.Returns((int?)null);
 
-        var result = await ServiceWith(
-            handler,
-            currentUser,
-            EffectiveGeographicAuthorization.Unrestricted).GetHeatmapAsync(ValidRequest(), default);
+        var result = await ServiceWith(handler, currentUser)
+            .GetPresentationAsync(DrawingKind.Point, ValidRequest(), default);
 
         Assert.False(result.IsSuccess);
         Assert.Equal(ServiceErrorKind.Forbidden, result.ErrorKind);
-        Assert.Equal(0, handler.CallCount);
-    }
-
-    [Fact]
-    public async Task Effective_geographic_scope_is_requested_for_the_authenticated_user()
-    {
-        var geographic = Substitute.For<IGeographicAuthorizationService>();
-        geographic.GetEffectiveAuthorizationAsync(835, Arg.Any<CancellationToken>())
-            .Returns(EffectiveGeographicAuthorization.Unrestricted);
-
-        var result = await ServiceWith(PngHandler(), CurrentUser(835), geographic)
-            .GetHeatmapAsync(ValidRequest(), default);
-
-        Assert.True(result.IsSuccess, result.Error);
-        await geographic.Received(1).GetEffectiveAuthorizationAsync(835, Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
-    public async Task Non_polygon_restricted_scope_fails_closed()
-    {
-        var handler = PngHandler();
-        var point = Geometry("POINT (30 40)");
-
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            ServiceWith(handler, 104, EffectiveGeographicAuthorization.Restricted(point))
-                .GetHeatmapAsync(ValidRequest(), default));
-
         Assert.Equal(0, handler.CallCount);
     }
 
@@ -185,7 +175,7 @@ public class GeoServerHeatmapServiceTests
             }
         });
 
-        var result = await ServiceWith(handler).GetHeatmapAsync(ValidRequest(), default);
+        var result = await ServiceWith(handler).GetPresentationAsync(DrawingKind.Point, ValidRequest(), default);
 
         Assert.False(result.IsSuccess);
         Assert.Equal(ServiceErrorKind.Upstream, result.ErrorKind);
@@ -196,7 +186,7 @@ public class GeoServerHeatmapServiceTests
     {
         var handler = new RecordingHandler(_ => Response([1, 2, 3, 4], "image/png"));
 
-        var result = await ServiceWith(handler).GetHeatmapAsync(ValidRequest(), default);
+        var result = await ServiceWith(handler).GetPresentationAsync(DrawingKind.Line, ValidRequest(), default);
 
         Assert.False(result.IsSuccess);
         Assert.Equal(ServiceErrorKind.Upstream, result.ErrorKind);
@@ -207,7 +197,7 @@ public class GeoServerHeatmapServiceTests
     {
         var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
 
-        var result = await ServiceWith(handler).GetHeatmapAsync(ValidRequest(), default);
+        var result = await ServiceWith(handler).GetPresentationAsync(DrawingKind.Polygon, ValidRequest(), default);
 
         Assert.False(result.IsSuccess);
         Assert.Equal(ServiceErrorKind.Upstream, result.ErrorKind);
@@ -218,7 +208,7 @@ public class GeoServerHeatmapServiceTests
     {
         var handler = new RecordingHandler(_ => throw new TaskCanceledException("timeout"));
 
-        var result = await ServiceWith(handler).GetHeatmapAsync(ValidRequest(), default);
+        var result = await ServiceWith(handler).GetPresentationAsync(DrawingKind.Point, ValidRequest(), default);
 
         Assert.False(result.IsSuccess);
         Assert.Equal(ServiceErrorKind.Timeout, result.ErrorKind);
@@ -236,13 +226,13 @@ public class GeoServerHeatmapServiceTests
         cancellation.Cancel();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-            ServiceWith(handler).GetHeatmapAsync(ValidRequest(), cancellation.Token));
+            ServiceWith(handler).GetPresentationAsync(DrawingKind.Point, ValidRequest(), cancellation.Token));
     }
 
     [Fact]
     public void Public_request_contract_contains_no_security_or_GeoServer_authority_fields()
     {
-        var properties = typeof(HeatmapRequest).GetProperties().Select(property => property.Name).ToArray();
+        var properties = typeof(MapPresentationRequest).GetProperties().Select(property => property.Name).ToArray();
 
         Assert.Equal(["Bbox", "Width", "Height"], properties);
         Assert.DoesNotContain(properties, name =>
@@ -252,64 +242,45 @@ public class GeoServerHeatmapServiceTests
             || name.Contains("Layer", StringComparison.OrdinalIgnoreCase)
             || name.Contains("Style", StringComparison.OrdinalIgnoreCase)
             || name.Contains("Workspace", StringComparison.OrdinalIgnoreCase)
-            || name.Contains("Wkt", StringComparison.OrdinalIgnoreCase));
+            || name.Contains("Kind", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
-    public void Options_reject_missing_or_unsafe_heatmap_resources_and_timeout()
+    public void Options_reject_missing_or_unsafe_presentation_styles_and_timeout()
     {
         var missing = Options();
-        missing.HeatmapLayer = string.Empty;
+        missing.LinePresentationStyle = string.Empty;
         Assert.Throws<InvalidOperationException>(missing.Validate);
 
         var unsafeName = Options();
-        unsafeName.HeatmapStyle = "safe&CQL_FILTER=INCLUDE";
+        unsafeName.PolygonPresentationStyle = "safe&CQL_FILTER=INCLUDE";
         Assert.Throws<InvalidOperationException>(unsafeName.Validate);
 
         var timeout = Options();
-        timeout.HeatmapTimeoutSeconds = 0;
+        timeout.PresentationTimeoutSeconds = 0;
         Assert.Throws<InvalidOperationException>(timeout.Validate);
 
         Options().Validate();
     }
 
-    private static HeatmapRequest ValidRequest() => new()
+    private static MapPresentationRequest ValidRequest() => new()
     {
         Bbox = "-1000,-2000,3000,4000",
         Width = 512,
         Height = 320
     };
 
-    private static GeoServerHeatmapService ServiceWith(
-        RecordingHandler handler,
-        int userId = 104,
-        EffectiveGeographicAuthorization? geographic = null) =>
-        ServiceWith(
-            handler,
-            CurrentUser(userId),
-            geographic ?? EffectiveGeographicAuthorization.Unrestricted);
+    private static GeoServerMapPresentationService ServiceWith(RecordingHandler handler, int userId = 104) =>
+        ServiceWith(handler, CurrentUser(userId));
 
-    private static GeoServerHeatmapService ServiceWith(
+    private static GeoServerMapPresentationService ServiceWith(
         RecordingHandler handler,
-        ICurrentUserService currentUser,
-        EffectiveGeographicAuthorization geographic)
-    {
-        var authorization = Substitute.For<IGeographicAuthorizationService>();
-        authorization.GetEffectiveAuthorizationAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(geographic);
-        return ServiceWith(handler, currentUser, authorization);
-    }
-
-    private static GeoServerHeatmapService ServiceWith(
-        RecordingHandler handler,
-        ICurrentUserService currentUser,
-        IGeographicAuthorizationService geographic) =>
+        ICurrentUserService currentUser) =>
         new(
             new HttpClient(handler),
             Options(),
             currentUser,
-            geographic,
-            NullLogger<GeoServerHeatmapService>.Instance);
+            NullLogger<GeoServerMapPresentationService>.Instance);
 
     private static ICurrentUserService CurrentUser(int userId)
     {
@@ -331,18 +302,11 @@ public class GeoServerHeatmapServiceTests
         PointPresentationStyle = "drawing_point_presentation",
         LinePresentationStyle = "drawing_line_presentation",
         PolygonPresentationStyle = "drawing_polygon_presentation",
-        HeatmapTimeoutSeconds = 30
+        HeatmapTimeoutSeconds = 30,
+        PresentationTimeoutSeconds = 30
     };
 
-    private static NetTopologySuite.Geometries.Geometry Geometry(string wkt)
-    {
-        var geometry = new WKTReader().Read(wkt);
-        geometry.SRID = 4326;
-        return geometry;
-    }
-
-    private static RecordingHandler PngHandler() =>
-        new(_ => Response(Png, "image/png"));
+    private static RecordingHandler PngHandler() => new(_ => Response(Png, "image/png"));
 
     private static HttpResponseMessage Response(byte[] content, string mediaType)
     {

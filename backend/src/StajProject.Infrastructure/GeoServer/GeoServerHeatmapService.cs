@@ -7,6 +7,7 @@ using StajProject.Application.Common;
 using StajProject.Application.DTOs;
 using StajProject.Application.Interfaces;
 using StajProject.Application.Options;
+using StajProject.Application.Rendering;
 
 namespace StajProject.Infrastructure.GeoServer;
 
@@ -16,10 +17,9 @@ namespace StajProject.Infrastructure.GeoServer;
 /// </summary>
 public sealed class GeoServerHeatmapService : IGeoServerHeatmapService
 {
-    internal const int MinimumDimension = 64;
-    internal const int MaximumDimension = 2048;
-    internal const long MaximumPixels = 4_194_304;
-    internal const double WebMercatorLimit = 20_037_508.342789244;
+    /* Render penceresi doğrulaması Phase 5'te ortak sözleşmeye taşındı
+       (<see cref="WmsRenderContract"/>). Kural aynıdır; iki kopyanın zamanla
+       ayrışıp birinin sessizce zayıflaması riski ortadan kalkar. */
 
     private const string TargetCrs = "EPSG:3857";
     private const string PngMediaType = "image/png";
@@ -150,54 +150,7 @@ public sealed class GeoServerHeatmapService : IGeoServerHeatmapService
             return ServiceResult<ValidatedRender>.Failure("Heatmap render parametreleri zorunludur.");
         }
 
-        var parts = request.Bbox.Split(',', StringSplitOptions.None);
-
-        if (parts.Length != 4)
-        {
-            return ServiceResult<ValidatedRender>.Failure("bbox tam olarak dört sayı içermelidir.");
-        }
-
-        var coordinates = new double[4];
-
-        for (var index = 0; index < parts.Length; index++)
-        {
-            if (!double.TryParse(
-                    parts[index],
-                    NumberStyles.Float,
-                    CultureInfo.InvariantCulture,
-                    out coordinates[index])
-                || !double.IsFinite(coordinates[index])
-                || Math.Abs(coordinates[index]) > WebMercatorLimit)
-            {
-                return ServiceResult<ValidatedRender>.Failure(
-                    "bbox geçerli EPSG:3857 koordinatlarından oluşmalıdır.");
-            }
-        }
-
-        if (coordinates[0] >= coordinates[2] || coordinates[1] >= coordinates[3])
-        {
-            return ServiceResult<ValidatedRender>.Failure("bbox minimum değerleri maksimumlardan küçük olmalıdır.");
-        }
-
-        if (request.Width is < MinimumDimension or > MaximumDimension
-            || request.Height is < MinimumDimension or > MaximumDimension)
-        {
-            return ServiceResult<ValidatedRender>.Failure(
-                $"width ve height {MinimumDimension} ile {MaximumDimension} arasında olmalıdır.");
-        }
-
-        var pixelCount = (long)request.Width * request.Height;
-
-        if (pixelCount > MaximumPixels)
-        {
-            return ServiceResult<ValidatedRender>.Failure(
-                $"Heatmap görüntüsü en fazla {MaximumPixels} piksel olabilir.");
-        }
-
-        return ServiceResult<ValidatedRender>.Success(new ValidatedRender(
-            string.Join(',', coordinates.Select(value => value.ToString("G17", CultureInfo.InvariantCulture))),
-            request.Width,
-            request.Height));
+        return WmsRenderContract.Validate(request.Bbox, request.Width, request.Height);
     }
 
     private static string BuildCqlFilter(
@@ -227,6 +180,4 @@ public sealed class GeoServerHeatmapService : IGeoServerHeatmapService
 
     private static bool IsPng(MediaTypeHeaderValue? contentType) =>
         string.Equals(contentType?.MediaType, PngMediaType, StringComparison.OrdinalIgnoreCase);
-
-    private sealed record ValidatedRender(string Bbox, int Width, int Height);
 }

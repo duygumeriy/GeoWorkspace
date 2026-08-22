@@ -28,7 +28,6 @@ import ConfirmDialog from '../components/map/ConfirmDialog.jsx'
 import AttributePopup from '../components/map/AttributePopup.jsx'
 import AnalysisPanel from '../components/map/AnalysisPanel.jsx'
 import HeatmapPanel from '../components/map/HeatmapPanel.jsx'
-import HeatmapLegend from '../components/map/HeatmapLegend.jsx'
 import { SettingsPanel, AboutPanel } from '../components/map/InfoPanels.jsx'
 import {
   DrawingHint,
@@ -56,6 +55,7 @@ import useEditSession from '../hooks/useEditSession.js'
 import useVertexOverlay from '../hooks/useVertexOverlay.js'
 import useAnalysisHighlight from '../hooks/useAnalysisHighlight.js'
 import useHeatmapLayer from '../hooks/useHeatmapLayer.js'
+import useMapPresentationLayer from '../hooks/useMapPresentationLayer.js'
 import { DRAWING_TYPES, DRAWING_TYPE_LIST, colorPatchFor, normalizeTags } from '../map/drawingTypes.js'
 import { isGeometryInsideScope } from '../map/geographicScope.js'
 import {
@@ -192,6 +192,13 @@ export default function MapPage() {
     setActivePanel((current) => (current === 'heatmap' ? null : current))
   }, [canUseHeatmap])
 
+  /* Phase 5 köprüsü. Hangi türün NORMAL görünümünü artık sunucu tarafında
+     üretilen WMS görüntüsünün çizdiğini tutar. Ref'tir çünkü cevabı okuyan
+     yer OpenLayers'ın stil fonksiyonudur ve o React render'ının dışında
+     çalışır; bir state, görüntü yerine oturduğu anda değil bir render sonra
+     görünürdü ve çizim bir kare boyunca iki kez boyanırdı. */
+  const presentationActiveRef = useRef({ point: false, line: false, polygon: false })
+
   const workspace = useDrawingWorkspace(mapInstance, {
     showToast,
     dismissToast,
@@ -217,6 +224,56 @@ export default function MapPage() {
     geographicScope: geographic.scope,
     /* Sunucu coğrafi bir ret döndürürse tarayıcının sınırı eskimiş demektir. */
     onForbidden: geographic.refresh,
+    presentationActiveRef,
+  })
+
+  /* Hangi türlerin sunum görüntüsü, KAYDEDİLMEMİŞ yerel değişiklik yüzünden
+     geçici olarak devre dışı bırakılmalı.
+
+     Sunum görüntüsü VERİTABANINDAKİ hâli gösterir ve düzenleme sırasında bu
+     doğru olmaya devam eder — ama kullanıcının baktığı şey artık o değildir.
+     Görüntü kaldırılmazsa taşınan/yeniden renklendirilen çizimin eski hâli
+     hayalet bir kopya olarak ekranda kalır. Bu yüzden yalnızca ilgili TÜR
+     askıya alınır: nokta düzenlerken çizgi ve poligon sunumu yerinde kalır.
+
+     Katman görünürlüğüyle karıştırılmaz: biri kullanıcının kapattığı katman,
+     diğeri geçici bir düzenleme durumudur. */
+  const presentationSuspendedTypes = useMemo(() => {
+    /* Geometri oturumu: Modify ve Translate aynı oturumdan yürür, dolayısıyla
+       ikisi de aynı askıya alma yaşam döngüsünü kullanır. */
+    if (workspaceMode.isEditing && workspace.selectedFeature) {
+      return [workspace.selectedFeature.type]
+    }
+
+    /* Stil paneli canlı ÖNİZLEME yapar (`previewStyle`) ve önizleme henüz
+       kaydedilmemiştir; kayıtlı renkli görüntü altta durursa eski ve yeni renk
+       üst üste biner. Araç stili ('tool') hiçbir kaydı önizlemez. */
+    if (styleTarget === 'feature' || styleTarget === 'bulk') {
+      return [...new Set(workspace.selectedFeatures.map((item) => item.type))]
+    }
+
+    return []
+  }, [workspaceMode.isEditing, workspace.selectedFeature, workspace.selectedFeatures, styleTarget])
+
+  /* Kalıcı çizimlerin GENEL GÖSTERİMİ: kimlik doğrulamalı WMS görüntüsü.
+     Etkileşim (seçim, popup, düzenleme, taşıma, kutu/poligon seçimi) WFS
+     vektörleri üzerinde kalır — bu katman yalnızca görünümü devralır.
+
+     Yetki, çizim VERİSİNİ görme yetkisiyle aynıdır (`drawings.view`): harita
+     `map.view` ile açılır ama kayıtlı çizimlerin görüntüsü ayrı bir yetkidir
+     ve backend aynı yetkiyi bağımsız olarak yeniden arar. */
+  /* Dönüş değeri KULLANILMAZ ve bu bilinçlidir: sunum görüntüsü yüklenemezse
+     vektörler kendi normal stilini çizmeye döner, yani kullanıcı için görünen
+     bir arıza yoktur. Buna bir uyarı iliştirmek, hiçbir şeyin bozulmadığı bir
+     durumda bildirim göstermek olurdu. Aynı kalıp `useGeographicScopeLayer`
+     çağrısında da kullanılır. */
+  useMapPresentationLayer(mapInstance, {
+    permitted: allowed.canViewDrawings,
+    visibility: workspace.visibility,
+    version: workspace.presentationVersion,
+    suspendedTypes: presentationSuspendedTypes,
+    activeRef: presentationActiveRef,
+    onChange: workspace.onPresentationChange,
   })
   /* The trash is fetched only while its panel is open, and a successful restore
      reloads the map through the workspace's own loader — the record has to come
@@ -1053,10 +1110,10 @@ export default function MapPage() {
                 onClose={analysis.clear}
               />
 
-              <HeatmapLegend
-                visible={heatmapEnabled && canUseHeatmap}
-                panelOpen={activePanel === 'heatmap'}
-              />
+              {/* Yoğunluk ölçeği artık harita üzerinde yüzen bir katman
+                  değil, HeatmapPanel'in bir bölümüdür — bkz. HeatmapLegend.
+                  Böylece hiçbir görünüm genişliğinde harita kontrollerinin
+                  üstüne binemez. */}
 
               <MeasurementReadout
                 mode={workspaceMode.activeMeasureTool}

@@ -32,6 +32,12 @@ an `INTERSECTS("Geometry", <effective Polygon/MultiPolygon WKT>)` predicate.
 The geometry comes only from `IGeographicAuthorizationService`, preserving
 direct-user precedence, role-area union, and unrestricted semantics.
 
+Since Phase 5 the render-window validation (`bbox`, `width`, `height`, the
+64–2048 side bounds and the 4 194 304 pixel cap) lives in the shared
+`WmsRenderContract` and is used by both this endpoint and the normal drawing
+presentation endpoint, so the two cannot drift apart. The behaviour is
+unchanged. See `docs/geoserver-map-presentation.md`.
+
 The backend sends WMS 1.3.0 parameters with `POST
 application/x-www-form-urlencoded`. This was verified against local GeoServer
 3.0.1 and avoids URL-length failure for legitimate large authorization
