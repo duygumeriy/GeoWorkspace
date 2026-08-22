@@ -21,7 +21,13 @@ public enum ServiceErrorKind
     /// 409 — istek geçerli ama sistemin mevcut durumuyla çelişiyor
     /// (ör. son aktif Admin'in rolünü düşürme girişimi).
     /// </summary>
-    Conflict
+    Conflict,
+
+    /// <summary>502 — bağımlı servis geçerli bir yanıt üretemedi.</summary>
+    Upstream,
+
+    /// <summary>504 — bağımlı servis zaman aşımına uğradı.</summary>
+    Timeout
 }
 
 /// <summary>
@@ -55,4 +61,8 @@ public sealed class ServiceResult<T>
     public static ServiceResult<T> Conflict(string error) => new(default, error, ServiceErrorKind.Conflict);
 
     public static ServiceResult<T> Forbidden(string error) => new(default, error, ServiceErrorKind.Forbidden);
+
+    public static ServiceResult<T> Upstream(string error) => new(default, error, ServiceErrorKind.Upstream);
+
+    public static ServiceResult<T> Timeout(string error) => new(default, error, ServiceErrorKind.Timeout);
 }

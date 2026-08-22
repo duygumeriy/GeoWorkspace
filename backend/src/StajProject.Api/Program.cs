@@ -76,6 +76,8 @@ var geoServerOptions = builder.Configuration.GetSection(GeoServerOptions.Section
 geoServerOptions.Validate();
 builder.Services.AddSingleton(geoServerOptions);
 builder.Services.AddHttpClient<IGeoServerDrawingReadService, GeoServerDrawingReadService>();
+builder.Services.AddHttpClient<IGeoServerHeatmapService, GeoServerHeatmapService>(client =>
+    client.Timeout = TimeSpan.FromSeconds(geoServerOptions.HeatmapTimeoutSeconds));
 
 /* --- Secret'lar --------------------------------------------------------------
    Jwt:Key ve AdminSeed:Password hiçbir appsettings dosyasında TUTULMAZ.
