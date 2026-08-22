@@ -1,0 +1,150 @@
+.heatmap-panel-intro,
+.heatmap-scope-note {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-small);
+  line-height: 1.55;
+}
+
+.heatmap-control-row,
+.heatmap-opacity {
+  padding: 0.85rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface-soft);
+}
+
+.heatmap-control-row,
+.heatmap-opacity > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.heatmap-control-row > div {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.heatmap-control-row strong,
+.heatmap-opacity strong {
+  font-size: var(--font-small);
+  color: var(--text-primary);
+}
+
+.heatmap-control-row span,
+.heatmap-opacity output,
+.heatmap-status {
+  color: var(--text-secondary);
+  font-size: var(--font-small);
+}
+
+.heatmap-switch {
+  min-width: 52px;
+  min-height: 44px;
+  padding: 6px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-full);
+  background: var(--bg-secondary);
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.heatmap-switch span {
+  display: block;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+  transition: transform var(--transition-fast), background var(--transition-fast);
+}
+
+.heatmap-switch.is-on {
+  border-color: var(--primary-light);
+  background: var(--primary);
+}
+
+.heatmap-switch.is-on span {
+  background: #fff;
+  transform: translateX(14px);
+}
+
+.heatmap-opacity {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.heatmap-opacity.is-disabled {
+  opacity: 0.58;
+}
+
+.heatmap-opacity input {
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  accent-color: var(--primary-light);
+  cursor: pointer;
+}
+
+.heatmap-opacity input:disabled {
+  cursor: not-allowed;
+}
+
+.heatmap-status:empty {
+  display: none;
+}
+
+.heatmap-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.heatmap-loading::before {
+  content: '';
+  width: 0.75rem;
+  height: 0.75rem;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--primary-light);
+  border-radius: 50%;
+  animation: heatmap-spin 700ms linear infinite;
+}
+
+.heatmap-error {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.75rem;
+  border-radius: var(--radius-sm);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.heatmap-error button {
+  min-height: 44px;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.heatmap-switch:focus-visible,
+.heatmap-error button:focus-visible,
+.heatmap-opacity input:focus-visible {
+  outline: 3px solid var(--border-strong);
+  outline-offset: 2px;
+}
+
+.heatmap-scope-note {
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--border-strong);
+}
+
+@keyframes heatmap-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .heatmap-loading::before { animation: none; }
+}

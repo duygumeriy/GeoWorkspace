@@ -76,6 +76,15 @@ var geoServerOptions = builder.Configuration.GetSection(GeoServerOptions.Section
 geoServerOptions.Validate();
 builder.Services.AddSingleton(geoServerOptions);
 builder.Services.AddHttpClient<IGeoServerDrawingReadService, GeoServerDrawingReadService>();
+builder.Services.AddHttpClient<IGeoServerHeatmapService, GeoServerHeatmapService>(client =>
+    client.Timeout = TimeSpan.FromSeconds(geoServerOptions.HeatmapTimeoutSeconds));
+
+/* Çizimlerin haritadaki GENEL GÖSTERİMİ WMS üzerinden gelir; etkileşim
+   (seçim, düzenleme, taşıma, popup) yukarıdaki WFS okumasıyla sürer. İkisi
+   ayrı istemcilerdir çünkü biri kısa ömürlü bir görüntü, diğeri bir veri
+   okumasıdır ve zaman aşımı beklentileri aynı değildir. */
+builder.Services.AddHttpClient<IGeoServerMapPresentationService, GeoServerMapPresentationService>(client =>
+    client.Timeout = TimeSpan.FromSeconds(geoServerOptions.PresentationTimeoutSeconds));
 
 /* --- Secret'lar --------------------------------------------------------------
    Jwt:Key ve AdminSeed:Password hiçbir appsettings dosyasında TUTULMAZ.

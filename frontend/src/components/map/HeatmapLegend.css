@@ -1,0 +1,60 @@
+/* A section of the heatmap panel, not a map overlay: it uses the same border,
+   radius, surface and padding language as `.heatmap-control-row` and
+   `.heatmap-opacity` so it reads as one more row of the same panel. The panel
+   body already scrolls (`.map-sheet-body`), so a short viewport scrolls rather
+   than overflowing. */
+.heatmap-legend {
+  padding: 0.85rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface-soft);
+  color: var(--text-primary);
+}
+
+.heatmap-legend strong {
+  display: block;
+  font-size: var(--font-small);
+}
+
+.heatmap-legend-context {
+  display: block;
+  margin: 0.15rem 0 0.5rem;
+  color: var(--text-secondary);
+  font-size: 10px;
+}
+
+.heatmap-legend-gradient {
+  height: 10px;
+  border-radius: var(--radius-full);
+  background: linear-gradient(to right, rgba(44, 123, 182, 0) 0%, #2C7BB6 25%, #00A6CA 50%, #F9D057 75%, #D7191C 100%);
+}
+
+.heatmap-legend-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.3rem;
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.heatmap-legend-caption {
+  display: block;
+  margin-top: 0.4rem;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  text-align: center;
+}
+
+/* The five labels are the load-bearing part of the scale and stay readable at
+   320px; only the two prose lines give way. */
+@media (max-width: 360px) {
+  .heatmap-legend {
+    padding: 0.65rem;
+  }
+
+  .heatmap-legend-context,
+  .heatmap-legend-caption {
+    display: none;
+  }
+}

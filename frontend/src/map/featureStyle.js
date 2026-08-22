@@ -1,7 +1,10 @@
-import Style from 'ol/style/Style'
-import Fill from 'ol/style/Fill'
-import Stroke from 'ol/style/Stroke'
-import CircleStyle from 'ol/style/Circle'
+/* OpenLayers derin içe aktarmaları UZANTILI yazılır. Vite her iki yazımı da
+   çözer, ama Node'un ESM çözümleyicisi çözmez: bu modül artık `node --test`
+   ile doğrudan yüklendiği için uzantısız yol ERR_MODULE_NOT_FOUND verir. */
+import Style from 'ol/style/Style.js'
+import Fill from 'ol/style/Fill.js'
+import Stroke from 'ol/style/Stroke.js'
+import CircleStyle from 'ol/style/Circle.js'
 import { DRAWING_TYPES, normalizeStyle } from './drawingTypes.js'
 
 /**
@@ -54,6 +57,9 @@ export function hexToRgba(hex, alpha) {
 /** Cyan halo used for the selected feature; readable on both light and dark tiles. */
 const SELECTION_HALO = 'rgba(0, 209, 255, 0.55)'
 
+/** Invisible on the map, opaque in OpenLayers' hit-detection pass. */
+const TRANSPARENT = 'rgba(0, 0, 0, 0)'
+
 /**
  * Builds the render style for one feature.
  *
@@ -104,6 +110,51 @@ export function createFeatureStyle(typeId, style, options = {}) {
   return styles
 }
 
+/**
+ * Fully transparent, but still hit-detectable.
+ *
+ * Phase 5: once the WMS presentation raster owns a type's normal appearance,
+ * its vector features must not paint the same shape a second time — but they
+ * must stay clickable, box-selectable, translatable and hoverable, because the
+ * vector is still where feature identity lives.
+ *
+ * A zero-alpha colour is the right tool rather than a hack: OpenLayers builds
+ * its hit-detection pass from separate instructions that replace fill and
+ * stroke with an opaque colour and drop the dash pattern (see
+ * `ol/render/canvas/*Builder`), and `RegularShape` explicitly renders an extra
+ * hit-detection image when a transparent fill is set. Returning *no* style
+ * would be the mistake — that removes the feature from hit detection entirely,
+ * which is exactly what the layer toggle uses to make a hidden layer
+ * unclickable.
+ *
+ * Widths and radii are kept at their real values so the clickable area is the
+ * same size it was when the vector was drawing itself: nothing about how the
+ * map feels under the cursor changes.
+ */
+export function createInteractionOnlyStyle(typeId, style) {
+  const safe = normalizeStyle(typeId, style)
+
+  if (typeId === 'point') {
+    const outline = Math.min(safe.strokeWidth, Math.max(1, Math.round(safe.pointRadius / 2)))
+    return [
+      new Style({
+        image: new CircleStyle({
+          radius: safe.pointRadius,
+          fill: new Fill({ color: TRANSPARENT }),
+          stroke: new Stroke({ color: TRANSPARENT, width: outline }),
+        }),
+      }),
+    ]
+  }
+
+  return [
+    new Style({
+      stroke: new Stroke({ color: TRANSPARENT, width: safe.strokeWidth }),
+      fill: DRAWING_TYPES[typeId].supports.fillOpacity ? new Fill({ color: TRANSPARENT }) : undefined,
+    }),
+  ]
+}
+
 /** Wider translucent underlay that marks the current selection. */
 function selectionHaloStyle(typeId, safe) {
   if (typeId === 'point') {
@@ -129,14 +180,33 @@ function selectionHaloStyle(typeId, safe) {
  * selection plus three others. Hover is a separate, lighter treatment applied
  * by the cursor and the tooltip, so the two never blur together.
  *
- * @param {() => { selectedKeys: Set<string>, visibility: Record<string, boolean> }} getRenderState
+ * ## Phase 5: who draws the normal appearance
+ *
+ * When the WMS presentation raster is live for a type, this layer stops
+ * painting that type's *normal* look and renders it interaction-only — the
+ * server-rendered image is already showing it, and drawing it twice would
+ * double every translucent polygon fill. Everything that is NOT normal
+ * persisted appearance stays here, because none of it exists server-side:
+ *
+ *   - the selection halo and the selected feature's full style,
+ *   - the live `previewStyle` while the style panel is open,
+ *   - a feature still `awaitingPresentation`, i.e. just written and not yet in
+ *     an image — this is what stops a freshly saved drawing from blinking out
+ *     of existence for the length of one request.
+ *
+ * If the raster is not live for a type (no permission, GeoServer unreachable,
+ * first load still in flight), that type simply renders normally, as it always
+ * did. The map is never blank because a rendering service is down.
+ *
+ * @param {() => { selectedKeys: Set<string>, visibility: Record<string, boolean>,
+ *                 presentationActive?: Record<string, boolean> }} getRenderState
  */
 export function createLayerStyleFunction(getRenderState) {
   return (feature) => {
     const typeId = feature.get('drawingType')
     if (!DRAWING_TYPES[typeId]) return undefined
 
-    const { selectedKeys, visibility } = getRenderState?.() ?? {}
+    const { selectedKeys, visibility, presentationActive } = getRenderState?.() ?? {}
 
     // Layer toggle: returning no style hides the feature and also removes it
     // from hit detection, so a hidden layer cannot be clicked or hovered.
@@ -146,7 +216,16 @@ export function createLayerStyleFunction(getRenderState) {
     // `previewStyle` is set while the style panel is open and lets the user see
     // a change before it is committed; it is never sent to the API on its own.
     const style = feature.get('previewStyle') ?? feature.get('style')
+    const selected = Boolean(selectedKeys?.has(feature.getId()))
 
-    return createFeatureStyle(typeId, style, { selected: Boolean(selectedKeys?.has(feature.getId())) })
+    const ownedByRaster =
+      presentationActive?.[typeId] === true &&
+      !selected &&
+      feature.get('previewStyle') === undefined &&
+      feature.get('awaitingPresentation') !== true
+
+    if (ownedByRaster) return createInteractionOnlyStyle(typeId, style)
+
+    return createFeatureStyle(typeId, style, { selected })
   }
 }

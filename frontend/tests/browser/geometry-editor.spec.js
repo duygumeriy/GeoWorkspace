@@ -397,21 +397,45 @@ test.describe('polygon geometry editor', () => {
     await openMap(page)
     await startEditing(page, 'Test Alanı')
 
-    const before = await Promise.all(
-      ['Köşe 1', 'Köşe 2', 'Köşe 3', 'Köşe 4'].map((label) => longitudeOf(page, label)),
-    )
+    /* The grab pixel is ESTABLISHED, not guessed — the rule this file opens
+       with. "Haritada Göster" puts Köşe 1 (the bottom-left corner) on the map's
+       centre pixel, and the offset from there walks up the left edge and then
+       inwards, so the gesture starts on the polygon's fill for certain. Taking
+       the bare map centre instead assumes the earlier fitExtent left the shape
+       under it, which depends on the fit padding, the container box and the
+       viewport size; a pointerdown that misses the fill is a map pan, and a pan
+       moves the camera rather than the drawing. */
+    await showOnMap(page, 'Köşe 1')
+    const centre = await mapCentre(page)
+    const insidePolygon = { x: centre.x + 60, y: centre.y - 150 }
 
     await page.getByRole('button', { name: 'Tüm Geometriyi Taşı' }).click()
-    const centre = await mapCentre(page)
-    await dragFrom(page, centre, 80, 0)
+    const before = await polygonPanelCoords(page)
 
-    const after = await Promise.all(
-      ['Köşe 1', 'Köşe 2', 'Köşe 3', 'Köşe 4'].map((label) => longitudeOf(page, label)),
-    )
-    const deltas = after.map((value, index) => value - before[index])
+    /* Westwards on purpose. The edit panel is docked over the RIGHT of the map
+       (see `onLeftEdge`), so a leftward drag keeps both the start and the end
+       pixel on the map at every viewport this suite runs at. The direction is
+       part of the contract: the view is north-up EPSG:3857, so a leftward drag
+       can only decrease longitude. */
+    await dragFrom(page, insidePolygon, -80, 0)
 
-    expect(deltas[0]).toBeGreaterThan(0)
-    for (const delta of deltas.slice(1)) expect(delta).toBeCloseTo(deltas[0], 5)
+    const after = await polygonPanelCoords(page)
+    const dx = after[0][0] - before[0][0]
+    const dy = after[0][1] - before[0][1]
+
+    // It actually moved, and it moved the way the pointer went.
+    expect(dx).toBeLessThan(0)
+    expect(Math.hypot(dx, dy)).toBeGreaterThan(1e-4)
+
+    /* Rigid: EVERY vertex moved by the same amount, so no edge was stretched
+       and no corner was left behind. Comparing latitudes like this is only
+       sound because the drag is purely horizontal — Mercator's y axis is not
+       linear in latitude, so a diagonal drag would give each vertex a
+       different Δlat even for a perfectly rigid move. */
+    after.forEach(([longitude, latitude], index) => {
+      expect(longitude - before[index][0]).toBeCloseTo(dx, 5)
+      expect(latitude - before[index][1]).toBeCloseTo(dy, 5)
+    })
   })
 
   test('a successful retry clears only the stale geographic authorization warning', async ({ page }) => {
