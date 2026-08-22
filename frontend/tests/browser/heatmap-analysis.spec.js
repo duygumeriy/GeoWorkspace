@@ -1,7 +1,9 @@
 import { expect, test } from '@playwright/test'
 import { mockPermissions } from './permissions.js'
 
-const HEATMAP_PERMISSION = 'inventory.analysis'
+/* Isı haritasının TEK kanonik kodu. Envanter analizi artık burayı açmaz. */
+const HEATMAP_PERMISSION = 'heatmap.view'
+const INVENTORY_ANALYSIS = 'inventory.analysis'
 const BASE_PERMISSIONS = ['map.view', 'drawings.view', 'layers.view']
 const PIXEL_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+X8vZVwAAAABJRU5ErkJggg==',
@@ -157,6 +159,53 @@ async function activateHeatmap(page) {
 test('menu visibility uses the exact permission code, independent of role name', async ({ page }) => {
   await prepareMap(page, { permissions: BASE_PERMISSIONS, role: 'Administrator' })
   await expect(page.getByRole('button', { name: 'Isı Haritası Analizi', exact: true })).toBeHidden()
+})
+
+/* Ayrıştırmanın arayüz tarafındaki kanıtı. Menü daha önce `inventory.analysis`
+   ile açılıyordu; o kod tek başına artık ne menüyü çizmeli ne de bir tek istek
+   başlatmalıdır. İstek sayacı ayrıca "gizlemek yeterli değildir" iddiasını
+   ölçer: panel gizlense bile bir yerden tetiklenen istek burada görünürdü. */
+test('inventory analysis alone neither shows the menu nor requests an image', async ({ page }) => {
+  const { requests } = await prepareMap(page, {
+    permissions: [...BASE_PERMISSIONS, INVENTORY_ANALYSIS],
+    role: 'Envanter Analisti',
+  })
+
+  await expect(page.getByRole('button', { name: 'Isı Haritası Analizi', exact: true })).toBeHidden()
+  await expect(page.locator('.heatmap-layer')).toHaveCount(0)
+  expect(requests).toHaveLength(0)
+})
+
+/* Ters yön: ısı haritası yetkisi TEK BAŞINA yeter — çizim görüntüleme,
+   envanter analizi ya da bir rol adı gerekmez. */
+test('heatmap permission alone exposes the feature independently', async ({ page }) => {
+  await prepareMap(page, {
+    permissions: ['map.view', HEATMAP_PERMISSION],
+    role: 'Yalnız Isı Haritası',
+  })
+
+  await expect(page.getByRole('button', { name: 'Çizimlerim', exact: true })).toBeHidden()
+  await expect(page.getByRole('button', { name: 'Isı Haritası Analizi' })).toBeVisible()
+  await activateHeatmap(page)
+})
+
+/* Oturum değişimi: önceki kullanıcının rasterı BİR SONRAKİ oturuma sızmamalı.
+   Yetki kümesi ait olduğu token ile birlikte tutulduğu için çıkışta boşalır;
+   yeni oturum kendi kümesini okur ve ısı haritası yoksa katman hiç kurulmaz. */
+test('a user switch cannot leave an unauthorized heatmap raster visible', async ({ page }) => {
+  const { permissionState } = await prepareMap(page)
+  await activateHeatmap(page)
+
+  // Sıradaki kullanıcı ısı haritası yetkisi TAŞIMAZ.
+  permissionState.set(BASE_PERMISSIONS)
+  await page.getByRole('button', { name: 'Çıkış Yap', exact: true }).last().click()
+  await expect(page).toHaveURL(/\/login$/)
+
+  await page.goto('/map')
+  await expect(page.locator('.map-container canvas').first()).toBeVisible()
+
+  await expect(page.getByRole('button', { name: 'Isı Haritası Analizi', exact: true })).toBeHidden()
+  await expect(page.locator('.heatmap-layer')).toHaveCount(0)
 })
 
 test('a custom role or direct grant can see and activate exactly one raster layer', async ({ page }) => {
@@ -393,8 +442,20 @@ for (const viewport of [
         || box.y + box.height <= legendBox.y
       )
 
+      /* Liste, farklı yetki profillerinde var OLABİLECEK kontrolleri sayar;
+         hepsinin bu kurguda bulunması beklenmez. Örneğin `.draw-toolbar`
+         yalnızca çizim/ölçüm/seçim/envanter yetkilerinden en az biri varken
+         çizilir ve bu test ısı haritasını TEK BAŞINA ölçtüğü için yoktur.
+
+         Varlık `count()` ile sorulur: `boundingBox()` elemanın DOM'a
+         eklenmesini bekler, dolayısıyla hiç çizilmeyen bir kontrolde
+         sonrasındaki `if (box)` korumasına hiç ulaşılmaz ve test 30 saniye
+         bekleyip düşer. Sayım anlıktır ve beklemez. */
       for (const selector of ['.quick-actions', '.draw-toolbar', '.ol-zoom', '.ol-attribution']) {
-        const box = await page.locator(selector).boundingBox()
+        const control = page.locator(selector)
+        if (await control.count() === 0) continue
+
+        const box = await control.boundingBox()
         if (box) expect(overlapsLegend(box), `${selector} must remain clear of the legend`).toBe(false)
       }
     }

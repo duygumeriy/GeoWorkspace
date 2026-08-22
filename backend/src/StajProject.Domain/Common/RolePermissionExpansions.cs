@@ -68,13 +68,40 @@ public static class RolePermissionExpansions
     ];
 
     /// <summary>
+    /// Isı haritası kataloğu genişlemesi (Phase 10).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Isı haritası daha önce <c>inventory.analysis</c> ile korunuyordu; o kodu
+    /// taşıyan seed rolleri (Administrator, GIS Manager, GIS Analyst) bugün ısı
+    /// haritasına erişebiliyor. Yetki ayrıştırıldığında yeni kod yalnızca
+    /// matrise yazılsaydı, matris <b>yalnızca hiç yetkisi olmayan</b> rollere
+    /// uygulandığı için mevcut kurulumlardaki bu üç rol erişimi sessizce
+    /// KAYBEDERDİ. Genişleme, ayrıştırmayı davranış açısından nötr tutar.
+    /// </para>
+    /// <para>
+    /// Liste bilinçli olarak yalnızca <b>seed</b> rollerini sayar. Yöneticinin
+    /// kendi tanımladığı, <c>inventory.analysis</c> verilmiş özel roller
+    /// DIŞARIDADIR: o grant'ların niyeti kaynakta yazılı değildir ve "analiz
+    /// yetkisi ısı haritası da demektir" varsayımı, ayrıştırmanın kendisini
+    /// geçersiz kılardı. Gerekiyorsa Rol Yetki Düzenleyicisi'nden verilir.
+    /// </para>
+    /// </remarks>
+    private static readonly string[] HeatmapPermissions =
+    [
+        PermissionCodes.HeatmapView
+    ];
+
+    /// <summary>
     /// Uygulanacak genişlemeler. Rol adları yalnızca <b>başlangıç verisi</b>
     /// üretmek için kullanılır; çalışma zamanı yetkilendirmesi hâlâ tamamen
     /// etkin yetki KODLARI üzerinden yürür.
     /// </summary>
     public static readonly IReadOnlyList<Expansion> All =
     [
-        new(GisRoles.Administrator, [.. GeographyPermissions, .. AuditPermissions])
+        new(GisRoles.Administrator, [.. GeographyPermissions, .. AuditPermissions, .. HeatmapPermissions]),
+        new(GisRoles.GisManager, HeatmapPermissions),
+        new(GisRoles.GisAnalyst, HeatmapPermissions)
     ];
 
     /// <summary>Genişlemelerde geçen tüm kodlar (tekrarsız).</summary>

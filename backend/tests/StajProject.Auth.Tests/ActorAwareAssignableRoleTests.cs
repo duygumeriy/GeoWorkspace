@@ -74,7 +74,7 @@ public class ActorAwareAssignableRoleTests
         /* Katalogdaki yetkilerin tamamına sahip olmak legacy geçiş rollerini AÇMAZ: bunlar
            yetki yetersizliğinden değil, genel olarak yeni atamalara kapalı
            oldukları için listede yoktur. İki filtre bağımsızdır. */
-        Assert.Equal(30, (await Effective(scope).GetEffectivePermissionCodesAsync(actor.Id)).Count);
+        Assert.Equal(31, (await Effective(scope).GetEffectivePermissionCodesAsync(actor.Id)).Count);
         Assert.DoesNotContain(ApplicationRoles.Admin, offered);
         Assert.DoesNotContain(ApplicationRoles.User, offered);
     }
@@ -173,9 +173,19 @@ public class ActorAwareAssignableRoleTests
     public async Task A_direct_user_permission_brings_a_role_into_the_list()
     {
         await using var scope = await CreateScopeAsync();
-        var actor = await CreateActorAsync(scope, "analyst-granter", [.. ViewerCodes(), PermissionCodes.UsersUpdate]);
+        /* Aktör, GIS Analyst'in yetkilerinden TEK BİRİ dışında hepsini taşır.
+           Eksik bırakılan yetki, testin birazdan DOĞRUDAN vereceği yetkidir;
+           kurgu bu yüzden analistin profilinden yalnızca onu düşürür ve
+           katalog büyüdükçe elle güncellenmesi gerekmez. */
+        var actor = await CreateActorAsync(
+            scope,
+            "analyst-granter",
+            [
+                .. AnalystCodes().Where(code => code != PermissionCodes.InventoryAnalysis),
+                PermissionCodes.UsersUpdate
+            ]);
 
-        // GIS Analyst = Viewer + inventory.analysis; tek yetki eksik.
+        // Tek eksik yetki analisti listenin dışında tutar.
         Assert.DoesNotContain(GisRoles.GisAnalyst, await OfferedAsync(scope, actor));
 
         /* Eksik yetki ROL DEĞİŞTİRMEDEN, doğrudan veriliyor. Otorite "rol
@@ -189,7 +199,17 @@ public class ActorAwareAssignableRoleTests
     public async Task An_inactive_permission_on_the_target_role_does_not_hide_it()
     {
         await using var scope = await CreateScopeAsync();
-        var actor = await CreateActorAsync(scope, "inactive-aware", [.. ViewerCodes(), PermissionCodes.UsersUpdate]);
+        /* Aktör, analistin PASİFLEŞTİRİLECEK yetkisi dışındaki her aktif
+           yetkisini taşır. Testin konusu tam olarak o tek yetkidir: başka bir
+           eksik kalsaydı rol, pasiflikle ilgisi olmayan bir sebeple gizlenir
+           ve iddia kendi konusunu ölçmemiş olurdu. */
+        var actor = await CreateActorAsync(
+            scope,
+            "inactive-aware",
+            [
+                .. AnalystCodes().Where(code => code != PermissionCodes.InventoryAnalysis),
+                PermissionCodes.UsersUpdate
+            ]);
 
         Assert.DoesNotContain(GisRoles.GisAnalyst, await OfferedAsync(scope, actor));
 

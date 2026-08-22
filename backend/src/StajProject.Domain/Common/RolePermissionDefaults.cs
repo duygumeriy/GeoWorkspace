@@ -51,13 +51,20 @@ public static class RolePermissionDefaults
     private static readonly string[] GisAnalystPermissions =
     [
         .. ViewerPermissions,
-        PermissionCodes.InventoryAnalysis
+        PermissionCodes.InventoryAnalysis,
+
+        /* Isı haritası ayrı bir yetkidir; analiste envanter analiziyle BİRLİKTE
+           verilir çünkü ikisi de aynı rol profilinin analiz yeteneğidir. Ayrı
+           satır olması, birinin diğerinden bağımsız geri alınabilmesi
+           demektir — kod düzeyinde hiçbir ima kalmaz. */
+        PermissionCodes.HeatmapView
     ];
 
     private static readonly string[] GisManagerPermissions =
     [
         .. GisEditorPermissions,
         PermissionCodes.InventoryAnalysis,
+        PermissionCodes.HeatmapView,
         PermissionCodes.LayersManage
     ];
 

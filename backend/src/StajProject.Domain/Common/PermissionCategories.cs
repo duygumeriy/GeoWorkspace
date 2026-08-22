@@ -16,6 +16,7 @@ public static class PermissionCategories
     public const string DrawingManagement = "DrawingManagement";
     public const string Tools = "Tools";
     public const string Inventory = "Inventory";
+    public const string Heatmap = "Heatmap";
     public const string Layers = "Layers";
     public const string Users = "Users";
     public const string Roles = "Roles";

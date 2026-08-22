@@ -53,8 +53,8 @@ public class EffectivePermissionServiceTests
 
         var codes = await Service(scope).GetEffectivePermissionCodesAsync(user.Id);
 
-        // Viewer(6) ∪ GIS Analyst(7) = 7; ortak altı yetki tekrarlanmaz.
-        Assert.Equal(7, codes.Count);
+        // Viewer(6) ∪ GIS Analyst(8) = 8; ortak altı yetki tekrarlanmaz.
+        Assert.Equal(8, codes.Count);
         Assert.Contains(PermissionCodes.InventoryAnalysis, codes);
     }
 
@@ -207,14 +207,14 @@ public class EffectivePermissionServiceTests
         var user = await CreateUserAsync(scope, "admin-rows", GisRoles.Administrator);
 
         var service = Service(scope);
-        Assert.Equal(30, (await service.GetEffectivePermissionCodesAsync(user.Id)).Count);
+        Assert.Equal(31, (await service.GetEffectivePermissionCodesAsync(user.Id)).Count);
 
         // Tek bir grant satırı kaldırılınca yetki GERÇEKTEN kaybolur. Kodda bir
         // süper kullanıcı kestirmesi olsaydı bu assert geçmezdi.
         await RevokeRoleGrantAsync(scope, GisRoles.Administrator, PermissionCodes.UsersDelete);
 
         Assert.False(await service.HasPermissionAsync(user.Id, PermissionCodes.UsersDelete));
-        Assert.Equal(29, (await service.GetEffectivePermissionCodesAsync(user.Id)).Count);
+        Assert.Equal(30, (await service.GetEffectivePermissionCodesAsync(user.Id)).Count);
     }
 
     [Fact]

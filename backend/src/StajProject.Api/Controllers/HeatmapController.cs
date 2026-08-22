@@ -10,6 +10,12 @@ using StajProject.Domain.Common;
 namespace StajProject.Api.Controllers;
 
 /// <summary>Kullanıcıya ve etkin coğrafi yetkisine özel heatmap PNG sınırı.</summary>
+/// <remarks>
+/// Uç <c>heatmap.view</c> arar. Yetki bilinçli olarak <c>inventory.analysis</c>'ten
+/// AYRIDIR: envanter analizi çalıştırabilmek, ısı haritası görüntüsünü görebilmek
+/// anlamına gelmez. Arayüzün menüyü gizlemesi bir kolaylıktır; erişimi kapatan
+/// tek şey buradaki denetimdir.
+/// </remarks>
 [ApiController]
 [Authorize]
 [Route("api/heatmap")]
@@ -24,7 +30,7 @@ public sealed class HeatmapController : ApiControllerBase
     }
 
     [HttpGet("image")]
-    [RequirePermission(PermissionCodes.InventoryAnalysis)]
+    [RequirePermission(PermissionCodes.HeatmapView)]
     public Task<IActionResult> GetImage(
         [FromQuery] HeatmapRequest request,
         CancellationToken cancellationToken) =>

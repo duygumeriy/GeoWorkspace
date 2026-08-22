@@ -224,7 +224,7 @@ public class CurrentUserPermissionHttpTests
     [Fact]
     public async Task The_Administrator_role_name_grants_nothing_once_its_rows_are_gone()
     {
-        /* Administrator 29 yetkiyi ADINDAN değil, seed edilmiş
+        /* Administrator yetkilerini ADINDAN değil, seed edilmiş
            role_permissions satırlarından alır. Bir satır silindiğinde erişim
            GERÇEKTEN kapanır — ad bir kestirme olsaydı kapanmazdı. */
         await using var host = await CreateHostAsync();

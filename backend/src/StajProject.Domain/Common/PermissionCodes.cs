@@ -49,6 +49,16 @@ public static class PermissionCodes
     public const string InventoryView = "inventory.view";
     public const string InventoryAnalysis = "inventory.analysis";
 
+    /* --- Isı haritası ----------------------------------------------------------- */
+
+    /* Isı haritası kendi yetkisidir ve inventory.analysis altına GİZLENMEZ:
+       envanter analizi kesişim/dağılım sorgularını çalıştırmaktır; ısı haritası
+       ise kişinin kendi kayıtlarının yoğunluğunu, sunucuda üretilmiş bir WMS
+       görüntüsü olarak görmektir. İki yetenek ayrı verilebilmelidir — birine
+       sahip olmak diğerini ima etmez. */
+
+    public const string HeatmapView = "heatmap.view";
+
     /* --- Katmanlar ------------------------------------------------------------- */
 
     public const string LayersView = "layers.view";
