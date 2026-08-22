@@ -41,6 +41,8 @@ public static class ActivityActionRegistry
     private const string User = "user";
     private const string Role = "role";
     private const string Drawing = "drawing";
+    private const string Poi = "poi";
+    private const string PoiCategory = "poi_category";
 
     private static readonly IReadOnlyDictionary<string, Descriptor> Map =
         new Dictionary<string, Descriptor>(StringComparer.Ordinal)
@@ -92,7 +94,15 @@ public static class ActivityActionRegistry
             ["Drawings.BulkCreate"] = new(ActivityActionCatalog.DrawingBulkCreate, Drawing, null),
             ["Drawings.BulkDelete"] = new(ActivityActionCatalog.DrawingBulkDelete, Drawing, null),
             ["Drawings.BulkStyle"] = new(ActivityActionCatalog.DrawingBulkStyle, Drawing, null),
-            ["Drawings.Restore"] = new(ActivityActionCatalog.DrawingRestore, Drawing, null)
+            ["Drawings.Restore"] = new(ActivityActionCatalog.DrawingRestore, Drawing, null),
+
+            /* --- POI ------------------------------------------------------------
+               Okuma uçları (harita listesi, kategori listesi, yönetim listesi)
+               burada YOKTUR; tablo bir istek izi değil, "kim neyi değiştirdi"
+               defteridir. */
+            ["Poi.CreatePoi"] = new(ActivityActionCatalog.PoiCreate, Poi, null),
+            ["AdminPoi.CreateCategory"] = new(ActivityActionCatalog.PoiCategoryCreate, PoiCategory, null),
+            ["AdminPoi.UpdateCategory"] = new(ActivityActionCatalog.PoiCategoryUpdate, PoiCategory, "id")
         };
 
     /// <summary>Kayıt tablosundaki tüm anahtarlar — testlerin okuduğu yüzey.</summary>

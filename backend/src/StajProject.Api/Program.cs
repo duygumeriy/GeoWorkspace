@@ -249,6 +249,11 @@ builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, ActivityAut
 builder.Services.AddScoped<IDrawingService, DrawingService>();
 builder.Services.AddScoped<ISpatialAnalysisService, SpatialAnalysisService>();
 
+/* POI servisleri. Çizim servisiyle aynı lifetime ve aynı gerekçe: AppDbContext
+   scoped'dır ve her istek kendi transaction sınırını görmelidir. */
+builder.Services.AddScoped<IPoiService, PoiService>();
+builder.Services.AddScoped<IPoiCategoryService, PoiCategoryService>();
+
 /* Etkin yetki motoru. AppDbContext scoped olduğu ve servis her çağrıda canlı
    veritabanı durumunu okuduğu için lifetime da scoped'tır.
 
