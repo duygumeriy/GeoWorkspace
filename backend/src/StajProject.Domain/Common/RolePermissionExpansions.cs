@@ -93,15 +93,61 @@ public static class RolePermissionExpansions
     ];
 
     /// <summary>
+    /// POI kataloğu genişlemesi (Phase 2A).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Diğer genişlemelerden farklı olarak bu liste OPERASYONEL rolleri de
+    /// kapsar ve bu bilinçlidir: POI görüntüleme, coğrafi yetki yönetimi ya da
+    /// denetim kaydı gibi yönetimsel bir yetenek değil, temel bir harita
+    /// yeteneğidir. Yalnızca ayrıcalıklı rollere verilseydi, mevcut
+    /// kurulumlardaki Viewer/Editor/Analyst kullanıcıları haritada hiçbir POI
+    /// göremezdi — yani özellik, üzerinde çalıştığı kurulumlarda görünmez
+    /// hâlde kalırdı.
+    /// </para>
+    /// <para>
+    /// Dağılım <see cref="RolePermissionDefaults"/> matrisiyle birebir aynıdır;
+    /// genişlemenin işi yeni kodları zaten provision edilmiş rollere
+    /// ULAŞTIRMAKTIR, farklı bir profil tanımlamak değil.
+    /// </para>
+    /// <para>
+    /// <b>Özel roller DIŞARIDADIR.</b> Ödevin "Operatör" rolü, rol yönetimi
+    /// ekranından tanımlanacak özel bir roldür ve yetkilerini oradan AÇIKÇA
+    /// alır; buradan sessizce yetkilendirilmez.
+    /// </para>
+    /// </remarks>
+    private static readonly string[] PoiViewOnly =
+    [
+        PermissionCodes.PoiView
+    ];
+
+    private static readonly string[] PoiCreatePermissions =
+    [
+        PermissionCodes.PoiView,
+        PermissionCodes.PoiCreate
+    ];
+
+    private static readonly string[] PoiManagePermissions =
+    [
+        PermissionCodes.PoiView,
+        PermissionCodes.PoiCreate,
+        PermissionCodes.PoiManage,
+        PermissionCodes.PoiCategoriesManage
+    ];
+
+    /// <summary>
     /// Uygulanacak genişlemeler. Rol adları yalnızca <b>başlangıç verisi</b>
     /// üretmek için kullanılır; çalışma zamanı yetkilendirmesi hâlâ tamamen
     /// etkin yetki KODLARI üzerinden yürür.
     /// </summary>
     public static readonly IReadOnlyList<Expansion> All =
     [
-        new(GisRoles.Administrator, [.. GeographyPermissions, .. AuditPermissions, .. HeatmapPermissions]),
-        new(GisRoles.GisManager, HeatmapPermissions),
-        new(GisRoles.GisAnalyst, HeatmapPermissions)
+        new(GisRoles.Administrator,
+            [.. GeographyPermissions, .. AuditPermissions, .. HeatmapPermissions, .. PoiManagePermissions]),
+        new(GisRoles.GisManager, [.. HeatmapPermissions, .. PoiManagePermissions]),
+        new(GisRoles.GisAnalyst, [.. HeatmapPermissions, .. PoiViewOnly]),
+        new(GisRoles.GisEditor, PoiCreatePermissions),
+        new(GisRoles.Viewer, PoiViewOnly)
     ];
 
     /// <summary>Genişlemelerde geçen tüm kodlar (tekrarsız).</summary>

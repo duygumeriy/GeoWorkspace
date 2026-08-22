@@ -105,6 +105,25 @@ public static class PermissionCodes
 
     public const string ActivityView = "activity.view";
 
+    /* --- POI --------------------------------------------------------------------
+
+       POI yetkileri çizim yetkilerinden AYRIDIR ve onların altına gizlenmez:
+       POI, stil taşımayan, sahibine göre gizlenmeyen ve kategori hiyerarşisine
+       bağlı ORTAK bir envanterdir. Bir kişinin kendi çizimlerini yönetebilmesi,
+       herkesin gördüğü POI envanterine kayıt ekleyebilmesiyle aynı şey
+       değildir.
+
+       Görüntüleme ve yönetim de ayrılır: haritada pin görmek ile kimin neyi
+       eklediğini listeleyebilmek farklı yeteneklerdir (activity.view ile aynı
+       gerekçe). Kategori yönetimi ise üçüncü bir eksendir — herkesin
+       sınıflandırma yapmak zorunda olduğu taksonomiyi tanımlamak, kayıtları
+       gözden geçirmekten başka bir otoritedir. */
+
+    public const string PoiView = "poi.view";
+    public const string PoiCreate = "poi.create";
+    public const string PoiManage = "poi.manage";
+    public const string PoiCategoriesManage = "poi.categories.manage";
+
     /// <summary>EF <c>HasMaxLength</c> ile aynı sınır.</summary>
     public const int MaxLength = 128;
 }
