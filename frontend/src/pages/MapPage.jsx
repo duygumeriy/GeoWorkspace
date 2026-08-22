@@ -27,6 +27,8 @@ import BasemapSelector from '../components/map/BasemapSelector.jsx'
 import ConfirmDialog from '../components/map/ConfirmDialog.jsx'
 import AttributePopup from '../components/map/AttributePopup.jsx'
 import AnalysisPanel from '../components/map/AnalysisPanel.jsx'
+import HeatmapPanel from '../components/map/HeatmapPanel.jsx'
+import HeatmapLegend from '../components/map/HeatmapLegend.jsx'
 import { SettingsPanel, AboutPanel } from '../components/map/InfoPanels.jsx'
 import {
   DrawingHint,
@@ -53,6 +55,7 @@ import useGeometryEditing, { GEOMETRY_EDIT_MODES } from '../hooks/useGeometryEdi
 import useEditSession from '../hooks/useEditSession.js'
 import useVertexOverlay from '../hooks/useVertexOverlay.js'
 import useAnalysisHighlight from '../hooks/useAnalysisHighlight.js'
+import useHeatmapLayer from '../hooks/useHeatmapLayer.js'
 import { DRAWING_TYPES, DRAWING_TYPE_LIST, colorPatchFor, normalizeTags } from '../map/drawingTypes.js'
 import { isGeometryInsideScope } from '../map/geographicScope.js'
 import {
@@ -121,6 +124,7 @@ export default function MapPage() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   /** "Yetki Alanım" katmanının görünürlüğü. Katman salt görselleştirmedir. */
   const [scopeLayerVisible, setScopeLayerVisible] = useState(true)
+  const [heatmapEnabled, setHeatmapEnabled] = useState(false)
   // Exposed as state (not just a ref) so the drawing hook re-runs when the map
   // instance is actually created or torn down, StrictMode double-mount included.
   const [mapInstance, setMapInstance] = useState(null)
@@ -172,6 +176,21 @@ export default function MapPage() {
     scope: geographic.scope,
     visible: scopeLayerVisible,
   })
+
+  const canUseHeatmap = can(PERMISSIONS.INVENTORY_ANALYSIS)
+  const heatmap = useHeatmapLayer(mapInstance, {
+    enabled: heatmapEnabled,
+    permitted: canUseHeatmap,
+    scopeVersion: `${geographic.areaCount}:${geographic.effectiveWkt ?? ''}`,
+  })
+
+  /* Canlı yetki yenilemesi bu ekran açıkken erişimi kaldırabilir. Katmanı
+     sökmek hook'un, artık erişilemeyen paneli kapatmak bu sayfanın işidir. */
+  useEffect(() => {
+    if (canUseHeatmap) return
+    setHeatmapEnabled(false)
+    setActivePanel((current) => (current === 'heatmap' ? null : current))
+  }, [canUseHeatmap])
 
   const workspace = useDrawingWorkspace(mapInstance, {
     showToast,
@@ -1034,6 +1053,11 @@ export default function MapPage() {
                 onClose={analysis.clear}
               />
 
+              <HeatmapLegend
+                visible={heatmapEnabled && canUseHeatmap}
+                panelOpen={activePanel === 'heatmap'}
+              />
+
               <MeasurementReadout
                 mode={workspaceMode.activeMeasureTool}
                 liveLabel={measurement.liveLabel}
@@ -1169,6 +1193,19 @@ export default function MapPage() {
                   visible: scopeLayerVisible,
                 }}
                 onToggleScope={() => setScopeLayerVisible((value) => !value)}
+              />
+
+              <HeatmapPanel
+                open={activePanel === 'heatmap' && canUseHeatmap}
+                enabled={heatmapEnabled}
+                opacity={heatmap.opacity}
+                loading={heatmap.loading}
+                error={heatmap.error}
+                hasImage={heatmap.hasImage}
+                onClose={() => setActivePanel(null)}
+                onToggle={() => setHeatmapEnabled((value) => !value)}
+                onOpacityChange={heatmap.setOpacity}
+                onRetry={heatmap.refresh}
               />
 
               <SettingsPanel

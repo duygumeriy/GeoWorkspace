@@ -179,8 +179,10 @@ export async function authFetch(path, options = {}) {
   try {
     res = await fetch(`${API_BASE_URL}${path}`, { ...options, headers })
   } catch (error) {
-    // Network-level failure (server down, DNS, offline) — never a 4xx/5xx.
-    connectionHandler?.(false)
+    // A deliberate AbortController cancellation is lifecycle, not a lost
+    // connection. Reporting it as offline would flash an error on every
+    // superseded map-image request.
+    if (error?.name !== 'AbortError') connectionHandler?.(false)
     throw error
   }
 
@@ -607,6 +609,29 @@ export function deleteAdminRoleGeographicArea(roleId, areaId) {
 
 export function fetchMyGeographicScope() {
   return authFetch('/api/auth/me/geographic-scope')
+}
+
+/* --- Isı haritası ---------------------------------------------------------
+   Tarayıcı yalnızca uygulamanın kimlik doğrulamalı PNG ucunu bilir.
+   Veri kaynağına, katman adına veya sunucu tarafı filtrelerine ait hiçbir
+   ayrıntı bu sınırı geçmez. */
+
+export async function fetchHeatmapImage({ bbox, width, height, signal }) {
+  const query = new URLSearchParams({
+    bbox,
+    width: String(width),
+    height: String(height),
+  })
+  const response = await authFetch(`/api/heatmap/image?${query}`, { signal })
+
+  if (!response.ok) throw new Error('Isı haritası şu anda yüklenemedi.')
+
+  const contentType = response.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase()
+  if (contentType !== 'image/png') throw new Error('Isı haritası şu anda yüklenemedi.')
+
+  const blob = await response.blob()
+  if (blob.size === 0) throw new Error('Isı haritası şu anda yüklenemedi.')
+  return blob
 }
 
 /* --- Aktivite geçmişi --------------------------------------------------------

@@ -98,6 +98,7 @@
 [data-theme='dark'] .map-container .analysis-layer canvas,
 [data-theme='dark'] .map-container .vertex-layer canvas,
 [data-theme='dark'] .map-container .analysis-highlight-layer canvas,
+[data-theme='dark'] .map-container .heatmap-layer canvas,
 /* Yetki alanı sınırı da kendi tuvalindedir: filtreye bırakılsaydı moru koyu
    temada yeşile dönerdi ve sınır, uygulamanın hiçbir yerinde karşılığı olmayan
    bir renkle çizilirdi. */

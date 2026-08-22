@@ -47,3 +47,25 @@ for those resources, and `.geoserver-stage` contains no managed files or
 automation. A future reproducibility phase should define a reviewed,
 environment-neutral export/deployment convention rather than copying runtime
 catalog XML with machine-specific IDs into this repository.
+
+## Frontend analysis interface
+
+The map exposes **Isı Haritası Analizi** only when the caller's live effective
+permission set contains `inventory.analysis`. It uses the existing authenticated
+API client to request `/api/heatmap/image` and installs the returned PNG Blob as
+an OpenLayers image layer over the current `EPSG:3857` view extent. The layer is
+above basemaps and the geographic-scope overlay, but below drawing vectors, so
+the existing WFS-backed selection, editing, translation, and popup paths remain
+unchanged.
+
+The frontend does not contact GeoServer directly and has no layer, style,
+filter, user ID, or authorization-geometry authority. It sends only viewport
+`bbox`, bounded `width`, and bounded `height`. Superseded viewport requests are
+cancelled, Blob URLs are revoked when replaced or removed, and opacity changes
+are presentation-only.
+
+The visible legend is a normalized relative-density scale from `0` to `1`, not
+an absolute point count. Its color stops match the server style exactly:
+transparent, `#2C7BB6`, `#00A6CA`, `#F9D057`, and `#D7191C`. A valid fully
+transparent PNG is therefore a successful zero-density result. This read path
+does not mutate application or spatial data.

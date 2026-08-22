@@ -16,6 +16,7 @@ import {
   ClockIcon,
   ShieldIcon,
   TrashIcon,
+  AnalysisIcon,
 } from '../ui/icons/index.js'
 import './Sidebar.css'
 
@@ -75,6 +76,9 @@ export default function Sidebar({
     { id: null, label: 'Harita', Icon: MapIcon },
     ...(can(PERMISSIONS.DRAWINGS_VIEW) ? [{ id: 'drawings', label: 'Çizimlerim', Icon: ListIcon }] : []),
     ...(can(PERMISSIONS.LAYERS_VIEW) ? [{ id: 'layers', label: 'Katmanlar', Icon: LayersIcon }] : []),
+    ...(can(PERMISSIONS.INVENTORY_ANALYSIS)
+      ? [{ id: 'heatmap', label: 'Isı Haritası Analizi', Icon: AnalysisIcon }]
+      : []),
     // Right after "Çizimlerim"/"Katmanlar" because it is the same subject seen
     // from the other side: the drawings that are no longer on the map.
     // Çöp Kutusu'nun tek eylemi geri yüklemedir; listesi de silinmiş ÇİZİMLERDİR.

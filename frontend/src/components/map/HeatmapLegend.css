@@ -1,0 +1,77 @@
+.heatmap-legend {
+  position: absolute;
+  right: 1rem;
+  bottom: 2.25rem;
+  z-index: 28;
+  width: min(230px, calc(100% - 2rem));
+  padding: 0.7rem 0.8rem;
+  box-sizing: border-box;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface-soft);
+  box-shadow: var(--shadow-panel);
+  backdrop-filter: blur(var(--blur-glass));
+  -webkit-backdrop-filter: blur(var(--blur-glass));
+  color: var(--text-primary);
+  pointer-events: none;
+}
+
+.heatmap-legend strong {
+  display: block;
+  font-size: 12px;
+}
+
+.heatmap-legend-context {
+  display: block;
+  margin: 0.15rem 0 0.45rem;
+  color: var(--text-secondary);
+  font-size: 10px;
+}
+
+.heatmap-legend-gradient {
+  height: 10px;
+  border-radius: var(--radius-full);
+  background: linear-gradient(to right, rgba(44, 123, 182, 0) 0%, #2C7BB6 25%, #00A6CA 50%, #F9D057 75%, #D7191C 100%);
+}
+
+.heatmap-legend-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.25rem;
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.heatmap-legend-caption {
+  display: block;
+  margin-top: 0.35rem;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  text-align: center;
+}
+
+@media (max-width: 640px) {
+  .heatmap-legend {
+    right: 0.5rem;
+    bottom: calc(var(--ol-clearance) + 0.25rem);
+    width: min(210px, calc(100% - 1rem));
+  }
+
+  .heatmap-legend.is-panel-open {
+    top: 4.25rem;
+    bottom: auto;
+  }
+}
+
+@media (max-width: 360px) {
+  .heatmap-legend {
+    width: min(210px, calc(100% - 7rem));
+    padding: 0.55rem 0.65rem;
+  }
+
+  .heatmap-legend-context,
+  .heatmap-legend-caption {
+    display: none;
+  }
+}
