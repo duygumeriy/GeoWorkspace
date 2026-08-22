@@ -66,7 +66,7 @@ public class RoleManagementTests
         Assert.Equal(1, viewer.UserCount);
         Assert.Equal(6, viewer.PermissionCount);
 
-        Assert.Equal(30, roles.Single(r => r.Name == GisRoles.Administrator).PermissionCount);
+        Assert.Equal(31, roles.Single(r => r.Name == GisRoles.Administrator).PermissionCount);
         Assert.Equal(0, roles.Single(r => r.Name == GisRoles.GisAnalyst).UserCount);
     }
 
@@ -292,7 +292,7 @@ public class RoleManagementTests
         // Grant satırları FK cascade ile gider…
         Assert.Empty(await db.RolePermissions.Where(rp => rp.RoleId == created.Id).ToListAsync());
         // …ama yetki TANIMLARI sistem tanımlarıdır ve asla silinmez.
-        Assert.Equal(30, await db.Permissions.CountAsync());
+        Assert.Equal(31, await db.Permissions.CountAsync());
     }
 
     [Fact]
@@ -334,14 +334,14 @@ public class RoleManagementTests
     /* --- Yetki kataloğu -------------------------------------------------------------- */
 
     [Fact]
-    public async Task The_permission_catalog_returns_all_30_codes_in_a_deterministic_order()
+    public async Task The_permission_catalog_returns_all_31_codes_in_a_deterministic_order()
     {
         await using var scope = await CreateScopeAsync();
 
         var catalog = await Service(scope).GetPermissionCatalogAsync();
 
-        Assert.Equal(30, catalog.Count);
-        Assert.Equal(30, catalog.Select(p => p.Code).Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(31, catalog.Count);
+        Assert.Equal(31, catalog.Select(p => p.Code).Distinct(StringComparer.Ordinal).Count());
 
         var expectedOrder = catalog
             .OrderBy(p => p.Category, StringComparer.Ordinal)
@@ -362,7 +362,7 @@ public class RoleManagementTests
         var catalog = await Service(scope).GetPermissionCatalogAsync();
 
         // Yönetici mevcut durumu eksiksiz görebilmeli; gizlemek kafa karıştırırdı.
-        Assert.Equal(30, catalog.Count);
+        Assert.Equal(31, catalog.Count);
         Assert.False(catalog.Single(p => p.Code == PermissionCodes.DrawingsDelete).IsActive);
     }
 
@@ -378,7 +378,7 @@ public class RoleManagementTests
 
         Assert.True(result.IsSuccess);
         Assert.Equal(GisRoles.Viewer, result.Value!.Role.Name);
-        Assert.Equal(30, result.Value.Permissions.Count);
+        Assert.Equal(31, result.Value.Permissions.Count);
         Assert.Equal(6, result.Value.Permissions.Count(p => p.Assigned));
         Assert.True(result.Value.Permissions.Single(p => p.Code == PermissionCodes.MapView).Assigned);
         Assert.False(result.Value.Permissions.Single(p => p.Code == PermissionCodes.UsersDelete).Assigned);

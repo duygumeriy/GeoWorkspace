@@ -48,7 +48,7 @@ public class HeatmapEndpointTests
     }
 
     [Fact]
-    public async Task Authenticated_user_without_inventory_analysis_is_rejected_with_403()
+    public async Task Authenticated_user_without_heatmap_view_is_rejected_with_403()
     {
         await using var host = await CreateHostAsync();
         var viewer = await host.CreateUserAsync("heatmap-viewer", GisRoles.Viewer);
@@ -57,6 +57,56 @@ public class HeatmapEndpointTests
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         Assert.Equal(0, host.GeoServer.CallCount);
+    }
+
+    /// <summary>
+    /// Ayrıştırmanın kanıtı: envanter analizi ısı haritasını AÇMAZ.
+    /// </summary>
+    /// <remarks>
+    /// Uç önceden <c>inventory.analysis</c> arıyordu. Bu test, o kodun tek
+    /// başına taşınmasının artık hiçbir ısı haritası erişimi vermediğini
+    /// sabitler; aksi hâlde ayrıştırma yalnızca isimde kalırdı.
+    /// </remarks>
+    [Fact]
+    public async Task Inventory_analysis_alone_does_not_grant_heatmap()
+    {
+        await using var host = await CreateHostAsync();
+        const string role = "Envanter Analisti";
+        await host.CreateCustomRoleAsync(role, PermissionCodes.InventoryAnalysis);
+        var user = await host.CreateUserAsync("inventory-only", role);
+
+        var response = await host.Client(user).GetAsync(Url());
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(0, host.GeoServer.CallCount);
+    }
+
+    /// <summary>
+    /// Ters yön: ısı haritası yetkisi, başka HİÇBİR yetki olmadan da yeter.
+    /// </summary>
+    [Fact]
+    public async Task Heatmap_view_alone_is_enough()
+    {
+        await using var host = await CreateHostAsync();
+        const string role = "Yalnız Isı Haritası";
+        await host.CreateCustomRoleAsync(role, PermissionCodes.HeatmapView);
+        var user = await host.CreateUserAsync("heatmap-only", role);
+
+        Assert.Equal(HttpStatusCode.OK, (await host.Client(user).GetAsync(Url())).StatusCode);
+    }
+
+    /// <summary>
+    /// Çizim görüntüleme ile ısı haritası birbirini İMA ETMEZ; iki eksen ayrıdır.
+    /// </summary>
+    [Fact]
+    public async Task Drawings_view_alone_does_not_grant_heatmap()
+    {
+        await using var host = await CreateHostAsync();
+        const string role = "Yalnız Çizim Okuyucu";
+        await host.CreateCustomRoleAsync(role, PermissionCodes.DrawingsView, PermissionCodes.MapView);
+        var user = await host.CreateUserAsync("drawings-only", role);
+
+        Assert.Equal(HttpStatusCode.Forbidden, (await host.Client(user).GetAsync(Url())).StatusCode);
     }
 
     [Fact]
@@ -75,22 +125,22 @@ public class HeatmapEndpointTests
     }
 
     [Fact]
-    public async Task Custom_role_with_inventory_analysis_is_allowed()
+    public async Task Custom_role_with_heatmap_view_is_allowed()
     {
         await using var host = await CreateHostAsync();
         const string role = "Custom Heatmap Analyst";
-        await host.CreateCustomRoleAsync(role, PermissionCodes.InventoryAnalysis);
+        await host.CreateCustomRoleAsync(role, PermissionCodes.HeatmapView);
         var user = await host.CreateUserAsync("custom-heatmap", role);
 
         Assert.Equal(HttpStatusCode.OK, (await host.Client(user).GetAsync(Url())).StatusCode);
     }
 
     [Fact]
-    public async Task Direct_inventory_analysis_grant_is_allowed()
+    public async Task Direct_heatmap_view_grant_is_allowed()
     {
         await using var host = await CreateHostAsync();
         var user = await host.CreateUserAsync("direct-heatmap", GisRoles.Viewer);
-        await host.GrantDirectAsync(user, PermissionCodes.InventoryAnalysis);
+        await host.GrantDirectAsync(user, PermissionCodes.HeatmapView);
 
         Assert.Equal(HttpStatusCode.OK, (await host.Client(user).GetAsync(Url())).StatusCode);
     }

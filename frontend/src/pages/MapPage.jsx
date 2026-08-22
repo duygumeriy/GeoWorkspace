@@ -177,7 +177,7 @@ export default function MapPage() {
     visible: scopeLayerVisible,
   })
 
-  const canUseHeatmap = can(PERMISSIONS.INVENTORY_ANALYSIS)
+  const canUseHeatmap = can(PERMISSIONS.HEATMAP_VIEW)
   const heatmap = useHeatmapLayer(mapInstance, {
     enabled: heatmapEnabled,
     permitted: canUseHeatmap,

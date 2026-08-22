@@ -120,6 +120,13 @@ public static class PermissionCatalog
             "Envanter üzerinde kesişim ve dağılım analizlerini çalıştırabilir.",
             PermissionCategories.Inventory, 510),
 
+        /* --- Isı haritası ------------------------------------------------------ */
+
+        new(PermissionCodes.HeatmapView,
+            "Isı Haritası Görüntüleme",
+            "Isı haritası analizini açabilir ve kendi kayıtlarının yoğunluk görüntüsünü görebilir.",
+            PermissionCategories.Heatmap, 550),
+
         /* --- Katmanlar --------------------------------------------------------- */
 
         new(PermissionCodes.LayersView,

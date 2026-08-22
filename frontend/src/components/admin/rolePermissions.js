@@ -21,6 +21,7 @@ const CATEGORY_LABELS = {
   DrawingManagement: 'Çizim Yönetimi',
   Tools: 'Araçlar',
   Inventory: 'Envanter',
+  Heatmap: 'Isı Haritası',
   Layers: 'Katmanlar',
   Users: 'Kullanıcı Yönetimi',
   Roles: 'Rol Yönetimi',

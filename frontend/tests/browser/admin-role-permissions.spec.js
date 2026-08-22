@@ -241,15 +241,20 @@ test('opening a custom role loads its own matrix', async ({ page }) => {
   await expect(box(panel, 'Haritayı Görüntüleme')).not.toBeChecked()
 })
 
-test('a legacy role shows its permissions read-only', async ({ page }) => {
-  const { panel } = await open(page, 'Admin')
+/* Salt okunurluğun kaynağı sunucunun `canEditPermissions` bayrağıdır, rolün
+   ADI değil. Kurgu bu yüzden dondurulmuş KANONİK bir sistem rolünü açar:
+   legacy satırlar (`isLegacy: true`) yönetim ekranından çıkarıldığı için
+   listede hiç çizilmezler ve salt okunurluğu artık onlar temsil edemez. */
+test('a read-only role shows its permissions read-only', async ({ page }) => {
+  const { panel } = await open(page, 'GIS Analyst')
 
-  await expect(panel.getByText('Bu legacy rolün yetkileri geriye dönük uyumluluk nedeniyle değiştirilemez.')).toBeVisible()
-  await expect(panel.getByText(`4 / ${ACTIVE_TOTAL} yetki atanmış`)).toBeVisible()
+  await expect(panel.getByText('Bu rolün yetkileri sistem tarafından dondurulmuştur ve değiştirilemez.')).toBeVisible()
+  // "seçili" değil "atanmış": sayaç da salt okunur dili konuşur.
+  await expect(panel.getByText(`1 / ${ACTIVE_TOTAL} yetki atanmış`)).toBeVisible()
 
   // Atanmışlık görünür, ama hiçbir kutu değiştirilebilir değildir.
-  await expect(box(panel, 'Haritayı Görüntüleme')).toBeChecked()
-  await expect(box(panel, 'Haritayı Görüntüleme')).toBeDisabled()
+  await expect(box(panel, 'Envanteri Görüntüleme')).toBeChecked()
+  await expect(box(panel, 'Envanteri Görüntüleme')).toBeDisabled()
   await expect(box(panel, 'Envanter Analizi')).not.toBeChecked()
   await expect(box(panel, 'Envanter Analizi')).toBeDisabled()
 
@@ -274,6 +279,38 @@ test('permissions are grouped by the categories the server sent', async ({ page 
     'Yetki Yönetimi',
     'Rol Yönetimi',
   ])
+})
+
+/* Kataloğa YENİ eklenen bir yetki, arayüzde hiçbir özel kod gerektirmez.
+   Isı haritası bunun canlı örneğidir: sunucu satırı gönderdiği anda kendi
+   kategorisiyle listelenir, işaretlenebilir ve "tam istenen küme" gövdesinin
+   parçası olarak kaydedilir. Isı haritasına özel ikinci bir atama ekranı
+   olsaydı bu test yazılamazdı. */
+test('a newly catalogued permission is assignable through the generic editor', async ({ page }) => {
+  const HEATMAP = permission(35, 'heatmap.view', 'Isı Haritası Görüntüleme', 'Heatmap', 550)
+  let assigned = []
+  const view = () => ({
+    role: { ...CUSTOM_EMPTY, permissionCount: assigned.length },
+    permissions: [...CATALOG, HEATMAP].map((p) => ({ ...p, assigned: assigned.includes(p.code) })),
+  })
+
+  const { puts, panel } = await open(page, 'Saha Ekibi', {
+    onGet: (route) => route.fulfill(json(view())),
+    onPut: (route, { body }) => {
+      assigned = body.permissionCodes ?? []
+      route.fulfill(json(view()))
+    },
+  })
+
+  await expect(panel.getByRole('group', { name: 'Isı Haritası' })).toBeVisible()
+  await expect(box(panel, 'Isı Haritası Görüntüleme')).not.toBeChecked()
+
+  await box(panel, 'Isı Haritası Görüntüleme').check()
+  await saveButton(panel).click()
+
+  expect(puts).toHaveLength(1)
+  expect(puts[0].body.permissionCodes).toEqual(['heatmap.view'])
+  await expect(box(panel, 'Isı Haritası Görüntüleme')).toBeChecked()
 })
 
 test('the server sort order inside a category is preserved', async ({ page }) => {
@@ -410,7 +447,7 @@ test('editability follows the capability flag, not the role name', async ({ page
 })
 
 test('a read-only role never sends a permission update', async ({ page }) => {
-  const { puts, panel } = await open(page, 'Admin')
+  const { puts, panel } = await open(page, 'GIS Analyst')
 
   // Kilitli kutuya tıklamak hiçbir şey yapmaz — ne durumu ne de ağı değiştirir.
   await panel.locator('.admin-permission-row').filter({ hasText: 'Envanter Analizi' }).click({ force: true })

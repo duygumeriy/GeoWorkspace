@@ -431,7 +431,8 @@ test('the heatmap stays an independent, separately permissioned raster', async (
   })
 
   const { presentationRequests } = await prepareMap(page, {
-    permissions: [...VIEWER_PERMISSIONS, 'inventory.analysis'],
+    /* Isı haritası kendi kodunu ister; `inventory.analysis` onu AÇMAZ. */
+    permissions: [...VIEWER_PERMISSIONS, 'heatmap.view'],
   })
   await waitForKinds(page, presentationRequests, PRESENTATION_TYPES)
 

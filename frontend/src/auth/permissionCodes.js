@@ -39,6 +39,11 @@ export const PERMISSIONS = Object.freeze({
   INVENTORY_VIEW: 'inventory.view',
   INVENTORY_ANALYSIS: 'inventory.analysis',
 
+  /* --- Isı haritası -------------------------------------------------------- */
+  /* Envanter analizinden AYRI bir koddur: analiz çalıştırabilen birinin ısı
+     haritasını da görebildiği varsayımı bilinçli olarak yoktur. */
+  HEATMAP_VIEW: 'heatmap.view',
+
   /* --- Katmanlar ---------------------------------------------------------- */
   LAYERS_VIEW: 'layers.view',
   LAYERS_MANAGE: 'layers.manage',

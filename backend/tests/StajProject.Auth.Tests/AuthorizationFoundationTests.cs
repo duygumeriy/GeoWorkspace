@@ -47,6 +47,8 @@ public class AuthorizationFoundationTests
             "inventory.view",
             "inventory.analysis",
 
+            "heatmap.view",
+
             "layers.view",
             "layers.manage",
 
@@ -73,10 +75,34 @@ public class AuthorizationFoundationTests
         // Beklenen liste kasıtlı olarak literal yazılır: katalog sabitlerinden
         // türetilseydi, kodun kendisi yanlışlıkla değiştiğinde test de onunla
         // birlikte kayar ve hiçbir şey doğrulamamış olurdu.
-        Assert.Equal(30, expected.Length);
-        Assert.Equal(30, PermissionCatalog.All.Count);
+        Assert.Equal(31, expected.Length);
+        Assert.Equal(31, PermissionCatalog.All.Count);
         Assert.Equal(expected.OrderBy(c => c, StringComparer.Ordinal),
             PermissionCatalog.AllCodes.OrderBy(c => c, StringComparer.Ordinal));
+    }
+
+    /// <summary>
+    /// Isı haritası kendi katalog satırıdır ve envanter analizinden AYRIDIR.
+    /// </summary>
+    /// <remarks>
+    /// Tek bir kanonik kod olduğunu da sabitler: takma ad ya da eşdeğer ikinci
+    /// bir kod eklenirse bu test düşer.
+    /// </remarks>
+    [Fact]
+    public void Heatmap_is_a_capability_of_its_own()
+    {
+        var heatmap = Assert.Single(
+            PermissionCatalog.All,
+            p => p.Code == PermissionCodes.HeatmapView);
+
+        Assert.Equal("heatmap.view", heatmap.Code);
+        Assert.Equal("Isı Haritası Görüntüleme", heatmap.Name);
+        Assert.NotEqual(PermissionCodes.InventoryAnalysis, heatmap.Code);
+
+        // Isı haritasına atıfta bulunan başka bir kod yoktur.
+        Assert.Single(
+            PermissionCatalog.AllCodes,
+            code => code.Contains("heatmap", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -107,7 +133,7 @@ public class AuthorizationFoundationTests
 
         var stored = await Db(scope).Permissions.ToListAsync();
 
-        Assert.Equal(30, stored.Count);
+        Assert.Equal(31, stored.Count);
         Assert.Equal(
             PermissionCatalog.AllCodes.OrderBy(c => c, StringComparer.Ordinal),
             stored.Select(p => p.Code).OrderBy(c => c, StringComparer.Ordinal));
@@ -212,6 +238,7 @@ public class AuthorizationFoundationTests
         // Varsayılan olarak verilmeyenler açıkça doğrulanır: bir "hepsini ver"
         // regresyonu, yalnızca beklenenleri saymakla yakalanmayabilir.
         Assert.DoesNotContain("inventory.analysis", codes);
+        Assert.DoesNotContain("heatmap.view", codes);
         Assert.DoesNotContain("layers.manage", codes);
         Assert.DoesNotContain(codes, c => c.StartsWith("users.", StringComparison.Ordinal));
         Assert.DoesNotContain(codes, c => c.StartsWith("roles.", StringComparison.Ordinal));
@@ -234,6 +261,7 @@ public class AuthorizationFoundationTests
                 "selection.use",
                 "inventory.view",
                 "inventory.analysis",
+                "heatmap.view",
                 "layers.view"),
             codes);
 
@@ -271,6 +299,7 @@ public class AuthorizationFoundationTests
 
                 "inventory.view",
                 "inventory.analysis",
+                "heatmap.view",
 
                 "layers.view",
                 "layers.manage"),
