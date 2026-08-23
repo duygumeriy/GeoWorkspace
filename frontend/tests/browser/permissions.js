@@ -10,7 +10,7 @@
  * yetki kodu değiştiğinde 14 ayrı yerde düzeltme demek olurdu.
  */
 
-/** Kanonik 31 kodun tamamı — backend'in PermissionCodes sabitleriyle aynı. */
+/** Kanonik 35 kodun tamamı — backend'in PermissionCodes sabitleriyle aynı. */
 export const ALL_PERMISSIONS = Object.freeze([
   'map.view',
   'drawings.point.create',
@@ -43,6 +43,10 @@ export const ALL_PERMISSIONS = Object.freeze([
   'geography.view',
   'geography.manage',
   'activity.view',
+  'poi.view',
+  'poi.create',
+  'poi.manage',
+  'poi.categories.manage',
 ])
 
 /** Yönetim panelini açan üç görüntüleme yetkisi. */

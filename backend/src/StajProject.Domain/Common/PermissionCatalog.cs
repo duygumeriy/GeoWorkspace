@@ -217,7 +217,34 @@ public static class PermissionCatalog
         new(PermissionCodes.ActivityView,
             "Aktivite Geçmişini Görüntüleme",
             "Sistemde yapılan yönetim ve çizim işlemlerinin kaydını görüntüleyebilir.",
-            PermissionCategories.Audit, 1100)
+            PermissionCategories.Audit, 1100),
+
+        /* --- POI ---------------------------------------------------------------
+
+           Sıra numaraları katalogdaki mevcut en büyük değerin (1100) ÜSTÜNDEN
+           devam eder; hiçbir mevcut yetki yeniden numaralanmaz. Yeniden
+           numaralamak, yalnızca gösterim sırası için tüm katalog satırlarını
+           güncellemek demek olurdu. */
+
+        new(PermissionCodes.PoiView,
+            "POI Görüntüleme",
+            "Haritadaki aktif POI'leri görüntüleyebilir ve bilgi panelinde açabilir.",
+            PermissionCategories.Poi, 1200),
+
+        new(PermissionCodes.PoiCreate,
+            "POI Ekleme",
+            "Harita üzerinde yeni POI oluşturabilir.",
+            PermissionCategories.Poi, 1210),
+
+        new(PermissionCodes.PoiManage,
+            "POI Yönetimi",
+            "Yönetim panelinde tüm POI kayıtlarını ve onları oluşturan kullanıcıları listeleyebilir.",
+            PermissionCategories.Poi, 1220),
+
+        new(PermissionCodes.PoiCategoriesManage,
+            "POI Kategori Yönetimi",
+            "POI kategori hiyerarşisini oluşturabilir ve düzenleyebilir.",
+            PermissionCategories.Poi, 1230)
     ];
 
     /// <summary>Katalogdaki tüm kodlar.</summary>

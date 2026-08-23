@@ -94,6 +94,7 @@ test('the shell renders one sidebar with the four admin destinations', async ({ 
   await expect(nav(page).getByRole('link', { name: 'Roller' })).toBeVisible()
   await expect(nav(page).getByRole('link', { name: 'Yetkiler' })).toBeVisible()
   await expect(nav(page).getByRole('link', { name: 'Aktivite Geçmişi' })).toBeVisible()
+  await expect(nav(page).getByRole('link', { name: 'POI Yönetimi' })).toBeVisible()
 
   // Exactly one navigation: a page growing its own copy would show two.
   await expect(page.getByRole('navigation', { name: 'Yönetim menüsü' })).toHaveCount(1)
@@ -102,9 +103,9 @@ test('the shell renders one sidebar with the four admin destinations', async ({ 
      kullanıcının ya da rolün alanı, o kaydın detayından yönetilir. Ayrı bir
      menü girişi, "hangi hedefin alanı" sorusunu cevapsız bırakan bir kapı
      olurdu. */
-  // Dört bölüm + haritaya dönüş bağlantısı. Sayı, yeni bir girişin fark
+  // Beş bölüm + haritaya dönüş bağlantısı. Sayı, yeni bir girişin fark
   // edilmeden eklenmesine karşı bir bekçidir.
-  await expect(nav(page).getByRole('link')).toHaveCount(5)
+  await expect(nav(page).getByRole('link')).toHaveCount(6)
   await expect(nav(page).getByText(/coğraf/i)).toHaveCount(0)
 })
 

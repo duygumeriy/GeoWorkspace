@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom'
 import { usePermissions } from '../../auth/permissionStore.js'
-import { PERMISSIONS } from '../../auth/permissionCodes.js'
-import { ClockIcon, KeyIcon, MapIcon, ShieldIcon, UserIcon } from '../ui/icons/index.js'
+import { PERMISSIONS, POI_SECTION_PERMISSIONS } from '../../auth/permissionCodes.js'
+import { ClockIcon, KeyIcon, MapIcon, PinIcon, ShieldIcon, UserIcon } from '../ui/icons/index.js'
 import './AdminSidebar.css'
 
 /* Tek gezinme tanımı. Sayfalar kendi menülerini kurmaz; bir uç eklemek burada
@@ -11,10 +11,15 @@ import './AdminSidebar.css'
    ile rota koruyucusu aynı cevabı verir ve görünen bir bağlantı yetkisizlik
    ekranına çıkmaz. */
 const NAV_ITEMS = [
-  { to: '/admin/users', label: 'Kullanıcılar', Icon: UserIcon, permission: PERMISSIONS.USERS_VIEW },
-  { to: '/admin/roles', label: 'Roller', Icon: ShieldIcon, permission: PERMISSIONS.ROLES_VIEW },
-  { to: '/admin/permissions', label: 'Yetkiler', Icon: KeyIcon, permission: PERMISSIONS.PERMISSIONS_VIEW },
-  { to: '/admin/activity', label: 'Aktivite Geçmişi', Icon: ClockIcon, permission: PERMISSIONS.ACTIVITY_VIEW },
+  { to: '/admin/users', label: 'Kullanıcılar', Icon: UserIcon, anyOf: [PERMISSIONS.USERS_VIEW] },
+  { to: '/admin/roles', label: 'Roller', Icon: ShieldIcon, anyOf: [PERMISSIONS.ROLES_VIEW] },
+  { to: '/admin/permissions', label: 'Yetkiler', Icon: KeyIcon, anyOf: [PERMISSIONS.PERMISSIONS_VIEW] },
+  { to: '/admin/activity', label: 'Aktivite Geçmişi', Icon: ClockIcon, anyOf: [PERMISSIONS.ACTIVITY_VIEW] },
+  /* POI bölümü İKİ yetkiden herhangi biriyle açılır: biri POI envanterini,
+     diğeri kategori taksonomisini yönetir ve bir kişide yalnızca biri
+     bulunabilir. Tek bir koda bağlansaydı, yalnızca kategori yetkisi olan
+     yönetici bölüme hiç giremezdi. */
+  { to: '/admin/poi', label: 'POI Yönetimi', Icon: PinIcon, anyOf: POI_SECTION_PERMISSIONS },
 ]
 
 /**
@@ -34,8 +39,8 @@ const NAV_ITEMS = [
  * kolonu ve mobil çekmece AYNI bileşen olduğu için kural da tektir.
  */
 export default function AdminSidebar({ onNavigate }) {
-  const { can } = usePermissions()
-  const items = NAV_ITEMS.filter((item) => can(item.permission))
+  const { canAny } = usePermissions()
+  const items = NAV_ITEMS.filter((item) => canAny(item.anyOf))
 
   return (
     <nav className="admin-nav" aria-label="Yönetim menüsü">

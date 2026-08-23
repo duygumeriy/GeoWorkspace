@@ -60,7 +60,7 @@ export default function PermissionRoute({ anyOf, children }) {
  * kenar çubuğunun sırasıdır ve tek yerden (ADMIN_SECTIONS) okunur.
  */
 export function AdminIndexRedirect() {
-  const { can, permissionsLoaded, permissionsError } = usePermissions()
+  const { canAny, permissionsLoaded, permissionsError } = usePermissions()
 
   if (permissionsError) return <AccessDeniedPage />
 
@@ -73,7 +73,7 @@ export function AdminIndexRedirect() {
     )
   }
 
-  const first = ADMIN_SECTIONS.find((section) => can(section.permission))
+  const first = ADMIN_SECTIONS.find((section) => canAny(section.anyOf))
 
   return first ? <Navigate to={first.path} replace /> : <AccessDeniedPage />
 }

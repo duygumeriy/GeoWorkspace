@@ -1,6 +1,6 @@
-import WKT from 'ol/format/WKT'
-import VectorLayer from 'ol/layer/Vector'
-import VectorSource from 'ol/source/Vector'
+import WKT from 'ol/format/WKT.js'
+import VectorLayer from 'ol/layer/Vector.js'
+import VectorSource from 'ol/source/Vector.js'
 import { createLayerStyleFunction } from './featureStyle.js'
 import { defaultStyleFor, normalizeStyle } from './drawingTypes.js'
 

@@ -29,6 +29,16 @@ public class AppDbContext : IdentityDbContext<User, IdentityRole<int>, int>
 
     public DbSet<PolygonFeature> Polygons => Set<PolygonFeature>();
 
+    /* --- POI ----------------------------------------------------------------
+       POI, çizim tablolarından AYRI bir envanterdir: stil taşımaz, çöp kutusu
+       akışına girmez ve sahibine göre gizlenmez. Aynı context'te durur çünkü
+       kategori, sahiplik ve coğrafi doğrulama aynı transaction sınırını
+       paylaşmalıdır. */
+
+    public DbSet<Poi> Pois => Set<Poi>();
+
+    public DbSet<PoiCategory> PoiCategories => Set<PoiCategory>();
+
     /* --- Dinamik yetkilendirme ---------------------------------------------
        Yetki kataloğu ve grant tabloları. Identity'nin rol/kullanıcı tabloları
        ile aynı context'te durur: bir rolün yetkilendirilmesi ile o rolün

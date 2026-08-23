@@ -33,8 +33,13 @@ public class EffectivePermissionServiceTests
 
         var codes = await Service(scope).GetEffectivePermissionCodesAsync(user.Id);
 
-        // GIS Editor matristeki 14 yetkiye sahiptir.
-        Assert.Equal(14, codes.Count);
+        /* Beklenen küme, rolün YÜRÜRLÜKTEKİ başlangıç matrisinden türetilir.
+           Sabit bir sayı, matrise her yetki eklendiğinde — kural değişmemiş
+           olsa bile — bu testi düşürürdü; ölçülen şey ise "rolün yetkileri
+           etkin kümeye eksiksiz geçiyor mu"dur. */
+        Assert.Equal(
+            RolePermissionDefaults.For(GisRoles.GisEditor).OrderBy(c => c, StringComparer.Ordinal),
+            codes.OrderBy(c => c, StringComparer.Ordinal));
         Assert.Contains(PermissionCodes.DrawingsPointCreate, codes);
         Assert.Contains(PermissionCodes.MapView, codes);
         Assert.DoesNotContain(PermissionCodes.UsersDelete, codes);
@@ -53,8 +58,14 @@ public class EffectivePermissionServiceTests
 
         var codes = await Service(scope).GetEffectivePermissionCodesAsync(user.Id);
 
-        // Viewer(6) ∪ GIS Analyst(8) = 8; ortak altı yetki tekrarlanmaz.
-        Assert.Equal(8, codes.Count);
+        /* Ölçülen şey BİRLEŞİM semantiğidir: sonuç, iki rolün matrislerinin
+           birleşimine eşit olmalı ve ortak yetkiler tekrarlanmamalıdır. */
+        var expected = RolePermissionDefaults.For(GisRoles.Viewer)
+            .Union(RolePermissionDefaults.For(GisRoles.GisAnalyst), StringComparer.Ordinal)
+            .OrderBy(c => c, StringComparer.Ordinal);
+
+        Assert.Equal(expected, codes.OrderBy(c => c, StringComparer.Ordinal));
+        Assert.Equal(codes.Count, codes.Distinct(StringComparer.Ordinal).Count());
         Assert.Contains(PermissionCodes.InventoryAnalysis, codes);
     }
 
@@ -83,11 +94,16 @@ public class EffectivePermissionServiceTests
 
         var codes = await Service(scope).GetEffectivePermissionCodesAsync(user.Id);
 
-        // GIS Editor'ün 14 yetkisi + rolde olmayan 1 doğrudan yetki = 15.
-        // Doğrudan yetki rolü değiştirmeden erişimi genişletir.
-        Assert.Equal(15, codes.Count);
+        /* Doğrudan yetki rolü değiştirmeden erişimi TAM OLARAK bir kod kadar
+           genişletir: sonuç, rolün matrisi ∪ {inventory.analysis}. */
+        var roleCodes = RolePermissionDefaults.For(GisRoles.GisEditor);
+
+        Assert.DoesNotContain(PermissionCodes.InventoryAnalysis, roleCodes);
+        Assert.Equal(
+            roleCodes.Append(PermissionCodes.InventoryAnalysis).OrderBy(c => c, StringComparer.Ordinal),
+            codes.OrderBy(c => c, StringComparer.Ordinal));
+        Assert.Equal(roleCodes.Count + 1, codes.Count);
         Assert.Contains(PermissionCodes.DrawingsPointCreate, codes);
-        Assert.Contains(PermissionCodes.InventoryAnalysis, codes);
     }
 
     [Fact]
@@ -103,8 +119,12 @@ public class EffectivePermissionServiceTests
 
         var codes = await Service(scope).GetEffectivePermissionCodesAsync(user.Id);
 
+        /* Asıl iddia TEKRARSIZLIKTIR: aynı kod hem rolden hem doğrudan geldiği
+           hâlde küme büyümez ve rolün matrisine eşit kalır. */
         Assert.Single(codes, code => code == PermissionCodes.MapView);
-        Assert.Equal(6, codes.Count);
+        Assert.Equal(
+            RolePermissionDefaults.For(GisRoles.Viewer).OrderBy(c => c, StringComparer.Ordinal),
+            codes.OrderBy(c => c, StringComparer.Ordinal));
         Assert.Equal(codes.Count, codes.Distinct(StringComparer.Ordinal).Count());
     }
 
@@ -125,7 +145,14 @@ public class EffectivePermissionServiceTests
         Assert.DoesNotContain(PermissionCodes.DrawingsDelete,
             await service.GetEffectivePermissionCodesAsync(user.Id));
         Assert.False(await service.HasPermissionAsync(user.Id, PermissionCodes.DrawingsDelete));
-        Assert.Equal(13, (await service.GetEffectivePermissionCodesAsync(user.Id)).Count);
+
+        /* Elenen TEK yetki odur: küme, rolün matrisinden yalnızca o kod
+           çıkarılmış hâline eşittir. */
+        Assert.Equal(
+            RolePermissionDefaults.For(GisRoles.GisEditor)
+                .Where(code => code != PermissionCodes.DrawingsDelete)
+                .OrderBy(c => c, StringComparer.Ordinal),
+            (await service.GetEffectivePermissionCodesAsync(user.Id)).OrderBy(c => c, StringComparer.Ordinal));
     }
 
     [Fact]
@@ -207,14 +234,27 @@ public class EffectivePermissionServiceTests
         var user = await CreateUserAsync(scope, "admin-rows", GisRoles.Administrator);
 
         var service = Service(scope);
-        Assert.Equal(31, (await service.GetEffectivePermissionCodesAsync(user.Id)).Count);
+        // "Yönetici katalogdaki her şeye sahiptir" — sayı katalogdan okunur.
+        Assert.Equal(PermissionCatalog.All.Count, (await service.GetEffectivePermissionCodesAsync(user.Id)).Count);
 
         // Tek bir grant satırı kaldırılınca yetki GERÇEKTEN kaybolur. Kodda bir
         // süper kullanıcı kestirmesi olsaydı bu assert geçmezdi.
         await RevokeRoleGrantAsync(scope, GisRoles.Administrator, PermissionCodes.UsersDelete);
 
         Assert.False(await service.HasPermissionAsync(user.Id, PermissionCodes.UsersDelete));
-        Assert.Equal(30, (await service.GetEffectivePermissionCodesAsync(user.Id)).Count);
+
+        /* Kalan küme, katalogdan YALNIZCA o kod çıkarılmış hâline eşittir.
+           Sadece sayıya bakmak "bir yetki eksildi" derdi ama HANGİSİNİN
+           eksildiğini kanıtlamazdı; süper kullanıcı kestirmesi olmadığının
+           kanıtı, kaldırılan satırın tam da kaybolan yetki olmasıdır. */
+        Assert.Equal(
+            PermissionCatalog.AllCodes
+                .Where(code => code != PermissionCodes.UsersDelete)
+                .OrderBy(code => code, StringComparer.Ordinal),
+            (await service.GetEffectivePermissionCodesAsync(user.Id)).OrderBy(code => code, StringComparer.Ordinal));
+
+        // Diğer yönetim yetkileri yerinde: kaybolan tek şey kaldırılan satırdır.
+        Assert.True(await service.HasPermissionAsync(user.Id, PermissionCodes.UsersView));
     }
 
     [Fact]

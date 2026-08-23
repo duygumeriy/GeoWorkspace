@@ -62,11 +62,17 @@ public class RoleManagementTests
 
         var roles = await Service(scope).GetRolesAsync();
 
+        /* Sayımlar SUNUCUNUN hesabıdır; beklenen değerler de aynı kanonik
+           kaynaklardan türetilir. Elle yazılmış bir sayı, matris ya da katalog
+           büyüdüğünde sayım kuralı hiç değişmemiş olsa bile testi düşürürdü. */
         var viewer = roles.Single(r => r.Name == GisRoles.Viewer);
         Assert.Equal(1, viewer.UserCount);
-        Assert.Equal(6, viewer.PermissionCount);
+        Assert.Equal(RolePermissionDefaults.For(GisRoles.Viewer).Count, viewer.PermissionCount);
 
-        Assert.Equal(31, roles.Single(r => r.Name == GisRoles.Administrator).PermissionCount);
+        // Yönetici katalogdaki her şeye sahiptir.
+        Assert.Equal(
+            PermissionCatalog.All.Count,
+            roles.Single(r => r.Name == GisRoles.Administrator).PermissionCount);
         Assert.Equal(0, roles.Single(r => r.Name == GisRoles.GisAnalyst).UserCount);
     }
 
@@ -292,7 +298,7 @@ public class RoleManagementTests
         // Grant satırları FK cascade ile gider…
         Assert.Empty(await db.RolePermissions.Where(rp => rp.RoleId == created.Id).ToListAsync());
         // …ama yetki TANIMLARI sistem tanımlarıdır ve asla silinmez.
-        Assert.Equal(31, await db.Permissions.CountAsync());
+        Assert.Equal(PermissionCatalog.All.Count, await db.Permissions.CountAsync());
     }
 
     [Fact]
@@ -334,14 +340,15 @@ public class RoleManagementTests
     /* --- Yetki kataloğu -------------------------------------------------------------- */
 
     [Fact]
-    public async Task The_permission_catalog_returns_all_31_codes_in_a_deterministic_order()
+    public async Task The_permission_catalog_returns_every_code_in_a_deterministic_order()
     {
         await using var scope = await CreateScopeAsync();
 
         var catalog = await Service(scope).GetPermissionCatalogAsync();
 
-        Assert.Equal(31, catalog.Count);
-        Assert.Equal(31, catalog.Select(p => p.Code).Distinct(StringComparer.Ordinal).Count());
+        // "Katalogdaki her şey" — sayı katalogdan okunur, elle sabitlenmez.
+        Assert.Equal(PermissionCatalog.All.Count, catalog.Count);
+        Assert.Equal(catalog.Count, catalog.Select(p => p.Code).Distinct(StringComparer.Ordinal).Count());
 
         var expectedOrder = catalog
             .OrderBy(p => p.Category, StringComparer.Ordinal)
@@ -362,7 +369,8 @@ public class RoleManagementTests
         var catalog = await Service(scope).GetPermissionCatalogAsync();
 
         // Yönetici mevcut durumu eksiksiz görebilmeli; gizlemek kafa karıştırırdı.
-        Assert.Equal(31, catalog.Count);
+        // Pasifleştirme satırı LİSTEDEN düşürmez: sayı hâlâ kataloğun tamamıdır.
+        Assert.Equal(PermissionCatalog.All.Count, catalog.Count);
         Assert.False(catalog.Single(p => p.Code == PermissionCodes.DrawingsDelete).IsActive);
     }
 
@@ -378,8 +386,12 @@ public class RoleManagementTests
 
         Assert.True(result.IsSuccess);
         Assert.Equal(GisRoles.Viewer, result.Value!.Role.Name);
-        Assert.Equal(31, result.Value.Permissions.Count);
-        Assert.Equal(6, result.Value.Permissions.Count(p => p.Assigned));
+        // Ekran TÜM kataloğu gösterir; işaretli olanlar rolün matrisidir.
+        Assert.Equal(PermissionCatalog.All.Count, result.Value.Permissions.Count);
+        Assert.Equal(
+            RolePermissionDefaults.For(GisRoles.Viewer).OrderBy(c => c, StringComparer.Ordinal),
+            result.Value.Permissions.Where(p => p.Assigned).Select(p => p.Code)
+                .OrderBy(c => c, StringComparer.Ordinal));
         Assert.True(result.Value.Permissions.Single(p => p.Code == PermissionCodes.MapView).Assigned);
         Assert.False(result.Value.Permissions.Single(p => p.Code == PermissionCodes.UsersDelete).Assigned);
     }
@@ -485,6 +497,11 @@ public class RoleManagementTests
         var service = Service(scope);
         var role = await FindRoleAsync(scope, GisRoles.Viewer);
 
+        /* Ölçülen şey DEĞİŞMEMİŞLİKTİR: satır sayısı denemeden önce okunur ve
+           sonrasında birebir aynı olmalıdır. Sabit bir sayı, rolün matrisi
+           büyüdüğünde kural hiç değişmemiş olsa bile düşerdi. */
+        var before = await Db(scope).RolePermissions.CountAsync(rp => rp.RoleId == role.Id);
+
         var result = await service.ReplaceRolePermissionsAsync(
             await AuthorityAsync(scope),
             role.Id,
@@ -496,7 +513,7 @@ public class RoleManagementTests
         /* Geçersiz kod sessizce atılmaz ve isteğin geçerli kısmı da
            uygulanmaz: yarı uygulanmış bir yetki kümesi, yöneticinin gördüğü
            ekranla veritabanını ayrıştırırdı. */
-        Assert.Equal(6, await Db(scope).RolePermissions.CountAsync(rp => rp.RoleId == role.Id));
+        Assert.Equal(before, await Db(scope).RolePermissions.CountAsync(rp => rp.RoleId == role.Id));
     }
 
     [Fact]
@@ -629,10 +646,42 @@ public class RoleManagementTests
 
         await SeedAsync(scope);
 
+        var assigned = (await Service(scope).GetRolePermissionsAsync(role.Id)).Value!
+            .Permissions.Where(p => p.Assigned).Select(p => p.Code).ToArray();
+
         /* Seeder başlangıç değeri verir, kural dayatmaz: yöneticinin bilinçli
-           düzenlemesi yeniden başlatmada geri alınmamalıdır. */
-        var permissions = await Service(scope).GetRolePermissionsAsync(role.Id);
-        Assert.Equal(1, permissions.Value!.Permissions.Count(p => p.Assigned));
+           düzenlemesi yeniden başlatmada geri alınmamalıdır. Korunan kod
+           yerinde durur … */
+        Assert.Contains(PermissionCodes.MapView, assigned);
+
+        /* … ve kaldırılan ESKİ yetkilerin hiçbiri geri gelmez. Ölçülen şey
+           budur; sabit bir toplam değil. */
+        foreach (var removed in RolePermissionDefaults.For(GisRoles.GisEditor)
+                     .Where(code => code != PermissionCodes.MapView
+                         && !RolePermissionExpansions.AllCodes.Contains(code, StringComparer.Ordinal)))
+        {
+            Assert.DoesNotContain(removed, assigned);
+        }
+
+        /* Geri gelebilecek TEK küme, katalog GENİŞLEMESİ olarak açıkça
+           dağıtılan kodlardır. Bu, mekanizmanın belgelenmiş ve bilinçli
+           sınırıdır (bkz. RolePermissionExpansions): liste hangi genişlemenin
+           uygulandığını saklamaz, dolayısıyla bir genişleme kodu bilinçli
+           olarak geri alınırsa sonraki açılışta yeniden eklenir. Genişleme
+           kaydı kalıcı bir kural değil, bir kerelik dağıtım niyetidir ve
+           kurulumlara ulaştıktan sonra listeden çıkarılır. */
+        Assert.All(
+            assigned.Where(code => code != PermissionCodes.MapView),
+            code => Assert.Contains(code, RolePermissionExpansions.AllCodes));
+
+        // Ve yeniden tohumlama idempotenttir: ikinci tur hiçbir şey eklemez.
+        await SeedAsync(scope);
+
+        Assert.Equal(
+            assigned.OrderBy(c => c, StringComparer.Ordinal),
+            (await Service(scope).GetRolePermissionsAsync(role.Id)).Value!
+                .Permissions.Where(p => p.Assigned).Select(p => p.Code)
+                .OrderBy(c => c, StringComparer.Ordinal));
     }
 
     [Fact]

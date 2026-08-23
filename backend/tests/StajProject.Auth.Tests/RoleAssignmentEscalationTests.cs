@@ -41,6 +41,10 @@ public class RoleAssignmentEscalationTests
         var actor = await CreateActorAsync(scope, "helpdesk", PermissionCodes.UsersUpdate);
         var victim = await CreateUserAsync(scope, "victim", GisRoles.Viewer);
 
+        /* Ölçülen şey DEĞİŞMEMİŞLİKTİR, belli bir sayı değil: kurbanın kümesi
+           denemeden önce okunur ve sonrasında birebir aynı olmalıdır. */
+        var before = await Effective(scope).GetEffectivePermissionCodesAsync(victim.Id);
+
         var result = await Management(scope).ChangeRoleAsync(
             victim.Id, new UpdateUserRoleRequest { Role = GisRoles.Administrator }, actor.Id);
 
@@ -49,7 +53,9 @@ public class RoleAssignmentEscalationTests
 
         // Kurbanın rolü ve yetkileri hiç değişmedi — kısmi uygulama yok.
         Assert.Equal([GisRoles.Viewer], await RolesOfAsync(scope, victim));
-        Assert.Equal(6, (await Effective(scope).GetEffectivePermissionCodesAsync(victim.Id)).Count);
+        Assert.Equal(
+            before.OrderBy(c => c, StringComparer.Ordinal),
+            (await Effective(scope).GetEffectivePermissionCodesAsync(victim.Id)).OrderBy(c => c, StringComparer.Ordinal));
     }
 
     [Fact]
@@ -136,17 +142,14 @@ public class RoleAssignmentEscalationTests
     {
         await using var scope = await CreateScopeAsync();
 
-        // Viewer'ın altı yetkisi + users.update taşıyan özel rol.
+        /* Aktör, hedef rolün YÜRÜRLÜKTEKİ yetkilerinin tamamını taşır — liste
+           elle sürdürülmez, matristen türetilir. Sabit bir liste, matrise bir
+           yetki eklendiği anda testin adını yalanlar: fixture artık "rolün
+           yetkilerine tamamen sahip" olmazdı. */
         var actor = await CreateActorAsync(
             scope,
             "viewer-manager",
-            PermissionCodes.UsersUpdate,
-            PermissionCodes.MapView,
-            PermissionCodes.DrawingsView,
-            PermissionCodes.MeasurementUse,
-            PermissionCodes.SelectionUse,
-            PermissionCodes.InventoryView,
-            PermissionCodes.LayersView);
+            [PermissionCodes.UsersUpdate, .. RolePermissionDefaults.For(GisRoles.Viewer)]);
 
         var target = await CreatePendingUserAsync(scope, "new-viewer");
 
@@ -227,23 +230,24 @@ public class RoleAssignmentEscalationTests
     {
         await using var scope = await CreateScopeAsync();
 
-        // GIS Editor'ün 14 yetkisinden biri hariç hepsi + users.update.
+        /* Hedef rolün yetkilerinden TAM OLARAK biri eksik. Eksik olan kod
+           matristen çıkarılarak elde edilir; testin anlamı "bir tane eksik"
+           olduğu için liste elle sabitlenmez. */
+        const string missing = PermissionCodes.DrawingsRestore;
+        var targetCodes = RolePermissionDefaults.For(GisRoles.GisEditor);
+
+        Assert.Contains(missing, targetCodes);
+
         var actor = await CreateActorAsync(
             scope, "almost-editor",
-            PermissionCodes.UsersUpdate,
-            PermissionCodes.MapView, PermissionCodes.DrawingsView, PermissionCodes.MeasurementUse,
-            PermissionCodes.SelectionUse, PermissionCodes.InventoryView, PermissionCodes.LayersView,
-            PermissionCodes.DrawingsPointCreate, PermissionCodes.DrawingsLineCreate,
-            PermissionCodes.DrawingsPolygonCreate, PermissionCodes.DrawingsMetadataUpdate,
-            PermissionCodes.DrawingsGeometryUpdate, PermissionCodes.DrawingsStyleUpdate,
-            PermissionCodes.DrawingsDelete);
+            [PermissionCodes.UsersUpdate, .. targetCodes.Where(code => code != missing)]);
 
         var first = await CreatePendingUserAsync(scope, "editor-attempt-1");
         Assert.False((await Management(scope).ApproveAsync(
             first.Id, new ApproveUserRequest { Role = GisRoles.GisEditor }, actor.Id)).IsSuccess);
 
         // Eksik yetki DOĞRUDAN veriliyor; aktörün rolü değişmiyor.
-        await GrantDirectAsync(scope, actor, PermissionCodes.DrawingsRestore);
+        await GrantDirectAsync(scope, actor, missing);
 
         var second = await CreatePendingUserAsync(scope, "editor-attempt-2");
         Assert.True((await Management(scope).ApproveAsync(

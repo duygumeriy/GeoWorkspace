@@ -58,6 +58,15 @@ public static class ActivityActionCatalog
     public const string DrawingBulkDelete = "drawing.bulk_delete";
     public const string DrawingBulkStyle = "drawing.bulk_style";
 
+    /* --- POI ------------------------------------------------------------------
+       POI mutasyonları da denetime girer: ortak bir envanterde kimin ne
+       eklediği ve taksonomiyi kimin değiştirdiği, çizimlerde olduğu gibi
+       geriye dönük açıklanabilir olmalıdır. */
+
+    public const string PoiCreate = "poi.create";
+    public const string PoiCategoryCreate = "poi_category.create";
+    public const string PoiCategoryUpdate = "poi_category.update";
+
     /// <summary>Kanonik katalog.</summary>
     public static readonly IReadOnlyList<Definition> All =
     [
@@ -85,7 +94,11 @@ public static class ActivityActionCatalog
         new(DrawingRestore, "Çizim geri yüklendi"),
         new(DrawingBulkCreate, "Toplu çizim oluşturuldu"),
         new(DrawingBulkDelete, "Toplu çizim silindi"),
-        new(DrawingBulkStyle, "Toplu çizim stili değiştirildi")
+        new(DrawingBulkStyle, "Toplu çizim stili değiştirildi"),
+
+        new(PoiCreate, "POI oluşturuldu"),
+        new(PoiCategoryCreate, "POI kategorisi oluşturuldu"),
+        new(PoiCategoryUpdate, "POI kategorisi güncellendi")
     ];
 
     private static readonly IReadOnlyDictionary<string, string> Names =

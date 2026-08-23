@@ -14,6 +14,7 @@ import {
   LassoIcon,
   AnalysisIcon,
   ChevronIcon,
+  PinIcon,
 } from '../ui/icons/index.js'
 import './DrawToolbar.css'
 
@@ -62,6 +63,8 @@ export default function DrawToolbar({
   onSelectSelectionTool,
   analysisActive,
   onToggleAnalysis,
+  poiActive,
+  onTogglePoi,
   onOpenStyle,
   canUndo,
   canRedo,
@@ -71,12 +74,12 @@ export default function DrawToolbar({
   collapsed = false,
   onToggleCollapse,
 }) {
-  const { drawTools, canDrawAny, canMeasure, canSelect, canAnalyze, canMutateDrawings } = permissions
+  const { drawTools, canDrawAny, canMeasure, canSelect, canAnalyze, canCreatePoi, canMutateDrawings } = permissions
 
   const drawTypes = DRAWING_TYPE_LIST.filter((type) => drawTools[type.id])
 
   // İlk grup çizim, ölçüm ve envanter araçlarını taşır; üçü de yoksa grup yok.
-  const hasToolGroup = drawTypes.length > 0 || canMeasure || canAnalyze
+  const hasToolGroup = drawTypes.length > 0 || canMeasure || canAnalyze || canCreatePoi
 
   if (!hasToolGroup && !canSelect && !canMutateDrawings) return null
 
@@ -84,7 +87,7 @@ export default function DrawToolbar({
      haritaya tıkladığında ne olacağını bilmelidir. */
   const activeLabel =
     DRAWING_TYPE_LIST.find((type) => type.id === activeTool)?.label ??
-    (measureMode ? 'Ölçüm' : analysisActive ? ANALYSIS_TOOL_INFO.label : null)
+    (measureMode ? 'Ölçüm' : analysisActive ? ANALYSIS_TOOL_INFO.label : poiActive ? 'POI Ekle' : null)
 
   if (collapsed) {
     return (
@@ -159,6 +162,24 @@ export default function DrawToolbar({
         >
           <AnalysisIcon size={18} />
           <span className="draw-toolbar-label">Envanter</span>
+        </button>
+        )}
+
+        {/* POI de kendi modudur ve bir ÇİZİM ARACI DEĞİLDİR: ürettiği nokta
+            çizim tablolarına değil POI envanterine gider. Nokta aracının
+            yanında bir çizim türüymüş gibi görünmemesi için ayrı bir düğmedir
+            ve kendi yetkisini (poi.create) arar. */}
+        {canCreatePoi && (
+        <button
+          type="button"
+          className={`draw-toolbar-btn ${poiActive ? 'is-active' : ''}`}
+          aria-pressed={poiActive}
+          aria-label="POI Ekle aracı"
+          title="POI Ekle — haritada bir nokta seçin"
+          onClick={onTogglePoi}
+        >
+          <PinIcon size={18} />
+          <span className="draw-toolbar-label">POI Ekle</span>
         </button>
         )}
       </div>

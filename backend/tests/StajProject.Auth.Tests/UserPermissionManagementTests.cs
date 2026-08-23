@@ -113,8 +113,16 @@ public class UserPermissionManagementTests
         var response = await ReadAsync(scope, actor.Id, target.Id);
         var effective = response.Permissions.Where(p => p.Effective).Select(p => p.Code).ToArray();
 
-        // Viewer'ın altı yetkisi + doğrudan verilen bir yetki.
-        Assert.Equal(7, effective.Length);
+        /* Ölçülen şey BİRLEŞİMDİR: rolün yürürlükteki matrisi + rolde olmayan
+           tek bir doğrudan yetki. Beklenen küme matristen türetilir; elle
+           yazılmış bir sayı, matrise yetki eklendiğinde birleşim kuralı hiç
+           değişmemiş olsa bile düşerdi. */
+        var roleCodes = RolePermissionDefaults.For(GisRoles.Viewer);
+
+        Assert.DoesNotContain(PermissionCodes.InventoryAnalysis, roleCodes);
+        Assert.Equal(
+            roleCodes.Append(PermissionCodes.InventoryAnalysis).OrderBy(c => c, StringComparer.Ordinal),
+            effective.OrderBy(c => c, StringComparer.Ordinal));
         Assert.Contains(PermissionCodes.InventoryAnalysis, effective);
         Assert.Contains(PermissionCodes.MapView, effective);
     }
@@ -395,6 +403,10 @@ public class UserPermissionManagementTests
         var actor = await CreateActorAsync(scope, "weak-granter", Gate);
         var target = await CreateUserAsync(scope, "viewer", GisRoles.Viewer);
 
+        // Karşılaştırma noktası denemeden ÖNCE alınır; ölçülen şey
+        // değişmemişliktir, belli bir sayı değil.
+        var before = await EffectiveAsync(scope, target.Id);
+
         var result = await SaveAsync(scope, actor.Id, target.Id, PermissionCodes.InventoryAnalysis);
 
         Assert.False(result.IsSuccess);
@@ -402,7 +414,9 @@ public class UserPermissionManagementTests
         Assert.False(await HasDirectAsync(scope, target, PermissionCodes.InventoryAnalysis));
 
         // Hedefin etkin yetkileri hiç değişmedi.
-        Assert.Equal(6, (await EffectiveAsync(scope, target.Id)).Length);
+        Assert.Equal(
+            before.OrderBy(c => c, StringComparer.Ordinal),
+            (await EffectiveAsync(scope, target.Id)).OrderBy(c => c, StringComparer.Ordinal));
     }
 
     [Fact]

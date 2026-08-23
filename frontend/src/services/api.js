@@ -698,6 +698,80 @@ const JSON_HEADERS = { 'Content-Type': 'application/json' }
  * Reads a failed response into a human message. The backend answers with
  * `{ message }`; anything else falls back to the status code.
  */
+/* --- POI (harita) -------------------------------------------------------------
+   Harita uçları YÖNETİM uçlarından ayrıdır ve bilerek daha dardır: yanıt
+   yalnızca aktif kayıtları taşır ve oluşturan bilgisi İÇERMEZ. Sıradan bir
+   harita kullanıcısının bir noktayı görebilmesi, onu kimin eklediğini
+   öğrenebilmesi anlamına gelmez. */
+
+/** Haritada gösterilecek aktif POI'ler (`poi.view`). */
+export function fetchPois() {
+  return authFetch('/api/poi')
+}
+
+/** POI oluşturma açılır listesi için aktif kategoriler (`poi.view`). */
+export function fetchPoiCategories() {
+  return authFetch('/api/poi/categories')
+}
+
+/**
+ * Yeni POI (`poi.create`).
+ *
+ * Gövde YALNIZCA bu beş alanı taşır. Sahiplik, tarihler ve durum bayrakları
+ * sunucuya aittir; SRID ve WKT de gönderilmez — koordinat sözleşme gereği
+ * EPSG:4326 boylam/enlemdir ve geometriyi sunucu kurar.
+ */
+export function createPoi({ name, categoryId, workHours, longitude, latitude }) {
+  return authFetch('/api/poi', {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ name, categoryId, workHours: workHours ?? null, longitude, latitude }),
+  })
+}
+
+/* --- POI yönetimi -------------------------------------------------------------
+   Bu dört uç YÖNETİM tarafıdır ve harita uçlarından (GET /api/poi …) bilinçli
+   olarak ayrıdır: yönetim listesi pasif ve silinmiş kayıtları da döndürür ve
+   POI'yi oluşturan kullanıcıyı taşır. Harita ekranı o sözleşmeyi hiç görmez. */
+
+/** Tüm POI kayıtları: pasif/silinmiş dâhil, oluşturan bilgisiyle. */
+export function fetchAdminPois() {
+  return authFetch('/api/admin/poi')
+}
+
+/** Kategori ağacı: pasif ve silinmiş satırlar dâhil. */
+export function fetchAdminPoiCategories() {
+  return authFetch('/api/admin/poi/categories')
+}
+
+/**
+ * Yeni kategori.
+ *
+ * Gövde YALNIZCA ad ve üst kategori taşır; durum ve tarih alanları sunucuya
+ * aittir ve istemciden gönderilmez.
+ */
+export function createAdminPoiCategory({ name, parentId }) {
+  return authFetch('/api/admin/poi/categories', {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ name, parentId: parentId ?? null }),
+  })
+}
+
+/**
+ * Kategori düzenleme: ad, üst kategori ve aktiflik.
+ *
+ * `isDeleted`, `createdDate` ve `modifiedDate` gövdede YER ALMAZ — sunucu
+ * sözleşmesinde de yoktur.
+ */
+export function updateAdminPoiCategory(id, { name, parentId, isActive }) {
+  return authFetch(`/api/admin/poi/categories/${id}`, {
+    method: 'PUT',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ name, parentId: parentId ?? null, isActive }),
+  })
+}
+
 export async function readApiError(res, fallback) {
   if (res.status === 401) return 'Oturum süresi doldu. Yeniden giriş yapın.'
   const body = await res.json().catch(() => null)

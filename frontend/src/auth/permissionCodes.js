@@ -78,6 +78,15 @@ export const PERMISSIONS = Object.freeze({
      gizlenmez: kayıt, diğer yöneticilerin hareketlerini de gösterir. Kullanıcı
      listesini görebilmek, yönetim geçmişini okuyabilmekle aynı şey değildir. */
   ACTIVITY_VIEW: 'activity.view',
+
+  /* --- POI ----------------------------------------------------------------- */
+  /* POI yetkileri çizim yetkilerinden AYRIDIR: POI, sahibine göre gizlenmeyen
+     ortak bir envanterdir. Görüntüleme (harita) ile yönetim (kimin ne eklediği)
+     de ayrı kodlardır — biri diğerini ima etmez. */
+  POI_VIEW: 'poi.view',
+  POI_CREATE: 'poi.create',
+  POI_MANAGE: 'poi.manage',
+  POI_CATEGORIES_MANAGE: 'poi.categories.manage',
 })
 
 /**
@@ -95,6 +104,18 @@ export const DRAWING_CREATE_PERMISSIONS = Object.freeze({
 })
 
 /**
+ * POI yönetim bölümünü açan yetkiler.
+ *
+ * İkisi ayrı ekranları açar (POI listesi / kategori ağacı) ve bir kişide
+ * yalnızca biri bulunabilir. Bölüm, ikisinden HERHANGİ biriyle erişilebilir
+ * olmalıdır; sekme görünürlüğü ayrıca her sekmenin kendi koduna bakar.
+ */
+export const POI_SECTION_PERMISSIONS = Object.freeze([
+  PERMISSIONS.POI_MANAGE,
+  PERMISSIONS.POI_CATEGORIES_MANAGE,
+])
+
+/**
  * Yönetim panelinin bölümleri, kenar çubuğundaki SIRAYLA.
  *
  * Tek tanım: kenar çubuğu, `/admin` kök yönlendirmesi ve rota koruyucuları
@@ -102,15 +123,22 @@ export const DRAWING_CREATE_PERMISSIONS = Object.freeze({
  * menüde görünüp yönlendirmede atlanmasına açık kapı bırakırdı.
  */
 export const ADMIN_SECTIONS = Object.freeze([
-  { path: '/admin/users', permission: PERMISSIONS.USERS_VIEW },
-  { path: '/admin/roles', permission: PERMISSIONS.ROLES_VIEW },
-  { path: '/admin/permissions', permission: PERMISSIONS.PERMISSIONS_VIEW },
+  { path: '/admin/users', anyOf: [PERMISSIONS.USERS_VIEW] },
+  { path: '/admin/roles', anyOf: [PERMISSIONS.ROLES_VIEW] },
+  { path: '/admin/permissions', anyOf: [PERMISSIONS.PERMISSIONS_VIEW] },
   /* Aktivite geçmişi de bir yönetim BÖLÜMÜDÜR: yalnızca `activity.view`
      taşıyan bir denetçi, başka hiçbir yetkisi olmasa bile yönetim panelini
      açabilmeli ve doğrudan bu sayfaya yönlendirilmelidir. Listeye eklenmeseydi
      menüde görünür ama /admin kökü onu hiç seçmezdi. */
-  { path: '/admin/activity', permission: PERMISSIONS.ACTIVITY_VIEW },
+  { path: '/admin/activity', anyOf: [PERMISSIONS.ACTIVITY_VIEW] },
+  /* POI bölümü İKİ yetkiden herhangi biriyle açılır ve bu yüzden bölümlerin
+     alanı `permission` değil `anyOf`tur. Yalnızca kategori yetkisi olan biri
+     POI listesini göremez ama taksonomiyi yönetebilmelidir; tek bir yetkiye
+     bağlansaydı o kişi bölüme hiç giremezdi. */
+  { path: '/admin/poi', anyOf: POI_SECTION_PERMISSIONS },
 ])
 
 /** Yönetim paneline girişi açan yetkiler: en az biri yeterlidir. */
-export const ADMIN_ENTRY_PERMISSIONS = Object.freeze(ADMIN_SECTIONS.map((section) => section.permission))
+export const ADMIN_ENTRY_PERMISSIONS = Object.freeze([
+  ...new Set(ADMIN_SECTIONS.flatMap((section) => section.anyOf)),
+])

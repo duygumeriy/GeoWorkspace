@@ -24,7 +24,7 @@ public class AuthorizationFoundationTests
     /* --- Yetki kataloğu -------------------------------------------------------- */
 
     [Fact]
-    public void Permission_catalog_contains_the_expected_30_codes()
+    public void Permission_catalog_contains_the_expected_35_codes()
     {
         string[] expected =
         [
@@ -69,14 +69,19 @@ public class AuthorizationFoundationTests
             "geography.view",
             "geography.manage",
 
-            "activity.view"
+            "activity.view",
+
+            "poi.view",
+            "poi.create",
+            "poi.manage",
+            "poi.categories.manage"
         ];
 
         // Beklenen liste kasıtlı olarak literal yazılır: katalog sabitlerinden
         // türetilseydi, kodun kendisi yanlışlıkla değiştiğinde test de onunla
         // birlikte kayar ve hiçbir şey doğrulamamış olurdu.
-        Assert.Equal(31, expected.Length);
-        Assert.Equal(31, PermissionCatalog.All.Count);
+        Assert.Equal(35, expected.Length);
+        Assert.Equal(35, PermissionCatalog.All.Count);
         Assert.Equal(expected.OrderBy(c => c, StringComparer.Ordinal),
             PermissionCatalog.AllCodes.OrderBy(c => c, StringComparer.Ordinal));
     }
@@ -133,7 +138,7 @@ public class AuthorizationFoundationTests
 
         var stored = await Db(scope).Permissions.ToListAsync();
 
-        Assert.Equal(31, stored.Count);
+        Assert.Equal(35, stored.Count);
         Assert.Equal(
             PermissionCatalog.AllCodes.OrderBy(c => c, StringComparer.Ordinal),
             stored.Select(p => p.Code).OrderBy(c => c, StringComparer.Ordinal));
@@ -202,7 +207,8 @@ public class AuthorizationFoundationTests
                 "measurement.use",
                 "selection.use",
                 "inventory.view",
-                "layers.view"),
+                "layers.view",
+                "poi.view"),
             await PermissionCodesOfAsync(scope, GisRoles.Viewer));
     }
 
@@ -232,7 +238,10 @@ public class AuthorizationFoundationTests
                 "drawings.style.update",
 
                 "drawings.delete",
-                "drawings.restore"),
+                "drawings.restore",
+
+                "poi.view",
+                "poi.create"),
             codes);
 
         // Varsayılan olarak verilmeyenler açıkça doğrulanır: bir "hepsini ver"
@@ -240,6 +249,12 @@ public class AuthorizationFoundationTests
         Assert.DoesNotContain("inventory.analysis", codes);
         Assert.DoesNotContain("heatmap.view", codes);
         Assert.DoesNotContain("layers.manage", codes);
+
+        // POI envanteri ve kategori taksonomisi yönetimi Editor profilinde YOK:
+        // POI üretebilmek, herkesin kaydını listeleyebilmek ya da sınıflandırmayı
+        // tanımlayabilmek demek değildir.
+        Assert.DoesNotContain("poi.manage", codes);
+        Assert.DoesNotContain("poi.categories.manage", codes);
         Assert.DoesNotContain(codes, c => c.StartsWith("users.", StringComparison.Ordinal));
         Assert.DoesNotContain(codes, c => c.StartsWith("roles.", StringComparison.Ordinal));
         Assert.DoesNotContain(codes, c => c.StartsWith("permissions.", StringComparison.Ordinal));
@@ -262,7 +277,8 @@ public class AuthorizationFoundationTests
                 "inventory.view",
                 "inventory.analysis",
                 "heatmap.view",
-                "layers.view"),
+                "layers.view",
+                "poi.view"),
             codes);
 
         // Analist operasyonel çizim verisini düzenlemez.
@@ -302,7 +318,12 @@ public class AuthorizationFoundationTests
                 "heatmap.view",
 
                 "layers.view",
-                "layers.manage"),
+                "layers.manage",
+
+                "poi.view",
+                "poi.create",
+                "poi.manage",
+                "poi.categories.manage"),
             codes);
 
         // Sistem yönetimi yetkileri GIS Manager'a varsayılan olarak verilmez.

@@ -27,7 +27,11 @@ public static class RolePermissionDefaults
         PermissionCodes.MeasurementUse,
         PermissionCodes.SelectionUse,
         PermissionCodes.InventoryView,
-        PermissionCodes.LayersView
+        PermissionCodes.LayersView,
+
+        /* POI görüntüleme temel bir harita yeteneğidir: ödevin "Kullanıcı"
+           rolü POI'leri görebilmelidir ve Viewer bu profilin karşılığıdır. */
+        PermissionCodes.PoiView
     ];
 
     private static readonly string[] GisEditorPermissions =
@@ -43,7 +47,14 @@ public static class RolePermissionDefaults
         PermissionCodes.DrawingsStyleUpdate,
 
         PermissionCodes.DrawingsDelete,
-        PermissionCodes.DrawingsRestore
+        PermissionCodes.DrawingsRestore,
+
+        /* GIS Editor projenin veri ÜRETİCİSİ profilidir; ödevin "Operatör"
+           tanımı da budur. Rol adı üzerinden bir eşleme YAPILMAZ — Operatör
+           ileride normal rol yönetimi ekranından tanımlanacak ÖZEL bir roldür
+           ve yetkilerini oradan alır. Buradaki grant, mevcut profilin POI
+           üretebilmesini sağlar; ikisi birbirinin yerine geçmez. */
+        PermissionCodes.PoiCreate
     ];
 
     /* Analist, Editor'ün türevi DEĞİLDİR: çizim düzenleme yetkileri bilinçli
@@ -65,7 +76,13 @@ public static class RolePermissionDefaults
         .. GisEditorPermissions,
         PermissionCodes.InventoryAnalysis,
         PermissionCodes.HeatmapView,
-        PermissionCodes.LayersManage
+        PermissionCodes.LayersManage,
+
+        /* POI envanterinin ve kategori taksonomisinin yönetimi GIS veri
+           yöneticisinin işidir; sistem yönetimi yetkileri (users/roles/
+           permissions) hâlâ bu profilin DIŞINDADIR. */
+        PermissionCodes.PoiManage,
+        PermissionCodes.PoiCategoriesManage
     ];
 
     /// <summary>Yönetici katalogdaki tüm yetkilere sahiptir.</summary>

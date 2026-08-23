@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider } from './auth/AuthContext'
 import { PermissionProvider } from './auth/PermissionContext.jsx'
-import { ADMIN_ENTRY_PERMISSIONS, PERMISSIONS } from './auth/permissionCodes.js'
+import { ADMIN_ENTRY_PERMISSIONS, PERMISSIONS, POI_SECTION_PERMISSIONS } from './auth/permissionCodes.js'
 import { TransitionProvider } from './transition/TransitionContext.jsx'
 import ProtectedRoute from './components/ProtectedRoute'
 import PermissionRoute, { AdminIndexRedirect } from './components/PermissionRoute.jsx'
@@ -20,6 +20,7 @@ import AdminPage from './pages/AdminPage'
 import RolesPage from './pages/admin/RolesPage.jsx'
 import PermissionsPage from './pages/admin/PermissionsPage.jsx'
 import ActivityPage from './pages/admin/ActivityPage.jsx'
+import PoiPage from './pages/admin/PoiPage.jsx'
 import AccessDeniedPage from './pages/AccessDeniedPage.jsx'
 
 function App() {
@@ -125,6 +126,18 @@ function App() {
                     element={
                       <PermissionRoute anyOf={[PERMISSIONS.ACTIVITY_VIEW]}>
                         <ActivityPage />
+                      </PermissionRoute>
+                    }
+                  />
+                  {/* POI bölümü İKİ yetkiden herhangi biriyle açılır; hangi
+                      sekmenin çizileceğine sayfanın kendisi karar verir.
+                      Rotayı tek bir koda bağlamak, yalnızca kategori yetkisi
+                      olan yöneticiyi kapıda bırakırdı. */}
+                  <Route
+                    path="poi"
+                    element={
+                      <PermissionRoute anyOf={POI_SECTION_PERMISSIONS}>
+                        <PoiPage />
                       </PermissionRoute>
                     }
                   />
