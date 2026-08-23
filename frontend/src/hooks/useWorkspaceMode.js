@@ -18,6 +18,7 @@ import { useCallback, useMemo, useState } from 'react'
  *   mode: 'measure'  -> activeMeasureTool   distance | area
  *   mode: 'analysis' -> activeAnalysisTool  polygon
  *   mode: 'edit'     -> isEditing           (geometry of the selected record)
+ *   mode: 'poi'      -> isPlacingPoi        (a single point for a new POI)
  *
  * `edit` is a mode for the same reason the others are: while the user is
  * dragging the vertices of an existing record, a click must not start a new
@@ -28,6 +29,13 @@ import { useCallback, useMemo, useState } from 'react'
  * The remembered (inactive) values are kept so leaving and re-entering a mode
  * returns to the tool the user last used, and so the style panel knows which
  * type to show when no tool is active.
+ *
+ * `poi` is its own family for the same reason `analysis` is: the point it
+ * produces is NOT a drawing record. It never reaches the drawings source, the
+ * attribute popup or `/api/drawings/*`; it becomes a POI through a different
+ * endpoint and a different table. Making it a mode is also what guarantees its
+ * Draw interaction cannot be live at the same time as the drawing, selection,
+ * measurement, analysis or geometry-edit ones.
  *
  * `analysis` is a fourth family rather than a variant of `draw` because what it
  * produces is a throwaway query geometry, not a record: it must not reach the
@@ -42,6 +50,7 @@ export const WORKSPACE_MODES = Object.freeze({
   measure: 'measure',
   analysis: 'analysis',
   edit: 'edit',
+  poi: 'poi',
 })
 
 /** Selection tools, in toolbar order. */
@@ -167,6 +176,23 @@ export default function useWorkspaceMode() {
     )
   }, [])
 
+  /* --- POI ----------------------------------------------------------------- */
+
+  /** Toolbar behaviour: pressing the active POI tool again leaves the mode. */
+  const togglePoiTool = useCallback(() => {
+    setState((current) =>
+      current.mode === WORKSPACE_MODES.poi
+        ? { ...current, mode: WORKSPACE_MODES.select }
+        : { ...current, mode: WORKSPACE_MODES.poi },
+    )
+  }, [])
+
+  const stopPoiPlacement = useCallback(() => {
+    setState((current) =>
+      current.mode === WORKSPACE_MODES.poi ? { ...current, mode: WORKSPACE_MODES.select } : current,
+    )
+  }, [])
+
   /* --- Edit ---------------------------------------------------------------- */
 
   /**
@@ -203,6 +229,7 @@ export default function useWorkspaceMode() {
       isSelecting: state.mode === WORKSPACE_MODES.select,
       isAnalyzing: state.mode === WORKSPACE_MODES.analysis,
       isEditing: state.mode === WORKSPACE_MODES.edit,
+      isPlacingPoi: state.mode === WORKSPACE_MODES.poi,
       selectDrawTool,
       setDrawTool,
       stopDrawing,
@@ -211,6 +238,8 @@ export default function useWorkspaceMode() {
       stopMeasuring,
       toggleAnalysisTool,
       stopAnalysis,
+      togglePoiTool,
+      stopPoiPlacement,
       startEditing,
       stopEditing,
     }),
@@ -224,6 +253,8 @@ export default function useWorkspaceMode() {
       stopMeasuring,
       toggleAnalysisTool,
       stopAnalysis,
+      togglePoiTool,
+      stopPoiPlacement,
       startEditing,
       stopEditing,
     ],

@@ -10,7 +10,7 @@ import { canManageAll, canManageDrawing } from '../auth/permissions.js'
 import { usePermissions } from '../auth/permissionStore.js'
 import { PERMISSIONS } from '../auth/permissionCodes.js'
 import { useTransition } from '../transition/TransitionContext.jsx'
-import { setConnectionHandler } from '../services/api'
+import { createPoi, fetchPoiCategories, readApiError, setConnectionHandler } from '../services/api'
 import Sidebar from '../components/map/Sidebar.jsx'
 import Topbar from '../components/map/Topbar.jsx'
 import MapLoadingOverlay from '../components/map/MapLoadingOverlay.jsx'
@@ -29,6 +29,8 @@ import AttributePopup from '../components/map/AttributePopup.jsx'
 import AnalysisPanel from '../components/map/AnalysisPanel.jsx'
 import HeatmapPanel from '../components/map/HeatmapPanel.jsx'
 import { SettingsPanel, AboutPanel } from '../components/map/InfoPanels.jsx'
+import PoiFormSheet from '../components/map/PoiFormSheet.jsx'
+import PoiInfoSheet from '../components/map/PoiInfoSheet.jsx'
 import {
   DrawingHint,
   HoverTooltip,
@@ -56,6 +58,9 @@ import useVertexOverlay from '../hooks/useVertexOverlay.js'
 import useAnalysisHighlight from '../hooks/useAnalysisHighlight.js'
 import useHeatmapLayer from '../hooks/useHeatmapLayer.js'
 import useMapPresentationLayer from '../hooks/useMapPresentationLayer.js'
+import usePoiLayer from '../hooks/usePoiLayer.js'
+import usePoiPlacement from '../hooks/usePoiPlacement.js'
+import usePoiInteraction from '../hooks/usePoiInteraction.js'
 import { DRAWING_TYPES, DRAWING_TYPE_LIST, colorPatchFor, normalizeTags } from '../map/drawingTypes.js'
 import { isGeometryInsideScope } from '../map/geographicScope.js'
 import {
@@ -306,6 +311,121 @@ export default function MapPage() {
     hoverEnabled: hasFinePointer,
     onSelect: selectFeature,
   })
+
+  /* --- POI ------------------------------------------------------------------
+     POI, çizimlerden AYRI bir alan nesnesidir: kendi katmanı, kendi uçları ve
+     kendi yetkileri vardır. Buradaki kod yalnızca orkestrasyondur — katman
+     yaşam döngüsü, yerleştirme etkileşimi ve isabet denetimi kendi
+     kancalarında yaşar. */
+
+  const [selectedPoi, setSelectedPoi] = useState(null)
+  const [poiFormOpen, setPoiFormOpen] = useState(false)
+  const [poiSaving, setPoiSaving] = useState(false)
+  const [poiError, setPoiError] = useState('')
+  const poiSaveInFlight = useRef(false)
+  const [poiCategories, setPoiCategories] = useState({ items: [], loading: false, error: '' })
+
+  const poi = usePoiLayer(mapInstance, {
+    permitted: allowed.canViewPoi,
+    selectedId: selectedPoi?.id ?? null,
+    showToast,
+  })
+  const { addPoi: addPoiToLayer } = poi
+
+  const placement = usePoiPlacement(mapInstance, {
+    /* Mod `useWorkspaceMode`'a aittir; yetki kapısı burada ikinci kez aranır ki
+       yetkisi alınan biri için etkileşim tek bir render bile ayakta kalmasın. */
+    active: workspaceMode.isPlacingPoi && allowed.canCreatePoi,
+    // Nokta konduğu anda HİÇBİR ŞEY kaydedilmez; yalnızca form açılır.
+    onPlaced: useCallback(() => { setPoiError(''); setPoiFormOpen(true) }, []),
+  })
+  const { pending: pendingPoi, clearPending: clearPendingPoi } = placement
+
+  /* POI tıklaması, haritanın tıklamasının sahibi olan bir araç varken
+     DEVREYE GİRMEZ: kullanıcı poligon çizerken bir tık köşe noktasıdır, POI
+     seçimi değil. Koşul çizim seçimiyle aynı dinlenme durumunu arar ama kendi
+     yetkisine (poi.view) bakar — seçim yetkisi olmayan biri de POI'ye
+     tıklayabilmelidir. */
+  const poiClickEnabled =
+    allowed.canViewPoi && workspaceMode.isSelecting && workspaceMode.activeSelectionTool !== 'polygon'
+
+  usePoiInteraction(mapInstance, { enabled: poiClickEnabled, onSelect: setSelectedPoi })
+
+  /* Kategoriler yalnızca GEREKTİĞİNDE okunur: form ilk kez açıldığında. Her
+     harita açılışında istek göndermek, POI eklemeyen kullanıcılar için boşuna
+     bir çağrı olurdu. */
+  const loadPoiCategories = useCallback(async () => {
+    setPoiCategories((current) => ({ ...current, loading: true, error: '' }))
+    try {
+      const res = await fetchPoiCategories()
+      if (!res.ok) throw new Error(await readApiError(res, 'Kategoriler yüklenemedi.'))
+      setPoiCategories({ items: await res.json(), loading: false, error: '' })
+    } catch (error) {
+      setPoiCategories({ items: [], loading: false, error: error.message || 'Kategoriler yüklenemedi.' })
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!poiFormOpen || poiCategories.loading || poiCategories.items.length || poiCategories.error) return
+    loadPoiCategories()
+  }, [poiFormOpen, poiCategories, loadPoiCategories])
+
+  /** Formu, bekleyen işareti ve yerleştirme modunu birlikte kapatır. */
+  const closePoiForm = useCallback(() => {
+    setPoiFormOpen(false)
+    setPoiError('')
+    clearPendingPoi()
+    workspaceMode.stopPoiPlacement()
+  }, [clearPendingPoi, workspaceMode])
+
+  const savePoi = useCallback(async (payload) => {
+    // Çift gönderim koruması: düğme de kilitlenir, ama ref yarışı da kapatır.
+    if (poiSaveInFlight.current) return
+    poiSaveInFlight.current = true
+    setPoiSaving(true)
+    setPoiError('')
+
+    try {
+      const res = await createPoi(payload)
+
+      if (!res.ok) {
+        /* Sunucunun mesajı olduğu gibi gösterilir — coğrafi yetki reddi dâhil.
+           O mesaj izin verilen alanı AÇIKLAMAZ, yalnızca burada eklenemediğini
+           söyler; arayüz de fazlasını uydurmaz. */
+        throw new Error(await readApiError(res, 'POI eklenemedi.'))
+      }
+
+      /* Yanıt kaydın kanonik hâlidir ve listeyle AYNI eşlemeden geçer; ikinci
+         bir GET, az önce yazılanı yeniden indirmek olurdu. */
+      addPoiToLayer(await res.json())
+      closePoiForm()
+      showToast('success', 'POI başarıyla eklendi.')
+    } catch (error) {
+      /* Başarısızlıkta form AÇIK kalır, girilen değerler ve bekleyen konum
+         yerinde durur: kullanıcı düzeltip yeniden deneyebilmelidir. Kalıcı
+         kaynağa hiçbir şey eklenmez. */
+      setPoiError(error.message || 'POI eklenemedi.')
+    } finally {
+      poiSaveInFlight.current = false
+      setPoiSaving(false)
+    }
+  }, [addPoiToLayer, closePoiForm, showToast])
+
+  /* Yetki CANLIDIR. `poi.create` alındığında yerleştirme modu
+     useWorkspacePermissions tarafından kapatılır; burada da açık kalmış form
+     ve bekleyen işaret temizlenir — korumalı hiçbir arayüz ayakta kalmaz. */
+  useEffect(() => {
+    if (allowed.canCreatePoi) return
+    setPoiFormOpen(false)
+    setPoiError('')
+    clearPendingPoi()
+  }, [allowed.canCreatePoi, clearPendingPoi])
+
+  /* `poi.view` alındığında katmanı boşaltmak kancanın işi; artık erişilemeyen
+     bilgi panelini kapatmak bu sayfanın. */
+  useEffect(() => {
+    if (!allowed.canViewPoi) setSelectedPoi(null)
+  }, [allowed.canViewPoi])
 
   /** Box / area selection results land in the same canonical selection set. */
   const handleSpatialSelect = useCallback(
@@ -1072,6 +1192,8 @@ export default function MapPage() {
                 onSelectSelectionTool={allowed.selectSelectionTool}
                 analysisActive={Boolean(workspaceMode.activeAnalysisTool)}
                 onToggleAnalysis={allowed.toggleAnalysisTool}
+                poiActive={workspaceMode.isPlacingPoi}
+                onTogglePoi={allowed.togglePoiTool}
                 onOpenStyle={openStyleForTool}
                 canUndo={workspace.canUndo}
                 canRedo={workspace.canRedo}
@@ -1283,6 +1405,29 @@ export default function MapPage() {
                 onSave={workspace.savePendingDrawing}
                 onCancel={workspace.cancelPendingDrawing}
                 onColorChange={workspace.previewPendingColor}
+              />
+
+              {/* Nokta konduktan SONRA açılan öznitelik formu. `key` bekleyen
+                  konuma bağlıdır: yeni bir yerleştirme formu sıfırdan kurar ve
+                  bir önceki denemenin değerleri sonrakine sızmaz. */}
+              <PoiFormSheet
+                key={pendingPoi ? `${pendingPoi.longitude},${pendingPoi.latitude}` : 'poi-form'}
+                open={poiFormOpen && allowed.canCreatePoi}
+                point={pendingPoi}
+                categories={poiCategories.items}
+                categoriesLoading={poiCategories.loading}
+                categoriesError={poiCategories.error}
+                onRetryCategories={loadPoiCategories}
+                saving={poiSaving}
+                error={poiError}
+                onSave={savePoi}
+                onCancel={closePoiForm}
+              />
+
+              <PoiInfoSheet
+                open={Boolean(selectedPoi) && allowed.canViewPoi}
+                poi={selectedPoi}
+                onClose={() => setSelectedPoi(null)}
               />
 
               <MapToasts toasts={toasts} onDismiss={dismissToast} />

@@ -7,7 +7,7 @@ import {
   hasSchedule,
   summarize,
   weekSchedule,
-} from '../../src/components/admin/poiWorkHours.js'
+} from '../../src/poi/workHours.js'
 import {
   MAX_INDENT_DEPTH,
   categoryStatus,

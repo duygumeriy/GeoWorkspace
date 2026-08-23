@@ -108,6 +108,12 @@
    temada yeşile dönerdi ve sınır, uygulamanın hiçbir yerinde karşılığı olmayan
    bir renkle çizilirdi. */
 [data-theme='dark'] .map-container .scope-layer canvas,
+/* POI katmanları da kendi tuvallerindedir. Filtreye bırakılsalardı mavi
+   işaretler koyu temada turuncuya döner ve POI, uygulamanın hiçbir yerinde
+   karşılığı olmayan bir renkle çizilirdi; beyaz halkanın koyu zeminde
+   sağladığı okunurluk da kaybolurdu. */
+[data-theme='dark'] .map-container .poi-layer canvas,
+[data-theme='dark'] .map-container .poi-pending-layer canvas,
 [data-theme='dark'] .map-container .location-layer canvas {
   filter: none;
 }

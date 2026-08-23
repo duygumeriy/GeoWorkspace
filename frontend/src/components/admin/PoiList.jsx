@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { summarize, weekSchedule } from './poiWorkHours.js'
+import { summarize, weekSchedule } from '../../poi/workHours.js'
 
 /**
  * POI envanteri.

@@ -29,13 +29,14 @@ import { PERMISSIONS } from '../auth/permissionCodes.js'
  * an action that would only come back as an error.
  */
 export default function useWorkspacePermissions(workspaceMode) {
-  const { can, canAny } = usePermissions()
+  const { can, canAny, canAll } = usePermissions()
 
   const {
     activeDrawTool,
     activeMeasureTool,
     activeAnalysisTool,
     isEditing,
+    isPlacingPoi,
     selectDrawTool,
     setDrawTool,
     selectMeasureTool,
@@ -45,6 +46,8 @@ export default function useWorkspacePermissions(workspaceMode) {
     stopMeasuring,
     stopAnalysis,
     stopEditing,
+    togglePoiTool,
+    stopPoiPlacement,
   } = workspaceMode
 
   /* Üç oluşturma yetkisi AYRI kalır ve tek bir `canDraw`a indirgenmez: yalnızca
@@ -65,6 +68,26 @@ export default function useWorkspacePermissions(workspaceMode) {
   const canSelect = can(PERMISSIONS.SELECTION_USE)
   const canAnalyze = can(PERMISSIONS.INVENTORY_ANALYSIS)
   const canViewDrawings = can(PERMISSIONS.DRAWINGS_VIEW)
+
+  /* POI yetkileri çizim yetkilerinden AYRIDIR ve birine sahip olmak diğerini
+     ima etmez: POI ekleyebilen biri çizim oluşturamayabilir, çizim yönetebilen
+     biri POI göremeyebilir. */
+  const canViewPoi = can(PERMISSIONS.POI_VIEW)
+
+  /* Haritada POI OLUŞTURABİLMEK iki yetkiyi birden ister ve bu, backend'in
+     tek bir ucunun aradığından fazlasıdır — bilinçlidir:
+
+       POST /api/poi            -> poi.create
+       GET  /api/poi/categories -> poi.view
+
+     Oluşturma formu kategori listesi olmadan doldurulamaz; kategori seçilmeden
+     de kayıt gönderilemez. Yalnızca `poi.create` taşıyan birine araç
+     gösterilseydi, açılan form kategori açılır listesini 403 yüzünden hiç
+     yükleyemez ve kişi asla kaydedemeyeceği bir akışa davet edilmiş olurdu.
+
+     Bu bir yetki genişletmesi DEĞİL, bir yetenek tanımıdır: uçların kendi
+     kapıları backend'de olduğu gibi durur. */
+  const canCreatePoi = canAll([PERMISSIONS.POI_CREATE, PERMISSIONS.POI_VIEW])
   const canUpdateStyle = can(PERMISSIONS.DRAWINGS_STYLE_UPDATE)
   const canDeleteDrawings = can(PERMISSIONS.DRAWINGS_DELETE)
   const canRestoreDrawings = can(PERMISSIONS.DRAWINGS_RESTORE)
@@ -129,6 +152,13 @@ export default function useWorkspacePermissions(workspaceMode) {
     [canSelect, selectSelectionTool],
   )
 
+  const guardedTogglePoiTool = useCallback(() => {
+    // Açmak yetki ister; açıkken kapatmak istemez — yetkisi kalmayan biri de
+    // aktif moddan çıkabilmelidir.
+    if (!canCreatePoi && !isPlacingPoi) return
+    togglePoiTool()
+  }, [canCreatePoi, isPlacingPoi, togglePoiTool])
+
   const guardedToggleAnalysisTool = useCallback(() => {
     // Açmak yetki ister; açıkken kapatmak istemez.
     if (!canAnalyze && !activeAnalysisTool) return
@@ -157,6 +187,14 @@ export default function useWorkspacePermissions(workspaceMode) {
     if (isEditing && !canEditDrawing) stopEditing()
   }, [isEditing, canEditDrawing, stopEditing])
 
+  /* `poi.create` harita açıkken geri alınabilir. Modun kapanması, yerleştirme
+     etkileşiminin sökülmesini ve bekleyen işaretin temizlenmesini de tetikler
+     (bkz. usePoiPlacement) — düğmeyi gizlemek tek başına bir sonraki tıkta
+     hâlâ nokta koyardı. */
+  useEffect(() => {
+    if (isPlacingPoi && !canCreatePoi) stopPoiPlacement()
+  }, [isPlacingPoi, canCreatePoi, stopPoiPlacement])
+
   return {
     drawTools,
     canDrawAny,
@@ -169,10 +207,13 @@ export default function useWorkspacePermissions(workspaceMode) {
     canDeleteDrawings,
     canRestoreDrawings,
     canMutateDrawings,
+    canViewPoi,
+    canCreatePoi,
     selectDrawTool: guardedSelectDrawTool,
     setDrawTool: guardedSetDrawTool,
     selectMeasureTool: guardedSelectMeasureTool,
     selectSelectionTool: guardedSelectSelectionTool,
     toggleAnalysisTool: guardedToggleAnalysisTool,
+    togglePoiTool: guardedTogglePoiTool,
   }
 }
