@@ -1,0 +1,24 @@
+/* "POI'lerim", Çizimlerim'in iskeletini ve denetim şeridini aynen kullanır
+   (bkz. DrawingsPanel.css); burada yalnızca POI'ye ÖZGÜ birkaç kural vardır.
+   Panelin tamamını ikinci kez tanımlamak, iki listenin ilk düzen
+   değişikliğinde birbirinden ayrışması demek olurdu. */
+
+/* Koordinat satırı: rakamlar hizalı okunur ve satırı taşırmaz. */
+.my-pois-panel .my-pois-coordinates {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+
+/* Metin taşıyan eylem düğmeleri (Düzenle) simge düğmeleriyle aynı yükseklikte
+   kalır; şerit tek satırda hizalı durur. */
+.my-pois-panel .drawings-action {
+  white-space: nowrap;
+}
+
+.my-pois-panel .drawings-action--danger {
+  color: var(--danger);
+}
+
+.my-pois-panel .drawings-action--danger:hover:not(:disabled) {
+  background: var(--danger-soft);
+}

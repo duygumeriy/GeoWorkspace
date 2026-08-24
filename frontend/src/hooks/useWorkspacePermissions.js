@@ -88,6 +88,23 @@ export default function useWorkspacePermissions(workspaceMode) {
      Bu bir yetki genişletmesi DEĞİL, bir yetenek tanımıdır: uçların kendi
      kapıları backend'de olduğu gibi durur. */
   const canCreatePoi = canAll([PERMISSIONS.POI_CREATE, PERMISSIONS.POI_VIEW])
+
+  /* Düzenleme/silme YETENEĞİ ile bir KAYITTA yetki farklı sorulardır.
+     Buradaki değerler yalnızca ilkini yanıtlar — "bu kişi hiç POI
+     düzenleyebilir mi" — ve düzenleme formunun kategori listesini
+     yükleyebilmesi için poi.view'ü de ister (oluşturma akışıyla aynı gerekçe).
+
+     "BU POI'yi düzenleyebilir mi" sorusunu sunucu yanıtlar ve yanıttaki
+     canUpdate / canDelete bayraklarıyla bildirir; sahiplik kuralı tarayıcıda
+     ikinci kez yazılmaz. */
+  const canUpdatePoi = canAll([PERMISSIONS.POI_UPDATE, PERMISSIONS.POI_VIEW])
+  const canDeletePoi = can(PERMISSIONS.POI_DELETE)
+  const canManagePoi = can(PERMISSIONS.POI_MANAGE)
+
+  /* Çöp Kutusu'nun POI yarısını açabilen yetenek: silinmiş bir kaydı geri
+     yükleyebilen herkes. Görüntüleme yetkisi (poi.view) uç tarafından ayrıca
+     aranır. */
+  const canRestorePoi = (canDeletePoi || canManagePoi) && can(PERMISSIONS.POI_VIEW)
   const canUpdateStyle = can(PERMISSIONS.DRAWINGS_STYLE_UPDATE)
   const canDeleteDrawings = can(PERMISSIONS.DRAWINGS_DELETE)
   const canRestoreDrawings = can(PERMISSIONS.DRAWINGS_RESTORE)
@@ -209,6 +226,10 @@ export default function useWorkspacePermissions(workspaceMode) {
     canMutateDrawings,
     canViewPoi,
     canCreatePoi,
+    canUpdatePoi,
+    canDeletePoi,
+    canManagePoi,
+    canRestorePoi,
     selectDrawTool: guardedSelectDrawTool,
     setDrawTool: guardedSetDrawTool,
     selectMeasureTool: guardedSelectMeasureTool,

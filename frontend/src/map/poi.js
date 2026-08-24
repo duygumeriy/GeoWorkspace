@@ -30,6 +30,9 @@ export const POI_LAYER_CLASSNAME = 'poi-layer'
 /** Yerleştirilmiş ama henüz kaydedilmemiş nokta için ayrı canvas. */
 export const POI_PENDING_LAYER_CLASSNAME = 'poi-pending-layer'
 
+/** Düzenlenmekte olan POI'nin KAYDEDİLMEMİŞ konumu için ayrı canvas. */
+export const POI_DRAFT_LAYER_CLASSNAME = 'poi-draft-layer'
+
 /**
  * Katman sırası.
  *
@@ -47,6 +50,14 @@ export const POI_PENDING_LAYER_CLASSNAME = 'poi-pending-layer'
  */
 export const POI_LAYER_Z_INDEX = 13
 export const POI_PENDING_LAYER_Z_INDEX = 14
+
+/**
+ * Düzenleme taslağı işareti <b>16</b>'dadır: geçici bir DÜZENLEME katmanıdır ve
+ * bu yüzden kalıcı POI'nin de, envanter analizinin de (15) üstünde durur —
+ * kullanıcının sürüklediği nokta hiçbir zaman başka bir şeyin altında
+ * kalmamalıdır. Analiz vurgusunun (18) ve ölçümün (20) altında kalır.
+ */
+export const POI_DRAFT_LAYER_Z_INDEX = 16
 
 /** Mavi: mor çizimlerden, kehribar analizden ve camgöbeği ölçümden ayrı. */
 const POI_COLOR = '#2563EB'
@@ -79,6 +90,39 @@ const POI_PENDING_STYLE = new Style({
     stroke: new Stroke({ color: POI_COLOR, width: 2, lineDash: [4, 3] }),
   }),
 })
+
+/** Taşınabilir taslak: bekleyen noktayla aynı dil, tutulabilir bir boyut. */
+const POI_DRAFT_STYLE = new Style({
+  image: new CircleStyle({
+    radius: 10,
+    fill: new Fill({ color: 'rgba(37, 99, 235, 0.30)' }),
+    stroke: new Stroke({ color: POI_SELECTED_COLOR, width: 3, lineDash: [5, 4] }),
+  }),
+})
+
+/**
+ * Düzenlenmekte olan POI'nin taslak konumu.
+ *
+ * Kalıcı kaynaktan AYRI olması güvenlik ve doğruluk gereğidir: kaydın kendisi
+ * sürüklenseydi, reddedilen bir güncellemeden sonra harita veritabanında
+ * olmayan bir konumu anlatır, "İptal" ve "Değişiklikleri Geri Al" ise kalıcı
+ * kaynağı geri sarmak zorunda kalırdı. Taslak işaret, kaydedilene kadar
+ * yalnızca bir NİYETTİR.
+ *
+ * Kesikli halka bunu görsel olarak da söyler ve yerleştirme işaretiyle aynı
+ * dili konuşur: "henüz kaydedilmedi".
+ */
+export function createPoiDraftLayer() {
+  const source = new VectorSource()
+  const layer = new VectorLayer({
+    source,
+    className: POI_DRAFT_LAYER_CLASSNAME,
+    zIndex: POI_DRAFT_LAYER_Z_INDEX,
+    style: POI_DRAFT_STYLE,
+  })
+
+  return { source, layer }
+}
 
 /**
  * Kalıcı POI katmanı.
@@ -142,11 +186,23 @@ export function poiToFeature(poi) {
   feature.set('featureKind', POI_FEATURE_KIND)
   feature.set('poiId', poi.id)
   feature.set('name', poi.name ?? '')
+  /* Kategori KİMLİĞİ de taşınır: düzenleme formu kaydın mevcut kategorisini
+     önceden seçili açabilmelidir. Yalnızca ad/yol taşınırsa form kategorisiz
+     açılır ve kullanıcı, yalnızca mesai saatini değiştirmek istese bile
+     kategoriyi yeniden seçmek zorunda kalır. Kimlik, harita sözleşmesinin
+     zaten döndürdüğü bir alandır (`PoiResponse.categoryId`) ve sahiplik
+     bilgisi DEĞİLDİR. */
+  feature.set('categoryId', poi.categoryId ?? null)
   feature.set('categoryName', poi.categoryName ?? '')
   feature.set('categoryPath', poi.categoryPath ?? '')
   feature.set('workHours', poi.workHours ?? null)
   feature.set('longitude', poi.longitude)
   feature.set('latitude', poi.latitude)
+  /* Yetenek bayrakları SUNUCUDAN gelir ve kaydın yanında taşınır: bilgi paneli
+     "Düzenle"/"Sil" düğmelerini bunlara bakarak gösterir. Sahiplik kuralı
+     tarayıcıda yeniden hesaplanmaz — kaydın sahibi zaten burada yoktur. */
+  feature.set('canUpdate', poi.canUpdate === true)
+  feature.set('canDelete', poi.canDelete === true)
 
   return feature
 }
@@ -156,11 +212,14 @@ export function featureToPoi(feature) {
   return {
     id: feature.get('poiId'),
     name: feature.get('name') ?? '',
+    categoryId: feature.get('categoryId') ?? null,
     categoryName: feature.get('categoryName') ?? '',
     categoryPath: feature.get('categoryPath') ?? '',
     workHours: feature.get('workHours') ?? null,
     longitude: feature.get('longitude'),
     latitude: feature.get('latitude'),
+    canUpdate: feature.get('canUpdate') === true,
+    canDelete: feature.get('canDelete') === true,
   }
 }
 

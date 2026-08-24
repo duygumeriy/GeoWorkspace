@@ -101,6 +101,11 @@ public static class ActivityActionRegistry
                burada YOKTUR; tablo bir istek izi değil, "kim neyi değiştirdi"
                defteridir. */
             ["Poi.CreatePoi"] = new(ActivityActionCatalog.PoiCreate, Poi, null),
+            /* Mutasyon uçları kaydın kimliğini ROTADAN taşır; çizim
+               uçlarındaki "id" sözleşmesinin aynısı. */
+            ["Poi.UpdatePoi"] = new(ActivityActionCatalog.PoiUpdate, Poi, "id"),
+            ["Poi.DeletePoi"] = new(ActivityActionCatalog.PoiDelete, Poi, "id"),
+            ["Poi.RestorePoi"] = new(ActivityActionCatalog.PoiRestore, Poi, "id"),
             ["AdminPoi.CreateCategory"] = new(ActivityActionCatalog.PoiCategoryCreate, PoiCategory, null),
             ["AdminPoi.UpdateCategory"] = new(ActivityActionCatalog.PoiCategoryUpdate, PoiCategory, "id")
         };

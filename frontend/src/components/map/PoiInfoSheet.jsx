@@ -14,12 +14,24 @@ import './PoiSheets.css'
  * taşımaz. Sıradan bir harita kullanıcısının bir noktayı görebilmesi, onu kimin
  * eklediğini öğrenebilmesi anlamına gelmez.
  *
+ * <b>Eylemler SUNUCUNUN kararını yansıtır.</b> "Düzenle" ve "Sil", kaydın
+ * kendi `canUpdate` / `canDelete` bayraklarına bakar; bu bayrakları sunucu
+ * hesaplar (poi.manage VEYA sahiplik VE poi.update/poi.delete) ve yanıtta
+ * taşır. Böylece arayüz, kaydın SAHİBİNİ öğrenmeden doğru düğmeleri gösterir —
+ * harita sözleşmesi kimin ne eklediğini hâlâ taşımaz. Bayraklar bir güvenlik
+ * sınırı DEĞİLDİR: her mutasyon ucu aynı kararı bağımsız olarak yeniden verir.
+ *
  * Mesai saatleri yönetim ekranıyla AYNI yorumdan çizilir
  * (<c>poi/workHours.js</c>): "Kapalı" ile "Belirtilmemiş" ayrımı iki ekranda da
  * korunur ve ham JSON hiçbir yerde gösterilmez.
  */
-export default function PoiInfoSheet({ open, poi, onClose }) {
+export default function PoiInfoSheet({ open, poi, onClose, onEdit, onDelete, busy = false }) {
   if (!open || !poi) return null
+
+  /* Yetenek bayrağı YOKSA düğme de yoktur: eski bir yanıt (alan taşımayan)
+     hiçbir eylem sunmaz — fail-closed. */
+  const canEdit = poi.canUpdate === true && typeof onEdit === 'function'
+  const canDelete = poi.canDelete === true && typeof onDelete === 'function'
 
   return (
     <MapSheet open={open} title="POI Bilgisi" onClose={onClose} className="poi-sheet">
@@ -51,6 +63,23 @@ export default function PoiInfoSheet({ open, poi, onClose }) {
           ))}
         </dl>
       </section>
+
+      {/* Yönetim bölümü, sunulacak en az bir eylem varsa çizilir; hiçbiri yoksa
+          boş bir düğme şeridi bırakılmaz. */}
+      {(canEdit || canDelete) && (
+        <div className="poi-info-actions">
+          {canEdit && (
+            <button type="button" className="poi-button" onClick={onEdit} disabled={busy}>
+              Düzenle
+            </button>
+          )}
+          {canDelete && (
+            <button type="button" className="poi-button danger" onClick={onDelete} disabled={busy}>
+              {busy ? 'Siliniyor…' : 'Sil'}
+            </button>
+          )}
+        </div>
+      )}
     </MapSheet>
   )
 }

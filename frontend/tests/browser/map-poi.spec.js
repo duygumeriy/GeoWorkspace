@@ -133,6 +133,47 @@ const toolbar = (page) => page.getByRole('toolbar', { name: 'Çizim araçları' 
 const poiButton = (page) => toolbar(page).getByRole('button', { name: 'POI Ekle aracı' })
 const sheet = (page, title) => page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: title }) })
 
+/* --- Aranabilir kategori seçici ---------------------------------------------
+   Kategori artık yerel bir <select> DEĞİLDİR: taksonomi hiyerarşiktir ve
+   derinleştikçe açılır liste, aranan yaprağı onlarca satır arasında elle
+   bulmayı gerektirirdi. Yerine paylaşılan `PoiCategoryPicker` gelir —
+   arama kutusu + listbox, satırlar TAM YOL ile etiketli.
+
+   Testler bu yüzden DOM içinden gizli bir veritabanı kimliği seçmez; kullanıcı
+   gibi davranır: ara, tam yolu tıkla, seçimin yansıdığını gör. */
+
+/** Seçicinin arama kutusu. Erişilebilir ad `Kategori`dir. */
+const categorySearch = (form) => form.getByRole('searchbox', { name: 'Kategori', exact: true })
+
+/** Seçenek listesi. Erişilebilir ad `Kategoriler`dir — arama kutusundan AYRI. */
+const categoryList = (form) => form.getByRole('listbox', { name: 'Kategoriler' })
+
+/**
+ * Bir kategoriyi TAM YOLUYLA seçer.
+ *
+ * Seçenekler tam yolla adlandırıldığı için `exact: true` şarttır: "Kafe"
+ * hem "Yeme-İçme / Kafe" ile hem de ileride eklenebilecek başka bir yaprakla
+ * eşleşebilirdi. Konum tahmini (`nth`, `first`) hiçbir yerde kullanılmaz.
+ *
+ * @param {import('@playwright/test').Locator} form açık POI formu (sheet)
+ * @param {string} path ör. 'Yeme-İçme / Kafe'
+ */
+async function choosePoiCategory(form, path) {
+  // Kullanıcının yazacağı şey yaprak addır; yol ayıracından sonrası.
+  const leaf = path.split(' / ').at(-1)
+
+  await categorySearch(form).fill(leaf)
+
+  const option = categoryList(form).getByRole('option', { name: path, exact: true })
+  await option.click()
+
+  /* Seçim GÖRÜNÜR biçimde yansır: hem ARIA durumu hem panelin kendi
+     "Seçili:" satırı. Tıklamanın gerçekten bir seçime dönüştüğü, gönderilen
+     gövdeye bakmadan önce burada kanıtlanır. */
+  await expect(option).toHaveAttribute('aria-selected', 'true')
+  await expect(form.getByText(`Seçili: ${path}`)).toBeVisible()
+}
+
 /**
  * Birinci POI'nin üstüne tıklar.
  *
@@ -399,23 +440,72 @@ test('the form loads categories and labels them by path', async ({ page }) => {
   const form = sheet(page, 'POI Ekle')
   await expect.poll(() => calls.categories).toBeGreaterThan(0)
 
-  const options = await form.getByLabel('Kategori').locator('option').allInnerTexts()
-  expect(options).toContain('Yeme-İçme')
-  expect(options).toContain('Yeme-İçme / Kafe')
-  expect(options).toContain('Yeme-İçme / Restoran')
+  /* Her satır TAM YOL taşır: aynı adlı kardeşler ancak böyle ayırt edilir.
+     Erişilebilir ad üzerinden sorulur — metin düğümü kazımak, bileşenin
+     yapısına test yazmak olurdu. */
+  const list = categoryList(form)
+  for (const path of ['Yeme-İçme', 'Yeme-İçme / Kafe', 'Yeme-İçme / Restoran']) {
+    await expect(list.getByRole('option', { name: path, exact: true })).toBeVisible()
+  }
 })
 
-test('with no categories the form says so and blocks submission', async ({ page }) => {
-  await openMap(page, withPoi('poi.view', 'poi.create'), { categories: [] })
+test('the category picker filters by leaf name and by path', async ({ page }) => {
+  await openMap(page, withPoi('poi.view', 'poi.create'))
 
   await poiButton(page).click()
   await clickMap(page)
 
   const form = sheet(page, 'POI Ekle')
-  await expect(form.getByText('POI eklemek için önce bir kategori tanımlanmalıdır.')).toBeVisible()
+  const list = categoryList(form)
+
+  // Yaprak adı: yalnızca o dal kalır.
+  await categorySearch(form).fill('kafe')
+  await expect(list.getByRole('option', { name: 'Yeme-İçme / Kafe', exact: true })).toBeVisible()
+  await expect(list.getByRole('option', { name: 'Yeme-İçme / Restoran', exact: true })).toHaveCount(0)
+
+  /* Üst kategorinin adı: dalın TAMAMI gelir — eşleşme yola da bakar.
+     Katlama Türkçe duyarlıdır ve uygulamanın tek arama yardımcısından gelir
+     ('yeme-icme' ile 'Yeme-İçme' eşleşir). */
+  await categorySearch(form).fill('yeme-icme')
+  for (const path of ['Yeme-İçme', 'Yeme-İçme / Kafe', 'Yeme-İçme / Restoran']) {
+    await expect(list.getByRole('option', { name: path, exact: true })).toBeVisible()
+  }
+
+  // Eşleşmeyen arama listeyi boşaltır ama seçiciyi gizlemez.
+  await categorySearch(form).fill('otopark')
+  await expect(list.getByRole('option')).toHaveCount(0)
+  await expect(form.getByText('Aramanızla eşleşen kategori yok.')).toBeVisible()
+})
+
+test('with no categories the form says so and blocks submission', async ({ page }) => {
+  const { calls } = await openMap(page, withPoi('poi.view', 'poi.create'), { categories: [] })
+
+  await poiButton(page).click()
+  await clickMap(page)
+
+  const form = sheet(page, 'POI Ekle')
+
+  /* Açıklama, KATEGORİ alanının kendi durumudur ve orada aranır — formun
+     herhangi bir yerinde değil. Boş bir taksonomi ile "aramayla eşleşen yok"
+     AYRI durumlardır ve ayrı metinleri vardır. */
+  const category = form.locator('.poi-category-picker')
+  await expect(category.getByRole('status')).toHaveText(
+    'POI eklemek için önce bir kategori tanımlanmalıdır.',
+  )
+  // Seçilecek bir şey olmadığında arama kutusu da açık bırakılmaz.
+  await expect(category.getByRole('searchbox', { name: 'Kategori' })).toBeDisabled()
+
   // categoryId=0 hiçbir yoldan gönderilemez.
   await form.getByLabel('POI Adı').fill('Deneme')
   await expect(form.getByRole('button', { name: 'Kaydet' })).toBeDisabled()
+  expect(calls.created).toHaveLength(0)
+
+  /* Boş ama BAŞARILI bir yanıt tamamlanmış bir okumadır. Bu satır gerçek bir
+     hatanın nöbetçisidir: liste "hiç okunmadı" sayıldığında istek sonsuz bir
+     döngüye giriyor, tek bir oturumda binlerce çağrı açılıyor ve form kalıcı
+     olarak "yükleniyor" göründüğü için kullanıcı kategori olmadığını hiç
+     öğrenemiyordu. */
+  expect(calls.categories).toBe(1)
 })
 
 /* ===========================================================================
@@ -430,7 +520,7 @@ test('the POST body carries exactly the five client-owned fields', async ({ page
 
   const form = sheet(page, 'POI Ekle')
   await form.getByLabel('POI Adı').fill('  Yeni POI  ')
-  await form.getByLabel('Kategori').selectOption('3')
+  await choosePoiCategory(form, 'Yeme-İçme / Kafe')
   await form.getByRole('button', { name: 'Kaydet' }).click()
 
   await expect.poll(() => calls.created.length).toBe(1)
@@ -462,7 +552,7 @@ test('an untouched day is omitted while closed and open days are explicit', asyn
 
   const form = sheet(page, 'POI Ekle')
   await form.getByLabel('POI Adı').fill('Mesai POI')
-  await form.getByLabel('Kategori').selectOption('3')
+  await choosePoiCategory(form, 'Yeme-İçme / Kafe')
 
   await form.getByRole('checkbox', { name: 'Pazartesi' }).check()
   await form.getByLabel('Pazartesi açılış saati').fill('09:00')
@@ -497,22 +587,105 @@ test('an untouched day is omitted while closed and open days are explicit', asyn
   expect(hours).not.toHaveProperty('tuesday')
 })
 
-test('an opening time that is not before closing is blocked before any request', async ({ page }) => {
+test('an overnight interval is a real schedule and is saved verbatim', async ({ page }) => {
   const { calls } = await openMap(page, withPoi('poi.view', 'poi.create'))
 
   await poiButton(page).click()
   await clickMap(page)
 
   const form = sheet(page, 'POI Ekle')
-  await form.getByLabel('POI Adı').fill('Ters Mesai')
-  await form.getByLabel('Kategori').selectOption('3')
+  await form.getByLabel('POI Adı').fill('Gece Kafesi')
+  await choosePoiCategory(form, 'Yeme-İçme / Kafe')
   await form.getByRole('checkbox', { name: 'Pazartesi' }).check()
-  await form.getByLabel('Pazartesi açılış saati').fill('18:00')
+  await form.getByLabel('Pazartesi açılış saati').fill('17:00')
+  await form.getByLabel('Pazartesi kapanış saati').fill('01:00')
+
+  /* Kapanışın sayıca küçük olması bir hata DEĞİL, ertesi gündür: gece çalışan
+     bir işletmenin saatini reddetmek, o saati hiç girememek demek olurdu.
+     Satır bunu kendi cümlesiyle söyler ve uyarı hata biçimli değildir. */
+  await expect(form.getByText('01:00 — ertesi gün kapanır')).toBeVisible()
+
+  await form.getByRole('button', { name: 'Kaydet' }).click()
+  await expect.poll(() => calls.created.length).toBe(1)
+
+  // Saatler OLDUĞU GİBİ gider; "ertesi gün" için ek bir alan uydurulmaz.
+  expect(calls.created[0].workHours.monday).toEqual({ closed: false, open: '17:00', close: '01:00' })
+})
+
+test('a day can be declared 24 hours open, explicitly and without hours', async ({ page }) => {
+  const { calls } = await openMap(page, withPoi('poi.view', 'poi.create'))
+
+  await poiButton(page).click()
+  await clickMap(page)
+
+  const form = sheet(page, 'POI Ekle')
+  await form.getByLabel('POI Adı').fill('Kesintisiz Kafe')
+  await choosePoiCategory(form, 'Yeme-İçme / Kafe')
+  await form.getByRole('checkbox', { name: 'Pazartesi', exact: true }).check()
+
+  /* Erişilebilir ad güne özgüdür, bu yüzden satır ataları üzerinden yürümeye
+     gerek yoktur — yedi özdeş "24 Saat Açık" kutusu YOKTUR. */
+  await form.getByRole('checkbox', { name: 'Pazartesi 24 saat açık' }).check()
+
+  // Kesintisiz açık bir günün saati sorulmaz: alanlar hiç çizilmez.
+  await expect(form.getByLabel('Pazartesi açılış saati')).toHaveCount(0)
+  await expect(form.getByLabel('Pazartesi kapanış saati')).toHaveCount(0)
+
+  await form.getByRole('button', { name: 'Kaydet' }).click()
+  await expect.poll(() => calls.created.length).toBe(1)
+
+  /* Gövde AÇIK bayrağı taşır; sahte bir 00:00–23:59 aralığı uydurulmaz ve
+     dokunulmayan günler yine gövdeye hiç girmez. */
+  expect(calls.created[0].workHours.monday).toEqual({ closed: false, open24Hours: true })
+  expect(calls.created[0].workHours).not.toHaveProperty('tuesday')
+})
+
+test('Kapalı and 24 Saat Açık exclude each other', async ({ page }) => {
+  await openMap(page, withPoi('poi.view', 'poi.create'))
+
+  await poiButton(page).click()
+  await clickMap(page)
+
+  const form = sheet(page, 'POI Ekle')
+  await form.getByRole('checkbox', { name: 'Pazartesi', exact: true }).check()
+
+  const monday = form
+    .getByRole('checkbox', { name: 'Pazartesi', exact: true })
+    .locator('xpath=ancestor::li[contains(@class,"poi-hours-day")][1]')
+  const closed = monday.getByRole('checkbox', { name: 'Kapalı', exact: true })
+  const allDay = form.getByRole('checkbox', { name: 'Pazartesi 24 saat açık' })
+
+  await closed.check()
+  await allDay.check()
+  // Bir gün hem kapalı hem kesintisiz açık OLAMAZ; ikinci seçim ilkini bırakır.
+  await expect(closed).not.toBeChecked()
+
+  await closed.check()
+  await expect(allDay).not.toBeChecked()
+
+  // İkisi de bırakılınca saat alanları geri gelir.
+  await closed.uncheck()
+  await expect(form.getByLabel('Pazartesi açılış saati')).toBeVisible()
+})
+
+test('an interval with no duration is blocked before any request', async ({ page }) => {
+  const { calls } = await openMap(page, withPoi('poi.view', 'poi.create'))
+
+  await poiButton(page).click()
+  await clickMap(page)
+
+  const form = sheet(page, 'POI Ekle')
+  await form.getByLabel('POI Adı').fill('Süresiz Mesai')
+  await choosePoiCategory(form, 'Yeme-İçme / Kafe')
+  await form.getByRole('checkbox', { name: 'Pazartesi' }).check()
+  await form.getByLabel('Pazartesi açılış saati').fill('09:00')
   await form.getByLabel('Pazartesi kapanış saati').fill('09:00')
 
   await form.getByRole('button', { name: 'Kaydet' }).click()
 
-  await expect(form.getByText('Açılış saati kapanış saatinden önce olmalıdır.')).toBeVisible()
+  /* Aynı açılış ve kapanış "24 saat açık" SAYILMAZ: veriden türetilemeyen bir
+     anlam uydurmak olurdu. */
+  await expect(form.getByText('Açılış ve kapanış saati aynı olamaz.')).toBeVisible()
   expect(calls.created).toHaveLength(0)
 })
 
@@ -524,7 +697,7 @@ test('a successful save closes the form, drops the marker and shows the POI', as
 
   const form = sheet(page, 'POI Ekle')
   await form.getByLabel('POI Adı').fill('Kaydedilen POI')
-  await form.getByLabel('Kategori').selectOption('3')
+  await choosePoiCategory(form, 'Yeme-İçme / Kafe')
 
   /* Ölçülen şey MUTLAK istek sayısı değil, kaydetmenin YENİ bir istek açıp
      açmadığıdır: geliştirme sunucusu StrictMode altında çalışır ve efektleri
@@ -556,7 +729,7 @@ test('a failed save keeps the form, its values and the pending marker', async ({
 
   const form = sheet(page, 'POI Ekle')
   await form.getByLabel('POI Adı').fill('Alan Dışı')
-  await form.getByLabel('Kategori').selectOption('3')
+  await choosePoiCategory(form, 'Yeme-İçme / Kafe')
   await form.getByRole('button', { name: 'Kaydet' }).click()
 
   // Coğrafi ret açıkça söylenir ama izin verilen alan AÇIKLANMAZ.
@@ -589,7 +762,7 @@ test('save is disabled while a request is in flight', async ({ page }) => {
 
   const form = sheet(page, 'POI Ekle')
   await form.getByLabel('POI Adı').fill('Tek Kayıt')
-  await form.getByLabel('Kategori').selectOption('3')
+  await choosePoiCategory(form, 'Yeme-İçme / Kafe')
 
   const save = form.getByRole('button', { name: /Kaydet|Kaydediliyor/ })
   await save.click()

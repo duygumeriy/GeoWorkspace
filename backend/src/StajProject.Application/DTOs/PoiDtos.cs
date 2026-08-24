@@ -38,6 +38,59 @@ public class CreatePoiRequest
 }
 
 /// <summary>
+/// Var olan bir POI'nin düzenlenmesi.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <b>Sunucuya ait alanlar burada da TANIMLI DEĞİLDİR.</b> <c>userId</c>,
+/// <c>createdDate</c>, <c>modifiedDate</c>, <c>isActive</c>, <c>isDeleted</c>
+/// ve <c>creatorUsername</c> gövdede gönderilse bile bağlanacak bir property
+/// yoktur — düzenleme, sahipliği ve denetim alanlarını hiçbir yoldan
+/// değiştiremez. Oluşturan, düzenlemeden SONRA da aynı kişidir.
+/// </para>
+/// <para>
+/// <b>Koordinat OPSİYONEL bir ÇİFTTİR.</b> Üçü de mümkündür ve üçü de
+/// açıkça tanımlıdır:
+/// </para>
+/// <list type="bullet">
+/// <item>ikisi de gönderilmez → kayıt YERİNDE kalır (eski istemciler ve konum
+/// alanı sunmayan ekranlar bu ucu değiştirmeden kullanmaya devam eder);</item>
+/// <item>ikisi de gönderilir → doğrulanır, coğrafi yetkiden geçirilir ve
+/// geometri güncellenir;</item>
+/// <item>yalnızca biri gönderilir → REDDEDİLİR. Yarım bir koordinat diye bir
+/// şey yoktur; eksik yarısını eski değerle tamamlamak, kullanıcının hiç
+/// istemediği bir noktaya taşımak olurdu.</item>
+/// </list>
+/// <para>
+/// SRID yine istemciden alınmaz: değerler sözleşme gereği EPSG:4326'dır ve
+/// geometriyi sunucu 4326 olarak kurar.
+/// </para>
+/// </remarks>
+public class UpdatePoiRequest
+{
+    /// <summary>ZORUNLU. Kırpılır; en fazla 200 karakter.</summary>
+    public string? Name { get; set; }
+
+    /// <summary>ZORUNLU. Var olan, aktif ve silinmemiş bir kategori olmalıdır.</summary>
+    public int CategoryId { get; set; }
+
+    /// <summary>Gönderilmezse mesai bilgisi TEMİZLENİR (null yazılır).</summary>
+    public PoiWorkHoursDto? WorkHours { get; set; }
+
+    /// <summary>
+    /// EPSG:4326 boylam. <see cref="Latitude"/> ile BİRLİKTE gönderilir ya da
+    /// hiç gönderilmez.
+    /// </summary>
+    public double? Longitude { get; set; }
+
+    /// <summary>
+    /// EPSG:4326 enlem. <see cref="Longitude"/> ile BİRLİKTE gönderilir ya da
+    /// hiç gönderilmez.
+    /// </summary>
+    public double? Latitude { get; set; }
+}
+
+/// <summary>
 /// Haritanın gördüğü POI. <c>poi.view</c> taşıyan HERKESE döner.
 /// </summary>
 /// <remarks>
@@ -67,6 +120,28 @@ public class PoiResponse
     public double Longitude { get; set; }
 
     public double Latitude { get; set; }
+
+    /* --- Yetenek bayrakları ---------------------------------------------------
+
+       İkisi de SUNUCUDA hesaplanır ve "bu çağıran bu kayıtta ne yapabilir"
+       sorusunu yanıtlar: poi.manage VEYA (sahiplik VE poi.update/poi.delete).
+
+       Neden kullanıcı kimliği yerine bayrak. Arayüzün "Düzenle" düğmesini
+       gösterebilmesi için kaydın sahibini BİLMESİ gerekmez — yalnızca kendi
+       yetkisini bilmesi gerekir. Oluşturan kimliğini haritaya taşımak, harita
+       sözleşmesinin bilinçli olarak dışarıda bıraktığı bilgiyi (kim neyi
+       ekledi) her kullanıcıya açardı; bayrak ise aynı arayüzü sızıntısız
+       kurar.
+
+       Bunlar bir GÜVENLİK SINIRI DEĞİLDİR: her mutasyon ucu aynı kararı
+       sunucuda yeniden verir ve yetkisiz isteğe 403 döner. Bayraklar yalnızca
+       garanti reddedilecek bir eylemin sunulmasını engeller. */
+
+    /// <summary>Çağıran bu POI'yi düzenleyebilir mi.</summary>
+    public bool CanUpdate { get; set; }
+
+    /// <summary>Çağıran bu POI'yi silebilir (ve geri yükleyebilir) mi.</summary>
+    public bool CanDelete { get; set; }
 }
 
 /// <summary>
@@ -108,4 +183,45 @@ public class AdminPoiResponse
     public bool IsActive { get; set; }
 
     public bool IsDeleted { get; set; }
+}
+
+/// <summary>
+/// Çöp Kutusu'ndaki tek bir silinmiş POI.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Çizim tarafındaki <see cref="DeletedDrawingResponse"/> ile AYNI sözleşmeyi
+/// izler: kaydın kendisi normal harita gövdesiyle (<see cref="PoiResponse"/>)
+/// taşınır, sarmalayıcı yalnızca listenin ihtiyaç duyduğu iki şeyi ekler —
+/// kaydın türü ve ne zaman silindiği. Böylece geri yüklenen POI, çöp
+/// kutusunda göründüğü gibi haritada da görünür.
+/// </para>
+/// <para>
+/// <b><see cref="DeletedAt"/> ayrı bir kolon DEĞİLDİR.</b> POI tablosunda
+/// çizimlerdeki gibi bir <c>deleted_at</c> alanı yoktur ve bu faz için bir
+/// migration açmak, tek bir okuma alanı uğruna şema değiştirmek olurdu: soft
+/// delete <c>modified_date</c>'i damgalar, dolayısıyla silinmiş bir kaydın son
+/// değişiklik zamanı onun silinme zamanıdır.
+/// </para>
+/// <para>
+/// <b>Oluşturan bilgisi YALNIZCA yetkiliye doldurulur.</b> Harita sözleşmesi
+/// kullanıcı adı taşımaz; çöp kutusunda da taşımaz — tek istisna
+/// <c>poi.manage</c> ile listeyi açan yönetim yetkisidir, çünkü o zaten
+/// başkalarının kayıtlarını görmektedir ve kimin sildiğini bilmeden geri
+/// yükleme kararı veremez. Yetkisiz çağıran için alan boş kalır.
+/// </para>
+/// </remarks>
+public class DeletedPoiResponse
+{
+    /// <summary>Daima <c>poi</c>. Çöp Kutusu'nun tür ayrımını yapan alan.</summary>
+    public string Type { get; set; } = "poi";
+
+    /// <summary>UTC silinme zamanı (<c>modified_date</c>).</summary>
+    public DateTime? DeletedAt { get; set; }
+
+    /// <summary>Yalnızca <c>poi.manage</c> ile dolu; aksi hâlde boş.</summary>
+    public string CreatorUsername { get; set; } = string.Empty;
+
+    /// <summary>Kaydın normal harita gövdesiyle aynı gövde.</summary>
+    public PoiResponse Poi { get; set; } = new();
 }

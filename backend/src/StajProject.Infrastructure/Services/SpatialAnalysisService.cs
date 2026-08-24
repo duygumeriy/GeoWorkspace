@@ -3,6 +3,7 @@ using NetTopologySuite.Geometries;
 using StajProject.Application.Common;
 using StajProject.Application.DTOs;
 using StajProject.Application.Interfaces;
+using StajProject.Application.Pois;
 using StajProject.Application.Spatial;
 using StajProject.Domain.Common;
 using StajProject.Infrastructure.Persistence;
@@ -38,10 +39,20 @@ public class SpatialAnalysisService : ISpatialAnalysisService
     private readonly AppDbContext _dbContext;
     private readonly ICurrentUserService _currentUser;
 
-    public SpatialAnalysisService(AppDbContext dbContext, ICurrentUserService currentUser)
+    /* POI kırılımı AYRI bir yetkiyle (poi.view) korunur ve envanter analizi
+       yetkisi onu ima etmez: biri "analiz çalıştırabilir", diğeri "POI'leri
+       görebilir" der. Etkin yetki hesabı burada tekrarlanmaz; kaynak Phase 2
+       servisidir. */
+    private readonly IEffectivePermissionService _permissions;
+
+    public SpatialAnalysisService(
+        AppDbContext dbContext,
+        ICurrentUserService currentUser,
+        IEffectivePermissionService permissions)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
+        _permissions = permissions;
     }
 
     public async Task<ServiceResult<IntersectionAnalysisResponse>> CountIntersectionsAsync(
@@ -81,18 +92,103 @@ public class SpatialAnalysisService : ISpatialAnalysisService
         var polygons = await MatchesAsync<Domain.Entities.PolygonFeature, Polygon>(
             polygon, currentUserId.Value, DrawingKind.Polygon, request!.ExcludePolygonId, cancellationToken);
 
+        /* POI'ler SAHİPLİĞE göre daraltılmaz — çizimlerin aksine ortak bir
+           envanterdir ve poi.view taşıyan herkes hepsini görür. Kapı bu yüzden
+           sahiplik değil YETKİdir: yetki yoksa liste boş, sayı 0 ve toplam
+           POI'ler hiç yokmuş gibi hesaplanır. */
+        var pois = await MatchingPoisAsync(polygon, cancellationToken);
+
         /* Sayılar listelerden türetilir, ayrıca sorgulanmaz: "sayı ile liste
            uyuşmuyor" durumu böylece temsil edilemez hâle gelir. */
         return ServiceResult<IntersectionAnalysisResponse>.Success(new IntersectionAnalysisResponse
         {
-            TotalCount = points.Count + lines.Count + polygons.Count,
+            TotalCount = points.Count + lines.Count + polygons.Count + pois.Count,
             PointCount = points.Count,
             LineCount = lines.Count,
             PolygonCount = polygons.Count,
+            PoiCount = pois.Count,
             Points = points,
             Lines = lines,
-            Polygons = polygons
+            Polygons = polygons,
+            Pois = pois
         });
+    }
+
+    /// <summary>
+    /// Analiz alanıyla kesişen POI'ler.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Kesişim VERİTABANINDA hesaplanır.</b> <c>Coordinate.Intersects</c>,
+    /// Npgsql tarafından <c>ST_Intersects</c>'e çevrilir ve <c>coordinate</c>
+    /// kolonundaki GiST indeksi kullanılabilir. Tüm POI'leri belleğe (ya da
+    /// tarayıcıya) çekip nokta-poligon testi yazmak, aynı cevabı indekssiz ve
+    /// tablonun tamamını taşıyarak üretirdi.
+    /// </para>
+    /// <para>
+    /// <b>Aktiflik/silinmişlik filtresi global query filter'dan gelir</b> —
+    /// <c>IgnoreQueryFilters</c> BİLİNÇLİ olarak kullanılmaz, dolayısıyla pasif
+    /// ve soft-delete edilmiş POI'ler sayıma hiç girmez.
+    /// </para>
+    /// </remarks>
+    private async Task<List<AnalysisPoiResponse>> MatchingPoisAsync(
+        Polygon analysisArea,
+        CancellationToken cancellationToken)
+    {
+        var currentUserId = _currentUser.UserId;
+
+        if (currentUserId is null
+            || !await _permissions.HasPermissionAsync(currentUserId.Value, PermissionCodes.PoiView, cancellationToken))
+        {
+            // Sızıntı yok: ne sayı, ne liste, ne de toplamda bir iz.
+            return [];
+        }
+
+        var rows = await _dbContext.Pois
+            .AsNoTracking()
+            .Where(poi => poi.Coordinate.Intersects(analysisArea))
+            .OrderBy(poi => poi.Id)
+            .Select(poi => new
+            {
+                poi.Id,
+                poi.Name,
+                poi.CategoryId,
+                Longitude = poi.Coordinate.X,
+                Latitude = poi.Coordinate.Y
+            })
+            .ToListAsync(cancellationToken);
+
+        if (rows.Count == 0)
+        {
+            // Eşleşme yoksa kategori ağacını hiç okumaya gerek yok.
+            return [];
+        }
+
+        /* Kategori adları TEK sorguda okunur ve yol aynı saf yardımcıyla
+           kurulur (PoiCategoryHierarchy): harita listesindeki "Yeme-İçme /
+           Kafe" ile analiz sonucundaki yol ikinci bir tanım değil, aynı
+           tanımdır. */
+        var categories = await _dbContext.PoiCategories
+            .AsNoTracking()
+            .Select(category => new { category.Id, category.Name, category.ParentId })
+            .ToListAsync(cancellationToken);
+
+        var nodes = categories.ToDictionary(
+            node => node.Id,
+            node => new PoiCategoryHierarchy.Node(node.Id, node.Name, node.ParentId));
+
+        return
+        [
+            .. rows.Select(row => new AnalysisPoiResponse
+            {
+                Id = row.Id,
+                Name = row.Name,
+                CategoryName = nodes.TryGetValue(row.CategoryId, out var node) ? node.Name : string.Empty,
+                CategoryPath = PoiCategoryHierarchy.BuildPath(nodes, row.CategoryId),
+                Longitude = row.Longitude,
+                Latitude = row.Latitude
+            })
+        ];
     }
 
     /// <summary>

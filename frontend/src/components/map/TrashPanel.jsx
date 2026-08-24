@@ -1,16 +1,27 @@
 import { useMemo, useState } from 'react'
 import MapSheet from './MapSheet.jsx'
-import { PointIcon, LineIcon, PolygonIcon, CloseIcon, UndoIcon } from '../ui/icons/index.js'
-import { TYPE_FILTERS } from '../../map/drawingFilters.js'
-import { DEFAULT_TRASH_SORT, TRASH_SORT_OPTIONS, buildTrashView } from '../../map/trashFilters.js'
+import { PointIcon, LineIcon, PolygonIcon, CloseIcon, UndoIcon, PinIcon } from '../ui/icons/index.js'
+import {
+  DEFAULT_TRASH_SORT,
+  TRASH_SORT_OPTIONS,
+  TRASH_TYPE_FILTERS,
+  buildTrashView,
+  trashRecordOf,
+} from '../../map/trashFilters.js'
 import { DRAWING_TYPES } from '../../map/drawingTypes.js'
 import { formatDateTime } from '../../map/datetime.js'
 import './TrashPanel.css'
 
-const TYPE_ICONS = { point: PointIcon, line: LineIcon, polygon: PolygonIcon }
+/* POI'nin kendi simgesi vardır: listede bir noktadan ayırt edilebilmelidir. */
+const TYPE_ICONS = { point: PointIcon, line: LineIcon, polygon: PolygonIcon, poi: PinIcon }
+
+/** Çizim türleri kanonik tablodan gelir; POI ayrı bir kayıttır. */
+const POI_LABEL = 'POI'
 
 /**
- * "Çöp Kutusu" — the current user's soft-deleted drawings, and the way back.
+ * "Çöp Kutusu" — soft-deleted records the caller can bring back, and the way
+ * back. Drawings and POIs share ONE panel: "ne sildim?" is the same question
+ * whichever table the row lives in.
  *
  * This panel is the visible half of a feature the backend already had: deleting
  * a drawing has always kept the row and only marked it, but until now nothing in
@@ -65,13 +76,13 @@ export default function TrashPanel({
     >
       {loading && (
         <p className="trash-status" role="status" aria-live="polite">
-          Silinen çizimler yükleniyor...
+          Silinen kayıtlar yükleniyor...
         </p>
       )}
 
       {!loading && error && (
         <div className="trash-error" role="alert">
-          <p className="trash-error-text">Silinen çizimler yüklenemedi.</p>
+          <p className="trash-error-text">Silinen kayıtlar yüklenemedi.</p>
           {onRetry && (
             <button type="button" className="trash-retry" onClick={onRetry}>
               Tekrar Dene
@@ -85,8 +96,8 @@ export default function TrashPanel({
           looking for a drawing that a filter is hiding. */}
       {!loading && !error && total === 0 && (
         <p className="trash-empty">
-          Çöp kutusunda çizim yok.
-          <span className="trash-empty-hint">Silinen çizimler burada görünecek.</span>
+          Çöp kutusunda kayıt yok.
+          <span className="trash-empty-hint">Silinen çizimler ve POI'ler burada görünecek.</span>
         </p>
       )}
 
@@ -97,8 +108,8 @@ export default function TrashPanel({
               <input
                 type="search"
                 className="trash-search-input"
-                placeholder="Çizim adına göre ara..."
-                aria-label="Silinen çizimlerde adına göre ara"
+                placeholder="Kayıt adına göre ara..."
+                aria-label="Silinen kayıtlarda adına göre ara"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
               />
@@ -114,10 +125,10 @@ export default function TrashPanel({
               )}
             </div>
 
-            {/* The same four options "Çizimlerim" offers, from the same table —
-                one trash for all three geometry types, not three screens. */}
+            {/* Çizim türleri "Çizimlerim" ile aynı kanonik tablodan; POI
+                dördüncü bir çip olarak eklenir — tek çöp kutusu, dört tür. */}
             <div className="trash-chips" role="group" aria-label="Tür filtresi">
-              {TYPE_FILTERS.map((filter) => (
+              {TRASH_TYPE_FILTERS.map((filter) => (
                 <button
                   key={filter.id}
                   type="button"
@@ -144,7 +155,7 @@ export default function TrashPanel({
 
           {matchCount === 0 ? (
             <div className="trash-empty-filtered">
-              <p className="trash-empty">Bu filtreyle eşleşen çizim bulunamadı.</p>
+              <p className="trash-empty">Bu filtreyle eşleşen kayıt bulunamadı.</p>
               {isFiltered && (
                 <button type="button" className="trash-retry" onClick={resetFilters}>
                   Filtreleri Temizle
@@ -154,18 +165,27 @@ export default function TrashPanel({
           ) : (
             <ul className="trash-items">
               {visible.map((item) => {
+                const isPoi = item.type === 'poi'
                 const config = DRAWING_TYPES[item.type]
                 const Icon = TYPE_ICONS[item.type]
-                const drawing = item.drawing ?? {}
-                const key = `${item.type}:${drawing.id}`
+                /* Tek okuma: çizim girişleri `drawing`, POI girişleri `poi`
+                   taşır ve ikisi de aynı şekle sahiptir. */
+                const record = trashRecordOf(item) ?? {}
+                const key = `${item.type}:${record.id}`
                 const isRestoring = restoringKey === key
-                const title = drawing.name || config?.label || 'Çizim'
+                const typeLabel = isPoi ? POI_LABEL : config?.label ?? item.type
+                const title = record.name || typeLabel
 
                 return (
                   <li key={key} className="trash-row">
                     <span
                       className="trash-item-dot"
-                      style={{ '--dot': drawing.style?.strokeColor ?? 'var(--primary-light)' }}
+                      style={{
+                        // POI'nin stili yoktur; haritadaki mavisiyle temsil edilir.
+                        '--dot': isPoi
+                          ? 'var(--poi-color, #2563EB)'
+                          : record.style?.strokeColor ?? 'var(--primary-light)',
+                      }}
                       aria-hidden="true"
                     />
 
@@ -175,9 +195,21 @@ export default function TrashPanel({
 
                     <span className="trash-item-text">
                       <span className="trash-item-title">
-                        #{drawing.id} {title}
+                        #{record.id} {title}
                       </span>
-                      <span className="trash-item-meta">Tür: {config?.label ?? item.type}</span>
+                      <span className="trash-item-meta">Tür: {typeLabel}</span>
+                      {/* POI'nin anlamlı ikinci alanı kategorisidir; çizimin
+                          yerine geçen bir alan uydurulmaz. */}
+                      {isPoi && (record.categoryPath || record.categoryName) && (
+                        <span className="trash-item-meta">
+                          Kategori: {record.categoryPath || record.categoryName}
+                        </span>
+                      )}
+                      {/* Ekleyen YALNIZCA sunucu gönderdiyse (poi.manage)
+                          gösterilir; harita sözleşmesi onu taşımaz. */}
+                      {isPoi && item.creatorUsername && (
+                        <span className="trash-item-meta">Ekleyen: {item.creatorUsername}</span>
+                      )}
                       {/* The deletion time, not the modification time: the two
                           are different questions and only one of them belongs
                           in a trash. */}
@@ -188,7 +220,7 @@ export default function TrashPanel({
                       type="button"
                       className="trash-restore"
                       disabled={isRestoring}
-                      aria-label={`${title} çizimini geri yükle`}
+                      aria-label={`${title} kaydını geri yükle`}
                       onClick={() => onRestore?.(item)}
                     >
                       <UndoIcon size={14} />

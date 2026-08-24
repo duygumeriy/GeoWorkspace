@@ -709,6 +709,17 @@ export function fetchPois() {
   return authFetch('/api/poi')
 }
 
+/**
+ * "POI'lerim": çağıranın KENDİ aktif POI'leri (`poi.view`).
+ *
+ * Harita listesinden AYRI bir uçtur ve bu bilinçlidir: sahiplik yüklemi
+ * sunucudadır. Ortak listeyi tarayıcıda süzmek, kaydın sahibini herkesin
+ * gördüğü sözleşmeye koymayı gerektirirdi.
+ */
+export function fetchOwnPois() {
+  return authFetch('/api/poi/mine')
+}
+
 /** POI oluşturma açılır listesi için aktif kategoriler (`poi.view`). */
 export function fetchPoiCategories() {
   return authFetch('/api/poi/categories')
@@ -727,6 +738,55 @@ export function createPoi({ name, categoryId, workHours, longitude, latitude }) 
     headers: JSON_HEADERS,
     body: JSON.stringify({ name, categoryId, workHours: workHours ?? null, longitude, latitude }),
   })
+}
+
+/**
+ * POI düzenleme (`poi.update` + sahiplik, ya da `poi.manage`).
+ *
+ * Gövde adı, kategoriyi, mesaiyi ve — varsa — YENİ KOORDİNATI taşır. Sahiplik,
+ * tarihler ve durum bayrakları sunucuya aittir; düzenleme onları hiçbir yoldan
+ * değiştiremez. Koordinat gönderildiğinde sunucu onu kendi coğrafi yetki
+ * denetiminden geçirir: haritada sürükleyebilmek, oraya taşıyabilmek DEĞİLDİR —
+ * DTO'da karşılıkları bile yoktur.
+ */
+export function updatePoi(id, { name, categoryId, workHours, longitude, latitude }) {
+  /* Koordinat ÇİFT olarak gönderilir ya da hiç gönderilmez. Yarım bir çift
+     sunucuda reddedilir — ve reddedilmelidir: yalnızca boylamı değişen bir
+     nokta, kullanıcının hiç istemediği bir yere taşınırdı. Hiç gönderilmediğinde
+     kayıt yerinde kalır, böylece koordinat alanı olmayan çağıranlar (ve eski
+     istemciler) aynı ucu değiştirmeden kullanmaya devam eder. */
+  const moved = Number.isFinite(longitude) && Number.isFinite(latitude)
+
+  return authFetch(`/api/poi/${id}`, {
+    method: 'PUT',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({
+      name,
+      categoryId,
+      workHours: workHours ?? null,
+      ...(moved ? { longitude, latitude } : {}),
+    }),
+  })
+}
+
+/**
+ * POI silme (`poi.delete` + sahiplik, ya da `poi.manage`).
+ *
+ * SOFT delete: satır veritabanında kalır, Çöp Kutusu'nda görünür ve geri
+ * yüklenebilir. Kalıcı silme ucu YOKTUR.
+ */
+export function deletePoi(id) {
+  return authFetch(`/api/poi/${id}`, { method: 'DELETE' })
+}
+
+/** Silinmiş POI'yi geri açar; silmeyle aynı yetkiyi ister. */
+export function restorePoi(id) {
+  return authFetch(`/api/poi/${id}/restore`, { method: 'POST' })
+}
+
+/** Çöp Kutusu'nun POI yarısı: çağıranın geri yükleyebileceği silinmiş kayıtlar. */
+export function fetchDeletedPois() {
+  return authFetch('/api/poi/deleted')
 }
 
 /* --- POI yönetimi -------------------------------------------------------------

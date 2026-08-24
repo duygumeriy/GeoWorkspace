@@ -5,6 +5,15 @@ import { mockPermissions } from './permissions.js'
  * Browser cover for the "Çöp Kutusu" panel: listing, filtering, searching and
  * restoring soft-deleted drawings.
  *
+ * ## Kapsam: ÇİZİM yarısı
+ *
+ * Phase 3'ten beri Çöp Kutusu ortak bir kabuktur ve POI'leri de taşır. Bu
+ * dosyanın konusu bilinçli olarak ÇİZİM davranışının aynı kabuk içinde
+ * bozulmadan sürmesidir; POI sahiplik/geri yükleme akışı
+ * `poi-ownership-and-map-context.spec.js` içinde ayrıca kanıtlanır ve burada
+ * tekrarlanmaz. POI ucu bu yüzden BOŞ liste döndürür — ama mutlaka
+ * yanıtlanır: yetkili bir çağıran onu gerçekten ister.
+ *
  * ## Why these exist
  *
  * Soft delete and restore were already implemented on the backend, but nothing
@@ -83,10 +92,12 @@ const DEFAULT_TRASH = [
  * @param {Array} [options.trash] entries the deleted endpoint answers with
  * @param {number} [options.deletedDelayMs] holds the response, so the loading
  *   state can be observed rather than raced past
- * @returns {{ restoreRequests: object[], listLoads: number, state: object }}
+ * @returns {{ restoreRequests: object[], poiRestoreRequests: string[], state: object }}
  */
 async function openMap(page, { trash = DEFAULT_TRASH, deletedDelayMs = 0 } = {}) {
   const restoreRequests = []
+  /** POI geri yükleme ucuna giden istekler — çizim akışında BOŞ kalmalıdır. */
+  const poiRestoreRequests = []
   const state = {
     // Restoring moves a record from the trash into the live list, which is what
     // the map reload then picks up.
@@ -95,6 +106,8 @@ async function openMap(page, { trash = DEFAULT_TRASH, deletedDelayMs = 0 } = {})
     points: [],
     lines: [],
     listLoads: 0,
+    /** POI çöp kutusu ucunun kaç kez okunduğu. */
+    poiListLoads: 0,
   }
 
   /* Yetki ucu da yanıtlanmalı: arayüz küme gelene kadar korumalı hiçbir şeyi
@@ -104,6 +117,22 @@ async function openMap(page, { trash = DEFAULT_TRASH, deletedDelayMs = 0 } = {})
 
   await page.route('**/api/auth/me', (route) =>
     route.fulfill(json({ userId: USER_ID, username: 'browser-user', role: 'User' })),
+  )
+
+  /* Phase 3 haritaya bir POI KATMANI ekledi ve bu profil `poi.view` taşır,
+     dolayısıyla harita açılışında `/api/poi` gerçekten istenir. Taklit
+     edilmezse istek `http://localhost:5154`'e gider, testte ayakta olmayan
+     backend yüzünden reddedilir ve `usePoiLayer` bunu bir hata bildirimi
+     olarak gösterir ("Failed to fetch") — bu spec'in ölçtüğü geri yükleme
+     hatasının yanına ikinci, alakasız bir hata koyardı. İçerik boştur:
+     buradaki konu çizim çöp kutusudur. */
+  await page.route('**/api/poi', (route) => route.fulfill(json([])))
+
+  /* Aynı gerekçe: coğrafi kapsam ucu her harita açılışında okunur. Sessizce
+     başarısız olur (bildirim üretmez) ama taklit edilmesi fikstürü
+     belirlenimci kılar. */
+  await page.route('**/api/auth/me/geographic-scope', (route) =>
+    route.fulfill(json({ isRestricted: false, effectiveWkt: null, areaCount: 0 })),
   )
 
   await page.route('**/api/drawings/points', (route) => {
@@ -116,6 +145,22 @@ async function openMap(page, { trash = DEFAULT_TRASH, deletedDelayMs = 0 } = {})
   await page.route('**/api/drawings/deleted', async (route) => {
     if (deletedDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, deletedDelayMs))
     await route.fulfill(json(state.trash))
+  })
+
+  /* Çöp Kutusu artık İKİ uçtan okur. Bu spec'in profili tam yetkilidir,
+     dolayısıyla POI ucu da gerçekten çağrılır ve yanıtlanmalıdır: taklit
+     edilmeyen bir uç geliştirme sunucusuna düşer ve JSON yerine HTML döner.
+     İçerik bilerek boştur — burada ölçülen şey çizim davranışıdır. */
+  await page.route('**/api/poi/deleted', (route) => {
+    state.poiListLoads += 1
+    return route.fulfill(json([]))
+  })
+
+  /* POI geri yükleme ucu, ÇAĞRILMADIĞINI kanıtlayabilmek için tanımlanır:
+     çizim satırının yanlış uca gitmesi böylece sessiz kalmaz. */
+  await page.route('**/api/poi/*/restore', (route) => {
+    poiRestoreRequests.push(route.request().url())
+    return route.fulfill(json({}))
   })
 
   await page.route('**/api/drawings/restore', async (route) => {
@@ -148,7 +193,7 @@ async function openMap(page, { trash = DEFAULT_TRASH, deletedDelayMs = 0 } = {})
   await page.goto('/map')
   await expect(page.locator('.map-container canvas').first()).toBeVisible()
 
-  return { restoreRequests, state }
+  return { restoreRequests, poiRestoreRequests, state }
 }
 
 async function openTrashPanel(page) {
@@ -161,7 +206,7 @@ const listedTitles = (page) => page.locator('.trash-item-title')
 /* --- Listing ---------------------------------------------------------------- */
 
 test('trash lists the deleted drawings with their type and deletion time', async ({ page }) => {
-  await openMap(page)
+  const { state } = await openMap(page)
   await openTrashPanel(page)
 
   await expect(listedTitles(page)).toHaveText([
@@ -172,6 +217,10 @@ test('trash lists the deleted drawings with their type and deletion time', async
 
   // The header counts everything in the trash, regardless of the filters.
   await expect(page.locator('.map-sheet-title')).toHaveText('Çöp Kutusu (3)')
+
+  /* Ortak kabuk POI ucunu da okur — bu profil onu geri yükleyebilir. Liste
+     boş döndüğü için çizim beklentileri aynen geçerlidir. */
+  expect(state.poiListLoads).toBeGreaterThan(0)
 
   const firstRow = page.locator('.trash-row').first()
   await expect(firstRow).toContainText('Tür: Poligon')
@@ -186,17 +235,19 @@ test('trash shows a loading state while the list is in flight', async ({ page })
 
   await page.getByRole('button', { name: 'Çöp Kutusu' }).click()
 
-  await expect(page.getByText('Silinen çizimler yükleniyor...')).toBeVisible()
+  /* Ortak kabuk "kayıt" der: liste çizimleri ve POI'leri birlikte taşır,
+     dolayısıyla yalnızca çizimden söz eden bir metin artık doğru olmazdı. */
+  await expect(page.getByText('Silinen kayıtlar yükleniyor...')).toBeVisible()
   await expect(listedTitles(page).first()).toBeVisible()
-  await expect(page.getByText('Silinen çizimler yükleniyor...')).toBeHidden()
+  await expect(page.getByText('Silinen kayıtlar yükleniyor...')).toBeHidden()
 })
 
 test('an empty trash explains itself instead of showing a blank panel', async ({ page }) => {
   await openMap(page, { trash: [] })
   await openTrashPanel(page)
 
-  await expect(page.getByText('Çöp kutusunda çizim yok.')).toBeVisible()
-  await expect(page.getByText('Silinen çizimler burada görünecek.')).toBeVisible()
+  await expect(page.getByText('Çöp kutusunda kayıt yok.')).toBeVisible()
+  await expect(page.getByText("Silinen çizimler ve POI'ler burada görünecek.")).toBeVisible()
   // With nothing to filter, the controls stay out of the way.
   await expect(page.locator('.trash-chips')).toHaveCount(0)
 })
@@ -216,13 +267,20 @@ test('the type filter narrows the trash to one geometry type', async ({ page }) 
   // "Tümü" puts every type back — one trash, not three.
   await page.getByRole('button', { name: 'Tümü', exact: true }).click()
   await expect(listedTitles(page)).toHaveCount(3)
+
+  /* Dördüncü çip ortak kabuğun parçasıdır ve kayıt olmasa da çizilir: çipler
+     TÜR tablosundan türetilir, listedeki içerikten değil. Silinmiş POI
+     bulunmadığı için süzgeç boş sonuç verir. */
+  await page.getByRole('button', { name: 'POI', exact: true }).click()
+  await expect(listedTitles(page)).toHaveCount(0)
+  await expect(page.getByText('Bu filtreyle eşleşen kayıt bulunamadı.')).toBeVisible()
 })
 
 test('searching by name is case- and diacritic-insensitive', async ({ page }) => {
   await openMap(page)
   await openTrashPanel(page)
 
-  const search = page.getByLabel('Silinen çizimlerde adına göre ara')
+  const search = page.getByLabel('Silinen kayıtlarda adına göre ara')
 
   await search.fill('ankara')
   await expect(listedTitles(page)).toHaveText(['#11 Ankara Ofis Alanı'])
@@ -236,13 +294,13 @@ test('a filter that matches nothing says so, separately from an empty trash', as
   await openMap(page)
   await openTrashPanel(page)
 
-  await page.getByLabel('Silinen çizimlerde adına göre ara').fill('bulunmayan-çizim')
+  await page.getByLabel('Silinen kayıtlarda adına göre ara').fill('bulunmayan-çizim')
 
-  await expect(page.getByText('Bu filtreyle eşleşen çizim bulunamadı.')).toBeVisible()
+  await expect(page.getByText('Bu filtreyle eşleşen kayıt bulunamadı.')).toBeVisible()
   // The other empty state must NOT appear: the trash is not empty, a filter is
   // hiding its contents, and saying otherwise would send the user looking for a
   // drawing they still have.
-  await expect(page.getByText('Çöp kutusunda çizim yok.')).toHaveCount(0)
+  await expect(page.getByText('Çöp kutusunda kayıt yok.')).toHaveCount(0)
 
   await page.getByRole('button', { name: 'Filtreleri Temizle' }).click()
   await expect(listedTitles(page)).toHaveCount(3)
@@ -269,9 +327,11 @@ test('restoring asks for confirmation and can be cancelled', async ({ page }) =>
   const { restoreRequests } = await openMap(page)
   await openTrashPanel(page)
 
-  await page.getByRole('button', { name: 'Ankara Ofis Alanı çizimini geri yükle' }).click()
+  /* Satır düğmesinin erişilebilir adı ortak kabukta "kaydını"dır: aynı liste
+     iki türü birden taşır ve "çizimini" bir POI satırında yanlış olurdu. */
+  await page.getByRole('button', { name: 'Ankara Ofis Alanı kaydını geri yükle' }).click()
 
-  const dialog = page.getByRole('alertdialog')
+  const dialog = page.getByRole('alertdialog', { name: 'Çizimi geri yükle', exact: true })
   await expect(dialog).toBeVisible()
   // Naming the drawing is what makes the dialog catch a mis-tap.
   await expect(dialog).toContainText('Ankara Ofis Alanı')
@@ -285,13 +345,20 @@ test('restoring asks for confirmation and can be cancelled', async ({ page }) =>
 })
 
 test('restoring sends the existing restore contract and returns the drawing to the map', async ({ page }) => {
-  const { restoreRequests, state } = await openMap(page)
+  const { restoreRequests, poiRestoreRequests, state } = await openMap(page)
   await openTrashPanel(page)
 
   const loadsBeforeRestore = state.listLoads
 
-  await page.getByRole('button', { name: 'Ankara Ofis Alanı çizimini geri yükle' }).click()
-  await page.getByRole('alertdialog').getByRole('button', { name: 'Geri Yükle' }).click()
+  await page.getByRole('button', { name: 'Ankara Ofis Alanı kaydını geri yükle' }).click()
+
+  /* Onay kutusu TÜRÜYLE seçilir (çizim onayı, POI onayı değil) ve onay
+     düğmesi `exact` ile aranır: satırların "… kaydını geri yükle" adları da
+     "Geri Yükle" alt dizesini taşır. */
+  await page
+    .getByRole('alertdialog', { name: 'Çizimi geri yükle', exact: true })
+    .getByRole('button', { name: 'Geri Yükle', exact: true })
+    .click()
 
   await expect(
     page.getByRole('status').filter({ hasText: 'Çizim geri yüklendi.' }),
@@ -300,6 +367,10 @@ test('restoring sends the existing restore contract and returns the drawing to t
   // Identity only: no geometry, no name, no owner. Restoring must not be able
   // to turn into a create that claims ownership of the record.
   expect(restoreRequests).toEqual([{ items: [{ type: 'polygon', id: 11 }] }])
+
+  /* Ortak çöp kutusunda İKİ geri yükleme yolu vardır; çizim satırı yalnızca
+     çizim ucunu çağırır. POI ucuna sızan bir istek burada görünür. */
+  expect(poiRestoreRequests).toEqual([])
 
   // The row is gone from the trash immediately — it is no longer deleted.
   await expect(listedTitles(page)).toHaveText(['#12 İzmir Deposu', '#13 Kuzey Rotası'])
@@ -313,7 +384,7 @@ test('restoring sends the existing restore contract and returns the drawing to t
 })
 
 test('a failed restore leaves the record in the trash', async ({ page }) => {
-  await openMap(page)
+  const { poiRestoreRequests } = await openMap(page)
 
   await page.route('**/api/drawings/restore', (route) =>
     route.fulfill({
@@ -325,10 +396,29 @@ test('a failed restore leaves the record in the trash', async ({ page }) => {
 
   await openTrashPanel(page)
 
-  await page.getByRole('button', { name: 'İzmir Deposu çizimini geri yükle' }).click()
-  await page.getByRole('alertdialog').getByRole('button', { name: 'Geri Yükle' }).click()
+  await page.getByRole('button', { name: 'İzmir Deposu kaydını geri yükle' }).click()
+  await page
+    .getByRole('alertdialog', { name: 'Çizimi geri yükle', exact: true })
+    .getByRole('button', { name: 'Geri Yükle', exact: true })
+    .click()
 
-  await expect(page.locator('.map-toast.is-error')).toContainText('yetkiniz yok')
+  /* Sunucunun mesajı OLDUĞU GİBİ gösterilir ve hata bildirimi `role="alert"`
+     taşır: sınıf adı yerine erişilebilir rol üzerinden sorulur. Konum
+     (`first`/`last`) kullanılmaz — aranan şey İŞ hatasıdır, dizideki bir sıra
+     değil. */
+  const restoreError = page
+    .getByRole('alert')
+    .filter({ hasText: 'Bu çizim üzerinde işlem yapma yetkiniz yok.' })
+  await expect(restoreError).toBeVisible()
+
+  /* Tek bir kullanıcı eylemi TEK bir hata bildirir: aynı başarısızlığın iki
+     kez raporlanması ya da araya alakasız bir ağ hatasının karışması burada
+     görünür. */
+  await expect(page.getByRole('alert')).toHaveCount(1)
+
   // The panel keeps showing the truth: the record is still deleted.
   await expect(listedTitles(page)).toHaveCount(3)
+  await expect(page.locator('.map-sheet-title')).toHaveText('Çöp Kutusu (3)')
+  // Başarısız bir çizim geri yüklemesi POI ucuna da düşmez.
+  expect(poiRestoreRequests).toEqual([])
 })

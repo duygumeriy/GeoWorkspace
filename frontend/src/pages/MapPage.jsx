@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import 'ol/ol.css'
 import Map from 'ol/Map'
 import View from 'ol/View'
@@ -10,7 +10,14 @@ import { canManageAll, canManageDrawing } from '../auth/permissions.js'
 import { usePermissions } from '../auth/permissionStore.js'
 import { PERMISSIONS } from '../auth/permissionCodes.js'
 import { useTransition } from '../transition/TransitionContext.jsx'
-import { createPoi, fetchPoiCategories, readApiError, setConnectionHandler } from '../services/api'
+import {
+  createPoi,
+  deletePoi,
+  fetchPoiCategories,
+  readApiError,
+  setConnectionHandler,
+  updatePoi,
+} from '../services/api'
 import Sidebar from '../components/map/Sidebar.jsx'
 import Topbar from '../components/map/Topbar.jsx'
 import MapLoadingOverlay from '../components/map/MapLoadingOverlay.jsx'
@@ -23,6 +30,7 @@ import MultiSelectionPanel from '../components/map/MultiSelectionPanel.jsx'
 import LayersPanel from '../components/map/LayersPanel.jsx'
 import DrawingsPanel from '../components/map/DrawingsPanel.jsx'
 import TrashPanel from '../components/map/TrashPanel.jsx'
+import MyPoisPanel from '../components/map/MyPoisPanel.jsx'
 import BasemapSelector from '../components/map/BasemapSelector.jsx'
 import ConfirmDialog from '../components/map/ConfirmDialog.jsx'
 import AttributePopup from '../components/map/AttributePopup.jsx'
@@ -41,9 +49,18 @@ import useMediaQuery from '../hooks/useMediaQuery.js'
 import useToasts from '../hooks/useToasts.js'
 import useDrawingWorkspace from '../hooks/useDrawingWorkspace.js'
 import useTrash from '../hooks/useTrash.js'
+import useMyPois from '../hooks/useMyPois.js'
 import useBasemap from '../hooks/useBasemap.js'
 import useInventoryAnalysis from '../hooks/useInventoryAnalysis.js'
 import useWorkspaceMode, { STYLE_PANEL_MODES } from '../hooks/useWorkspaceMode.js'
+import useMapContext from '../hooks/useMapContext.js'
+import {
+  MAP_CONTEXTS,
+  POI_CONTEXTS,
+  SELECTION_CONTEXTS,
+  SIDEBAR_CONTEXTS,
+  sharesState,
+} from '../map/mapContexts.js'
 import useWorkspacePermissions from '../hooks/useWorkspacePermissions.js'
 import useGeographicScope from '../hooks/useGeographicScope.js'
 import useGeographicScopeLayer from '../hooks/useGeographicScopeLayer.js'
@@ -61,7 +78,9 @@ import useMapPresentationLayer from '../hooks/useMapPresentationLayer.js'
 import usePoiLayer from '../hooks/usePoiLayer.js'
 import usePoiPlacement from '../hooks/usePoiPlacement.js'
 import usePoiInteraction from '../hooks/usePoiInteraction.js'
+import usePoiEditDraft from '../hooks/usePoiEditDraft.js'
 import { DRAWING_TYPES, DRAWING_TYPE_LIST, colorPatchFor, normalizeTags } from '../map/drawingTypes.js'
+import { trashRecordOf } from '../map/trashFilters.js'
 import { isGeometryInsideScope } from '../map/geographicScope.js'
 import {
   formatArea,
@@ -117,6 +136,7 @@ export default function MapPage() {
   const { can, canAll } = usePermissions()
   const { reportMapReady, isIdle } = useTransition()
   const navigate = useNavigate()
+  const location = useLocation()
 
   const [remaining, setRemaining] = useState(() => formatRemaining(expiresAt))
   const [mapReady, setMapReady] = useState(false)
@@ -134,8 +154,28 @@ export default function MapPage() {
   // instance is actually created or torn down, StrictMode double-mount included.
   const [mapInstance, setMapInstance] = useState(null)
 
-  /** Which sidebar panel is open: drawings | layers | settings | about | null. */
-  const [activePanel, setActivePanel] = useState(null)
+  /* --- Harita bağlam sahipliği ---------------------------------------------
+
+     Eskiden her bağlamsal panel kendi açık/kapalı durumunu tutuyordu
+     (`activePanel`, `styleTarget`, seçim sayısı, `selectedPoi`, analiz
+     sonucu) ve hiçbiri diğerini bilmiyordu; bu yüzden bir panel açıkken başka
+     bir bağlama geçmek eskisini ekranda bırakıyordu.
+
+     Artık TEK bir sahip vardır: `mapContext`. Bir bağlam etkinleştiğinde
+     önceki kendiliğinden emekliye ayrılır. Hiçbir tıklama işleyicisi başka bir
+     panelin setter'ını tanımaz — yeni bir panel eklemek mevcut panellerin
+     hiçbirine dokunmayı gerektirmez.
+
+     Emeklilik yalnızca PANEL durumunu bırakır; altındaki harita özelliğini
+     kapatmaz (bkz. `contextRetirers` ve ısı haritası). */
+
+  /* Emeklilik tablosu, çağrılarının tanımlarından ÖNCE hook'a verilmelidir;
+     bu yüzden kimliği sabit bir nesnedir ve içeriği render sonunda yerinde
+     tazelenir (aşağıdaki Object.assign). Tablonun kendisini değiştirmek,
+     hook'un elindeki referansı eskitirdi. */
+  const contextRetirers = useRef({})
+  const mapContext = useMapContext(contextRetirers.current)
+
   /** What the style panel is editing: null | 'tool' | 'feature' | 'bulk'. */
   const [styleTarget, setStyleTarget] = useState(null)
   const [pendingDelete, setPendingDelete] = useState(null)
@@ -168,6 +208,21 @@ export default function MapPage() {
   })
   const { analyzeSaved } = analysis
 
+  /**
+   * Kaydedilen poligonun otomatik analizi de bir BAĞLAM AÇAR.
+   *
+   * Sonuç paneli ekranda belirirken çakışan bağlam (seçili kayıt paneli, POI
+   * bilgisi, ısı haritası paneli …) koordinatör üzerinden kapanır; panelin
+   * kendisi başkalarını tanımaz.
+   */
+  const analyzeSavedWithContext = useCallback(
+    (record) => {
+      mapContext.activate(MAP_CONTEXTS.inventory)
+      return analyzeSaved(record)
+    },
+    [analyzeSaved, mapContext],
+  )
+
   /* Kullanıcının KENDİ coğrafi sınırı. Kapsam CANLI okunur ve JWT'de taşınmaz;
      yönetici bir alanı daralttığında yeniden giriş gerekmez.
 
@@ -183,6 +238,17 @@ export default function MapPage() {
   })
 
   const canUseHeatmap = can(PERMISSIONS.HEATMAP_VIEW)
+
+  /* Çöp Kutusu, geri yükleyebileceği bir şeyi olan herkese açıktır: çizim
+     yarısı için drawings.view + drawings.restore, POI yarısı için poi.view +
+     (poi.delete ya da poi.manage). Yalnızca birine sahip olmak paneli açmaya
+     yeter — açılan panel diğer yarıyı zaten hiç istemez. */
+  const canOpenTrash = (allowed.canViewDrawings && allowed.canRestoreDrawings) || allowed.canRestorePoi
+
+  /* "POI'lerim" yalnızca `poi.view` ister: kendi kayıtlarını görebilmek ayrı
+     bir yetenek değildir. Yönetim yetkileri (poi.manage / poi.categories.manage)
+     İSTENMEZ — uç zaten yalnızca çağıranın kendi kayıtlarını döndürür. */
+  const canOpenMyPois = allowed.canViewPoi
   const heatmap = useHeatmapLayer(mapInstance, {
     enabled: heatmapEnabled,
     permitted: canUseHeatmap,
@@ -194,8 +260,10 @@ export default function MapPage() {
   useEffect(() => {
     if (canUseHeatmap) return
     setHeatmapEnabled(false)
-    setActivePanel((current) => (current === 'heatmap' ? null : current))
-  }, [canUseHeatmap])
+    // Panel sahipliği bağlam koordinatöründedir; yalnızca ısı haritası
+    // açıksa kapanır, başka bir bağlam devraldıysa ona dokunulmaz.
+    mapContext.close(MAP_CONTEXTS.heatmap)
+  }, [canUseHeatmap, mapContext])
 
   /* Phase 5 köprüsü. Hangi türün NORMAL görünümünü artık sunucu tarafında
      üretilen WMS görüntüsünün çizdiğini tutar. Ref'tir çünkü cevabı okuyan
@@ -223,7 +291,7 @@ export default function MapPage() {
        taşır (bkz. yukarıdaki `active`), dolayısıyla yetkili kullanıcının
        bilerek başlattığı analiz etkilenmez. Çizim akışının geri kalanı —
        AttributePopup, kaydetme, coğrafi denetim — değişmez. */
-    onPolygonSaved: allowed.canAnalyze ? analyzeSaved : null,
+    onPolygonSaved: allowed.canAnalyze ? analyzeSavedWithContext : null,
     /* Alan dışı bir tık köşe olarak EKLENMEZ ve alan dışı kalan bir çizim
        için AttributePopup hiç açılmaz. */
     geographicScope: geographic.scope,
@@ -280,16 +348,6 @@ export default function MapPage() {
     activeRef: presentationActiveRef,
     onChange: workspace.onPresentationChange,
   })
-  /* The trash is fetched only while its panel is open, and a successful restore
-     reloads the map through the workspace's own loader — the record has to come
-     back where the user deleted it from, not only leave this list. That is also
-     why there is no second "add it to the map" code path here. */
-  const trash = useTrash({
-    active: activePanel === 'trash' && allowed.canViewDrawings && allowed.canRestoreDrawings,
-    showToast,
-    onRestored: workspace.reloadDrawings,
-  })
-
   /* The one owner of the selected basemap. It is independent of the UI theme in
      both directions: nothing here reads `useTheme`, and the theme never picks a
      basemap — every light/dark × standard/uydu combination is valid. */
@@ -306,10 +364,26 @@ export default function MapPage() {
   const clickSelectEnabled =
     allowed.canSelect && workspaceMode.isSelecting && workspaceMode.activeSelectionTool !== 'polygon'
 
+  /**
+   * Haritadan seçim: seçimi kur, sonra çizim bağlamını etkinleştir.
+   *
+   * Etkinleştirme, çakışan bağlamı (POI Bilgisi, ısı haritası paneli, açık bir
+   * liste …) koordinatör üzerinden kendiliğinden kapatır; burada tek tek
+   * kapatılan bir panel YOKTUR. Boş haritaya tıklama seçimi düşürür ve
+   * aşağıdaki senkron efekt paneli kapatır.
+   */
+  const selectFromMap = useCallback(
+    (key, options) => {
+      selectFeature(key, options)
+      if (key) mapContext.activate(MAP_CONTEXTS.drawingInfo)
+    },
+    [selectFeature, mapContext],
+  )
+
   const { hovered } = useFeatureInteraction(mapInstance, {
     enabled: clickSelectEnabled,
     hoverEnabled: hasFinePointer,
-    onSelect: selectFeature,
+    onSelect: selectFromMap,
   })
 
   /* --- POI ------------------------------------------------------------------
@@ -322,15 +396,41 @@ export default function MapPage() {
   const [poiFormOpen, setPoiFormOpen] = useState(false)
   const [poiSaving, setPoiSaving] = useState(false)
   const [poiError, setPoiError] = useState('')
+  /** Non-null while a POI delete confirmation is on screen. */
+  const [pendingPoiDelete, setPendingPoiDelete] = useState(null)
   const poiSaveInFlight = useRef(false)
-  const [poiCategories, setPoiCategories] = useState({ items: [], loading: false, error: '' })
+  /* `loaded`, "bu okuma BİR KEZ yapıldı" demektir ve `items.length`'ten AYRI bir
+     olgudur: boş ama başarılı bir yanıt da tamamlanmış bir okumadır. İkisini
+     karıştırmak, kategori tanımlanmamış bir kurulumda listenin sonsuza kadar
+     yeniden istenmesine yol açıyordu. */
+  const [poiCategories, setPoiCategories] = useState({ items: [], loading: false, error: '', loaded: false })
 
   const poi = usePoiLayer(mapInstance, {
     permitted: allowed.canViewPoi,
     selectedId: selectedPoi?.id ?? null,
     showToast,
   })
-  const { addPoi: addPoiToLayer } = poi
+  const {
+    addPoi: addPoiToLayer,
+    updatePoi: updatePoiOnLayer,
+    removePoi: removePoiFromLayer,
+    findPoi: findPoiOnLayer,
+  } = poi
+
+  /* "POI'lerim": kapsamı SUNUCU belirler (`GET /api/poi/mine`). Ortak harita
+     listesini tarayıcıda süzmek mümkün değildir — o sözleşme kaydın sahibini
+     bilinçli olarak taşımaz — ve `canUpdate`/`canDelete` de sahiplik ölçüsü
+     DEĞİLDİR: `poi.manage` taşıyan biri onları yabancı kayıtlarda da taşır.
+
+     Liste yalnızca panel AÇILDIĞINDA okunur; oluşturma ve geri yükleme akışları
+     başka bir bağlam etkinken yürüdüğü için panel bir sonraki açılışında zaten
+     tazelenir. Yerinde güncelleme yalnızca panelin görünür kalabildiği iki
+     durumda yapılır: düzenleme sonrası tazeleme ve satırdan silme. */
+  const myPois = useMyPois({
+    active: mapContext.isActive(MAP_CONTEXTS.myPois),
+    permitted: allowed.canViewPoi,
+  })
+  const { replace: replaceMyPoi, remove: removeMyPoi } = myPois
 
   const placement = usePoiPlacement(mapInstance, {
     /* Mod `useWorkspaceMode`'a aittir; yetki kapısı burada ikinci kez aranır ki
@@ -349,7 +449,26 @@ export default function MapPage() {
   const poiClickEnabled =
     allowed.canViewPoi && workspaceMode.isSelecting && workspaceMode.activeSelectionTool !== 'polygon'
 
-  usePoiInteraction(mapInstance, { enabled: poiClickEnabled, onSelect: setSelectedPoi })
+  /**
+   * POI tıklaması: kaydı seç ve POI bağlamını etkinleştir.
+   *
+   * Boş haritaya tıklama YALNIZCA POI bağlamını kapatır (`close(poiInfo)`):
+   * aynı tıkla bir çizim seçilmişse bağlam çoktan ona geçmiştir ve geç kalan
+   * bir kapatma onu düşürmemelidir.
+   */
+  const handlePoiSelected = useCallback(
+    (record) => {
+      if (!record) {
+        mapContext.close(MAP_CONTEXTS.poiInfo)
+        return
+      }
+      setSelectedPoi(record)
+      mapContext.activate(MAP_CONTEXTS.poiInfo)
+    },
+    [mapContext],
+  )
+
+  usePoiInteraction(mapInstance, { enabled: poiClickEnabled, onSelect: handlePoiSelected })
 
   /* Kategoriler yalnızca GEREKTİĞİNDE okunur: form ilk kez açıldığında. Her
      harita açılışında istek göndermek, POI eklemeyen kullanıcılar için boşuna
@@ -359,24 +478,56 @@ export default function MapPage() {
     try {
       const res = await fetchPoiCategories()
       if (!res.ok) throw new Error(await readApiError(res, 'Kategoriler yüklenemedi.'))
-      setPoiCategories({ items: await res.json(), loading: false, error: '' })
+      setPoiCategories({ items: await res.json(), loading: false, error: '', loaded: true })
     } catch (error) {
-      setPoiCategories({ items: [], loading: false, error: error.message || 'Kategoriler yüklenemedi.' })
+      setPoiCategories({
+        items: [],
+        loading: false,
+        error: error.message || 'Kategoriler yüklenemedi.',
+        loaded: true,
+      })
     }
   }, [])
 
-  useEffect(() => {
-    if (!poiFormOpen || poiCategories.loading || poiCategories.items.length || poiCategories.error) return
-    loadPoiCategories()
-  }, [poiFormOpen, poiCategories, loadPoiCategories])
+  /* Düzenleme formu da aynı listeyi kullanır: iki form, tek okuma. */
+  const poiFormNeedsCategories = poiFormOpen || mapContext.isActive(MAP_CONTEXTS.poiEdit)
 
-  /** Formu, bekleyen işareti ve yerleştirme modunu birlikte kapatır. */
-  const closePoiForm = useCallback(() => {
+  /* Okuma bir KEZ yapılır. Ölçüt "elimde kayıt var mı" DEĞİL, "bu okuma
+     tamamlandı mı"dır: kategori tanımlanmamış bir kurulumda boş liste geçerli
+     bir yanıttır ve `items.length`'e bakan bir koşul onu "hiç okumadım" sayıp
+     isteği sonsuz bir döngüye sokuyordu (tek bir oturumda binlerce çağrı) —
+     üstelik `loading` sürekli true kaldığı için form da kalıcı olarak
+     "yükleniyor" görünüyor, kullanıcı kategori olmadığını hiç öğrenemiyordu.
+
+     Bağımlılıklar da nesnenin tamamı değil, kararı veren iki bayraktır: her
+     liste değişimi bu etkiyi yeniden çalıştırmamalıdır. Hatadan sonra yeniden
+     denemek kullanıcının açık eylemidir ("Tekrar dene") ve `loadPoiCategories`'i
+     doğrudan çağırır. */
+  useEffect(() => {
+    if (!poiFormNeedsCategories || poiCategories.loading || poiCategories.loaded) return
+    loadPoiCategories()
+  }, [poiFormNeedsCategories, poiCategories.loading, poiCategories.loaded, loadPoiCategories])
+
+  /**
+   * POI oluşturma bağlamının EMEKLİLİĞİ: form, bekleyen işaret ve yerleştirme
+   * modu birlikte bırakılır.
+   *
+   * Koordinatörü BURADAN çağırmaz (activate/close yok): bu fonksiyon zaten
+   * koordinatörün emeklilik tablosundan çalışır ve kendini geri çağırmak
+   * özyineleme olurdu. Bağlamı kapatmak isteyen çağıranlar
+   * `mapContext.close(MAP_CONTEXTS.poiCreate)` kullanır.
+   */
+  const retirePoiCreate = useCallback(() => {
     setPoiFormOpen(false)
     setPoiError('')
     clearPendingPoi()
     workspaceMode.stopPoiPlacement()
   }, [clearPendingPoi, workspaceMode])
+
+  /** Formun "İptal"i ve × düğmesi: bağlamı koordinatör üzerinden kapatır. */
+  const closePoiForm = useCallback(() => {
+    mapContext.close(MAP_CONTEXTS.poiCreate)
+  }, [mapContext])
 
   const savePoi = useCallback(async (payload) => {
     // Çift gönderim koruması: düğme de kilitlenir, ama ref yarışı da kapatır.
@@ -411,21 +562,331 @@ export default function MapPage() {
     }
   }, [addPoiToLayer, closePoiForm, showToast])
 
+  /* --- POI düzenleme / silme ------------------------------------------------
+     İkisi de SUNUCUNUN kararını uygular, onu ikinci kez üretmez: hangi kayıtta
+     hangi eylemin sunulacağını kaydın `canUpdate` / `canDelete` bayrakları
+     söyler ve o bayrakları sunucu hesaplar (poi.manage VEYA sahiplik VE
+     poi.update/poi.delete). Buradaki hiçbir koşul kaydın sahibini tahmin
+     etmeye çalışmaz; uçlar da aynı kararı bağımsız olarak yeniden verir. */
+
+  /** Düzenlenmekte olan POI; POI Düzenle bağlamının konusu. */
+  const [poiEditing, setPoiEditing] = useState(null)
+
+  /* Düzenlemenin TASLAK konumu ve "Haritada Taşı" kipi.
+     Değer burada tutulur, formda değil: aynı sayıyı iki yer düzenler —
+     formdaki boylam/enlem kutuları ve haritada sürüklenen taslak işaret. İki
+     kopya, kutularla işaretin bir noktada ayrışması demek olurdu. Kalıcı kayıt
+     ve haritadaki kalıcı işaret, BAŞARILI bir güncellemeye kadar yerinde
+     durur. */
+  const [poiEditCoordinate, setPoiEditCoordinate] = useState(null)
+  const [poiMoveActive, setPoiMoveActive] = useState(false)
+
+  /**
+   * Bir kaydı düzenlemeye açarken taslağın başlangıç durumu.
+   *
+   * `draft` yalnızca başka bir ekrandan devralınan kaydedilmemiş taslak için
+   * doludur; konumu da o belirler, aksi hâlde kaydın kalıcı koordinatı.
+   */
+  const beginPoiEdit = useCallback((record, draft = null) => {
+    setPoiError('')
+    setPoiEditing(record)
+
+    const handedOver =
+      Number.isFinite(draft?.longitude) && Number.isFinite(draft?.latitude)
+        ? { longitude: draft.longitude, latitude: draft.latitude }
+        : null
+
+    setPoiEditCoordinate(
+      handedOver
+        ?? (Number.isFinite(record?.longitude) && Number.isFinite(record?.latitude)
+          ? { longitude: record.longitude, latitude: record.latitude }
+          : null),
+    )
+    // Taşıma kipi her düzenlemede KAPALI başlar: bir önceki kayıttan devralınan
+    // sürüklenebilir bir işaret, kullanıcının açmadığı bir araç olurdu.
+    setPoiMoveActive(false)
+  }, [])
+
+  /* Taslak işaret ve taşıma etkileşimi. Etkileşim yalnızca düzenleme bağlamı
+     açıkken ve yalnızca "Haritada Taşı" seçiliyken kurulur; kalıcı POI
+     kaynağına hiçbir koşulda dokunmaz. */
+  usePoiEditDraft(mapInstance, {
+    active: mapContext.isActive(MAP_CONTEXTS.poiEdit) && Boolean(poiEditing),
+    coordinate: poiEditCoordinate,
+    /* Taşınabilirlik kaydın KENDİ yetenek bayrağına bakar — sunucunun kararı
+       budur ve tarayıcıda yeniden hesaplanmaz. */
+    movable: poiMoveActive && poiEditing?.canUpdate === true,
+    onMove: setPoiEditCoordinate,
+  })
+
+  /* --- Yönetim panelinden devralınan düzenleme ------------------------------
+     `/admin/poi` ekranında "Haritada Taşı"ya basıldığında oraya kaydedilmemiş
+     bir taslakla birlikte gelinir. Devralma AYNI düzenleme bağlamına girer
+     (`MAP_CONTEXTS.poiEdit`), aynı formu ve aynı taslak işaretini kullanır;
+     "harita üzerinde yönetim düzenlemesi" diye ikinci bir birincil bağlam
+     açmak, tek-birincil-panel kuralını iki farklı yerden yönetmek olurdu.
+
+     <b>Gezinme durumu İSTEMCİ GİRDİSİDİR.</b> İçinden yalnızca kimlik ve
+     taslak DEĞERLER okunur; hiçbir yetki iddiası taşınmaz ve taşınsa da
+     kullanılmazdı. Kaydın kendisi haritanın kendi listesinden çözülür,
+     düzenlenebilirliği sunucunun o kayıt için verdiği `canUpdate` bayrağından
+     okunur ve PUT yine sunucuda sahiplik, kategori, koordinat ve coğrafi
+     yetki denetiminden geçer. */
+  const [poiEditHandoffDraft, setPoiEditHandoffDraft] = useState(null)
+
+  /* Yönlendirme durumunun temizlenmesi bir sonraki render'da görünür; bu arada
+     etki (örneğin katman yüklenmesi bittiği için) yeniden çalışabilir. Ref,
+     devralmanın GERÇEKTEN tek sefer uygulanmasını garanti eder. */
+  const consumedHandoffRef = useRef(false)
+
+  const poiEditHandoff = location.state?.poiEditHandoff ?? null
+
+  useEffect(() => {
+    if (!poiEditHandoff || consumedHandoffRef.current) return
+
+    if (!allowed.canViewPoi) {
+      // Yetkisiz çağıran için devralma sessizce tüketilir; panel açılmaz.
+      consumedHandoffRef.current = true
+      navigate(location.pathname, { replace: true, state: null })
+      return
+    }
+
+    /* İLK OKUMA BİTENE KADAR KARAR VERİLMEZ.
+       Ölçüt `!loading` DEĞİL, `loaded`'dır: kanca `loading: false` ile doğar ve
+       okumayı bir effect başlatır, dolayısıyla ilk render'da kaynak boştur ama
+       istek daha yola çıkmamıştır. "Yüklenmiyor" ile "yüklendi" karıştırılırsa
+       devralma, veri gelmeden önce "kayıt bulunamadı" diye reddedilir — ve
+       reddetme tek seferlik olduğu için veri sonradan gelse de düzenleme bir
+       daha açılmaz. */
+    if (!poi.loaded) return
+
+    const record = findPoiOnLayer(poiEditHandoff.poiId)
+
+    consumedHandoffRef.current = true
+
+    /* Devralma TEK SEFERLİKTİR ve her durumda tüketilir: aksi hâlde başka bir
+       panel açmak, geri/ileri gitmek ya da sayfayı yenilemek eskimiş bir
+       taslağı yeniden uygulardı. */
+    navigate(location.pathname, { replace: true, state: null })
+
+    /* Kayıt silinmiş, artık görünmüyor ya da bu çağıran düzenleyemiyorsa
+       düzenlemeye HİÇ girilmez. Mesaj sahiplik ayrıntısı açıklamaz. */
+    if (!record?.canUpdate) {
+      showToast('error', 'Bu POI kaydı artık düzenlenemiyor.')
+      return
+    }
+
+    const draft = poiEditHandoff.draft ?? null
+
+    setSelectedPoi(record)
+    /* Konum taslağı da devralınır: yönetimde elle değiştirilmiş bir koordinat
+       haritada taslak işaretin AÇILIŞ yeri olur. Kalıcı işaret kaydedilene
+       kadar eski yerinde durur — kalıcı/taslak ayrımı bozulmaz. */
+    beginPoiEdit(record, draft)
+    setPoiEditHandoffDraft(draft)
+    mapContext.activate(MAP_CONTEXTS.poiEdit)
+  }, [
+    poiEditHandoff,
+    allowed.canViewPoi,
+    poi.loaded,
+    findPoiOnLayer,
+    beginPoiEdit,
+    mapContext,
+    navigate,
+    location.pathname,
+    showToast,
+  ])
+
+  /** "Düzenle": bilgi panelinden düzenleme bağlamına geçilir. */
+  const startPoiEdit = useCallback(() => {
+    if (!selectedPoi?.canUpdate) return
+    beginPoiEdit(selectedPoi)
+    mapContext.activate(MAP_CONTEXTS.poiEdit)
+  }, [selectedPoi, beginPoiEdit, mapContext])
+
+  /** POI Düzenle bağlamının emekliliği. Koordinatörü çağırmaz (bkz. yukarısı). */
+  const retirePoiEdit = useCallback(() => {
+    setPoiEditing(null)
+    setPoiError('')
+    /* Taslak konum ve taşıma kipi de bırakılır: düzenleme oturumu bittiğinde
+       haritada, artık hiçbir formun anlatmadığı sürüklenebilir bir işaret
+       kalmamalıdır. Kalıcı kayıt zaten hiç kıpırdamadı. */
+    setPoiEditCoordinate(null)
+    setPoiMoveActive(false)
+    // Devralınan taslak da bırakılır: bir sonraki düzenleme onu miras almaz.
+    setPoiEditHandoffDraft(null)
+  }, [])
+
+  /** "İptal": düzenlemeden ÇIKIP bilgi paneline döner, hiçbir şey kaydetmeden. */
+  const cancelPoiEdit = useCallback(() => {
+    if (selectedPoi) mapContext.activate(MAP_CONTEXTS.poiInfo)
+    else mapContext.close(MAP_CONTEXTS.poiEdit)
+  }, [selectedPoi, mapContext])
+
+  const savePoiEdit = useCallback(
+    async (payload) => {
+      const target = poiEditing
+      if (!target || poiSaveInFlight.current) return
+
+      poiSaveInFlight.current = true
+      setPoiSaving(true)
+      setPoiError('')
+
+      try {
+        const res = await updatePoi(target.id, payload)
+        if (!res.ok) throw new Error(await readApiError(res, 'POI güncellenemedi.'))
+
+        /* Yanıt kaydın kanonik hâlidir: katman yerinde tazelenir, tam sayfa
+           yenilemesi ya da listenin baştan okunması gerekmez. */
+        const updated = await res.json()
+        updatePoiOnLayer(updated)
+        // Bilgi paneli aynı kaydı gösterdiği için o da tazelenir.
+        setSelectedPoi(updated)
+        // "POI'lerim" de aynı kaydı gösterebilir; yerinde tazelenir.
+        replaceMyPoi(updated)
+        mapContext.activate(MAP_CONTEXTS.poiInfo)
+        showToast('success', 'POI güncellendi.')
+      } catch (error) {
+        /* Başarısızlıkta form AÇIK kalır ve girilen değerler durur: sunucunun
+           mesajı (yetki/sahiplik reddi dâhil) olduğu gibi gösterilir. */
+        setPoiError(error.message || 'POI güncellenemedi.')
+      } finally {
+        poiSaveInFlight.current = false
+        setPoiSaving(false)
+      }
+    },
+    [poiEditing, updatePoiOnLayer, replaceMyPoi, mapContext, showToast],
+  )
+
+  /** "Sil": önce onay. Soft delete de olsa kullanıcı ne olduğunu bilmelidir. */
+  const requestPoiDelete = useCallback(() => {
+    if (selectedPoi?.canDelete) setPendingPoiDelete(selectedPoi)
+  }, [selectedPoi])
+
+  const confirmPoiDelete = useCallback(async () => {
+    const target = pendingPoiDelete
+    setPendingPoiDelete(null)
+    if (!target) return
+
+    setPoiSaving(true)
+    try {
+      const res = await deletePoi(target.id)
+      if (!res.ok) throw new Error(await readApiError(res, 'POI silinemedi.'))
+
+      /* Kayıt veritabanında DURUR (soft delete); haritadan kaldırılan yalnızca
+         temsilidir ve Çöp Kutusu'ndan geri yüklenebilir. */
+      removePoiFromLayer(target.id)
+      removeMyPoi(target.id)
+      // Silinen kaydın bilgi paneli açık kalamaz.
+      if (selectedPoi?.id === target.id) mapContext.close(MAP_CONTEXTS.poiInfo)
+      showToast('success', 'POI çöp kutusuna taşındı.')
+    } catch (error) {
+      showToast('error', error.message || 'POI silinemedi.')
+    } finally {
+      setPoiSaving(false)
+    }
+  }, [pendingPoiDelete, removePoiFromLayer, removeMyPoi, selectedPoi, mapContext, showToast])
+
+  /* --- "POI'lerim" eylemleri -------------------------------------------------
+     Üçü de HARİTADAKİ akışların ta kendisini çağırır: ayrı bir seçim, ayrı bir
+     form ya da ikinci bir silme yolu YOKTUR. Panelden yapılan bir düzenleme,
+     POI'ye haritada tıklayıp Düzenle demekle aynı bağlamı ve aynı isteği
+     kullanır. */
+
+  /**
+   * Satır: haritada ODAKLAN + POI Bilgisi'ni aç (bağlam devri dâhil).
+   *
+   * `panTo` değil `focusPoint`: yalnızca ortalamak, Türkiye ölçeğinde açılmış
+   * bir haritada kullanıcıyı hâlâ ayırt edilemeyen bir noktanın karşısında
+   * bırakırdı. `focusPoint` gerekiyorsa yakınlaştırır ama zaten daha yakındaysa
+   * GERİ ÇEKMEZ (bkz. `useMapView`).
+   *
+   * Kamera yardımcısı `mapView` ÜZERİNDEN okunur, ayrıca destructure edilmiş
+   * bir bağlamadan değil: o bağlamalar bu satırdan SONRA tanımlanır ve
+   * bağımlılık dizisi render sırasında değerlendirildiği için `const`'un
+   * temporal dead zone'una düşerdi — sayfa daha ilk render'da patlardı.
+   */
+  const focusMyPoi = useCallback(
+    (poi) => {
+      if (!poi) return
+      mapView.focusPoint(fromLonLat([poi.longitude, poi.latitude]))
+      setSelectedPoi(poi)
+      mapContext.activate(MAP_CONTEXTS.poiInfo)
+    },
+    [mapView, mapContext],
+  )
+
+  /** "Düzenle": haritadakiyle AYNI düzenleme bağlamı ve aynı form. */
+  const editMyPoi = useCallback(
+    (poi) => {
+      if (!poi?.canUpdate) return
+      setSelectedPoi(poi)
+      beginPoiEdit(poi)
+      mapContext.activate(MAP_CONTEXTS.poiEdit)
+    },
+    [beginPoiEdit, mapContext],
+  )
+
+  /** "Sil": haritadakiyle AYNI onay ve aynı yumuşak silme akışı. */
+  const deleteMyPoi = useCallback((poi) => {
+    if (poi?.canDelete) setPendingPoiDelete(poi)
+  }, [])
+
   /* Yetki CANLIDIR. `poi.create` alındığında yerleştirme modu
      useWorkspacePermissions tarafından kapatılır; burada da açık kalmış form
      ve bekleyen işaret temizlenir — korumalı hiçbir arayüz ayakta kalmaz. */
   useEffect(() => {
     if (allowed.canCreatePoi) return
+    // Bağlam da bırakılır; temizliğin geri kalanını emeklilik yapar.
+    mapContext.close(MAP_CONTEXTS.poiCreate)
     setPoiFormOpen(false)
     setPoiError('')
     clearPendingPoi()
-  }, [allowed.canCreatePoi, clearPendingPoi])
+  }, [allowed.canCreatePoi, clearPendingPoi, mapContext])
 
   /* `poi.view` alındığında katmanı boşaltmak kancanın işi; artık erişilemeyen
      bilgi panelini kapatmak bu sayfanın. */
   useEffect(() => {
-    if (!allowed.canViewPoi) setSelectedPoi(null)
-  }, [allowed.canViewPoi])
+    if (allowed.canViewPoi) return
+    setSelectedPoi(null)
+    // Bağlam da bırakılır: erişilemeyen bir panel bir kare bile ayakta kalmaz.
+    mapContext.close(MAP_CONTEXTS.poiInfo)
+    mapContext.close(MAP_CONTEXTS.poiEdit)
+    mapContext.close(MAP_CONTEXTS.myPois)
+  }, [allowed.canViewPoi, mapContext])
+
+  /* Düzenleme yetkisi harita açıkken geri alınabilir; açık kalan form da
+     kapanır. Kaydetme zaten sunucuda reddedilirdi — ama reddedileceği belli
+     olan bir formu açık tutmanın anlamı yok. */
+  useEffect(() => {
+    if (!allowed.canUpdatePoi && !allowed.canManagePoi) mapContext.close(MAP_CONTEXTS.poiEdit)
+  }, [allowed.canUpdatePoi, allowed.canManagePoi, mapContext])
+
+  /* The trash is fetched only while its panel is open, and a successful restore
+     reloads the map through the workspace's own loader — the record has to come
+     back where the user deleted it from, not only leave this list. That is also
+     why there is no second "add it to the map" code path here. */
+  const trash = useTrash({
+    active: mapContext.isActive(MAP_CONTEXTS.trash) && canOpenTrash,
+    showToast,
+    onRestored: workspace.reloadDrawings,
+    /* Her yarı KENDİ yetkisine bağlıdır. Çizim yarısı koşulsuz okunsaydı,
+       yalnızca POI yetkisi olan bir kullanıcı (ör. map.view + poi.* taşıyan
+       özel bir rol) `/api/drawings/deleted`ten 403 alır ve o hata paneli
+       düşürerek kendi sildiği POI'yi görmesini engellerdi. */
+    includeDrawings: allowed.canViewDrawings && allowed.canRestoreDrawings,
+    includePois: allowed.canRestorePoi,
+    onPoiRestored: (restored) => {
+      /* Geri yüklenen kayıt sunucudan kanonik hâliyle döner ve doğrudan
+         haritaya konur; ikinci bir GET gereksizdir.
+
+         "POI'lerim" listesine BURADAN eklenmez: geri yüklenen kayıt yabancı da
+         olabilir (poi.manage) ve `canUpdate`/`canDelete` sahiplik ölçüsü
+         değildir. Panel bir sonraki açılışında sunucudan tazelenir ve kapsam
+         kararını yine sunucu verir. */
+      if (restored) addPoiToLayer(restored)
+    },
+  })
 
   /** Box / area selection results land in the same canonical selection set. */
   const handleSpatialSelect = useCallback(
@@ -433,9 +894,14 @@ export default function MapPage() {
       if (additive) workspace.addToSelection(keys)
       else workspace.setSelection(keys)
 
+      /* Kutu/alan seçimi de aynı kapıdan geçer: sonucu gösteren panel
+         devralırken çakışan bağlam kendiliğinden kapanır. */
+      if (keys.length === 1) mapContext.activate(MAP_CONTEXTS.drawingInfo)
+      else if (keys.length > 1) mapContext.activate(MAP_CONTEXTS.multiSelection)
+
       showToast('info', keys.length ? `${keys.length} çizim seçildi.` : 'Seçilen alanda çizim bulunamadı.')
     },
-    [workspace, showToast],
+    [workspace, mapContext, showToast],
   )
 
   useSelectionTools(mapInstance, {
@@ -583,8 +1049,61 @@ export default function MapPage() {
     if (styleTarget === 'bulk' && selectionCount < 2) setStyleTarget(null)
   }, [styleTarget, selectedFeature, selectionCount])
 
-  const openStyleForSelection = useCallback(() => setStyleTarget('feature'), [])
-  const openStyleForBulk = useCallback(() => setStyleTarget('bulk'), [])
+  /* --- Seçim ile bağlam arasındaki eşgüdüm ---------------------------------
+
+     Seçim bir VERİ, panel ise onun görünümüdür. Bu efekt yalnızca ikisinin
+     tutarlılığını korur ve YALNIZCA seçim bağlamlarından biri UI'ın sahibiyken
+     çalışır: kullanıcının açtığı bir liste ya da POI paneli, seçim sayısı
+     değişti diye devrilmez.
+
+       seçim boşaldı        -> seçim bağlamı bırakılır
+       1 -> 2+              -> çoklu seçim paneli devralır
+       2+ -> 1              -> tekil kayıt paneli devralır
+
+     Araç stili ('tool') hiçbir kaydı düzenlemez; boş seçimde de ayakta kalır. */
+  useEffect(() => {
+    /* Sahipsiz UI + canlı seçim: panel seçimin kendisine düşer.
+
+       Phase 3 öncesinde bu koşul panelin açılma kuralıydı (`selectionCount === 1
+       && !activePanel`). Sahiplik koordinatöre taşındığında, bir SEÇİM
+       bağlamı dışından yapılan seçimler (çizim listesinden bir satır, analiz
+       sonucundan "Çizimi Aç") paneli hiç açamaz hâle geldi: aşağıdaki eşgüdüm
+       yalnızca bir seçim bağlamı zaten sahipken çalışır. Kural burada
+       GENEL biçimde geri konur ve pinlenmiş bir listeyi devirmez — yalnızca
+       hiçbir bağlam sahip DEĞİLKEN devreye girer. */
+    if (mapContext.active === null && selectionCount > 0) {
+      mapContext.activate(
+        selectionCount === 1 ? MAP_CONTEXTS.drawingInfo : MAP_CONTEXTS.multiSelection,
+      )
+      return
+    }
+
+    if (!SELECTION_CONTEXTS.includes(mapContext.active)) return
+
+    if (selectionCount === 0) {
+      if (mapContext.active === MAP_CONTEXTS.styleEditor && styleTarget === 'tool') return
+      mapContext.close()
+      return
+    }
+
+    if (mapContext.active === MAP_CONTEXTS.drawingInfo && selectionCount >= 2) {
+      mapContext.activate(MAP_CONTEXTS.multiSelection)
+    } else if (mapContext.active === MAP_CONTEXTS.multiSelection && selectionCount === 1) {
+      mapContext.activate(MAP_CONTEXTS.drawingInfo)
+    }
+  }, [selectionCount, styleTarget, mapContext])
+
+  /* Stil paneli SEÇİMİ düzenler; bu yüzden seçim bağlamlarıyla aynı kümededir
+     ve devralırken seçim BIRAKILMAZ (bkz. SELECTION_CONTEXTS). */
+  const openStyleForSelection = useCallback(() => {
+    setStyleTarget('feature')
+    mapContext.activate(MAP_CONTEXTS.styleEditor)
+  }, [mapContext])
+
+  const openStyleForBulk = useCallback(() => {
+    setStyleTarget('bulk')
+    mapContext.activate(MAP_CONTEXTS.styleEditor)
+  }, [mapContext])
 
   /**
    * The toolbar palette always edits the *tool* defaults — the style the next
@@ -594,9 +1113,23 @@ export default function MapPage() {
    * Which type it opens on is read from the canonical mode, not from a copy
    * kept here; the panel's tabs write back to that same state.
    */
-  const openStyleForTool = useCallback(() => setStyleTarget('tool'), [])
+  const openStyleForTool = useCallback(() => {
+    setStyleTarget('tool')
+    mapContext.activate(MAP_CONTEXTS.styleEditor)
+  }, [mapContext])
 
-  const closeStylePanel = useCallback(() => setStyleTarget(null), [])
+  /**
+   * Stil panelini kapatmak, seçimi bırakmak DEĞİLDİR: seçili kayıt duruyorsa
+   * sahiplik ona geri döner ve kaydın bilgi paneli açılır. Yalnızca
+   * `close()` çağırmak, kullanıcının hâlâ seçili olan kaydını sessizce
+   * bırakırdı.
+   */
+  const closeStylePanel = useCallback(() => {
+    setStyleTarget(null)
+    if (selectionCount === 1) mapContext.activate(MAP_CONTEXTS.drawingInfo)
+    else if (selectionCount >= 2) mapContext.activate(MAP_CONTEXTS.multiSelection)
+    else mapContext.close(MAP_CONTEXTS.styleEditor)
+  }, [selectionCount, mapContext])
 
   const requestDelete = useCallback(() => {
     if (selectedFeatures.length > 0) setPendingDelete(selectedFeatures)
@@ -624,9 +1157,27 @@ export default function MapPage() {
     if (target) await trash.restore(target)
   }, [pendingRestore, trash])
 
-  const handleSelectPanel = useCallback((panelId) => {
-    setActivePanel((current) => (current === panelId ? null : panelId))
-  }, [])
+  /**
+   * Kenar çubuğu satırı.
+   *
+   * "Harita" (`id: null`) açık olan HER bağlamı kapatır — panel, sheet ya da
+   * seçim paneli fark etmez; hepsi aynı sahiplikten geçer. Diğer satırlar
+   * kendi bağlamlarını açar; aynı satıra tekrar basmak kapatır.
+   *
+   * Buradaki hiçbir dal başka bir panelin setter'ını çağırmaz: çakışan bağlamı
+   * koordinatör emekliye ayırır.
+   */
+  const handleSelectPanel = useCallback(
+    (panelId) => {
+      if (!panelId) {
+        mapContext.close()
+        return
+      }
+      if (mapContext.active === panelId) mapContext.close(panelId)
+      else mapContext.activate(panelId)
+    },
+    [mapContext],
+  )
 
   const selectedGeometry = selectedFeature ? featureByKey(selectedFeature.key)?.getGeometry() ?? null : null
 
@@ -888,6 +1439,19 @@ export default function MapPage() {
   /**
    * "Çizimi Aç": hands the record to the ORDINARY drawing detail panel rather
    * than growing a second one inside the analysis results.
+   *
+   * Devir İKİ adımdır ve ikisi de gereklidir: kaydı SEÇMEK (veri) ve çizim
+   * bağlamını ETKİNLEŞTİRMEK (panel sahipliği). Yalnızca seçmek, Phase 3'ten
+   * beri hiçbir panel açmaz — birincil bağlam hâlâ analiz sonucundadır ve
+   * seçim/panel eşgüdüm efekti bilinçli olarak yalnızca bir SEÇİM bağlamı
+   * UI'ın sahibiyken çalışır (kullanıcının açtığı bir liste, seçim sayısı
+   * değişti diye devrilmesin diye). POI satırının yolu (`openAnalysisPoi`)
+   * bağlamını zaten etkinleştiriyordu; çizim satırı bunu yapmıyordu.
+   *
+   * SIRA önemlidir: önce seçim kurulur, sonra bağlam devralınır. Analiz
+   * bağlamının emekliliği geçici alanı ve sonucu temizler ama çizim seçimine
+   * DOKUNMAZ, dolayısıyla az önce devredilen kayıt devrin içinde hayatta
+   * kalır.
    */
   const openAnalysisItemDrawing = useCallback(
     (item) => {
@@ -899,8 +1463,43 @@ export default function MapPage() {
         return
       }
       selectAndZoom(match.key)
+      mapContext.activate(MAP_CONTEXTS.drawingInfo)
     },
-    [workspace.drawings, selectAndZoom, showToast],
+    [workspace.drawings, selectAndZoom, mapContext, showToast],
+  )
+
+  /**
+   * Analiz sonucundaki bir POI satırı: haritada odaklan + POI Bilgisi'ni aç.
+   *
+   * Çizim satırlarındaki "Çizimi Aç" ile aynı ilke — sonuç paneli ikinci bir
+   * detay görünümü üretmez, kaydı SIRADAN paneline devreder. Bu devir de
+   * koordinatörden geçtiği için analiz sonucu kendiliğinden kapanır.
+   */
+  const openAnalysisPoi = useCallback(
+    (item) => {
+      if (!item) return
+      panTo(fromLonLat([item.longitude, item.latitude]))
+
+      /* Kayıt haritada zaten yüklüdür ve TAM hâli oradadır: mesai saatleri ve
+         yetenek bayrakları analiz sözleşmesinde taşınmaz. Katmandan okunamazsa
+         (katman kapalı ya da kayıt yeni) sonuç satırındaki dar bilgi gösterilir
+         ve eylemler kapalı kalır — fail-closed. */
+      setSelectedPoi(
+        findPoiOnLayer(item.id) ?? {
+          id: item.id,
+          name: item.name,
+          categoryName: item.categoryName,
+          categoryPath: item.categoryPath,
+          workHours: null,
+          longitude: item.longitude,
+          latitude: item.latitude,
+          canUpdate: false,
+          canDelete: false,
+        },
+      )
+      mapContext.activate(MAP_CONTEXTS.poiInfo)
+    },
+    [panTo, findPoiOnLayer, mapContext],
   )
 
   /** Copy helper shared by the point and "all coordinates" actions. */
@@ -996,13 +1595,14 @@ export default function MapPage() {
     (key) =>
       guardEdit(() => {
         selectAndZoom(key)
-        // The panel is covering the map it is about to edit; close it so the
-        // Modify handles are actually reachable.
-        setActivePanel(null)
+        /* Düzenleme, kaydın kendi bağlamında yapılır: listeyi (ya da açık olan
+           başka hangi bağlamsa) koordinatör bırakır, böylece Modify tutamakları
+           gerçekten erişilebilir olur. */
+        mapContext.activate(MAP_CONTEXTS.drawingInfo)
         setGeometryEditMode(GEOMETRY_EDIT_MODES.vertex)
         startEditing()
       }),
-    [guardEdit, selectAndZoom, startEditing],
+    [guardEdit, selectAndZoom, mapContext, startEditing],
   )
 
   const deleteFromList = useCallback(
@@ -1029,6 +1629,10 @@ export default function MapPage() {
     }
     if (pendingRestore) {
       setPendingRestore(null)
+      return
+    }
+    if (pendingPoiDelete) {
+      setPendingPoiDelete(null)
       return
     }
     // The attribute popup is the most modal thing on screen: Esc there means
@@ -1061,12 +1665,10 @@ export default function MapPage() {
       workspaceMode.selectSelectionTool('single')
       return
     }
-    if (styleTarget) {
-      setStyleTarget(null)
-      return
-    }
-    if (activePanel) {
-      setActivePanel(null)
+    /* Açık bağlam TEK bir yerden kapanır: hangi panel olduğu Esc'nin
+       bilmesi gereken bir şey değil. */
+    if (mapContext.active) {
+      mapContext.close()
       return
     }
     if (selectionCount > 0) workspace.clearSelection()
@@ -1074,13 +1676,38 @@ export default function MapPage() {
     pendingDiscard,
     pendingDelete,
     pendingRestore,
+    pendingPoiDelete,
     workspaceMode,
-    styleTarget,
-    activePanel,
+    mapContext,
     selectionCount,
     workspace,
     cancelEdit,
   ])
+
+  /* --- Araç düğmeleri de aynı sisteme katılır -------------------------------
+
+     Bir aracı açmak bir BAĞLAM açmaktır; kapatmak o bağlamı bırakmaktır.
+     Sarmalayıcılar yalnızca kendi bağlamlarını bilir — hiçbiri "önce POI
+     panelini kapat, sonra çizim panelini kapat" demez. */
+
+  const { isPlacingPoi, activeAnalysisTool } = workspaceMode
+
+  /** "POI Ekle": yerleştirme + form bağlamı. */
+  const togglePoiPlacement = useCallback(() => {
+    const wasActive = isPlacingPoi
+    allowed.togglePoiTool()
+    // Yetki kapısı `allowed`ın içindedir; mod değişmediyse bağlam da değişmez.
+    if (wasActive) mapContext.close(MAP_CONTEXTS.poiCreate)
+    else if (allowed.canCreatePoi) mapContext.activate(MAP_CONTEXTS.poiCreate)
+  }, [isPlacingPoi, allowed, mapContext])
+
+  /** "Envanter Analizi": alan çizimi ve sonucu tek bağlamdır. */
+  const toggleInventoryAnalysis = useCallback(() => {
+    const wasActive = Boolean(activeAnalysisTool)
+    allowed.toggleAnalysisTool()
+    if (wasActive) mapContext.close(MAP_CONTEXTS.inventory)
+    else if (allowed.canAnalyze) mapContext.activate(MAP_CONTEXTS.inventory)
+  }, [activeAnalysisTool, allowed, mapContext])
 
   const handleMeasureShortcut = useCallback(
     () => allowed.selectMeasureTool(workspaceMode.activeMeasureTool ?? 'distance'),
@@ -1108,15 +1735,87 @@ export default function MapPage() {
   )
 
 
-  const isStylePanelOpen = styleTarget !== null
-  // Only one right-hand surface at a time keeps the map readable on tablets.
-  // One selected feature gets the detail panel; two or more get the multi
-  // panel — the same selection state, shown at the altitude that is useful.
-  const isSelectedPanelOpen = selectionCount === 1 && !isStylePanelOpen && !activePanel
-  const isMultiPanelOpen = selectionCount >= 2 && !isStylePanelOpen && !activePanel
+  /* Panellerin açıklığı ARTIK TÜRETİLİR: sahibi tek bir bağlamdır. "Aynı anda
+     yalnızca bir sağ panel" kuralı bu yüzden her panelde ayrı ayrı yazılan bir
+     koşul değil, yapının kendisidir. */
+  const isStylePanelOpen = mapContext.isActive(MAP_CONTEXTS.styleEditor) && styleTarget !== null
+  const isSelectedPanelOpen = mapContext.isActive(MAP_CONTEXTS.drawingInfo) && selectionCount === 1
+  const isMultiPanelOpen = mapContext.isActive(MAP_CONTEXTS.multiSelection) && selectionCount >= 2
   // Drives the CSS that moves the OpenLayers zoom control out from under the
   // docked panel; on phones the panel is a bottom sheet and nothing shifts.
-  const hasDockedPanel = isStylePanelOpen || isSelectedPanelOpen || isMultiPanelOpen || Boolean(activePanel)
+  const hasDockedPanel =
+    isStylePanelOpen || isSelectedPanelOpen || isMultiPanelOpen || SIDEBAR_CONTEXTS.includes(mapContext.active)
+
+  /* --- Emeklilik tablosu ----------------------------------------------------
+
+     Bir bağlam UI sahipliğini kaybederken NE bırakır. Tabloyu tek bir yerde
+     tutmak, "hangi panel hangi paneli kapatır" sorusunu ortadan kaldırır:
+     kimse kimseyi kapatmaz, herkes yalnızca kendini bırakır.
+
+     İki kural yapısaldır ve `mapContexts.js` içinde beyan edilir:
+       · Seçim bağlamları (kayıt paneli, çoklu seçim, stil) aynı SEÇİMİ
+         paylaşır; birbirlerine devrederken seçim düşmez.
+       · POI bağlamları (bilgi, düzenleme) aynı KAYDI paylaşır.
+
+     Bırakılan şey daima PANEL durumudur. Isı haritası bunun en açık örneğidir:
+     emekliliği BOŞTUR — panel kapanır, katman (heatmapEnabled) haritada kalır.
+     Aynı şekilde hiçbir emeklilik bir kaydı silmez ya da bir katmanı
+     gizlemez. */
+  Object.assign(contextRetirers.current, {
+    [MAP_CONTEXTS.drawingInfo]: (next) => {
+      /* CANLI BİR GEOMETRİ OTURUMU BİR PANEL DEĞİL, BİR ETKİLEŞİMDİR.
+
+         Panel sahipliğini bırakmak onu sonlandırmaz: kullanıcı düzenleme
+         sürerken Katmanlar'ı (ya da başka bir kenar çubuğu panelini) açtığında
+         panel gizlenir, Modify tutamakları ve seçim yerinde kalır, panel
+         kapanınca kaldığı yerden devam eder — Phase 3 öncesindeki davranışın
+         aynısı.
+
+         Burada oturumu kapatmak İKİ şeyi birden bozardı: kaydedilmemiş
+         geometri, uygulamanın kendi "Değişiklikleri At" onayı hiç sorulmadan
+         sessizce geri alınırdı (o onay tam da bunun için var), ve düzenlenen
+         türün sunum görüntüsü askıdan çıkıp yeniden istenirdi — yani harita,
+         kullanıcının üzerinde çalıştığı kaydın ESKİ hâlini geri getirirdi.
+
+         Oturumu sonlandırmanın yolları değişmez: Kaydet, İptal, Esc — hepsi
+         kaydedilmemiş iş varsa önce sorar. */
+      if (workspaceMode.isEditing) return
+
+      if (!sharesState(SELECTION_CONTEXTS, next)) workspace.clearSelection()
+    },
+    [MAP_CONTEXTS.multiSelection]: (next) => {
+      if (!sharesState(SELECTION_CONTEXTS, next)) workspace.clearSelection()
+    },
+    [MAP_CONTEXTS.styleEditor]: (next) => {
+      setStyleTarget(null)
+      if (!sharesState(SELECTION_CONTEXTS, next)) workspace.clearSelection()
+    },
+    [MAP_CONTEXTS.poiInfo]: (next) => {
+      if (!sharesState(POI_CONTEXTS, next)) setSelectedPoi(null)
+    },
+    [MAP_CONTEXTS.poiEdit]: (next) => {
+      retirePoiEdit()
+      if (!sharesState(POI_CONTEXTS, next)) setSelectedPoi(null)
+    },
+    [MAP_CONTEXTS.poiCreate]: retirePoiCreate,
+    [MAP_CONTEXTS.inventory]: () => {
+      /* Analiz alanı geçicidir ve sonuç onunla birlikte gider; veritabanına
+         hiçbir şey yazılmamıştı. Çizim katmanları etkilenmez. */
+      workspaceMode.stopAnalysis()
+      analysis.clear()
+    },
+    /* Kenar çubuğu panelleri yalnızca birer görünümdür: bıraktıkları bir durum
+       yoktur. Isı haritası da buradadır — paneli kapanır, KATMANI kalır. */
+    [MAP_CONTEXTS.heatmap]: () => {},
+    [MAP_CONTEXTS.drawings]: () => {},
+    /* "POI'lerim" de yalnızca bir GÖRÜNÜMDÜR: kapanması POI katmanını
+       gizlemez, seçimi düşürmez, hiçbir kaydı silmez. */
+    [MAP_CONTEXTS.myPois]: () => {},
+    [MAP_CONTEXTS.layers]: () => {},
+    [MAP_CONTEXTS.trash]: () => {},
+    [MAP_CONTEXTS.settings]: () => {},
+    [MAP_CONTEXTS.about]: () => {},
+  })
 
   const stylePanelMode =
     styleTarget === 'feature'
@@ -1124,6 +1823,17 @@ export default function MapPage() {
       : styleTarget === 'bulk'
         ? STYLE_PANEL_MODES.bulkSelection
         : STYLE_PANEL_MODES.drawingDefault
+
+  /**
+   * Geri yükleme onayında gösterilecek kayıt adı.
+   *
+   * Çöp Kutusu girişleri iki türdür ve gövdeyi FARKLI alanda taşır (çizim:
+   * `drawing`, POI: `poi`); `trashRecordOf` o okumanın tek tanımıdır ve panel
+   * de aynı yardımcıyı kullanır — böylece satırda görünen ad ile diyalogda
+   * sorulan ad ayrışamaz. Adsız bir kayıt için türün etiketine düşülür.
+   */
+  const restoreTargetName = (item) =>
+    trashRecordOf(item)?.name || (item?.type === 'poi' ? 'POI' : DRAWING_TYPES[item?.type]?.label) || 'Kayıt'
 
   /** "1 Nokta, 1 Çizgi ve 1 Poligon" for the delete confirmation. */
   const describeSelection = (items) => {
@@ -1143,8 +1853,10 @@ export default function MapPage() {
         onToggleCollapse={toggleSidebar}
         mobileOpen={mobileMenuOpen}
         onCloseMobile={() => setMobileMenuOpen(false)}
-        activePanel={activePanel}
+        activePanel={mapContext.active}
         onSelectPanel={handleSelectPanel}
+        canOpenTrash={canOpenTrash}
+        canOpenMyPois={canOpenMyPois}
         username={username}
         remaining={remaining}
         onLogout={handleLogout}
@@ -1191,9 +1903,11 @@ export default function MapPage() {
                 selectionTool={workspaceMode.activeSelectionTool}
                 onSelectSelectionTool={allowed.selectSelectionTool}
                 analysisActive={Boolean(workspaceMode.activeAnalysisTool)}
-                onToggleAnalysis={allowed.toggleAnalysisTool}
+                /* Araç düğmeleri bağlam koordinatöründen geçer: açılan araç
+                   çakışan paneli kendiliğinden kapatır. */
+                onToggleAnalysis={toggleInventoryAnalysis}
                 poiActive={workspaceMode.isPlacingPoi}
-                onTogglePoi={allowed.togglePoiTool}
+                onTogglePoi={togglePoiPlacement}
                 onOpenStyle={openStyleForTool}
                 canUndo={workspace.canUndo}
                 canRedo={workspace.canRedo}
@@ -1228,8 +1942,11 @@ export default function MapPage() {
                 onShowOnMap={showAnalysisItemOnMap}
                 onOpenDrawing={openAnalysisItemDrawing}
                 metricsFor={analysisMetrics}
+                onOpenPoi={openAnalysisPoi}
                 onClear={analysis.clear}
-                onClose={analysis.clear}
+                /* Paneli kapatmak BAĞLAMI bırakmaktır; analiz alanı ve sonucu
+                   emeklilikte temizlenir. */
+                onClose={() => mapContext.close(MAP_CONTEXTS.inventory)}
               />
 
               {/* Yoğunluk ölçeği artık harita üzerinde yüzen bir katman
@@ -1321,8 +2038,8 @@ export default function MapPage() {
               />
 
               <DrawingsPanel
-                open={activePanel === 'drawings' && allowed.canViewDrawings}
-                onClose={() => setActivePanel(null)}
+                open={mapContext.isActive(MAP_CONTEXTS.drawings) && allowed.canViewDrawings}
+                onClose={() => mapContext.close(MAP_CONTEXTS.drawings)}
                 drawings={workspace.drawings}
                 selectedKeys={selectedKeys}
                 visibility={workspace.visibility}
@@ -1344,11 +2061,26 @@ export default function MapPage() {
                 canDelete={allowed.canDeleteDrawings}
               />
 
+              {/* Çizimlerim'in kardeşi: aynı iskelet, ayrı alan nesnesi.
+                  Kapsamı sunucu belirler; burada sahiplik süzgeci yoktur. */}
+              <MyPoisPanel
+                open={mapContext.isActive(MAP_CONTEXTS.myPois) && canOpenMyPois}
+                onClose={() => mapContext.close(MAP_CONTEXTS.myPois)}
+                pois={myPois.items}
+                loading={myPois.loading}
+                error={myPois.error}
+                onRetry={myPois.reload}
+                onSelect={focusMyPoi}
+                onEdit={editMyPoi}
+                onDelete={deleteMyPoi}
+                busyId={poiSaving ? pendingPoiDelete?.id ?? poiEditing?.id ?? null : null}
+              />
+
               {/* Soft delete made visible: the rows the database kept, with
                   the one action that puts them back. No permanent delete. */}
               <TrashPanel
-                open={activePanel === 'trash' && allowed.canViewDrawings && allowed.canRestoreDrawings}
-                onClose={() => setActivePanel(null)}
+                open={mapContext.isActive(MAP_CONTEXTS.trash) && canOpenTrash}
+                onClose={() => mapContext.close(MAP_CONTEXTS.trash)}
                 items={trash.items}
                 loading={trash.loading}
                 error={trash.error}
@@ -1358,8 +2090,8 @@ export default function MapPage() {
               />
 
               <LayersPanel
-                open={activePanel === 'layers' && can(PERMISSIONS.LAYERS_VIEW)}
-                onClose={() => setActivePanel(null)}
+                open={mapContext.isActive(MAP_CONTEXTS.layers) && can(PERMISSIONS.LAYERS_VIEW)}
+                onClose={() => mapContext.close(MAP_CONTEXTS.layers)}
                 visibility={workspace.visibility}
                 counts={layerCounts}
                 onToggle={workspace.toggleVisibility}
@@ -1375,25 +2107,30 @@ export default function MapPage() {
               />
 
               <HeatmapPanel
-                open={activePanel === 'heatmap' && canUseHeatmap}
+                open={mapContext.isActive(MAP_CONTEXTS.heatmap) && canUseHeatmap}
                 enabled={heatmapEnabled}
                 opacity={heatmap.opacity}
                 loading={heatmap.loading}
                 error={heatmap.error}
                 hasImage={heatmap.hasImage}
-                onClose={() => setActivePanel(null)}
+                /* Paneli kapatmak ısı haritasını KAPATMAZ: katman
+                   `heatmapEnabled` ile yaşar ve haritada kalmaya devam eder. */
+                onClose={() => mapContext.close(MAP_CONTEXTS.heatmap)}
                 onToggle={() => setHeatmapEnabled((value) => !value)}
                 onOpacityChange={heatmap.setOpacity}
                 onRetry={heatmap.refresh}
               />
 
               <SettingsPanel
-                open={activePanel === 'settings'}
-                onClose={() => setActivePanel(null)}
+                open={mapContext.isActive(MAP_CONTEXTS.settings)}
+                onClose={() => mapContext.close(MAP_CONTEXTS.settings)}
                 shortcutsEnabled={hasFinePointer}
               />
 
-              <AboutPanel open={activePanel === 'about'} onClose={() => setActivePanel(null)} />
+              <AboutPanel
+                open={mapContext.isActive(MAP_CONTEXTS.about)}
+                onClose={() => mapContext.close(MAP_CONTEXTS.about)}
+              />
 
               {/* Opens the instant a shape is finished. Until "Kaydet" is
                   pressed the geometry exists only on the pending layer — no
@@ -1412,7 +2149,8 @@ export default function MapPage() {
                   bir önceki denemenin değerleri sonrakine sızmaz. */}
               <PoiFormSheet
                 key={pendingPoi ? `${pendingPoi.longitude},${pendingPoi.latitude}` : 'poi-form'}
-                open={poiFormOpen && allowed.canCreatePoi}
+                mode="create"
+                open={poiFormOpen && allowed.canCreatePoi && mapContext.isActive(MAP_CONTEXTS.poiCreate)}
                 point={pendingPoi}
                 categories={poiCategories.items}
                 categoriesLoading={poiCategories.loading}
@@ -1424,10 +2162,42 @@ export default function MapPage() {
                 onCancel={closePoiForm}
               />
 
+              {/* Düzenleme formu OLUŞTURMA formuyla aynı bileşendir; `key`
+                  kayda bağlıdır, böylece başka bir POI'ye geçmek formu
+                  sıfırdan kurar ve önceki kaydın değerleri sızmaz. */}
+              <PoiFormSheet
+                key={poiEditing ? `poi-edit-${poiEditing.id}-${poiEditHandoffDraft ? 'handoff' : 'own'}` : 'poi-edit'}
+                mode="edit"
+                open={mapContext.isActive(MAP_CONTEXTS.poiEdit) && Boolean(poiEditing)}
+                poi={poiEditing}
+                /* Devralınan taslak yalnızca BAŞLANGIÇ değerleridir; "neye göre
+                   değişti" ve "geri al" hâlâ kalıcı kaydı referans alır. */
+                initialDraft={poiEditHandoffDraft}
+                categories={poiCategories.items}
+                categoriesLoading={poiCategories.loading}
+                categoriesError={poiCategories.error}
+                onRetryCategories={loadPoiCategories}
+                /* Taslak konumun sahibi bu sayfadır; form ve haritadaki
+                   sürükleme AYNI değeri yazar. */
+                coordinate={poiEditCoordinate}
+                onCoordinateChange={setPoiEditCoordinate}
+                moveActive={poiMoveActive}
+                onToggleMove={setPoiMoveActive}
+                saving={poiSaving}
+                error={poiError}
+                onSave={savePoiEdit}
+                onCancel={cancelPoiEdit}
+              />
+
               <PoiInfoSheet
-                open={Boolean(selectedPoi) && allowed.canViewPoi}
+                open={mapContext.isActive(MAP_CONTEXTS.poiInfo) && Boolean(selectedPoi) && allowed.canViewPoi}
                 poi={selectedPoi}
-                onClose={() => setSelectedPoi(null)}
+                onClose={() => mapContext.close(MAP_CONTEXTS.poiInfo)}
+                /* Düğmeler kaydın kendi yetenek bayraklarına bakar; sahiplik
+                   kuralı tarayıcıda yeniden hesaplanmaz. */
+                onEdit={startPoiEdit}
+                onDelete={requestPoiDelete}
+                busy={poiSaving}
               />
 
               <MapToasts toasts={toasts} onDismiss={dismissToast} />
@@ -1458,21 +2228,49 @@ export default function MapPage() {
                 onCancel={() => setPendingDelete(null)}
               />
 
+              {/* POI silme onayı. Çizimlerle AYNI diyalog bileşeni: iki
+                  silme de aynı görünür ve ikisi de yumuşak silmedir — metin
+                  bu yüzden kalıcı bir kayıp vaat etmez. */}
+              <ConfirmDialog
+                open={Boolean(pendingPoiDelete)}
+                title="POI'yi sil"
+                message={
+                  pendingPoiDelete
+                    ? `“${pendingPoiDelete.name || 'POI'}” kaydını silmek istediğinize emin misiniz?`
+                    : ''
+                }
+                description="POI haritadan kaldırılır ve Çöp Kutusu'na taşınır. Bu işlem geri alınabilir."
+                confirmLabel="Sil"
+                onConfirm={confirmPoiDelete}
+                onCancel={() => setPendingPoiDelete(null)}
+              />
+
               {/* Restore confirmation. Same dialog component as the delete one,
                   in the primary tone: the record is coming back, and the row
-                  it comes back into is the very one that was deleted. */}
+                  it comes back into is the very one that was deleted.
+
+                  Metin KAYDIN TÜRÜNE göre kurulur. Çöp Kutusu artık çizimleri
+                  ve POI'leri birlikte taşır; sabit "çizim" metni bir POI
+                  satırında adı da kaybederdi (POI gövdesi `poi` alanında
+                  gelir, `drawing` değil) ve diyalog "Çizim" diye sorardı —
+                  yanlış satıra basıldığını yakalamak için var olan tek
+                  ayrıntı tam da odur. */}
               <ConfirmDialog
                 open={Boolean(pendingRestore)}
                 tone="primary"
-                title="Çizimi geri yükle"
+                title={pendingRestore?.type === 'poi' ? "POI'yi geri yükle" : 'Çizimi geri yükle'}
                 message={
                   !pendingRestore
                     ? ''
-                    : // Naming the drawing makes the dialog specific enough to
+                    : // Naming the record makes the dialog specific enough to
                       // catch a mis-tap on the neighbouring row.
-                      `“${pendingRestore.drawing?.name || DRAWING_TYPES[pendingRestore.type]?.label || 'Çizim'}” çizimini geri yüklemek istiyor musunuz?`
+                      `“${restoreTargetName(pendingRestore)}” kaydını geri yüklemek istiyor musunuz?`
                 }
-                description="Çizim aynı kayıt olarak haritaya ve Çizimlerim listesine geri döner, Çöp Kutusu'ndan kalkar."
+                description={
+                  pendingRestore?.type === 'poi'
+                    ? "POI aynı kayıt olarak haritaya geri döner, Çöp Kutusu'ndan kalkar."
+                    : "Çizim aynı kayıt olarak haritaya ve Çizimlerim listesine geri döner, Çöp Kutusu'ndan kalkar."
+                }
                 confirmLabel="Geri Yükle"
                 onConfirm={confirmRestore}
                 onCancel={() => setPendingRestore(null)}

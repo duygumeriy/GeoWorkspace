@@ -287,8 +287,13 @@ test('"Çizimi Aç" hands over to the ordinary drawing panel', async ({ page }) 
   await runTemporaryAnalysis(page)
 
   await section(page, 'Çizgiler (1)').locator('.analysis-section-head').click()
-  await page.locator('.analysis-item-head').filter({ hasText: 'çizgi1' }).click()
-  await page.getByRole('button', { name: 'Çizimi Aç' }).click()
+
+  /* Eylem, "çizgi1" sonucunun KENDİ satırından tetiklenir: sayfa genelinde
+     tek bir "Çizimi Aç" düğmesi aramak, açık olan başka bir sonucun
+     düğmesini de yakalayabilirdi. */
+  const result = page.locator('.analysis-item').filter({ hasText: 'çizgi1' })
+  await result.locator('.analysis-item-head').click()
+  await result.getByRole('button', { name: 'Çizimi Aç' }).click()
 
   // The existing selected-drawing panel, not a second editor grown inside the
   // analysis results.
@@ -296,6 +301,12 @@ test('"Çizimi Aç" hands over to the ordinary drawing panel', async ({ page }) 
   await expect(panel).toBeVisible()
   await expect(panel).toContainText('çizgi1')
   await expect(panel.getByRole('button', { name: 'Düzenle' })).toBeVisible()
+
+  /* Devir GERÇEKTEN olmuştur: aynı anda tek bir birincil bağlam vardır, yani
+     analiz sonucu paneli artık ekranda değildir. Yalnızca yeni panelin
+     görünmesini ölçmek, iki panelin üst üste bindiği eski davranışı da
+     geçirirdi. */
+  await expect(page.locator('.analysis-panel')).toHaveCount(0)
 })
 
 /* --- Clearing ----------------------------------------------------------------- */

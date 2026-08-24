@@ -64,6 +64,9 @@ public static class ActivityActionCatalog
        geriye dönük açıklanabilir olmalıdır. */
 
     public const string PoiCreate = "poi.create";
+    public const string PoiUpdate = "poi.update";
+    public const string PoiDelete = "poi.delete";
+    public const string PoiRestore = "poi.restore";
     public const string PoiCategoryCreate = "poi_category.create";
     public const string PoiCategoryUpdate = "poi_category.update";
 
@@ -97,6 +100,9 @@ public static class ActivityActionCatalog
         new(DrawingBulkStyle, "Toplu çizim stili değiştirildi"),
 
         new(PoiCreate, "POI oluşturuldu"),
+        new(PoiUpdate, "POI güncellendi"),
+        new(PoiDelete, "POI silindi"),
+        new(PoiRestore, "POI geri yüklendi"),
         new(PoiCategoryCreate, "POI kategorisi oluşturuldu"),
         new(PoiCategoryUpdate, "POI kategorisi güncellendi")
     ];

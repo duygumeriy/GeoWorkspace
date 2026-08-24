@@ -54,7 +54,18 @@ public static class RolePermissionDefaults
            ileride normal rol yönetimi ekranından tanımlanacak ÖZEL bir roldür
            ve yetkilerini oradan alır. Buradaki grant, mevcut profilin POI
            üretebilmesini sağlar; ikisi birbirinin yerine geçmez. */
-        PermissionCodes.PoiCreate
+        PermissionCodes.PoiCreate,
+
+        /* Düzenleme ve silme, oluşturmanın DOĞAL tamamlayıcısıdır: kendi
+           eklediği bir noktanın adını düzeltemeyen ya da yanlış yere koyduğu
+           kaydı kaldıramayan bir veri üreticisi, envanteri yalnızca
+           büyütebilir. Kodlar yine de AYRI kalır — bir kurulum isterse
+           yalnızca ekleme verebilir.
+
+           İkisi de yalnızca KENDİ kayıtlarında geçerlidir; başkasının kaydına
+           dokunmak `poi.manage` ister ve o, bu profilde YOKTUR. */
+        PermissionCodes.PoiUpdate,
+        PermissionCodes.PoiDelete
     ];
 
     /* Analist, Editor'ün türevi DEĞİLDİR: çizim düzenleme yetkileri bilinçli

@@ -254,6 +254,12 @@ builder.Services.AddScoped<ISpatialAnalysisService, SpatialAnalysisService>();
 builder.Services.AddScoped<IPoiService, PoiService>();
 builder.Services.AddScoped<IPoiCategoryService, PoiCategoryService>();
 
+/* POI sahiplik/yetki kararının TEK yeri. Çizim tarafındaki
+   IDrawingAuthorizationService ile aynı gerekçe: servis katmanı kuralı
+   kopyalamaz, sorar. Farkı, kararın rol adına değil etkin yetki KODLARINA
+   (poi.update / poi.delete / poi.manage) ve kaydın sahibine bakmasıdır. */
+builder.Services.AddScoped<IPoiAuthorizationService, PoiAuthorizationService>();
+
 /* Etkin yetki motoru. AppDbContext scoped olduğu ve servis her çağrıda canlı
    veritabanı durumunu okuduğu için lifetime da scoped'tır.
 

@@ -53,6 +53,8 @@ public class PoiApiAuthorizationTests
 
     private const string MapRoute = "/api/poi";
     private const string MapCategoriesRoute = "/api/poi/categories";
+    private const string DeletedRoute = "/api/poi/deleted";
+    private const string MineRoute = "/api/poi/mine";
     private const string AdminRoute = "/api/admin/poi";
     private const string AdminCategoriesRoute = "/api/admin/poi/categories";
 
@@ -298,6 +300,115 @@ public class PoiApiAuthorizationTests
 
     /* --- Yardımcılar --------------------------------------------------------------- */
 
+    /* --- Mutasyon uçları: kimlik + servis kararı ---------------------------------
+
+       Bu üç uç endpoint seviyesinde bir POI mutasyon yetkisi ARAMAZ ve bu
+       bilinçlidir: izin ölçütü "poi.manage VEYA (sahiplik VE poi.update /
+       poi.delete)"tir — bir VEYA içerir ve kaydın veritabanındaki sahibine
+       bakar. Statik attribute'lar aynı endpoint'te VE ile birleştiği ve isteği
+       kaydı görmeden değerlendirdiği için bu kuralı ifade EDEMEZ.
+
+       Dolayısıyla burada ölçülen şey iki sınırdır: kimliksiz istek hiç
+       geçemez, kimlikli istek ise kararı verecek olan servise ULAŞIR. Kuralın
+       kendisi PoiOwnershipTests içinde, kayıt üzerinde ölçülür. */
+
+    [Fact]
+    public async Task Anonymous_poi_mutations_are_rejected_with_401()
+    {
+        await using var host = await CreateHostAsync();
+        var client = host.Client();
+
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.PutAsJsonAsync($"{MapRoute}/7", NewPoiUpdate())).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.DeleteAsync($"{MapRoute}/7")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.PostAsync($"{MapRoute}/7/restore", null)).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync(DeletedRoute)).StatusCode);
+
+        // Kritik: hiçbir iş mantığı çalışmadı.
+        await host.Pois.DidNotReceive().UpdatePoiAsync(Arg.Any<int>(), Arg.Any<UpdatePoiRequest>(), Arg.Any<CancellationToken>());
+        await host.Pois.DidNotReceive().DeletePoiAsync(Arg.Any<int>(), Arg.Any<CancellationToken>());
+        await host.Pois.DidNotReceive().RestorePoiAsync(Arg.Any<int>(), Arg.Any<CancellationToken>());
+        await host.Pois.DidNotReceive().GetDeletedPoisAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task An_authenticated_mutation_reaches_the_service_that_owns_the_ownership_rule()
+    {
+        await using var host = await CreateHostAsync();
+        var user = await host.CreateUserAsync("editor", GisRoles.GisEditor);
+        var client = host.Client(user);
+
+        Assert.Equal(HttpStatusCode.OK, (await client.PutAsJsonAsync($"{MapRoute}/7", NewPoiUpdate())).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync($"{MapRoute}/7")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await client.PostAsync($"{MapRoute}/7/restore", null)).StatusCode);
+
+        await host.Pois.Received(1).UpdatePoiAsync(7, Arg.Any<UpdatePoiRequest>(), Arg.Any<CancellationToken>());
+        await host.Pois.Received(1).DeletePoiAsync(7, Arg.Any<CancellationToken>());
+        await host.Pois.Received(1).RestorePoiAsync(7, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task A_service_level_ownership_refusal_becomes_403_not_401()
+    {
+        /* 403 ile 401 ayrımı KORUNUR: kimlik geçerlidir, yalnızca bu kayıtta
+           yetki yoktur. Frontend 401'i oturum kaybı sayar; sahiplik reddini
+           logout'a çevirmek kullanıcıyı haritadan atardı. */
+        await using var host = await CreateHostAsync();
+        host.Pois.UpdatePoiAsync(Arg.Any<int>(), Arg.Any<UpdatePoiRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ServiceResult<PoiResponse>.Forbidden("Bu POI kaydı üzerinde işlem yapma yetkiniz bulunmuyor."));
+
+        var user = await host.CreateUserAsync("foreign-editor", GisRoles.GisEditor);
+
+        var response = await host.Client(user).PutAsJsonAsync($"{MapRoute}/7", NewPoiUpdate());
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task The_trash_listing_is_gated_by_poi_view()
+    {
+        await using var host = await CreateHostAsync();
+
+        // Emekli rolün hiçbir yetki satırı yoktur.
+        var stranger = await host.CreateUserAsync("trash-stranger", ApplicationRoles.Admin);
+        Assert.Equal(HttpStatusCode.Forbidden, (await host.Client(stranger).GetAsync(DeletedRoute)).StatusCode);
+        await host.Pois.DidNotReceive().GetDeletedPoisAsync(Arg.Any<CancellationToken>());
+
+        /* Kapsamı (kendi kayıtları / hepsi / hiçbiri) servis daraltır; uç
+           yalnızca okumaya izin verir. */
+        var viewer = await host.CreateUserAsync("trash-viewer", GisRoles.Viewer);
+        Assert.Equal(HttpStatusCode.OK, (await host.Client(viewer).GetAsync(DeletedRoute)).StatusCode);
+        await host.Pois.Received(1).GetDeletedPoisAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task My_pois_is_gated_by_poi_view_alone()
+    {
+        await using var host = await CreateHostAsync();
+
+        // Emekli rolün hiçbir yetki satırı yoktur.
+        var stranger = await host.CreateUserAsync("mine-stranger", ApplicationRoles.Admin);
+        Assert.Equal(HttpStatusCode.Forbidden, (await host.Client(stranger).GetAsync(MineRoute)).StatusCode);
+        await host.Pois.DidNotReceive().GetOwnPoisAsync(Arg.Any<CancellationToken>());
+
+        /* Yönetim yetkisi İSTENMEZ: uç zaten yalnızca çağıranın kendi
+           kayıtlarını döndürür, dolayısıyla poi.view yeterlidir. Ödevin
+           "Operatör" profili de tam olarak buradan geçer. */
+        var viewer = await host.CreateUserAsync("mine-viewer", GisRoles.Viewer);
+        Assert.Equal(HttpStatusCode.OK, (await host.Client(viewer).GetAsync(MineRoute)).StatusCode);
+        await host.Pois.Received(1).GetOwnPoisAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Anonymous_my_pois_is_rejected_with_401()
+    {
+        await using var host = await CreateHostAsync();
+
+        Assert.Equal(HttpStatusCode.Unauthorized, (await host.Client().GetAsync(MineRoute)).StatusCode);
+        await host.Pois.DidNotReceive().GetOwnPoisAsync(Arg.Any<CancellationToken>());
+    }
+
+    private static UpdatePoiRequest NewPoiUpdate() => new() { Name = "Yeni ad", CategoryId = 1 };
+
     private static CreatePoiRequest NewPoi() => new()
     {
         Name = "Test POI",
@@ -317,6 +428,19 @@ public class PoiApiAuthorizationTests
         pois.GetAdminPoisAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<AdminPoiResponse>());
         pois.CreatePoiAsync(Arg.Any<CreatePoiRequest>(), Arg.Any<CancellationToken>())
             .Returns(ServiceResult<PoiResponse>.Success(new PoiResponse()));
+
+        /* Mutasyon uçlarının yetki kapısı SERVİSTEDİR (yetki + sahiplik birlikte
+           değerlendirilir), bu yüzden substitute burada başarı döner: HTTP
+           hattında ölçülen şey kimlik doğrulamanın ve yönlendirmenin doğru
+           çalıştığıdır, sahiplik kuralı değil — onu PoiOwnershipTests ölçer. */
+        pois.UpdatePoiAsync(Arg.Any<int>(), Arg.Any<UpdatePoiRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ServiceResult<PoiResponse>.Success(new PoiResponse()));
+        pois.DeletePoiAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(ServiceResult<int>.Success(1));
+        pois.RestorePoiAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(ServiceResult<PoiResponse>.Success(new PoiResponse()));
+        pois.GetDeletedPoisAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<DeletedPoiResponse>());
+        pois.GetOwnPoisAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<PoiResponse>());
 
         var categories = Substitute.For<IPoiCategoryService>();
         categories.GetActiveCategoriesAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<PoiCategoryResponse>());

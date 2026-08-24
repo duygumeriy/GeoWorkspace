@@ -92,8 +92,29 @@
 
 .poi-form-actions {
   display: flex;
+  /* TEK bir eylem grubu, sağa yaslı. `space-between` ya da `margin-right:auto`
+     kullanılmaz: ikisi de "Değişiklikleri Geri Al"ı satırın öbür ucuna atar ve
+     düğme, ait olduğu gruptan kopmuş görünürdü. */
   justify-content: flex-end;
+  align-items: center;
+  /* Üç düğme dar bir sayfaya sığmadığında BÜZÜLMEZ, alt satıra iner: büzülme,
+     uzun etiketi iki satıra sarıp düğmeyi diğerlerinden yüksek gösteriyordu. */
+  flex-wrap: wrap;
   gap: .6rem;
+}
+
+.poi-form-actions .poi-button {
+  flex: 0 0 auto;
+}
+
+/* Metni uzun olan ikincil eylem: aynı yükseklik ve aynı yazı tipi, daha dar
+   nefes payı. "Güncelle"den büyük görünmemesi bilinçlidir — birincil eylem
+   odur. */
+.poi-button.compact {
+  padding: .6rem .7rem;
+  font-size: var(--font-small);
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .poi-button {
@@ -117,6 +138,80 @@
 .poi-button:disabled {
   opacity: .6;
   cursor: not-allowed;
+}
+
+/* Mesai satırındaki gece aşımı ipucu: hata DEĞİL, açıklama. */
+.poi-hours-overnight {
+  margin: .2rem 0 0;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+/* --- Konum (düzenlenebilir) -------------------------------------------------
+   Oluşturma formundaki salt okunur blokla aynı dili konuşur; farkı, iki
+   sayının artık girilebilir olmasıdır. */
+
+.poi-location {
+  min-width: 0;
+  margin: 0;
+  padding: .8rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+}
+
+.poi-location legend {
+  padding: 0 .35rem;
+  font-size: var(--font-small);
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+/* İki kutu yan yana durur, daralınca alt alta iner. */
+.poi-location-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+}
+
+.poi-location-fields .poi-field {
+  flex: 1 1 130px;
+  min-width: 0;
+}
+
+.poi-location-fields input {
+  font-variant-numeric: tabular-nums;
+}
+
+.poi-location-fields input[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+.poi-location-error {
+  margin: .4rem 0 0;
+  color: var(--danger);
+  font-size: 12px;
+}
+
+.poi-location-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .5rem;
+  margin-top: .6rem;
+}
+
+.poi-location-hint {
+  flex: 1 1 160px;
+  min-width: 0;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* Basılı kip: düğme bir eylemi değil, açık/kapalı bir durumu anlatır. */
+.poi-button.is-active {
+  border-color: var(--primary-light, #6366f1);
+  color: var(--primary-light, #6366f1);
 }
 
 /* --- Mesai düzenleyicisi ---------------------------------------------------- */
@@ -155,6 +250,15 @@
 .poi-hours-day.is-enabled {
   padding-bottom: .5rem;
   border-bottom: 1px solid var(--border-soft);
+}
+
+/* İki kip kutusu yan yana durur, dar ekranda alt alta iner: form zaten dikey
+   olarak uzun, bu yüzden 24 saat seçeneği kendi kartını değil "Kapalı"nın
+   komşuluğunu alır. */
+.poi-hours-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .2rem 1rem;
 }
 
 .poi-hours-toggle,
@@ -249,4 +353,73 @@
 .poi-info-hours dl {
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: .5rem .8rem;
+}
+
+/* --- Aranabilir kategori seçici ------------------------------------------
+   Liste yükseklik SINIRLIDIR ve kendi içinde kayar: taksonomi büyüdükçe
+   seçici formu aşağı itip "Kaydet" düğmesini ekran dışına atmamalıdır. */
+
+.poi-category-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.poi-category-selected {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted, #64748b);
+}
+
+.poi-category-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 8px;
+  background: var(--surface, #fff);
+}
+
+.poi-category-option {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.poi-category-option:hover:not(:disabled),
+.poi-category-option:focus-visible {
+  background: var(--surface-hover, #f1f5f9);
+}
+
+.poi-category-option.is-selected {
+  background: var(--primary-soft, #dbeafe);
+  font-weight: 600;
+}
+
+.poi-category-empty {
+  padding: 8px;
+  font-size: 12px;
+  color: var(--text-muted, #64748b);
+}
+
+/* --- Bilgi panelindeki eylemler ---------------------------------------- */
+
+.poi-info-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.poi-button.danger {
+  background: var(--danger, #dc2626);
+  color: #fff;
 }

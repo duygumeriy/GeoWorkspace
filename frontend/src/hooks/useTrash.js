@@ -1,9 +1,45 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { fetchDeletedDrawings, readApiError, restoreDrawings } from '../services/api.js'
+import {
+  fetchDeletedDrawings,
+  fetchDeletedPois,
+  readApiError,
+  restoreDrawings,
+  restorePoi,
+} from '../services/api.js'
 
 /**
- * Owns the "Çöp Kutusu" data: the caller's soft-deleted drawings and the restore
- * action over them.
+ * Owns the "Çöp Kutusu" data: the caller's soft-deleted records — drawings AND
+ * POIs — and the restore action over them.
+ *
+ * ## Neden tek panel, iki uç
+ *
+ * Çöp kutusu bir SORUYU yanıtlar: "ne sildim ve nasıl geri alırım?". Bu soru
+ * kaydın hangi tabloda durduğuna bakmaz. POI için ikinci bir çöp kutusu ekranı
+ * açmak, aynı arama/sıralama/geri yükleme akışını ikinci kez yazmak ve
+ * kullanıcıyı "hangi çöp kutusuna bakayım" sorusuyla baş başa bırakmak olurdu.
+ *
+ * Uçlar yine de AYRI kalır (`/api/drawings/deleted`, `/api/poi/deleted`) çünkü
+ * yetkileri ve kapsam kuralları ayrıdır: çizimler yalnızca sahibinindir; POI
+ * ise `poi.manage` ile herkesin, `poi.delete` ile yalnızca kendi kayıtlarının
+ * görüldüğü ortak bir envanterdir. Kapsamı sunucu belirler, bu hook yalnızca
+ * iki listeyi birleştirir.
+ *
+ * <b>İki yarı SİMETRİKTİR.</b> Her kaynak yalnızca çağıranın yetkisi varsa
+ * istenir ve kendi hatası kendi içinde kalır:
+ *
+ *   yalnızca çizim yetkisi  -> yalnızca çizim yarısı okunur
+ *   yalnızca POI yetkisi    -> yalnızca POI yarısı okunur
+ *   ikisi de                -> ikisi paralel okunur
+ *   hiçbiri                 -> hiçbir istek açılmaz
+ *
+ * Bu simetri bir kolaylık değil, bir GEREKLİLİKTİR: yalnızca POI yetkisi olan
+ * bir kullanıcı (ör. `map.view` + `poi.*` taşıyan özel bir rol)
+ * `/api/drawings/deleted` çağrıldığında 403 alır ve o hata tüm paneli
+ * düşürürse, kişi kendi sildiği POI'yi hiçbir zaman göremez.
+ *
+ * Panel yalnızca <b>istenen tüm kaynaklar</b> başarısız olduğunda hata
+ * gösterir; biri gelirse liste çizilir — yarım bir çöp kutusu, hiç olmayandan
+ * iyidir.
  *
  * Kept out of `useDrawingWorkspace` on purpose. That hook owns the OpenLayers
  * source, and every record in it is by definition a *live* one — putting deleted
@@ -21,7 +57,39 @@ import { fetchDeletedDrawings, readApiError, restoreDrawings } from '../services
  *   `onRestored` refreshes whatever shows live drawings (the map), so a restored
  *   record reappears without the user reloading the page.
  */
-export default function useTrash({ active, showToast, onRestored = null }) {
+/**
+ * Tek bir çöp kutusu kaynağını okur ve HİÇBİR koşulda fırlatmaz.
+ *
+ * Sonuç `{ ok, items }`tir: çağıran, "kaç kaynak gerçekten geldi" sorusunu
+ * yanıtlayabilsin diye başarı bilgisi ayrı taşınır. Boş liste ile başarısız
+ * istek aynı şey DEĞİLDİR — biri "çöp kutun boş", diğeri "okuyamadım"dır ve
+ * panel ikisini farklı göstermek zorundadır.
+ *
+ * @param {() => Promise<Response>} request
+ */
+async function loadTrashSource(request) {
+  try {
+    const res = await request()
+    if (!res.ok) return { ok: false, items: [] }
+
+    const body = await res.json()
+    return { ok: true, items: Array.isArray(body) ? body : [] }
+  } catch {
+    return { ok: false, items: [] }
+  }
+}
+
+export default function useTrash({
+  active,
+  showToast,
+  onRestored = null,
+  /* Her yarı KENDİ yetkisine bağlıdır; yetkisi olmayan uç HİÇ çağrılmaz —
+     garanti 403 alacak bir istek açmanın anlamı yok. */
+  includeDrawings = false,
+  includePois = false,
+  /** Geri yüklenen POI'yi haritaya geri koyar. */
+  onPoiRestored = null,
+}) {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(false)
   /** Non-null when the last load failed; drives the panel's error state. */
@@ -39,24 +107,41 @@ export default function useTrash({ active, showToast, onRestored = null }) {
     setLoading(true)
     setError(null)
 
-    try {
-      const res = await fetchDeletedDrawings()
-      if (!res.ok) throw new Error(await readApiError(res, 'Silinen çizimler yüklenemedi'))
+    /* İstenen kaynaklar PARALEL okunur: ikisi de bağımsızdır ve sırayla
+       beklemek paneli iki tur gecikmeye uğratırdı. Yetkisi olmayan kaynak
+       listeye hiç girmez, dolayısıyla isteği de açılmaz. */
+    const sources = [
+      ...(includeDrawings ? [loadTrashSource(fetchDeletedDrawings)] : []),
+      ...(includePois ? [loadTrashSource(fetchDeletedPois)] : []),
+    ]
 
-      const body = await res.json()
-      if (token !== requestRef.current) return false
-
-      setItems(Array.isArray(body) ? body : [])
+    if (sources.length === 0) {
+      // Geri yükleyebileceği hiçbir tür yok: istek açılmaz, liste boştur.
+      if (token === requestRef.current) {
+        setItems([])
+        setLoading(false)
+      }
       return true
-    } catch (loadError) {
-      if (token !== requestRef.current) return false
-      // A failed trash load must not take the map down; it is its own panel.
-      setError(loadError?.message || 'Silinen çizimler yüklenemedi.')
-      return false
-    } finally {
-      if (token === requestRef.current) setLoading(false)
     }
-  }, [])
+
+    const results = await Promise.all(sources)
+
+    if (token !== requestRef.current) return false
+
+    setLoading(false)
+
+    /* Hata YALNIZCA istenen her kaynak düştüğünde gösterilir. Biri geldiyse
+       elde gerçek veri vardır ve onu bir hata ekranının arkasına saklamak,
+       kullanıcıya geri yükleyebileceği kayıtları göstermemek olurdu. */
+    if (results.every((result) => !result.ok)) {
+      setItems([])
+      setError('Silinen kayıtlar yüklenemedi.')
+      return false
+    }
+
+    setItems(results.flatMap((result) => result.items))
+    return true
+  }, [includeDrawings, includePois])
 
   // Loaded when the panel opens rather than once at mount: the list is a
   // snapshot of what has been deleted, and deletions keep happening while the
@@ -79,34 +164,45 @@ export default function useTrash({ active, showToast, onRestored = null }) {
   const restore = useCallback(
     async (item) => {
       const type = item?.type
-      const id = item?.drawing?.id
+      const record = item?.drawing ?? item?.poi
+      const id = record?.id
       if (!type || !id) return false
 
+      const isPoi = type === 'poi'
       const key = `${type}:${id}`
       setRestoringKey(key)
 
       try {
-        // The same endpoint and the same payload undo uses. Only the record's
-        // identity travels; the server keeps ownership and content.
-        const res = await restoreDrawings([{ type, id }])
-        if (!res.ok) throw new Error(await readApiError(res, 'Çizim geri yüklenemedi'))
+        /* Tür başına DOĞRU uç çağrılır; ikisi de "geri yükle" eyleminin
+           sunucudaki tek gerçekleştirimidir. Sahiplik, geometri, ad ve
+           kategori sunucu tarafında kalır — istek yalnızca kaydın kimliğini
+           taşır. */
+        const res = isPoi ? await restorePoi(id) : await restoreDrawings([{ type, id }])
+        if (!res.ok) throw new Error(await readApiError(res, 'Kayıt geri yüklenemedi'))
+
+        /* POI geri yükleme kaydın kanonik hâlini döndürür ve o hâl doğrudan
+           haritaya konur; ikinci bir GET, az önce okunanı yeniden indirmek
+           olurdu. */
+        const restored = isPoi ? await res.json() : null
 
         setItems((current) =>
-          current.filter((entry) => !(entry.type === type && entry.drawing?.id === id)),
+          current.filter((entry) => !(entry.type === type && (entry.drawing ?? entry.poi)?.id === id)),
         )
-        // The map is the other half of the answer: the record has to reappear
-        // there, not just vanish from here.
-        await onRestored?.()
-        showToast('success', 'Çizim geri yüklendi.')
+
+        // Haritanın öbür yarısı: kaydın oradan da geri gelmesi gerekir.
+        if (isPoi) await onPoiRestored?.(restored)
+        else await onRestored?.()
+
+        showToast('success', isPoi ? 'POI geri yüklendi.' : 'Çizim geri yüklendi.')
         return true
       } catch (restoreError) {
-        showToast('error', restoreError?.message || 'Çizim geri yüklenemedi.')
+        showToast('error', restoreError?.message || 'Kayıt geri yüklenemedi.')
         return false
       } finally {
         setRestoringKey(null)
       }
     },
-    [onRestored, showToast],
+    [onRestored, onPoiRestored, showToast],
   )
 
   return { items, loading, error, restoringKey, reload: load, restore }

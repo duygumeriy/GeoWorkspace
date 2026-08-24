@@ -63,20 +63,35 @@
 
 /* --- POI listesi ------------------------------------------------------------ */
 
-/* Yedi sütun. İsim en geniş paydır; mesai ve konum okunabilir kalsın diye
-   sabit tabanlı minimumlar taşır. Dar ekranda AdminPage.css'in mobil kuralı
-   devralır ve satır data-label'lı bir karta dönüşür. */
+/* Sekiz sütun: yedi veri sütunu + işlemler. İsim en geniş paydır; mesai ve
+   konum okunabilir kalsın diye sabit tabanlı minimumlar taşır. Dar ekranda
+   AdminPage.css'in mobil kuralı devralır ve satır data-label'lı bir karta
+   dönüşür. */
 .admin-poi-list .admin-table-head,
 .admin-poi-list .admin-poi-row {
   grid-template-columns:
     minmax(160px, 1.4fr) minmax(140px, 1.2fr) minmax(150px, 1.3fr)
-    minmax(140px, 1fr) minmax(110px, .9fr) minmax(130px, 1fr) minmax(90px, .7fr);
+    minmax(140px, 1fr) minmax(110px, .9fr) minmax(130px, 1fr) minmax(90px, .7fr)
+    minmax(150px, .9fr);
 }
 
-/* Satır bir kontrol DEĞİLDİR: POI düzenleme/silme uçları yoktur, dolayısıyla
-   tıklama imleci ve seçim vurgusu da yanlış bir vaat olurdu. */
+/* Satırın KENDİSİ hâlâ bir kontrol değildir: eylemler açık düğmelerdir, satıra
+   tıklamak bir şey yapmaz — yanlışlıkla silmeye açık bir yüzey bırakılmaz. */
 .admin-poi-row {
   cursor: default;
+}
+
+/* İşlemler sütunu: dar ekranda düğmeler alt alta değil yan yana kalır ve
+   satır kartının içinde taşmaz. */
+.admin-poi-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.admin-poi-actions .admin-button {
+  padding: 4px 10px;
+  font-size: 12px;
 }
 
 .admin-poi-row:hover {
@@ -277,4 +292,146 @@
   .admin-poi-tree-edit {
     width: 100%;
   }
+}
+
+
+/* --- Süzgeç şeridi ----------------------------------------------------------
+   Tek bir kompakt satır: arama esner, açılır listeler kendi içeriklerine göre
+   daralır ve yer kalmadığında şerit SARAR. Ayrı bir "filtre kartı" açılmaz —
+   ekranın asıl konusu envanterin kendisidir. */
+
+.admin-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: .6rem .75rem;
+  max-width: 1180px;
+  box-sizing: border-box;
+  margin: 1rem auto 0;
+  padding: .75rem .9rem;
+  background: var(--surface-soft);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+}
+
+.admin-filter-search {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.admin-filter-search input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 40px;
+  padding: .5rem .7rem;
+  color: var(--text-primary);
+  background: var(--surface-solid);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  font: inherit;
+}
+
+.admin-filter-select {
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  gap: .25rem;
+  min-width: 0;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.admin-filter-select select {
+  box-sizing: border-box;
+  min-height: 40px;
+  max-width: 100%;
+  padding: .45rem .6rem;
+  color: var(--text-primary);
+  background: var(--surface-solid);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-weight: 400;
+}
+
+.admin-filter-meta {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: .75rem;
+}
+
+/* Sayaç bilgi verir, dikkat çekmez. */
+.admin-filter-count {
+  color: var(--text-tertiary);
+  font-size: var(--font-small);
+  white-space: nowrap;
+}
+
+.admin-filter-reset {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--primary-light, #6366f1);
+  font: inherit;
+  font-size: var(--font-small);
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .admin-filter-select { flex: 1 1 45%; }
+  .admin-filter-meta { justify-content: space-between; }
+}
+
+/* --- Yüksek diyalog ---------------------------------------------------------
+   POI düzenleme formu artık kategori seçicisi, yedi mesai günü ve konum
+   alanlarını taşıyor. Tek parça bir diyalog bu içerikle viewport'u aşıyor,
+   arka plandaki sayfa da kaymadığı için alttaki düğmelere ULAŞILAMIYORDU.
+
+   Çözüm üç bölgeli bir flex sütun: başlık ve eylemler sabit kalır, kaydırma
+   yalnızca GÖVDEYE aittir. `dvh` bilinçlidir — mobil tarayıcıların açılıp
+   kapanan adres çubuğu `vh`'yi yanıltır. */
+
+.admin-poi-dialog {
+  width: min(720px, 100%);
+  max-height: calc(100dvh - 2rem);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  /* Genel `.admin-dialog` güvenlik ağını (kendisi kayar) burada geçersiz kılar:
+     kaydırma gövdenin işidir. */
+  overflow: hidden;
+}
+
+.admin-poi-dialog .admin-dialog-header {
+  flex: 0 0 auto;
+  padding: 1.5rem 1.5rem 0;
+}
+
+.admin-poi-dialog .admin-dialog-header h2 { margin-top: 0; }
+
+.admin-poi-dialog .admin-dialog-body {
+  flex: 1 1 auto;
+  /* min-height:0 OLMADAN flex çocuğu içeriğinden küçülemez ve overflow hiç
+     devreye girmez — kaydırma kutusunun klasik tuzağı. */
+  min-height: 0;
+  overflow-y: auto;
+  /* Gövdenin sonuna gelince kaydırma arkadaki sayfaya SIÇRAMAZ. */
+  overscroll-behavior: contain;
+  display: grid;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+}
+
+.admin-poi-dialog .admin-dialog-actions {
+  flex: 0 0 auto;
+  margin-top: 0;
+  padding: 1rem 1.5rem;
+  background: var(--surface-solid);
+  border-top: 1px solid var(--border-soft);
 }

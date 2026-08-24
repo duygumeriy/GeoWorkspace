@@ -1,4 +1,4 @@
-import { DAY_KEYS, DAY_LABELS } from '../../poi/workHours.js'
+import { DAY_KEYS, DAY_LABELS, isOvernightRange } from '../../poi/workHours.js'
 
 /**
  * Haftalık mesai düzenleyicisi.
@@ -8,11 +8,21 @@ import { DAY_KEYS, DAY_LABELS } from '../../poi/workHours.js'
  * girmez. Her günü 09:00–18:00 ile başlatmak, kullanıcının söylemediği bir
  * şeyi veriye yazmak olurdu.
  *
- * <b>Üç durum ayrı ayrı temsil edilir</b> ve "Kapalı" ile "Belirtilmemiş"
- * karıştırılmaz — bu ayrım sunucu sözleşmesinde de vardır:
+ * <b>Dört durum ayrı ayrı temsil edilir</b> ve hiçbiri diğerine indirgenmez —
+ * bu ayrım sunucu sözleşmesinde de vardır:
  *   • bildirilmemiş — anahtar hiç gönderilmez
  *   • kapalı        — `{ closed: true }`
- *   • açık          — `{ closed: false, open, close }`
+ *   • 24 saat açık  — `{ closed: false, open24Hours: true }`
+ *   • saatli        — `{ closed: false, open, close }`
+ *
+ * "Kapalı" ile "24 Saat Açık" BİRBİRİNİ DIŞLAR ve ikisi de saat alanlarını
+ * kaldırır: gönderilmeyecek bir değeri istemek, kendi içinde çelişen bir form
+ * olurdu. 24 saat açık olmak eşit saatlerle (00:00 – 00:00) YAZILMAZ; o
+ * gösterim geçersizdir ve kalmaya devam eder.
+ *
+ * <b>Gece aşan aralık geçerlidir</b> ve satır bunu sessizce değil, kendi
+ * cümlesiyle söyler: 17:00 – 01:00 girildiğinde "ertesi gün kapanır" ipucu
+ * çıkar. İpucu hata biçimli DEĞİLDİR çünkü ortada bir hata yoktur.
  *
  * Saatler yerel <c>&lt;input type="time"&gt;</c> ile alınır: dolgulu HH:mm
  * üretir, klavye ve ekran okuyucuyla çalışır ve mobilde platformun kendi saat
@@ -47,18 +57,44 @@ export default function PoiWorkHoursEditor({ draft, errors, disabled, onChange }
 
               {day.enabled && (
                 <div className="poi-hours-fields">
-                  <label className="poi-hours-closed">
-                    <input
-                      type="checkbox"
-                      checked={day.closed}
-                      onChange={(e) => update(key, { closed: e.target.checked })}
-                    />
-                    <span>Kapalı</span>
-                  </label>
+                  <div className="poi-hours-modes">
+                    <label className="poi-hours-closed">
+                      <input
+                        type="checkbox"
+                        checked={day.closed}
+                        /* Karşılıklı dışlama TEK yönlü bir kural değildir:
+                           biri açıldığında diğeri KAPANIR, böylece
+                           "kapalı ve 24 saat açık" durumu hiç oluşmaz. */
+                        onChange={(e) =>
+                          update(key, { closed: e.target.checked, open24Hours: false })
+                        }
+                      />
+                      <span>Kapalı</span>
+                    </label>
 
-                  {/* Kapalı günde saat alanları hiç çizilmez: gönderilmeyecek
-                      bir değeri istemek, kendi içinde çelişen bir form olurdu. */}
-                  {!day.closed && (
+                    <label className="poi-hours-closed">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(day.open24Hours)}
+                        /* Erişilebilir ad GÜNE ÖZGÜDÜR: yedi özdeş "24 Saat
+                           Açık" kutusu, ekran okuyucuda hangi güne ait
+                           olduğunu söylemezdi. Saat alanları da aynı kalıbı
+                           kullanır. */
+                        aria-label={`${DAY_LABELS[key]} 24 saat açık`}
+                        onChange={(e) =>
+                          update(key, { open24Hours: e.target.checked, closed: false })
+                        }
+                      />
+                      <span>24 Saat Açık</span>
+                    </label>
+                  </div>
+
+                  {/* Kapalı ya da 24 saat açık günde saat alanları hiç
+                      çizilmez: gönderilmeyecek bir değeri istemek, kendi
+                      içinde çelişen bir form olurdu. Kullanıcı bu durumlardan
+                      çıktığında yazdığı saatler taslakta DURUYORDUR ve geri
+                      gelir — "Kapalı"nın bugünkü davranışının aynısı. */}
+                  {!day.closed && !day.open24Hours && (
                     <div className="poi-hours-times">
                       <label>
                         <span>Açılış</span>
@@ -79,6 +115,14 @@ export default function PoiWorkHoursEditor({ draft, errors, disabled, onChange }
                         />
                       </label>
                     </div>
+                  )}
+
+                  {/* Gece aşımı bir HATA DEĞİLDİR: aralık geçerlidir ve
+                      yalnızca ne anlama geldiği söylenir. Kırmızı bir uyarı
+                      olsaydı, kullanıcı doğru girdiği bir saati düzeltmeye
+                      çalışırdı. */}
+                  {!day.closed && !day.open24Hours && isOvernightRange(day.open, day.close) && (
+                    <p className="poi-hours-overnight">{day.close} — ertesi gün kapanır</p>
                   )}
 
                   {error && <p className="poi-hours-error" role="alert">{error}</p>}

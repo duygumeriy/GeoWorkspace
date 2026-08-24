@@ -124,13 +124,21 @@ public static class RolePermissionExpansions
     private static readonly string[] PoiCreatePermissions =
     [
         PermissionCodes.PoiView,
-        PermissionCodes.PoiCreate
+        PermissionCodes.PoiCreate,
+        /* Phase 3 genişlemesi. Kodlar kataloğa SONRADAN eklendiği için matris
+           tek başına yetmez: bu roller çoktan provision edilmiştir ve
+           `RolePermissionDefaults` onlara bir daha hiç uygulanmaz. Sahiplik
+           sınırı değişmez — kodlar yalnızca kendi kayıtlarında yetki verir. */
+        PermissionCodes.PoiUpdate,
+        PermissionCodes.PoiDelete
     ];
 
     private static readonly string[] PoiManagePermissions =
     [
         PermissionCodes.PoiView,
         PermissionCodes.PoiCreate,
+        PermissionCodes.PoiUpdate,
+        PermissionCodes.PoiDelete,
         PermissionCodes.PoiManage,
         PermissionCodes.PoiCategoriesManage
     ];

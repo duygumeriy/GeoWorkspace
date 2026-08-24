@@ -121,6 +121,19 @@ public static class PermissionCodes
 
     public const string PoiView = "poi.view";
     public const string PoiCreate = "poi.create";
+
+    /* Güncelleme ve silme, oluşturmadan AYRI kodlardır ve `poi.create` üzerine
+       yüklenmez: bir noktayı eklemek ile başkasının da göreceği ortak
+       envanterdeki bir kaydı değiştirmek/kaldırmak farklı yeteneklerdir.
+
+       İkisi de SAHİPLİK ile birlikte okunur — kod "kendi kaydında" yetki
+       verir; herkesin kaydına yetki veren tek şey `poi.manage`'dir. Bu ayrım
+       kodun kendisinde değil, servis katmanındaki sahiplik denetimindedir:
+       yetki "ne yapabilir", sahiplik "hangi kayıtta" sorusunu yanıtlar. */
+
+    public const string PoiUpdate = "poi.update";
+    public const string PoiDelete = "poi.delete";
+
     public const string PoiManage = "poi.manage";
     public const string PoiCategoriesManage = "poi.categories.manage";
 

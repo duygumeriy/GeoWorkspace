@@ -236,9 +236,23 @@ public static class PermissionCatalog
             "Harita üzerinde yeni POI oluşturabilir.",
             PermissionCategories.Poi, 1210),
 
+        /* Sahiplik burada YAZILI DEĞİLDİR ve bilinçlidir: katalog "ne
+           yapabilir"i tanımlar, "hangi kayıtta"yı değil. Kendi kaydı / herkesin
+           kaydı ayrımı servis katmanındaki sahiplik denetimindedir. */
+
+        new(PermissionCodes.PoiUpdate,
+            "POI Düzenleme",
+            "Kendi eklediği POI kayıtlarının adını, kategorisini ve mesai saatlerini güncelleyebilir.",
+            PermissionCategories.Poi, 1212),
+
+        new(PermissionCodes.PoiDelete,
+            "POI Silme",
+            "Kendi eklediği POI kayıtlarını çöp kutusuna gönderebilir ve oradan geri yükleyebilir.",
+            PermissionCategories.Poi, 1214),
+
         new(PermissionCodes.PoiManage,
             "POI Yönetimi",
-            "Yönetim panelinde tüm POI kayıtlarını ve onları oluşturan kullanıcıları listeleyebilir.",
+            "Yönetim panelinde tüm POI kayıtlarını listeleyebilir; kim eklemiş olursa olsun düzenleyebilir, silebilir ve geri yükleyebilir.",
             PermissionCategories.Poi, 1220),
 
         new(PermissionCodes.PoiCategoriesManage,
