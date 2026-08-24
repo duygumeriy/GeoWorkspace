@@ -378,11 +378,20 @@ public class InventoryAnalysisScopeTests
         return result.Value!;
     }
 
-    private static SpatialAnalysisService AnalysisFor(AppDbContext db, int? userId)
+    /// <param name="canViewPois">
+    /// <c>poi.view</c>. Varsayılan false: bu dosyanın konusu ÇİZİM kapsamıdır
+    /// ve POI kırılımı ayrı bir yetkinin arkasındadır.
+    /// </param>
+    private static SpatialAnalysisService AnalysisFor(AppDbContext db, int? userId, bool canViewPois = false)
     {
         var currentUser = Substitute.For<ICurrentUserService>();
         currentUser.UserId.Returns(userId);
-        return new SpatialAnalysisService(db, currentUser);
+
+        var permissions = Substitute.For<IEffectivePermissionService>();
+        permissions.HasPermissionAsync(Arg.Any<int>(), PermissionCodes.PoiView, Arg.Any<CancellationToken>())
+            .Returns(canViewPois);
+
+        return new SpatialAnalysisService(db, currentUser, permissions);
     }
 
     private static AppDbContext NewDb()

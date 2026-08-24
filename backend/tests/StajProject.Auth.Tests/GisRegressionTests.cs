@@ -85,7 +85,8 @@ public class GisRegressionTests
         Assert.Single(await drawings.GetPointsAsync(CancellationToken.None));
 
         // Analiz kapsamı doğrulanmış kimlikten gelir: sahibin kendi envanteri.
-        var analysis = new SpatialAnalysisService(db, owner);
+        var analysisPermissions = Substitute.For<IEffectivePermissionService>();
+        var analysis = new SpatialAnalysisService(db, owner, analysisPermissions);
         var counts = await analysis.CountIntersectionsAsync(new IntersectionAnalysisRequest
         {
             Wkt = "POLYGON ((27 37, 33 37, 33 43, 27 43, 27 37))",

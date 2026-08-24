@@ -34,6 +34,15 @@ export default function Sidebar({
   onCloseMobile,
   activePanel,
   onSelectPanel,
+  /* Çöp Kutusu artık çizimleri VE POI'leri gösterir; satırın görünürlüğü bu
+     yüzden tek bir yetki çiftinden değil, "geri yükleyebileceği bir şey var
+     mı" sorusundan türetilir. Hesap MapPage'dedir (etkin yetkiler oradaki
+     yetki katmanından okunur); burada yalnızca sonucu tüketilir. */
+  canOpenTrash = false,
+  /* "POI'lerim" ayrı bir yetkiyle açılır (poi.view) ve Çizimlerim'den
+     BAĞIMSIZDIR: çizim yetkisi olmayan biri de kendi POI'lerini görebilmelidir.
+     Hesap MapPage'deki yetki katmanındadır; burada yalnızca sonucu tüketilir. */
+  canOpenMyPois = false,
   username,
   remaining,
   onLogout,
@@ -75,16 +84,17 @@ export default function Sidebar({
   const items = [
     { id: null, label: 'Harita', Icon: MapIcon },
     ...(can(PERMISSIONS.DRAWINGS_VIEW) ? [{ id: 'drawings', label: 'Çizimlerim', Icon: ListIcon }] : []),
+    // Çizimlerim'in hemen ardında: aynı soru, farklı alan nesnesi.
+    ...(canOpenMyPois ? [{ id: 'myPois', label: "POI'lerim", Icon: PinIcon }] : []),
     ...(can(PERMISSIONS.LAYERS_VIEW) ? [{ id: 'layers', label: 'Katmanlar', Icon: LayersIcon }] : []),
     ...(can(PERMISSIONS.HEATMAP_VIEW)
       ? [{ id: 'heatmap', label: 'Isı Haritası Analizi', Icon: AnalysisIcon }]
       : []),
     // Right after "Çizimlerim"/"Katmanlar" because it is the same subject seen
-    // from the other side: the drawings that are no longer on the map.
-    // Çöp Kutusu'nun tek eylemi geri yüklemedir; listesi de silinmiş ÇİZİMLERDİR.
-    ...(can(PERMISSIONS.DRAWINGS_VIEW) && can(PERMISSIONS.DRAWINGS_RESTORE)
-      ? [{ id: 'trash', label: 'Çöp Kutusu', Icon: TrashIcon }]
-      : []),
+    // from the other side: the records that are no longer on the map.
+    // Çöp Kutusu'nun tek eylemi geri yüklemedir; listesi silinmiş çizimler VE
+    // POI'lerdir.
+    ...(canOpenTrash ? [{ id: 'trash', label: 'Çöp Kutusu', Icon: TrashIcon }] : []),
     ...(canAny(ADMIN_ENTRY_PERMISSIONS)
       ? [{ id: 'admin-users', label: 'Kullanıcı Yönetimi', Icon: ShieldIcon }]
       : []),

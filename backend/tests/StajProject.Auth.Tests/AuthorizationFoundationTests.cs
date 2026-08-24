@@ -24,7 +24,7 @@ public class AuthorizationFoundationTests
     /* --- Yetki kataloğu -------------------------------------------------------- */
 
     [Fact]
-    public void Permission_catalog_contains_the_expected_35_codes()
+    public void Permission_catalog_contains_the_expected_codes()
     {
         string[] expected =
         [
@@ -73,15 +73,25 @@ public class AuthorizationFoundationTests
 
             "poi.view",
             "poi.create",
+            /* Phase 3: düzenleme ve silme, oluşturmadan AYRI kanonik
+               kodlardır ve yalnızca KENDİ kayıtlarında yetki verir; sahiplik
+               sınırı kodun değil servis katmanının işidir. */
+            "poi.update",
+            "poi.delete",
             "poi.manage",
             "poi.categories.manage"
         ];
 
-        // Beklenen liste kasıtlı olarak literal yazılır: katalog sabitlerinden
-        // türetilseydi, kodun kendisi yanlışlıkla değiştiğinde test de onunla
-        // birlikte kayar ve hiçbir şey doğrulamamış olurdu.
-        Assert.Equal(35, expected.Length);
-        Assert.Equal(35, PermissionCatalog.All.Count);
+        /* Beklenen liste kasıtlı olarak literal yazılır: katalog sabitlerinden
+           türetilseydi, kodun kendisi yanlışlıkla değiştiğinde test de onunla
+           birlikte kayar ve hiçbir şey doğrulamamış olurdu. SÖZLEŞMEYİ ÇİVİLEYEN
+           şey bu listedir.
+
+           Toplam sayı artık literal DEĞİL, listeden okunur: aynı gerçeği iki
+           yerde (listede ve bir sayıda) tutmak, katalog her büyüdüğünde iki
+           ayrı yerin güncellenmesini gerektiriyordu ve testin adı bile eski
+           büyüklüğü taşıyordu. Liste zaten hem içeriği hem büyüklüğü sabitler. */
+        Assert.Equal(expected.Length, PermissionCatalog.All.Count);
         Assert.Equal(expected.OrderBy(c => c, StringComparer.Ordinal),
             PermissionCatalog.AllCodes.OrderBy(c => c, StringComparer.Ordinal));
     }
@@ -138,10 +148,15 @@ public class AuthorizationFoundationTests
 
         var stored = await Db(scope).Permissions.ToListAsync();
 
-        Assert.Equal(35, stored.Count);
-        Assert.Equal(
-            PermissionCatalog.AllCodes.OrderBy(c => c, StringComparer.Ordinal),
-            stored.Select(p => p.Code).OrderBy(c => c, StringComparer.Ordinal));
+        /* Değişmez, bir SAYI değil bir KÜME eşitliğidir: "katalogdaki her kod
+           yazılır ve katalogda olmayan hiçbir kod yazılmaz". Sabit bir toplam,
+           katalog her büyüdüğünde güncellenmesi gereken ikinci bir gerçek
+           olurdu ve iki kodun yanlışlıkla takas edilmesini de yakalamazdı. */
+        var storedCodes = stored.Select(p => p.Code).ToHashSet(StringComparer.Ordinal);
+
+        Assert.True(storedCodes.SetEquals(PermissionCatalog.AllCodes));
+        // Aynı kod iki satır olarak yazılmamıştır.
+        Assert.Equal(PermissionCatalog.All.Count, stored.Count);
         Assert.All(stored, p =>
         {
             Assert.True(p.IsActive);
@@ -241,7 +256,13 @@ public class AuthorizationFoundationTests
                 "drawings.restore",
 
                 "poi.view",
-                "poi.create"),
+                "poi.create",
+                /* Düzenleme ve silme, oluşturmanın doğal tamamlayıcısıdır:
+                   kendi eklediği noktanın adını düzeltemeyen bir veri
+                   üreticisi envanteri yalnızca büyütebilir. İkisi de YALNIZCA
+                   kendi kayıtlarında geçerlidir. */
+                "poi.update",
+                "poi.delete"),
             codes);
 
         // Varsayılan olarak verilmeyenler açıkça doğrulanır: bir "hepsini ver"
@@ -250,9 +271,11 @@ public class AuthorizationFoundationTests
         Assert.DoesNotContain("heatmap.view", codes);
         Assert.DoesNotContain("layers.manage", codes);
 
-        // POI envanteri ve kategori taksonomisi yönetimi Editor profilinde YOK:
-        // POI üretebilmek, herkesin kaydını listeleyebilmek ya da sınıflandırmayı
-        // tanımlayabilmek demek değildir.
+        /* POI envanteri ve kategori taksonomisi yönetimi Editor profilinde YOK:
+           POI üretebilmek, herkesin kaydını listeleyebilmek ya da
+           sınıflandırmayı tanımlayabilmek demek değildir. Bu, poi.update /
+           poi.delete eklendikten sonra daha da önemlidir — o iki kod sahiplikle
+           SINIRLIDIR, poi.manage ise herkesin kaydını açar. */
         Assert.DoesNotContain("poi.manage", codes);
         Assert.DoesNotContain("poi.categories.manage", codes);
         Assert.DoesNotContain(codes, c => c.StartsWith("users.", StringComparison.Ordinal));
@@ -322,6 +345,8 @@ public class AuthorizationFoundationTests
 
                 "poi.view",
                 "poi.create",
+                "poi.update",
+                "poi.delete",
                 "poi.manage",
                 "poi.categories.manage"),
             codes);

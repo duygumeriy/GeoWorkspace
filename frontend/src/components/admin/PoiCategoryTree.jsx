@@ -12,7 +12,15 @@ import { categoryStatus, indentOf } from './poiCategories.js'
  * Derinlik SINIRSIZ varsayılır; girinti ise `MAX_INDENT_DEPTH` ile sabitlenir,
  * böylece çok derin bir dal satırı yatay olarak taşırmaz.
  */
-export default function PoiCategoryTree({ categories, loading, canEdit, onEdit }) {
+export default function PoiCategoryTree({
+  categories,
+  loading,
+  canEdit,
+  /** Süzgeçten ÖNCEKİ satır sayısı: iki boş durumu ayırt eden tek bilgi. */
+  total = null,
+  onResetFilters,
+  onEdit,
+}) {
   if (loading) {
     return (
       <div className="admin-users-list" aria-label="Kategoriler yükleniyor">
@@ -22,10 +30,26 @@ export default function PoiCategoryTree({ categories, loading, canEdit, onEdit }
   }
 
   if (!categories.length) {
+    const filteredOut = total !== null && total > 0
+
     return (
       <div className="admin-empty">
-        <strong>Henüz kategori bulunmuyor.</strong>
-        <span>POI eklenebilmesi için önce en az bir kategori tanımlanmalıdır.</span>
+        {filteredOut ? (
+          <>
+            <strong>Filtrelerle eşleşen kategori bulunamadı.</strong>
+            <span>Arama ya da süzgeç ölçütlerini genişletmeyi deneyin.</span>
+            {onResetFilters && (
+              <button type="button" className="admin-button secondary" onClick={onResetFilters}>
+                Filtreleri Temizle
+              </button>
+            )}
+          </>
+        ) : (
+          <>
+            <strong>Henüz kategori bulunmuyor.</strong>
+            <span>POI eklenebilmesi için önce en az bir kategori tanımlanmalıdır.</span>
+          </>
+        )}
       </div>
     )
   }

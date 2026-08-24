@@ -69,4 +69,46 @@ public static class PoiAttributeValidator
 
         return ServiceResult<(double, double)>.Success((longitude, latitude));
     }
+
+    /// <summary>
+    /// Düzenlemedeki OPSİYONEL koordinat çifti.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Üç durum vardır ve üçü de açıkça karşılanır: ikisi de yoksa "taşıma
+    /// istenmedi" (<c>null</c> döner ve kayıt yerinde kalır); ikisi de varsa
+    /// <see cref="ValidateCoordinate"/>'in tam kuralı uygulanır; yalnızca biri
+    /// varsa istek REDDEDİLİR.
+    /// </para>
+    /// <para>
+    /// <b>Yarım koordinat neden tamamlanmaz.</b> Eksik yarısını kaydın eski
+    /// değeriyle doldurmak, istemcinin hiç söylemediği bir konuma taşımak
+    /// olurdu: yalnızca boylamı gönderen bir hata, POI'yi paralel boyunca
+    /// kilometrelerce öteye taşırdı ve bunu kimse istememiş olurdu.
+    /// </para>
+    /// </remarks>
+    /// <returns>
+    /// Taşıma istenmediyse <c>null</c>; istendiyse doğrulanmış çift.
+    /// </returns>
+    public static ServiceResult<(double Longitude, double Latitude)?> ValidateOptionalCoordinate(
+        double? longitude,
+        double? latitude)
+    {
+        if (longitude is null && latitude is null)
+        {
+            return ServiceResult<(double, double)?>.Success(null);
+        }
+
+        if (longitude is null || latitude is null)
+        {
+            return ServiceResult<(double, double)?>.Failure(
+                "Konum güncellemesi için boylam ve enlem BİRLİKTE gönderilmelidir.");
+        }
+
+        var validated = ValidateCoordinate(longitude.Value, latitude.Value);
+
+        return validated.IsSuccess
+            ? ServiceResult<(double, double)?>.Success(validated.Value)
+            : ServiceResult<(double, double)?>.Failure(validated.Error!);
+    }
 }

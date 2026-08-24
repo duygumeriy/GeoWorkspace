@@ -10,7 +10,13 @@
  * yetki kodu değiştiğinde 14 ayrı yerde düzeltme demek olurdu.
  */
 
-/** Kanonik 35 kodun tamamı — backend'in PermissionCodes sabitleriyle aynı. */
+/**
+ * Kanonik kodların TAMAMI — backend'in PermissionCodes sabitleriyle aynı.
+ *
+ * Sayı liste başlığında TAŞINMAZ: katalog büyüdükçe (Phase 3'te 35 → 37)
+ * yorumdaki sayı sessizce yalan söyler ve listenin kendisi zaten hem içeriği
+ * hem büyüklüğü tanımlar.
+ */
 export const ALL_PERMISSIONS = Object.freeze([
   'map.view',
   'drawings.point.create',
@@ -45,6 +51,12 @@ export const ALL_PERMISSIONS = Object.freeze([
   'activity.view',
   'poi.view',
   'poi.create',
+  /* Phase 3: düzenleme ve silme AYRI kanonik kodlardır ve yalnızca KENDİ
+     kayıtlarında yetki verir; herkesin kaydını açan tek kod poi.manage'dir.
+     "Her şeye sahip" profilinin gerçekten her şeye sahip olması için ikisi de
+     burada bulunmalıdır. */
+  'poi.update',
+  'poi.delete',
   'poi.manage',
   'poi.categories.manage',
 ])

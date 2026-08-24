@@ -284,13 +284,21 @@ public class PoiServiceTests
     }
 
     [Theory]
-    [InlineData("18:00", "09:00")]
-    [InlineData("09:00", "09:00")]
-    public async Task Create_rejects_an_opening_time_that_is_not_before_closing(string open, string close)
+    /* GECE AŞIMI GEÇERLİDİR. Kapanışın sayıca küçük olması hata değildir:
+       17:00 – 01:00, açılış günü başlayıp ERTESİ GÜN kapanan gerçek bir mesai
+       aralığıdır ve bunu reddetmek, gece çalışan hiçbir işletmenin saatini
+       giremeyeceği anlamına gelirdi. Kural, ayrı bir bayrakla değil, saatlerin
+       kendisiyle temsil edilir — kapanış açılıştan küçükse ertesi gündür — ve
+       bu yüzden şema değişikliği gerektirmez. */
+    [InlineData("17:00", "01:00")]
+    [InlineData("18:00", "02:00")]
+    [InlineData("20:00", "04:00")]
+    [InlineData("23:30", "03:00")]
+    public async Task Create_accepts_an_overnight_interval_and_stores_it_verbatim(string open, string close)
     {
         await using var fixture = await PoiFixture.CreateAsync();
         var category = await fixture.AddCategoryAsync("Yeme-İçme");
-        fixture.ActAs(await fixture.AddUserAsync("operator-11"));
+        fixture.ActAs(await fixture.AddUserAsync($"operator-11-{open[..2]}"));
 
         var request = Request(category.Id);
         request.WorkHours = new PoiWorkHoursDto
@@ -298,6 +306,179 @@ public class PoiServiceTests
             Monday = new PoiWorkHoursDayDto { Closed = false, Open = open, Close = close }
         };
 
+        var created = await fixture.Service.CreatePoiAsync(request);
+
+        Assert.True(created.IsSuccess);
+        // Değerler OLDUĞU GİBİ saklanır; "ertesi gün" için ek bir alan yazılmaz.
+        Assert.Equal(open, created.Value!.WorkHours!.Monday!.Open);
+        Assert.Equal(close, created.Value.WorkHours.Monday.Close);
+        Assert.False(created.Value.WorkHours.Monday.Closed);
+
+        /* Pazartesi'nin aralığı Salı 01:00'de kapanır ama Salı'nın KENDİ
+           programı bundan etkilenmez: gövdeye Salı hiç girmez. */
+        Assert.Null(created.Value.WorkHours.Tuesday);
+    }
+
+    /* --- 24 saat açık ---------------------------------------------------------
+       Günün DÖRDÜNCÜ durumu ve AÇIK bir bayrak. Eşit saatlerle temsil edilmez;
+       o gösterim geçersiz kalır (aşağıdaki teoriye bakınız). */
+
+    [Fact]
+    public async Task Create_accepts_an_explicit_24_hour_day_and_stores_no_times()
+    {
+        await using var fixture = await PoiFixture.CreateAsync();
+        var category = await fixture.AddCategoryAsync("Yeme-İçme");
+        fixture.ActAs(await fixture.AddUserAsync("operator-24a"));
+
+        var request = Request(category.Id);
+        request.WorkHours = new PoiWorkHoursDto
+        {
+            Monday = new PoiWorkHoursDayDto { Closed = false, Open24Hours = true },
+            Sunday = new PoiWorkHoursDayDto { Closed = true }
+        };
+
+        var created = await fixture.Service.CreatePoiAsync(request);
+
+        Assert.True(created.IsSuccess);
+
+        var monday = created.Value!.WorkHours!.Monday!;
+        Assert.True(monday.Open24Hours);
+        Assert.False(monday.Closed);
+        // Sahte bir 00:00–23:59 aralığı UYDURULMAZ.
+        Assert.Null(monday.Open);
+        Assert.Null(monday.Close);
+
+        // Diğer durumlar bozulmaz: kapalı kapalı, bildirilmemiş bildirilmemiş.
+        Assert.True(created.Value.WorkHours.Sunday!.Closed);
+        Assert.False(created.Value.WorkHours.Sunday.Open24Hours);
+        Assert.Null(created.Value.WorkHours.Tuesday);
+
+        var stored = await fixture.Db.Pois.AsNoTracking().SingleAsync();
+        Assert.Contains("open24Hours", stored.WorkHoursJson);
+    }
+
+    [Fact]
+    public async Task A_24_hour_day_needs_no_opening_or_closing_time()
+    {
+        await using var fixture = await PoiFixture.CreateAsync();
+        var category = await fixture.AddCategoryAsync("Yeme-İçme");
+        fixture.ActAs(await fixture.AddUserAsync("operator-24b"));
+
+        var request = Request(category.Id);
+        // Saatler gönderilse bile TEMİZLENİR: kesintisiz açık bir günün saati yoktur.
+        request.WorkHours = new PoiWorkHoursDto
+        {
+            Monday = new PoiWorkHoursDayDto
+            {
+                Closed = false,
+                Open24Hours = true,
+                Open = "saçma",
+                Close = null
+            }
+        };
+
+        var created = await fixture.Service.CreatePoiAsync(request);
+
+        Assert.True(created.IsSuccess);
+        Assert.True(created.Value!.WorkHours!.Monday!.Open24Hours);
+        Assert.Null(created.Value.WorkHours.Monday.Open);
+    }
+
+    [Fact]
+    public async Task A_day_cannot_be_closed_and_open_24_hours_at_once()
+    {
+        await using var fixture = await PoiFixture.CreateAsync();
+        var category = await fixture.AddCategoryAsync("Yeme-İçme");
+        fixture.ActAs(await fixture.AddUserAsync("operator-24c"));
+
+        var request = Request(category.Id);
+        request.WorkHours = new PoiWorkHoursDto
+        {
+            Monday = new PoiWorkHoursDayDto { Closed = true, Open24Hours = true }
+        };
+
+        /* Çelişki REDDEDİLİR, normalize edilmez: hangisinin kazanacağına sunucu
+           karar verseydi, istemcinin hiç söylemediği bir programı onun adına
+           yazmış olurdu. Arayüz iki kutuyu birbirini dışlayacak biçimde kurar,
+           dolayısıyla böyle bir gövde ancak elle gelir. */
+        Assert.False((await fixture.Service.CreatePoiAsync(request)).IsSuccess);
+        Assert.Empty(await fixture.Db.Pois.IgnoreQueryFilters().ToListAsync());
+    }
+
+    [Fact]
+    public async Task Update_accepts_a_24_hour_day()
+    {
+        await using var fixture = await PoiFixture.CreateAsync();
+        var category = await fixture.AddCategoryAsync("Yeme-İçme");
+        var owner = await fixture.AddUserAsync("operator-24d");
+        var poi = await fixture.AddPoiAsync(
+            "Kafe",
+            category.Id,
+            owner.Id,
+            workHoursJson: "{\"monday\":{\"closed\":false,\"open\":\"09:00\",\"close\":\"18:00\"}}");
+
+        fixture.ActAs(owner);
+        fixture.Grant(update: true);
+
+        var request = new UpdatePoiRequest
+        {
+            Name = "Kafe",
+            CategoryId = category.Id,
+            WorkHours = new PoiWorkHoursDto
+            {
+                Monday = new PoiWorkHoursDayDto { Closed = false, Open24Hours = true }
+            }
+        };
+
+        var updated = await fixture.Service.UpdatePoiAsync(poi.Id, request);
+
+        Assert.True(updated.IsSuccess);
+        Assert.True(updated.Value!.WorkHours!.Monday!.Open24Hours);
+        Assert.Null(updated.Value.WorkHours.Monday.Open);
+    }
+
+    [Fact]
+    public async Task Stored_rows_without_the_24_hour_field_stay_valid()
+    {
+        await using var fixture = await PoiFixture.CreateAsync();
+        var category = await fixture.AddCategoryAsync("Yeme-İçme");
+        var actor = await fixture.AddUserAsync("operator-24e");
+
+        /* ESKİ satırlar alanı hiç taşımaz. jsonb kolonuna yeni bir özellik
+           eklemek onları bozmaz ve şema değişikliği de gerektirmez. */
+        await fixture.AddPoiAsync(
+            "Eski",
+            category.Id,
+            actor.Id,
+            workHoursJson: "{\"monday\":{\"closed\":false,\"open\":\"17:00\",\"close\":\"01:00\"},\"sunday\":{\"closed\":true}}");
+
+        var poi = Assert.Single(await fixture.Service.GetMapPoisAsync());
+
+        Assert.False(poi.WorkHours!.Monday!.Open24Hours);
+        Assert.Equal("17:00", poi.WorkHours.Monday.Open);
+        Assert.Equal("01:00", poi.WorkHours.Monday.Close);
+        Assert.True(poi.WorkHours.Sunday!.Closed);
+        Assert.False(poi.WorkHours.Sunday.Open24Hours);
+    }
+
+    [Theory]
+    [InlineData("09:00", "09:00")]
+    [InlineData("00:00", "00:00")]
+    public async Task Create_rejects_an_interval_that_has_no_duration(string open, string close)
+    {
+        await using var fixture = await PoiFixture.CreateAsync();
+        var category = await fixture.AddCategoryAsync("Yeme-İçme");
+        fixture.ActAs(await fixture.AddUserAsync($"operator-11b-{open[..2]}"));
+
+        var request = Request(category.Id);
+        request.WorkHours = new PoiWorkHoursDto
+        {
+            Monday = new PoiWorkHoursDayDto { Closed = false, Open = open, Close = close }
+        };
+
+        /* Aynı açılış ve kapanış, süresi olmayan bir aralıktır. "24 saat açık"
+           SAYILMAZ: veriden türetilemeyen bir anlam uydurmak olurdu ve 24 saat
+           desteği istenirse kendi alanıyla açıkça eklenmelidir. */
         Assert.False((await fixture.Service.CreatePoiAsync(request)).IsSuccess);
     }
 
@@ -419,16 +600,49 @@ public class PoiServiceTests
     {
         /* Sıradan bir harita kullanıcısının bir noktayı görebilmesi, onu kimin
            eklediğini öğrenebilmesi anlamına gelmez. Sözleşme tip üzerinden
-           sabitlenir: creator alanı EKLENİRSE bu test düşer. */
+           sabitlenir: creator alanı EKLENİRSE bu test düşer.
+
+           Phase 3 sözleşmeye İKİ yetenek bayrağı ekledi (CanUpdate/CanDelete)
+           ve bu, kuralı gevşetmez: bayraklar "bu ÇAĞIRAN bu kayıtta ne
+           yapabilir" der, "bu kaydı KİM ekledi" demez. Arayüzün "Düzenle"
+           düğmesini gösterebilmesi için sahibi bilmesi gerekmez — yalnızca
+           kendi yetkisini bilmesi gerekir; sahibi göndermek ise haritayı
+           sessizce bir personel dizinine çevirirdi. */
         var properties = typeof(PoiResponse).GetProperties().Select(p => p.Name).ToArray();
 
         Assert.Equal(
-            ["CategoryId", "CategoryName", "CategoryPath", "Id", "Latitude", "Longitude", "Name", "WorkHours"],
+            [
+                "CanDelete", "CanUpdate", "CategoryId", "CategoryName", "CategoryPath",
+                "Id", "Latitude", "Longitude", "Name", "WorkHours"
+            ],
             properties.OrderBy(name => name, StringComparer.Ordinal));
 
+        /* Yasaklı alanlar AÇIKÇA sayılır: testin adı böylece tipin şekline
+           dolaylı olarak güvenmek yerine doğrudan kanıtlanır. Liste, sahiplik
+           kimliğinin projede aldığı adları kapsar (entity: UserId; yönetim
+           sözleşmesi: CreatorUserId / CreatorUsername; çizim mirası:
+           CreatedBy / CreatedByUserId). */
+        string[] forbidden =
+        [
+            "UserId", "User",
+            "CreatorUserId", "CreatorUsername",
+            "CreatedBy", "CreatedByUserId",
+            "OwnerId", "OwnerUsername"
+        ];
+
+        Assert.All(forbidden, name => Assert.DoesNotContain(name, properties, StringComparer.Ordinal));
+
+        /* Ad KALIBI üzerinden ikinci bir kapı: yukarıdaki listede olmayan yeni
+           bir sahiplik alanı (ör. AddedByUserId) da geçemesin. */
         Assert.DoesNotContain(properties, name => name.Contains("User", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(properties, name => name.Contains("Creator", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(properties, name => name.Contains("Owner", StringComparison.OrdinalIgnoreCase));
+
+        /* Soft-delete DURUMU da haritaya çıkmaz: harita listesi zaten yalnızca
+           aktif kayıtları taşır. "CanDelete" bir YETENEKTİR, bir durum değil —
+           bu yüzden yasak kalıp "Deleted"tır ve onunla çakışmaz. */
         Assert.DoesNotContain(properties, name => name.Contains("Deleted", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(properties, name => name.Contains("IsActive", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -521,12 +735,17 @@ public class PoiServiceTests
     /// </summary>
     internal sealed class PoiFixture : IAsyncDisposable
     {
-        private PoiFixture(AppDbContext db, ICurrentUserService currentUser, IGeographicAuthorizationService geography)
+        private PoiFixture(
+            AppDbContext db,
+            ICurrentUserService currentUser,
+            IGeographicAuthorizationService geography,
+            IPoiAuthorizationService poiAuthorization)
         {
             Db = db;
             CurrentUser = currentUser;
             Geography = geography;
-            Service = new PoiService(db, currentUser, geography);
+            PoiAuthorization = poiAuthorization;
+            Service = new PoiService(db, currentUser, geography, poiAuthorization);
             Categories = new PoiCategoryService(db);
         }
 
@@ -535,6 +754,13 @@ public class PoiServiceTests
         public ICurrentUserService CurrentUser { get; }
 
         public IGeographicAuthorizationService Geography { get; }
+
+        /// <summary>
+        /// POI yetki/sahiplik portu. Substitute edilir çünkü etkin yetki
+        /// hesabı bu servisin DIŞINDA belirlenen bir girdidir; buradaki
+        /// testlerin konusu, o girdinin sahiplikle nasıl BİRLEŞTİĞİDİR.
+        /// </summary>
+        public IPoiAuthorizationService PoiAuthorization { get; }
 
         public PoiService Service { get; }
 
@@ -549,26 +775,92 @@ public class PoiServiceTests
             var db = new AppDbContext(options);
             var currentUser = Substitute.For<ICurrentUserService>();
             var geography = Substitute.For<IGeographicAuthorizationService>();
+            var poiAuthorization = Substitute.For<IPoiAuthorizationService>();
+
+            // Varsayılan: hiçbir POI mutasyon yetkisi yok (fail-closed).
+            poiAuthorization.GetAuthorityAsync(Arg.Any<CancellationToken>())
+                .Returns(PoiAuthority.None);
 
             /* Varsayılan: kısıtsız. Hiç coğrafi alan tanımlanmamış kurulumların
                davranışı budur ve testlerin çoğunun konusu coğrafya değildir. */
             geography.GetEffectiveAuthorizationAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
                 .Returns(EffectiveGeographicAuthorization.Unrestricted);
 
-            return Task.FromResult(new PoiFixture(db, currentUser, geography));
+            return Task.FromResult(new PoiFixture(db, currentUser, geography, poiAuthorization));
         }
+
+        /// <summary>
+        /// O an rol yapan kullanıcının kimliği — SIRADAN bir alan, substitute
+        /// değil.
+        /// </summary>
+        /// <remarks>
+        /// <b>Neden ayrı bir alan.</b> <see cref="Grant"/>, yetki nesnesini
+        /// kurarken çağıranın kimliğine ihtiyaç duyar. Bu kimliği
+        /// <c>CurrentUser.UserId</c>'den okumak, BİR substitute'u
+        /// yapılandırırken BAŞKA bir substitute'u çağırmak demektir: NSubstitute
+        /// son çağrıyı kaydettiği için <c>get_UserId</c> "son çağrı" hâline
+        /// gelir ve ardından gelen <c>.Returns(...)</c> ona iliştirilmeye
+        /// çalışılır (<c>Task&lt;PoiAuthority&gt;</c> değerini
+        /// <c>int?</c> döndüren bir property'ye). Kimliği düz bir alanda
+        /// tutmak, kurulum ifadesinin içinde hiçbir substitute çağrısı
+        /// bulunmamasını garanti eder.
+        /// </remarks>
+        private int? _actingUserId;
 
         public void ActAs(User user)
         {
+            // ÖNCE düz alan: Grant artık substitute'a hiç dokunmadan okur.
+            _actingUserId = user.Id;
+
             CurrentUser.UserId.Returns(user.Id);
             CurrentUser.UserName.Returns(user.UserName!);
             CurrentUser.IsAuthenticated.Returns(true);
+            // Kimlik değişince yetki nesnesi de o kimliği taşımalıdır; aksi
+            // hâlde sahiplik karşılaştırması eski kullanıcıyı sorardı.
+            Grant();
+        }
+
+        /// <summary>
+        /// Çağıranın POI yetkilerini kurar. Sahiplik AYRI bir eksendir ve
+        /// kaydın veritabanındaki sahibine bakılarak servis içinde uygulanır.
+        /// </summary>
+        /// <remarks>
+        /// Yetki nesnesi, rol yapan kullanıcının GERÇEK kimliğini taşır —
+        /// <c>Arg.Any</c> ya da sabit bir kimlik değil. Sahiplik testleri
+        /// anlamını tam olarak buradan alır: "poi.update taşıyor ama kayıt
+        /// başkasının" durumu ancak yetki nesnesindeki kimlik doğru olduğunda
+        /// ölçülebilir.
+        /// </remarks>
+        /// <exception cref="InvalidOperationException">
+        /// <see cref="ActAs"/> çağrılmadan kullanılırsa. Kimliksiz bir yetki
+        /// nesnesi kurmak, sahiplik karşılaştırmasını sessizce anlamsız
+        /// kılardı; hata AÇIKÇA verilir.
+        /// </exception>
+        public void Grant(bool manage = false, bool update = false, bool delete = false)
+        {
+            var actingUserId = _actingUserId
+                ?? throw new InvalidOperationException(
+                    "Grant, ActAs'tan sonra çağrılmalıdır: yetki nesnesi rol yapan kullanıcının kimliğini taşır.");
+
+            /* Kurulum ifadesinin içinde HİÇBİR substitute çağrısı yoktur;
+               yalnızca düz bir int okunur. */
+            PoiAuthorization.GetAuthorityAsync(Arg.Any<CancellationToken>())
+                .Returns(new PoiAuthority(actingUserId, manage, update, delete));
         }
 
         public void ActAsAnonymous()
         {
+            // Kimlik yok: Grant çağrılırsa açıkça hata vermelidir.
+            _actingUserId = null;
+
             CurrentUser.UserId.Returns((int?)null);
             CurrentUser.IsAuthenticated.Returns(false);
+
+            /* Kimliksiz çağıranın hiçbir POI mutasyon yetkisi yoktur ve bu
+               kurulum, önceki bir ActAs'tan kalan yetki nesnesinin sızmasını
+               da engeller. */
+            PoiAuthorization.GetAuthorityAsync(Arg.Any<CancellationToken>())
+                .Returns(PoiAuthority.None);
         }
 
         public void RestrictTo(User user, Geometry area) =>

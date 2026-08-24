@@ -1,4 +1,4 @@
-import { foldForSearch } from './drawingFilters.js'
+import { TYPE_FILTERS, foldForSearch } from './drawingFilters.js'
 
 /**
  * The search / type-filter / sort pipeline behind the "Çöp Kutusu" panel.
@@ -7,10 +7,13 @@ import { foldForSearch } from './drawingFilters.js'
  * given the deleted records and the three control values, it returns the list to
  * render, and the panel only has to draw what it is handed.
  *
- * The type filter options themselves are NOT redefined here — the panel reuses
- * `TYPE_FILTERS` from `drawingFilters.js`, which is derived from the canonical
+ * The drawing type filter options are NOT redefined here — they come from
+ * `TYPE_FILTERS` in `drawingFilters.js`, which is derived from the canonical
  * `DRAWING_TYPES` table. So "point" / "line" / "polygon" are written down once
- * in the app, and a trash chip can never drift from the type it filters.
+ * in the app, and a trash chip can never drift from the type it filters. POI is
+ * appended as a FOURTH chip (see `TRASH_TYPE_FILTERS`) rather than being added
+ * to `DRAWING_TYPES`: a POI is not a drawing, and putting it in that table
+ * would sweep it into the drawings list, bulk selection and the style editor.
  *
  * Nothing here is a security boundary: the server returned only records that are
  * deleted AND owned by the caller. Everything below is presentation over a list
@@ -25,6 +28,18 @@ import { foldForSearch } from './drawingFilters.js'
  * sorting belong in "Çizimlerim", where the list is something you browse rather
  * than something you recover from.
  */
+/**
+ * Çöp Kutusu'nun tür çipleri: üç çizim türü + POI.
+ *
+ * POI ayrı bir satır olarak eklenir çünkü ayrı bir kayıttır — ayrı tablo, ayrı
+ * uçlar, ayrı yetkiler. Çöp kutusu ikisini de temsil edebilmelidir ("silinen
+ * neydi?"), ama bu onları aynı tür yapmaz.
+ */
+export const TRASH_TYPE_FILTERS = Object.freeze([
+  ...TYPE_FILTERS,
+  { id: 'poi', label: 'POI' },
+])
+
 export const TRASH_SORT_OPTIONS = Object.freeze([
   { id: 'newest', label: 'En Son Silinen' },
   { id: 'oldest', label: 'En Eski Silinen' },
@@ -40,9 +55,20 @@ function deletedTimeOf(item) {
   return Number.isNaN(time) ? 0 : time
 }
 
+/**
+ * Kaydın kendisi: çizim girişlerinde `drawing`, POI girişlerinde `poi`.
+ *
+ * İki sarmalayıcı da AYNI şekli taşır (id + name), dolayısıyla listenin
+ * arama/sıralama işi tek bir okuma üzerinden yürür ve panelde tür başına ikinci
+ * bir kod yolu doğmaz.
+ */
+export function trashRecordOf(item) {
+  return item?.drawing ?? item?.poi ?? null
+}
+
 /** Stable tiebreaker: two records deleted in the same batch share a timestamp. */
 function idOf(item) {
-  return item?.drawing?.id ?? 0
+  return trashRecordOf(item)?.id ?? 0
 }
 
 const COMPARATORS = {
@@ -71,7 +97,7 @@ export function buildTrashView(items, { search = '', type = 'all', sort = DEFAUL
   const filtered = items.filter((item) => {
     if (type !== 'all' && item.type !== type) return false
     if (!needle) return true
-    return foldForSearch(item.drawing?.name ?? '').includes(needle)
+    return foldForSearch(trashRecordOf(item)?.name ?? '').includes(needle)
   })
 
   const sorted = [...filtered].sort(COMPARATORS[sort] ?? COMPARATORS[DEFAULT_TRASH_SORT])

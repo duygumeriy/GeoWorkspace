@@ -16,6 +16,12 @@ namespace StajProject.Application.Pois;
 /// elle senkron tutmak demekti.
 /// </para>
 /// <para>
+/// <b>Gün DÖRT durumdan birindedir</b> ve normalize edilmiş çıktı bunu açıkça
+/// taşır: bildirilmemiş (gövdede hiç yok), kapalı, kesintisiz açık
+/// (<c>open24Hours</c>) ve saatli aralık. Kapalı ile kesintisiz açık aynı anda
+/// gönderilirse istek REDDEDİLİR.
+/// </para>
+/// <para>
 /// <b>Okuma asla patlamaz.</b> Kolonda elle yazılmış ya da eski biçimde bir
 /// değer bulunabilir; bozuk JSON tüm POI listesini 500'e çevirmemelidir.
 /// <see cref="Deserialize"/> bu yüzden başarısızlıkta <c>null</c> döner — POI
@@ -117,12 +123,32 @@ public static class PoiWorkHoursValidator
 
     private static ServiceResult<PoiWorkHoursDayDto> ValidateDay(string dayName, PoiWorkHoursDayDto day)
     {
+        /* ÇELİŞKİ REDDEDİLİR, normalize EDİLMEZ. Bir gün hem kapalı hem
+           kesintisiz açık olamaz; hangisinin kazanacağına sunucunun karar
+           vermesi, istemcinin hiç söylemediği bir programı onun adına yazmak
+           olurdu. Arayüz iki kutuyu birbirini dışlayacak biçimde kurar,
+           dolayısıyla bu gövde ancak elle ya da bozuk bir istemciden gelir. */
+        if (day.Closed && day.Open24Hours)
+        {
+            return ServiceResult<PoiWorkHoursDayDto>.Failure(
+                $"{dayName}: bir gün hem kapalı hem 24 saat açık olamaz.");
+        }
+
         if (day.Closed)
         {
             /* Kapalı bir günde saat bilgisi anlamsızdır ve SAKLANMAZ: gönderilse
                bile temizlenir, böylece "kapalı ama 09:00-18:00" gibi kendi
                içinde çelişen bir satır hiç oluşmaz. */
             return ServiceResult<PoiWorkHoursDayDto>.Success(new PoiWorkHoursDayDto { Closed = true });
+        }
+
+        /* 24 saat açık gün de saat TAŞIMAZ ve aynı gerekçeyle temizlenir. Saat
+           doğrulaması buraya hiç gelmez: kesintisiz açık bir günün açılış
+           saatini sormak anlamsızdır. */
+        if (day.Open24Hours)
+        {
+            return ServiceResult<PoiWorkHoursDayDto>.Success(
+                new PoiWorkHoursDayDto { Closed = false, Open24Hours = true });
         }
 
         var open = ParseTime(day.Open);
@@ -140,10 +166,26 @@ public static class PoiWorkHoursValidator
                 $"{dayName}: kapanış saati zorunludur ve HH:mm biçiminde olmalıdır.");
         }
 
-        if (open.Value >= close.Value)
+        /* GECE AŞIMI GEÇERLİDİR ve bu SIRA ÖNEMLİDİR: biçim önce, süre sonra.
+           Katı HH:mm ayrıştırması yukarıda çoktan yapıldı; buradaki kural
+           yalnızca aralığın bir süresi olup olmadığını sorar.
+
+           Kapanışın sayıca küçük olması bir hata değildir: 17:00 – 01:00,
+           açılış günü başlayıp ERTESİ GÜN kapanan gerçek bir mesai aralığıdır
+           ve reddetmek, gece çalışan hiçbir işletmenin saatini girememek
+           demek olurdu. "Ertesi gün" ayrı bir alanla saklanmaz — kapanışın
+           açılıştan küçük olması zaten bunu söyler; ikinci bir bayrak aynı
+           gerçeği iki yerde tutmak ve ikisinin bir gün çelişmesine izin vermek
+           olurdu.
+
+           Geçersiz olan tek durum aralığın hiç OLMAMASIDIR: aynı açılış ve
+           kapanış. Eşitliği "24 saat açık" saymak da veriden türetilemeyen bir
+           anlam uydurmak olurdu; 24 saat desteği istenirse kendi alanıyla
+           açıkça eklenmelidir. */
+        if (open.Value == close.Value)
         {
             return ServiceResult<PoiWorkHoursDayDto>.Failure(
-                $"{dayName}: açılış saati kapanış saatinden önce olmalıdır.");
+                $"{dayName}: açılış ve kapanış saati aynı olamaz.");
         }
 
         /* Değerler GELDİĞİ GİBİ saklanır. Girdi zaten tam olarak HH:mm
@@ -153,6 +195,7 @@ public static class PoiWorkHoursValidator
         return ServiceResult<PoiWorkHoursDayDto>.Success(new PoiWorkHoursDayDto
         {
             Closed = false,
+            Open24Hours = false,
             Open = day.Open,
             Close = day.Close
         });

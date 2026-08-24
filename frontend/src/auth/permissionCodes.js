@@ -85,6 +85,12 @@ export const PERMISSIONS = Object.freeze({
      de ayrı kodlardır — biri diğerini ima etmez. */
   POI_VIEW: 'poi.view',
   POI_CREATE: 'poi.create',
+  /* Güncelleme ve silme, oluşturmadan AYRI kodlardır ve ikisi de SAHİPLİKLE
+     birlikte okunur: kod "kendi kaydında" yetki verir, herkesin kaydına yetki
+     veren tek şey poi.manage'dir. Kayıt bazındaki kararı sunucu verir ve
+     yanıttaki canUpdate/canDelete bayraklarıyla bildirir. */
+  POI_UPDATE: 'poi.update',
+  POI_DELETE: 'poi.delete',
   POI_MANAGE: 'poi.manage',
   POI_CATEGORIES_MANAGE: 'poi.categories.manage',
 })

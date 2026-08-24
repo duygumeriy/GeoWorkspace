@@ -43,6 +43,8 @@ export default function AnalysisPanel({
   onSelectItem,
   onShowOnMap,
   onOpenDrawing,
+  /** POI sonucuna tıklandığında: haritada odaklan + POI Bilgisi'ni aç. */
+  onOpenPoi,
   /** Geometry-derived metrics for one match, read off the map feature. */
   metricsFor,
   onClear,
@@ -79,6 +81,7 @@ export default function AnalysisPanel({
             onSelectItem={onSelectItem}
             onShowOnMap={onShowOnMap}
             onOpenDrawing={onOpenDrawing}
+            onOpenPoi={onOpenPoi}
             metricsFor={metricsFor}
           />
         )}
@@ -96,7 +99,12 @@ export default function AnalysisPanel({
   )
 }
 
-function Results({ result, selectedKey, onSelectItem, onShowOnMap, onOpenDrawing, metricsFor }) {
+function Results({ result, selectedKey, onSelectItem, onShowOnMap, onOpenDrawing, onOpenPoi, metricsFor }) {
+  /* POI kırılımı yalnızca sunucu gönderdiyse çizilir. `poi.view` taşımayan bir
+     çağıran için sunucu POI'leri hiç raporlamaz (sayı 0, liste boş, toplamda
+     iz yok) ve panel de onlardan hiç söz etmez — "POI'ler (0)" satırı bile
+     bir bilgi olurdu. */
+  const showPois = result.poi > 0 || (result.items?.poi?.length ?? 0) > 0
   return (
     <>
       <p className="analysis-total">
@@ -113,6 +121,14 @@ function Results({ result, selectedKey, onSelectItem, onShowOnMap, onOpenDrawing
             <dd>{result[type.id]}</dd>
           </div>
         ))}
+        {/* POI, çizim türü TABLOSUNA eklenmez — çizim değildir. Özet satırı
+            dördüncü bir giriş olarak buraya gelir ve toplam onu içerir. */}
+        {showPois && (
+          <div className="analysis-summary-item">
+            <dt>POI'ler</dt>
+            <dd>{result.poi}</dd>
+          </div>
+        )}
       </dl>
 
       {result.total > 0 && (
@@ -129,6 +145,10 @@ function Results({ result, selectedKey, onSelectItem, onShowOnMap, onOpenDrawing
               metricsFor={metricsFor}
             />
           ))}
+
+          {showPois && (
+            <PoiSection items={result.items?.poi ?? []} selectedKey={selectedKey} onOpenPoi={onOpenPoi} />
+          )}
         </div>
       )}
     </>
@@ -258,6 +278,58 @@ function ResultItem({ item, selected, onSelect, onShowOnMap, onOpenDrawing, metr
         </div>
       )}
     </li>
+  )
+}
+
+/**
+ * POI sonuçları: çizimlerle aynı açılır grup, POI'ye uygun daraltılmış içerik.
+ *
+ * Satır TEK bir eylem sunar ve tıklama onu doğrudan çalıştırır: haritada
+ * odaklan + POI Bilgisi'ni aç. Çizimlerdeki gibi bir "aç/kapa detay" katmanı
+ * eklenmez çünkü gösterilecek detayın kendisi zaten POI Bilgisi panelidir ve
+ * onu burada ikinci kez çizmek, aynı bilginin iki farklı görünümünü üretirdi.
+ *
+ * <b>Oluşturan/denetim alanı GÖSTERİLMEZ.</b> Sunucu da göndermez: analiz
+ * sonucu, haritada zaten görünen bilgiden fazlasını açmaz.
+ */
+function PoiSection({ items, selectedKey, onOpenPoi }) {
+  const [open, setOpen] = useState(false)
+  const isEmpty = items.length === 0
+
+  return (
+    <div className={`analysis-section ${isEmpty ? 'is-empty' : ''}`}>
+      <button
+        type="button"
+        className="analysis-section-head"
+        aria-expanded={!isEmpty && open}
+        disabled={isEmpty}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <ChevronIcon size={13} className={`analysis-section-chevron ${!isEmpty && open ? 'is-open' : ''}`} />
+        <span className="analysis-section-title">POI'ler ({items.length})</span>
+      </button>
+
+      {!isEmpty && open && (
+        <ul className="analysis-items">
+          {items.map((item) => (
+            <li key={`poi:${item.id}`} className={`analysis-item ${selectedKey === `poi:${item.id}` ? 'is-selected' : ''}`}>
+              <button
+                type="button"
+                className="analysis-item-head"
+                onClick={() => onOpenPoi?.(item)}
+              >
+                <span className="analysis-item-dot" style={{ '--dot': 'var(--poi-color, #2563EB)' }} aria-hidden="true" />
+                <span className="analysis-item-text">
+                  <span className="analysis-item-name">{item.name || `POI #${item.id}`}</span>
+                  {/* Yol, yalnızca yaprak addan daha çok şey söyler. */}
+                  <span className="analysis-item-meta">{item.categoryPath || item.categoryName || '—'}</span>
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   )
 }
 

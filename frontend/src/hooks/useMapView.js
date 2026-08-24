@@ -9,6 +9,7 @@ import Stroke from 'ol/style/Stroke'
 import CircleStyle from 'ol/style/Circle'
 import { fromLonLat } from 'ol/proj'
 import { TURKEY_CENTER_LON_LAT, TURKEY_ZOOM } from '../map/turkey.js'
+import { POINT_ZOOM, focusZoomFor } from '../map/mapView.js'
 import useReducedMotion from './useReducedMotion.js'
 
 /* Türkiye açılış görünümü tek yerde tanımlıdır (`map/turkey.js`) ve buradan
@@ -17,7 +18,11 @@ import useReducedMotion from './useReducedMotion.js'
 export { TURKEY_CENTER_LON_LAT, TURKEY_ZOOM } from '../map/turkey.js'
 
 const FIT_PADDING = [80, 80, 120, 80]
-const POINT_ZOOM = 15
+
+/* Yakınlık KARARI burada değil, `map/mapView.js`'dedir: saf bir sayı hesabıdır
+   ve OpenLayers'a da React'e de ihtiyaç duymaz. Bu kanca hareketin kendisini
+   (görünüm nesnesi, animasyon, süre) sahiplenir ve kararı oradan okur —
+   böylece kuralın tek bir üretim uygulaması olur. */
 
 /**
  * Camera moves shared by the quick actions and the selected-feature panel.
@@ -77,6 +82,27 @@ export default function useMapView(map, { showToast } = {}) {
       const view = map?.getView()
       if (!view || !coordinate) return
       view.animate({ center: coordinate, duration: duration() })
+    },
+    [map, duration],
+  )
+
+  /**
+   * Bir noktaya odaklanır: ortalar ve GEREKİYORSA yakınlaştırır.
+   *
+   * <b><see cref="panTo"/>'dan farkı yakınlıktır.</b> Ülke ölçeğinde açılmış
+   * bir haritada listeden bir POI'ye tıklamak, ekranın ortasında hâlâ ayırt
+   * edilemeyen bir nokta bırakırdı: "gittim" demek, oraya bakabilmek
+   * demektir. Buna karşılık zaten daha yakındaysa kullanıcı GERİ ÇEKİLMEZ —
+   * hedef `max(mevcut, POINT_ZOOM)`'dur, sabit bir yakınlık değil. Sokak
+   * ölçeğinde çalışan biri, bir satıra tıkladı diye kaybettiği bağlamı
+   * yeniden kurmak zorunda kalmamalıdır.
+   */
+  const focusPoint = useCallback(
+    (coordinate, { minZoom = POINT_ZOOM } = {}) => {
+      const view = map?.getView()
+      if (!view || !coordinate) return
+
+      view.animate({ center: coordinate, zoom: focusZoomFor(view.getZoom(), minZoom), duration: duration() })
     },
     [map, duration],
   )
@@ -177,5 +203,5 @@ export default function useMapView(map, { showToast } = {}) {
     [map],
   )
 
-  return { goToTurkey, fitExtent, panTo, ensureVisible, goToMyLocation, reducedMotion }
+  return { goToTurkey, fitExtent, panTo, focusPoint, ensureVisible, goToMyLocation, reducedMotion }
 }

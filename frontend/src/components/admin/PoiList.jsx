@@ -13,11 +13,27 @@ import { summarize, weekSchedule } from '../../poi/workHours.js'
  * masaüstünde tablo, dar ekranda kendiliğinden kart yığınına döner. Ayrı bir
  * mobil bileşen yazmak, aynı satırın iki yerde bakım görmesi olurdu.
  *
- * <b>Eylem yoktur.</b> Ödev POI'lerin listelenmesini ve oluşturan bilgisini
- * ister; düzenleme, silme ve durum değiştirme uçları backend'de de yoktur, o
- * yüzden satır tıklanabilir bir kontrol değildir.
+ * <b>Eylemler yetkinin ta kendisidir.</b> `poi.manage` taşıyan çağıran her
+ * kaydı düzenleyebilir, silebilir ve geri yükleyebilir; bu yüzden satır artık
+ * eylem taşır. Sunulan eylem kaydın DURUMUNA göre değişir: aktif bir kayıt
+ * düzenlenip silinebilir, silinmiş bir kayıt yalnızca geri yüklenebilir.
+ *
+ * Karar burada verilmez: düğmeler ancak `canManage` true iken çizilir ve
+ * uçlar aynı yetkiyi sunucuda bağımsız olarak yeniden arar. Silme SOFT'tur —
+ * satır veritabanında kalır ve listede "Silinmiş" olarak görünmeye devam eder.
  */
-export default function PoiList({ pois, loading }) {
+export default function PoiList({
+  pois,
+  loading,
+  canManage = false,
+  busyId = null,
+  /** Süzgeçten ÖNCEKİ kayıt sayısı: iki boş durumu ayırt eden tek bilgi. */
+  total = null,
+  onResetFilters,
+  onEdit,
+  onDelete,
+  onRestore,
+}) {
   /* Açık mesai detayları. Tek bir satırın yedi gününü sürekli göstermek tabloyu
      okunmaz yükseklikte yapardı; özet her zaman görünür, ayrıntı istendiğinde
      açılır. Küme id tutar — liste yenilendiğinde açık satır açık kalır. */
@@ -38,11 +54,29 @@ export default function PoiList({ pois, loading }) {
     )
   }
 
+  /* İKİ AYRI boş durum. "Henüz POI yok" demek, süzgecin sakladığı kayıtlar
+     varken kullanıcıyı olmayan bir eksikliği aramaya gönderirdi. */
   if (!pois.length) {
+    const filteredOut = total !== null && total > 0
+
     return (
       <div className="admin-empty">
-        <strong>Henüz POI kaydı bulunmuyor.</strong>
-        <span>Operatörler harita üzerinden POI ekledikçe kayıtlar burada listelenir.</span>
+        {filteredOut ? (
+          <>
+            <strong>Filtrelerle eşleşen POI bulunamadı.</strong>
+            <span>Arama ya da süzgeç ölçütlerini genişletmeyi deneyin.</span>
+            {onResetFilters && (
+              <button type="button" className="admin-button secondary" onClick={onResetFilters}>
+                Filtreleri Temizle
+              </button>
+            )}
+          </>
+        ) : (
+          <>
+            <strong>Henüz POI kaydı bulunmuyor.</strong>
+            <span>Operatörler harita üzerinden POI ekledikçe kayıtlar burada listelenir.</span>
+          </>
+        )}
       </div>
     )
   }
@@ -57,6 +91,7 @@ export default function PoiList({ pois, loading }) {
         <span>Oluşturan</span>
         <span>Tarih</span>
         <span>Durum</span>
+        {canManage && <span>İşlemler</span>}
       </div>
 
       {pois.map((poi) => {
@@ -104,6 +139,40 @@ export default function PoiList({ pois, loading }) {
               <span data-label="Durum">
                 <span className={`admin-badge ${status.tone}`}>{status.label}</span>
               </span>
+
+              {canManage && (
+                <span data-label="İşlemler" className="admin-poi-actions">
+                  {poi.isDeleted ? (
+                    <button
+                      type="button"
+                      className="admin-button secondary"
+                      disabled={busyId === poi.id}
+                      onClick={() => onRestore?.(poi)}
+                    >
+                      Geri Yükle
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        className="admin-button secondary"
+                        disabled={busyId === poi.id}
+                        onClick={() => onEdit?.(poi)}
+                      >
+                        Düzenle
+                      </button>
+                      <button
+                        type="button"
+                        className="admin-button danger"
+                        disabled={busyId === poi.id}
+                        onClick={() => onDelete?.(poi)}
+                      >
+                        Sil
+                      </button>
+                    </>
+                  )}
+                </span>
+              )}
             </div>
 
             {open && (

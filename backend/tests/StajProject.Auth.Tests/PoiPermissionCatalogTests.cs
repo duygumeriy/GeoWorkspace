@@ -10,14 +10,18 @@ using StajProject.Infrastructure.Persistence;
 namespace StajProject.Auth.Tests;
 
 /// <summary>
-/// POI katalog genişlemesi (Phase 2A): <c>poi.view</c>, <c>poi.create</c>,
-/// <c>poi.manage</c>, <c>poi.categories.manage</c>.
+/// POI katalog genişlemesi: <c>poi.view</c>, <c>poi.create</c>,
+/// <c>poi.update</c>, <c>poi.delete</c>, <c>poi.manage</c>,
+/// <c>poi.categories.manage</c>.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Bu faz yalnızca temeli kurar.</b> Servis, uç ve arayüz yoktur; burada
-/// kanıtlanan tek şey dört yeni kodun sisteme <i>sıradan kanonik yetkiler
-/// olarak</i> girdiği ve mevcut yetkilendirme verisinin bozulmadığıdır.
+/// Burada kanıtlanan şey, altı POI kodunun sisteme <i>sıradan kanonik
+/// yetkiler olarak</i> girdiği ve mevcut yetkilendirme verisinin
+/// bozulmadığıdır. <c>poi.update</c> ve <c>poi.delete</c> Phase 3'te
+/// eklenmiştir; ikisi de yalnızca KENDİ kayıtlarında yetki verir — sahiplik
+/// sınırı kodun değil servis katmanının işidir ve
+/// <see cref="PoiOwnershipTests"/> tarafından ölçülür.
 /// </para>
 /// <para>
 /// <b>Rol tarafındaki asıl iddia bir OLUMSUZLUKTUR.</b> Ödevin "Operatör"
@@ -32,6 +36,8 @@ public class PoiPermissionCatalogTests
     [
         PermissionCodes.PoiView,
         PermissionCodes.PoiCreate,
+        PermissionCodes.PoiUpdate,
+        PermissionCodes.PoiDelete,
         PermissionCodes.PoiManage,
         PermissionCodes.PoiCategoriesManage
     ];
@@ -52,6 +58,15 @@ public class PoiPermissionCatalogTests
         Assert.Equal("poi.create", create.Code);
         Assert.Equal("POI Ekleme", create.Name);
 
+        var update = Single(PermissionCodes.PoiUpdate);
+        var delete = Single(PermissionCodes.PoiDelete);
+
+        Assert.Equal("poi.update", update.Code);
+        Assert.Equal("POI Düzenleme", update.Name);
+
+        Assert.Equal("poi.delete", delete.Code);
+        Assert.Equal("POI Silme", delete.Name);
+
         Assert.Equal("poi.manage", manage.Code);
         Assert.Equal("POI Yönetimi", manage.Name);
 
@@ -60,15 +75,15 @@ public class PoiPermissionCatalogTests
     }
 
     [Fact]
-    public void The_expansion_adds_exactly_four_codes()
+    public void The_expansion_adds_exactly_six_codes()
     {
-        /* Ölçülen şey POI genişlemesinin BÜYÜKLÜĞÜDÜR: kataloğa dört kod
+        /* Ölçülen şey POI genişlemesinin BÜYÜKLÜĞÜDÜR: kataloğa altı kod
            eklemiştir, ne bir eksik ne bir fazla. Sabit bir toplam yerine bu
            FARKA bakılır — başka fazların katkıları bu iddiayı bozmamalıdır. */
-        Assert.Equal(4, PermissionCatalog.AllCodes.Count(code => Poi.Contains(code)));
+        Assert.Equal(6, PermissionCatalog.AllCodes.Count(code => Poi.Contains(code)));
 
         Assert.Equal(
-            PermissionCatalog.AllCodes.Count - 4,
+            PermissionCatalog.AllCodes.Count - 6,
             PermissionCatalog.AllCodes.Count(code => !Poi.Contains(code)));
     }
 
@@ -107,9 +122,12 @@ public class PoiPermissionCatalogTests
 
         Assert.True(poiOrders.Min() > otherOrders.Max());
 
-        // Görüntüleme → ekleme → yönetme sırası kategori içinde korunur.
+        /* Görüntüleme → ekleme → düzenleme → silme → yönetme sırası kategori
+           içinde korunur: yetenekler artan otorite sırasında okunur. */
         Assert.True(Single(PermissionCodes.PoiView).SortOrder < Single(PermissionCodes.PoiCreate).SortOrder);
-        Assert.True(Single(PermissionCodes.PoiCreate).SortOrder < Single(PermissionCodes.PoiManage).SortOrder);
+        Assert.True(Single(PermissionCodes.PoiCreate).SortOrder < Single(PermissionCodes.PoiUpdate).SortOrder);
+        Assert.True(Single(PermissionCodes.PoiUpdate).SortOrder < Single(PermissionCodes.PoiDelete).SortOrder);
+        Assert.True(Single(PermissionCodes.PoiDelete).SortOrder < Single(PermissionCodes.PoiManage).SortOrder);
         Assert.True(Single(PermissionCodes.PoiManage).SortOrder < Single(PermissionCodes.PoiCategoriesManage).SortOrder);
     }
 
@@ -131,7 +149,7 @@ public class PoiPermissionCatalogTests
 
         var stored = await Db(scope).Permissions.Where(p => Poi.Contains(p.Code)).ToListAsync();
 
-        Assert.Equal(4, stored.Count);
+        Assert.Equal(6, stored.Count);
         Assert.All(stored, p =>
         {
             Assert.True(p.IsActive);
@@ -150,7 +168,7 @@ public class PoiPermissionCatalogTests
             PoiCodesOf(GisRoles.Viewer));
 
         Assert.Equal(
-            [PermissionCodes.PoiCreate, PermissionCodes.PoiView],
+            [PermissionCodes.PoiCreate, PermissionCodes.PoiDelete, PermissionCodes.PoiUpdate, PermissionCodes.PoiView],
             PoiCodesOf(GisRoles.GisEditor));
 
         Assert.Equal(
@@ -158,7 +176,8 @@ public class PoiPermissionCatalogTests
             PoiCodesOf(GisRoles.GisAnalyst));
 
         Assert.Equal(
-            [PermissionCodes.PoiCategoriesManage, PermissionCodes.PoiCreate, PermissionCodes.PoiManage, PermissionCodes.PoiView],
+            [PermissionCodes.PoiCategoriesManage, PermissionCodes.PoiCreate, PermissionCodes.PoiDelete,
+             PermissionCodes.PoiManage, PermissionCodes.PoiUpdate, PermissionCodes.PoiView],
             PoiCodesOf(GisRoles.GisManager));
     }
 
@@ -183,13 +202,15 @@ public class PoiPermissionCatalogTests
         await SeedAsync(scope);
 
         Assert.Equal([PermissionCodes.PoiView], await PoiCodesOfAsync(scope, GisRoles.Viewer));
-        Assert.Equal([PermissionCodes.PoiCreate, PermissionCodes.PoiView], await PoiCodesOfAsync(scope, GisRoles.GisEditor));
+        Assert.Equal([PermissionCodes.PoiCreate, PermissionCodes.PoiDelete, PermissionCodes.PoiUpdate, PermissionCodes.PoiView], await PoiCodesOfAsync(scope, GisRoles.GisEditor));
         Assert.Equal([PermissionCodes.PoiView], await PoiCodesOfAsync(scope, GisRoles.GisAnalyst));
         Assert.Equal(
-            [PermissionCodes.PoiCategoriesManage, PermissionCodes.PoiCreate, PermissionCodes.PoiManage, PermissionCodes.PoiView],
+            [PermissionCodes.PoiCategoriesManage, PermissionCodes.PoiCreate, PermissionCodes.PoiDelete,
+             PermissionCodes.PoiManage, PermissionCodes.PoiUpdate, PermissionCodes.PoiView],
             await PoiCodesOfAsync(scope, GisRoles.GisManager));
         Assert.Equal(
-            [PermissionCodes.PoiCategoriesManage, PermissionCodes.PoiCreate, PermissionCodes.PoiManage, PermissionCodes.PoiView],
+            [PermissionCodes.PoiCategoriesManage, PermissionCodes.PoiCreate, PermissionCodes.PoiDelete,
+             PermissionCodes.PoiManage, PermissionCodes.PoiUpdate, PermissionCodes.PoiView],
             await PoiCodesOfAsync(scope, GisRoles.Administrator));
     }
 
@@ -259,7 +280,7 @@ public class PoiPermissionCatalogTests
         var db = Db(scope);
         var poiIds = await db.Permissions.Where(p => Poi.Contains(p.Code)).Select(p => p.Id).ToListAsync();
 
-        Assert.Equal(4, poiIds.Count);
+        Assert.Equal(6, poiIds.Count);
 
         var pairs = await db.RolePermissions
             .Where(rp => poiIds.Contains(rp.PermissionId))

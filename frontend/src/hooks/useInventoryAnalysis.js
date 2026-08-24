@@ -127,10 +127,15 @@ export default function useInventoryAnalysis(map, { active, showToast }) {
           point: body.pointCount,
           line: body.lineCount,
           polygon: body.polygonCount,
+          /* POI kırılımı sunucudan gelir ve burada yeniden hesaplanmaz.
+             `poi.view` taşımayan bir çağıran için sunucu 0 ve boş liste
+             döndürür — sayı da bir bilgidir ve varlığı sızdırılmaz. */
+          poi: body.poiCount ?? 0,
           items: {
             point: body.points ?? [],
             line: body.lines ?? [],
             polygon: body.polygons ?? [],
+            poi: body.pois ?? [],
           },
         })
         setStatus('done')

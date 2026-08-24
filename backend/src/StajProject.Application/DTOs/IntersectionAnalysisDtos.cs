@@ -39,7 +39,8 @@ public class IntersectionAnalysisRequest
 /// sahiplik sınırındadır.
 /// </para>
 /// <para>
-/// <b>Değişmez:</b> <c>TotalCount == PointCount + LineCount + PolygonCount</c> ve
+/// <b>Değişmez:</b> <c>TotalCount == PointCount + LineCount + PolygonCount +
+/// PoiCount</c> ve
 /// her sayı kendi listesinin uzunluğuna eşittir. Sayılar listelerden türetilir,
 /// ayrıca sorgulanmaz — ikisinin ayrışması mümkün değildir.
 /// </para>
@@ -54,6 +55,17 @@ public class IntersectionAnalysisResponse
 
     public int PolygonCount { get; set; }
 
+    /// <summary>
+    /// Alanla kesişen POI sayısı.
+    /// </summary>
+    /// <remarks>
+    /// <b><c>poi.view</c> yoksa daima 0'dır ve <see cref="TotalCount"/>'a hiç
+    /// girmez.</b> Sayı da bir bilgidir: yetkisiz bir çağırana "burada 3 POI
+    /// var ama göremezsin" demek, varlıklarını sızdırmak olurdu. Yetkisiz
+    /// çağıran için toplam, POI'ler hiç yokmuş gibi hesaplanır.
+    /// </remarks>
+    public int PoiCount { get; set; }
+
     /// <summary>Eşleşen noktalar; yoksa boş dizi (asla null).</summary>
     public List<InventoryAnalysisItemResponse> Points { get; set; } = [];
 
@@ -62,6 +74,41 @@ public class IntersectionAnalysisResponse
 
     /// <summary>Eşleşen poligonlar; yoksa boş dizi.</summary>
     public List<InventoryAnalysisItemResponse> Polygons { get; set; } = [];
+
+    /// <summary>Eşleşen POI'ler; yetki yoksa boş dizi.</summary>
+    public List<AnalysisPoiResponse> Pois { get; set; } = [];
+}
+
+/// <summary>
+/// Analiz alanıyla kesişen tek bir POI.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <b>Çizim kaydıyla AYNI gövde kullanılmaz.</b> POI'nin stili, etiketi,
+/// açıklaması ve kesişim tipi yoktur: bir nokta bir alanın ya içindedir ya da
+/// değildir, "kısmi kesişim" POI için tanımsız bir kavramdır. Ortak bir DTO'ya
+/// zorlamak, her POI satırında anlamsız alanlar taşımak olurdu.
+/// </para>
+/// <para>
+/// <b>Oluşturan bilgisi YOKTUR.</b> Harita sözleşmesiyle (<c>GET /api/poi</c>)
+/// aynı ilke: analiz sonucu, haritada görünen bilgiden fazlasını açmaz.
+/// </para>
+/// </remarks>
+public class AnalysisPoiResponse
+{
+    public int Id { get; set; }
+
+    public string Name { get; set; } = string.Empty;
+
+    public string CategoryName { get; set; } = string.Empty;
+
+    /// <summary>Kök kategoriden bu kategoriye kadar olan yol.</summary>
+    public string CategoryPath { get; set; } = string.Empty;
+
+    /// <summary>EPSG:4326. Sonucun haritada odaklanabilmesi için taşınır.</summary>
+    public double Longitude { get; set; }
+
+    public double Latitude { get; set; }
 }
 
 /// <summary>
