@@ -1,13 +1,64 @@
-# GeoServer presentation styles (Phase 5)
+# GeoServer presentation styles
 
-`styles/` holds the SLD source for the three **normal drawing presentation**
-styles used by `GET /api/map/presentation/{point|line|polygon}`.
+`styles/` holds the SLD source for the **normal drawing presentation** styles
+used by `GET /api/map/presentation/{point|line|polygon}` (Phase 5), and for the
+**per-category POI styles** (Phase 3A onward).
 
 | File | GeoServer style name | Applied to |
 | --- | --- | --- |
 | `drawing_point_presentation.sld` | `drawing_point_presentation` | `geoworkspace:tbl_point_read` |
 | `drawing_line_presentation.sld` | `drawing_line_presentation` | `geoworkspace:tbl_line_read` |
 | `drawing_polygon_presentation.sld` | `drawing_polygon_presentation` | `geoworkspace:tbl_polygon_read` |
+| `poi_<slug>.sld` (44 files) | `poi_<slug>` | `geoworkspace:poi_read` |
+| `poi_all.sld` | `poi_all` | `geoworkspace:poi_read` |
+
+**The `poi_*` styles and every file in `icons/` are GENERATED.** Do not edit
+them by hand — change `PoiCategoryTaxonomy.All` and regenerate:
+
+```bash
+dotnet run --project backend/tools/StajProject.GeoServerStyleGenerator -- generate
+dotnet run --project backend/tools/StajProject.GeoServerStyleGenerator -- check
+```
+
+`check` exits non-zero when a committed artifact is missing, stale, or
+orphaned; `GeoServerPoiStyleArtifactTests` asserts the same thing from the test
+suite. The `drawing_*` styles above are **hand-authored** and carry no generated
+marker, so the generator's stale-file cleanup can never touch them.
+
+There is one style per canonical category — the assignment requires *"Her bir
+POI kategorisi için GeoServer'da ayrı bir Style (SLD)"*. `poi_all` renders all
+44 in a single WMS request and is **additive**: it does not replace the 44
+per-category styles.
+
+`icons/` holds the static vector assets the POI styles reference through
+`ExternalGraphic`. GeoServer cannot render a React/Lucide component, so each
+`icon_key` in the canonical taxonomy has a local SVG (44 distinct keys today).
+Same convention as `styles/`: **source in Git, installed manually per
+instance.**
+
+Install icons by copying them into the data directory's styles folder, keeping
+the `icons/` subfolder so the styles' relative `./icons/<name>.svg` paths
+resolve:
+
+```
+<GEOSERVER_DATA_DIR>/styles/icons/<icon-key>.svg
+```
+
+`./sync-icons.sh` does this for all 44 at once. It is **dry run by default**,
+takes no credentials, needs only `GEOSERVER_DATA_DIR`, and never deletes
+anything at the destination:
+
+```bash
+GEOSERVER_DATA_DIR=/opt/homebrew/var/geoserver/data_dir ./geoserver/sync-icons.sh
+GEOSERVER_DATA_DIR=/opt/homebrew/var/geoserver/data_dir ./geoserver/sync-icons.sh --apply
+```
+
+Style **registration** stays manual — this repository has no verified GeoServer
+REST contract to script against.
+
+The POI read layer (`geoworkspace:poi_read`), the full SQL View definition, the
+generator, the per-category style contract, and the deployment steps are
+documented in [`docs/geoserver-poi-read.md`](../docs/geoserver-poi-read.md).
 
 These files are **source**, not a deployment mechanism. As
 `docs/geoserver-heatmap-proxy.md` already records, the GeoServer runtime catalog
@@ -69,3 +120,23 @@ The point style uses the GeoTools filter functions `if_then_else`, `isNull`,
 `stroke-width` expression on your GeoServer build, replace that expression with
 the plain `StrokeWidth` property lookup — the only visible consequence is that a
 very thick stroke on a very small point is no longer capped.
+
+## POI style notes
+
+Every `poi_*` style matches on `kategori_slug`, never on a category's numeric
+id or display name: ids are environment-specific and names are editable from
+the admin screen, while the slug is generated once and never changes.
+
+The per-category styles deliberately carry **no `<ElseFilter/>`**. In the drawing styles that
+element stops a feature from vanishing when no rule matches; in a per-category
+POI style it would make the style draw *every* POI regardless of category and
+defeat the one-style-per-category requirement. The equivalent robustness sits
+one layer down instead: every rule places a `<Mark>` after its
+`<ExternalGraphic>`, which SLD 1.0 falls back to when the SVG cannot be loaded,
+so a missing icon file degrades to a plain red dot rather than an empty map.
+
+The label rule uses the GeoServer-specific `<VendorOption>` elements
+`conflictResolution`, `spaceAround`, `maxDisplacement` and `goodnessOfFit`.
+These are not part of SLD 1.0; a build that does not recognise them ignores
+them and the style stays valid. Removing them only costs label
+de-confliction in dense areas.

@@ -168,7 +168,7 @@ test('effective permissions are read once and shared by every screen', async ({ 
   const afterMap = permissions.calls
   expect(afterMap).toBeLessThanOrEqual(2)
 
-  await page.getByRole('button', { name: 'Kullanıcı Yönetimi' }).click()
+  await page.getByRole('button', { name: 'Yönetim Paneli' }).click()
   await expect(adminNav(page)).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Kullanıcılar', level: 1 })).toBeVisible()
 
@@ -184,7 +184,7 @@ test('an unknown permission code is simply false', async ({ page }) => {
 
   // Uydurma kod hiçbir şey açmaz; gerçek kodların yokluğu da öyle.
   await expect(drawButton(page, 'Nokta')).toBeHidden()
-  await expect(page.getByRole('button', { name: 'Kullanıcı Yönetimi' })).toBeHidden()
+  await expect(page.getByRole('button', { name: 'Yönetim Paneli' })).toBeHidden()
 })
 
 test('a failed permission read fails closed, and recovers on retry', async ({ page }) => {
@@ -211,7 +211,7 @@ test('logging out clears the permission set and the next user does not inherit i
   await stubDrawings(page)
   await openMap(page)
 
-  await expect(page.getByRole('button', { name: 'Kullanıcı Yönetimi' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Yönetim Paneli' })).toBeVisible()
 
   /* İkinci kullanıcı yalnızca haritayı görebiliyor. Küme AİT OLDUĞU token ile
      tutulduğu için, yeni oturumun isteği dönmeden önce bile eski yetkiler
@@ -230,7 +230,7 @@ test('logging out clears the permission set and the next user does not inherit i
   await openMap(page)
 
   // Birinci kullanıcının yönetim girişi ikinci kullanıcıda GÖRÜNMEZ.
-  await expect(page.getByRole('button', { name: 'Kullanıcı Yönetimi' })).toBeHidden()
+  await expect(page.getByRole('button', { name: 'Yönetim Paneli' })).toBeHidden()
   await expect(drawButton(page, 'Nokta')).toBeHidden()
 })
 
@@ -255,7 +255,7 @@ test('protected actions never flash before the permission set arrives', async ({
      "Önce hepsini göster, sonra yetkisizleri kaldır" davranışı burada
      yakalanır. */
   await expect(toolbar(page)).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'Kullanıcı Yönetimi' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Yönetim Paneli' })).toHaveCount(0)
 
   release()
 
@@ -297,7 +297,7 @@ test('no admin permission means no admin entry on the map at all', async ({ page
   await stubDrawings(page)
   await openMap(page)
 
-  await expect(page.getByRole('button', { name: 'Kullanıcı Yönetimi' })).toBeHidden()
+  await expect(page.getByRole('button', { name: 'Yönetim Paneli' })).toBeHidden()
 })
 
 /* ===========================================================================
@@ -663,7 +663,7 @@ test('the Administrator role name opens nothing its permissions do not', async (
   await stubDrawings(page)
   await openMap(page)
 
-  await expect(page.getByRole('button', { name: 'Kullanıcı Yönetimi' })).toBeHidden()
+  await expect(page.getByRole('button', { name: 'Yönetim Paneli' })).toBeHidden()
 
   await page.goto('/admin/users')
   await expect(denied(page)).toBeVisible()
@@ -676,7 +676,7 @@ test('a custom role name opens everything its permissions do', async ({ page }) 
   await openMap(page)
 
   await expect(toolbar(page).getByRole('button', { name: 'Envanter Analizi aracı' })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Kullanıcı Yönetimi' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Yönetim Paneli' })).toBeVisible()
 
   await page.goto('/admin/users')
   await expect(page.getByRole('heading', { name: 'Kullanıcılar', level: 1 })).toBeVisible()

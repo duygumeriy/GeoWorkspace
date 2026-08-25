@@ -101,6 +101,129 @@ public class PoiService : IPoiService
         _poiAuthorization = poiAuthorization;
     }
 
+    /* --- Arama ------------------------------------------------------------------ */
+
+    /// <summary>
+    /// Kayıtlı POI'ler arasında ada göre arama.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Görünürlük harita okumasıyla AYNIDIR.</b> Sahiplik, çağıran kimliği
+    /// ve coğrafi kapsam yüklemi YOKTUR — POI ortak envanterdir ve coğrafi
+    /// kapsam bir YAZMA kuralıdır (create/move). Buraya bir okuma filtresi
+    /// eklemek, haritada ve listede görünen bir POI'nin aramada bulunamadığı
+    /// tutarsız bir durum üretirdi.
+    /// </para>
+    /// <para>
+    /// <b>Süzme, sıralama ve sınır VERİTABANINDA yapılır.</b> Tüm POI'leri
+    /// belleğe çekip orada sıralamak, envanter büyüdükçe her tuş vuruşunda
+    /// tabloyu taramak demek olurdu.
+    /// </para>
+    /// <para>
+    /// <b>Joker karakterler METİNDİR.</b> Kullanıcının yazdığı <c>%</c> ve
+    /// <c>_</c> arama operatörüne dönüşmez; kaçış karakteriyle birlikte
+    /// <c>ILIKE ... ESCAPE</c>'e verilir. Aksi hâlde tek bir <c>%</c> bütün
+    /// envanteri döndürürdü.
+    /// </para>
+    /// </remarks>
+    public async Task<ServiceResult<IReadOnlyList<PoiSearchResult>>> SearchPoisAsync(
+        string? query,
+        int? limit,
+        CancellationToken cancellationToken = default)
+    {
+        var term = (query ?? string.Empty).Trim();
+
+        if (term.Length < PoiSearchContract.MinimumQueryLength)
+        {
+            return ServiceResult<IReadOnlyList<PoiSearchResult>>.Failure(
+                $"Arama metni en az {PoiSearchContract.MinimumQueryLength} karakter olmalıdır.");
+        }
+
+        if (term.Length > PoiSearchContract.MaximumQueryLength)
+        {
+            return ServiceResult<IReadOnlyList<PoiSearchResult>>.Failure(
+                $"Arama metni en fazla {PoiSearchContract.MaximumQueryLength} karakter olabilir.");
+        }
+
+        var take = limit ?? PoiSearchContract.DefaultLimit;
+
+        if (take < PoiSearchContract.MinimumLimit || take > PoiSearchContract.MaximumLimit)
+        {
+            return ServiceResult<IReadOnlyList<PoiSearchResult>>.Failure(
+                $"limit {PoiSearchContract.MinimumLimit} ile {PoiSearchContract.MaximumLimit} arasında olmalıdır.");
+        }
+
+        return ServiceResult<IReadOnlyList<PoiSearchResult>>.Success(
+            await BuildSearchQuery(term, take).ToListAsync(cancellationToken));
+    }
+
+    /// <summary>
+    /// Arama sorgusunun kendisi — süzme, sıralama, sınır ve projeksiyon.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Ayrı bir metot olması testler içindir ve gerçek bir kazanç sağlar:</b>
+    /// PostgreSQL sağlayıcısı bir sorguyu veritabanına BAĞLANMADAN SQL'e
+    /// çevirebilir (<c>ToQueryString</c>), dolayısıyla süzmenin, sıralamanın ve
+    /// sınırın gerçekten veritabanında yapıldığı — belleğe çekilmediği —
+    /// canlı bir veritabanı olmadan doğrulanabilir.
+    /// </para>
+    /// <para>
+    /// <b>Her şey TEK sorguda ve SQL tarafında olur.</b> <c>Take</c>
+    /// projeksiyondan önce gelir; sıralama ölçütü de SQL'e çevrilen bir
+    /// <c>CASE</c> ifadesidir. Sonuçları belleğe çekip orada sıralamak,
+    /// envanter büyüdükçe her tuş vuruşunda tabloyu taramak olurdu.
+    /// </para>
+    /// </remarks>
+    internal IQueryable<PoiSearchResult> BuildSearchQuery(string term, int take)
+    {
+        var escaped = PoiSearchContract.EscapeLikePattern(term);
+        var exact = escaped;
+        var prefix = $"{escaped}%";
+        var contains = $"%{escaped}%";
+        const string escapeCharacter = PoiSearchContract.LikeEscapeCharacter;
+
+        /* Global query filter POI ve kategorinin silinmiş/pasif satırlarını
+           zaten düşürür — iki tablo için de. Join, kategori alanlarını satır
+           başına ikinci bir sorgu doğurmadan getirir (Include ile gelen
+           N+1 riski yoktur). */
+        return _dbContext.Pois
+            .AsNoTracking()
+            .Join(
+                _dbContext.PoiCategories,
+                poi => poi.CategoryId,
+                category => category.Id,
+                (poi, category) => new { Poi = poi, Category = category })
+            .Where(row =>
+                EF.Functions.ILike(row.Poi.Name, contains, escapeCharacter)
+                || EF.Functions.ILike(row.Category.Name, contains, escapeCharacter))
+            /* Deterministik sıralama: tam eşleşme → ile başlayan → içeren →
+               yalnızca kategori adından eşleşen. Eşitlikte ad, en sonda kimlik;
+               böylece aynı sorgu her zaman aynı listeyi verir. */
+            .OrderBy(row =>
+                EF.Functions.ILike(row.Poi.Name, exact, escapeCharacter) ? 0
+                : EF.Functions.ILike(row.Poi.Name, prefix, escapeCharacter) ? 1
+                : EF.Functions.ILike(row.Poi.Name, contains, escapeCharacter) ? 2
+                : 3)
+            .ThenBy(row => row.Poi.Name)
+            .ThenBy(row => row.Poi.Id)
+            .Take(take)
+            .Select(row => new PoiSearchResult
+            {
+                Id = row.Poi.Id,
+                Name = row.Poi.Name,
+                CategoryId = row.Category.Id,
+                CategoryName = row.Category.Name,
+                CategorySlug = row.Category.Slug,
+                IconKey = row.Category.IconKey,
+                ColorHex = row.Category.ColorHex,
+                /* Coordinate.X boylam, Coordinate.Y enlemdir. Ters çevrilmesi
+                   POI'yi dünyanın başka bir yerine taşırdı. */
+                Longitude = row.Poi.Coordinate.X,
+                Latitude = row.Poi.Coordinate.Y
+            });
+    }
+
     /* --- Harita okuması --------------------------------------------------------- */
 
     public async Task<IReadOnlyList<PoiResponse>> GetMapPoisAsync(CancellationToken cancellationToken = default)

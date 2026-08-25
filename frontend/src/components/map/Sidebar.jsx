@@ -95,8 +95,14 @@ export default function Sidebar({
     // Çöp Kutusu'nun tek eylemi geri yüklemedir; listesi silinmiş çizimler VE
     // POI'lerdir.
     ...(canOpenTrash ? [{ id: 'trash', label: 'Çöp Kutusu', Icon: TrashIcon }] : []),
+    /* Etiket "Yönetim Paneli"dir, "Kullanıcı Yönetimi" değil: bu giriş artık
+       yalnızca kullanıcıları değil rolleri, yetkileri, POI yönetimini ve
+       aktivite geçmişini de kapsıyor ve açtığı ekranın kendi başlığı da
+       ("Yönetim Paneli", `AdminLayout`) bunu söylüyordu. Değişen YALNIZCA
+       görünen metindir: `admin-users` kimliği, `/admin` rotası ve
+       `ADMIN_ENTRY_PERMISSIONS` yetki kapısı olduğu gibi durur. */
     ...(canAny(ADMIN_ENTRY_PERMISSIONS)
-      ? [{ id: 'admin-users', label: 'Kullanıcı Yönetimi', Icon: ShieldIcon }]
+      ? [{ id: 'admin-users', label: 'Yönetim Paneli', Icon: ShieldIcon }]
       : []),
     { id: 'settings', label: 'Ayarlar', Icon: SettingsIcon },
     { id: 'about', label: 'Hakkında', Icon: InfoIcon },

@@ -29,6 +29,26 @@ public interface IPoiService
     Task<IReadOnlyList<PoiResponse>> GetMapPoisAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Kayıtlı POI'ler arasında ada göre arama.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Görünürlük <see cref="GetMapPoisAsync"/> ile AYNIDIR: sahiplik ve
+    /// coğrafi kapsam yüklemi yoktur. Aksi hâlde haritada görünen bir POI
+    /// aramada bulunamaz olurdu.
+    /// </para>
+    /// <para>
+    /// Sınırlar <c>PoiSearchContract</c>'tadır; geçersiz sorgu/limit bir
+    /// doğrulama hatası döndürür.
+    /// </para>
+    /// </remarks>
+    Task<ServiceResult<IReadOnlyList<PoiSearchResult>>> SearchPoisAsync(
+        string? query,
+        int? limit,
+        CancellationToken cancellationToken = default);
+
+
+    /// <summary>
     /// Yeni POI oluşturur. Sahiplik doğrulanmış kimlikten gelir; istek
     /// gövdesindeki hiçbir alan sahipliği, tarihleri veya durum bayraklarını
     /// etkileyemez.

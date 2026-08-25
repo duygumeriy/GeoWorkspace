@@ -93,6 +93,62 @@ public sealed class MapPresentationController : ApiControllerBase
         CancellationToken cancellationToken) =>
         Image(nameof(GetPolygonImage), DrawingKind.Polygon, bbox, width, height, cancellationToken);
 
+    /// <summary>
+    /// POI envanterinin genel gösterimi.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Yetki <c>poi.view</c>'dur, <c>drawings.view</c> DEĞİL: iki envanter
+    /// birbirinden bağımsızdır ve yalnızca POI görme yetkisi olan bir
+    /// kullanıcı da bu görüntüyü almalıdır. Rol adı hiçbir karara girmez.
+    /// </para>
+    /// <para>
+    /// Katman (<c>poi_read</c>) ve style (<c>poi_all</c>) sunucunun kendi
+    /// ayarındadır; imza yalnızca görüntü penceresini okur — diğer uçlarla
+    /// aynı gerekçe (bkz. yukarıdaki not).
+    /// </para>
+    /// <para>
+    /// <b><c>pixelRatio</c> tek EK skalerdir ve yalnızca bir SAYIDIR.</b>
+    /// İstemcinin çizime dair söyleyebildiği her şey budur: DPI, FORMAT_OPTIONS,
+    /// LAYERS, STYLES, CQL_FILTER, FORMAT, CRS, SERVICE ve REQUEST hâlâ
+    /// sunucuya aittir ve bu sorgudan hiçbir yolla etkilenemez. Gönderilmezse 1
+    /// varsayılır ve istek bugünküyle birebir aynı kalır. Doğrulama servis
+    /// katmanındadır (<c>WmsRenderContract</c>), diğer üç değerle aynı yerde.
+    /// </para>
+    /// </remarks>
+    [RequirePermission(PermissionCodes.PoiView)]
+    [HttpGet("presentation/poi")]
+    public Task<IActionResult> GetPoiImage(
+        [FromQuery] string? bbox,
+        [FromQuery] int width,
+        [FromQuery] int height,
+        [FromQuery] double? pixelRatio,
+        CancellationToken cancellationToken) =>
+        GuardAction(nameof(GetPoiImage), async () =>
+        {
+            var request = new MapPresentationRequest
+            {
+                Bbox = bbox ?? string.Empty,
+                Width = width,
+                Height = height,
+                PixelRatio = pixelRatio ?? 1.0
+            };
+
+            var result = await _presentation.GetPoiPresentationAsync(request, cancellationToken);
+
+            if (!result.IsSuccess)
+            {
+                return Problem(result);
+            }
+
+            /* POI ortak envanterdir ama yanıt yine de paylaşılan bir ara
+               bellekte tutulmaz: görüntü yetkiye bağlıdır ve yetkisi olmayan
+               bir isteğe servis edilmemelidir. */
+            Response.Headers.CacheControl = "private, no-store";
+            Response.Headers.Pragma = "no-cache";
+            return File(result.Value!.Content, "image/png");
+        });
+
     private Task<IActionResult> Image(
         string endpoint,
         DrawingKind kind,

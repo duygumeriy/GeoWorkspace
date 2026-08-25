@@ -3,6 +3,7 @@ using StajProject.Application.Common;
 using StajProject.Application.DTOs;
 using StajProject.Application.Interfaces;
 using StajProject.Application.Pois;
+using StajProject.Domain.Common;
 using StajProject.Domain.Entities;
 using StajProject.Infrastructure.Persistence;
 
@@ -29,6 +30,25 @@ public class PoiCategoryService : IPoiCategoryService
     private const string CycleMessage =
         "Bir kategori kendisinin ya da kendi alt kategorilerinden birinin altına taşınamaz.";
 
+    private const string SlugUnusableMessage =
+        "Kategori adından geçerli bir teknik kimlik üretilemedi. Ad en az bir harf ya da rakam içermelidir.";
+
+    /* Çakışma mesajı, çakışan slug'ı BİLİNÇLİ olarak yazmaz ve hiçbir koşulda
+       veritabanı hata metni taşımaz: istemciye dönen metin, sunucunun kendi
+       sözleşmesinin dilidir. */
+    private const string SlugConflictMessage =
+        "Bu kategori için oluşturulan teknik kimlik zaten kullanılıyor.";
+
+    private const string IconRequiredMessage = "Kategori simgesi zorunludur.";
+
+    private const string IconUnknownMessage =
+        "Seçilen kategori simgesi tanınmıyor. Yalnızca tanımlı simgeler kullanılabilir.";
+
+    private const string ColorRequiredMessage = "Kategori rengi zorunludur.";
+
+    private const string ColorInvalidMessage =
+        "Kategori rengi #RRGGBB biçiminde olmalıdır (örn. #EF4444).";
+
     private readonly AppDbContext _dbContext;
 
     public PoiCategoryService(AppDbContext dbContext)
@@ -43,18 +63,22 @@ public class PoiCategoryService : IPoiCategoryService
     {
         // Global query filter zaten pasif/silinmiş satırları düşürür; burada
         // IgnoreQueryFilters BİLİNÇLİ olarak kullanılmaz.
-        var nodes = await ReadNodesAsync(includeHidden: false, cancellationToken);
+        var rows = await ReadProjectionsAsync(includeHidden: false, cancellationToken);
+        var nodes = ToNodes(rows);
 
         return
         [
-            .. nodes.Values
-                .Select(node => new PoiCategoryResponse
+            .. rows
+                .Select(row => new PoiCategoryResponse
                 {
-                    Id = node.Id,
-                    Name = node.Name,
-                    ParentId = node.ParentId,
-                    Path = PoiCategoryHierarchy.BuildPath(nodes, node.Id),
-                    Depth = PoiCategoryHierarchy.DepthOf(nodes, node.Id)
+                    Id = row.Id,
+                    Name = row.Name,
+                    ParentId = row.ParentId,
+                    Path = PoiCategoryHierarchy.BuildPath(nodes, row.Id),
+                    Depth = PoiCategoryHierarchy.DepthOf(nodes, row.Id),
+                    Slug = row.Slug,
+                    IconKey = row.IconKey,
+                    ColorHex = row.ColorHex
                 })
                 .OrderBy(item => item.Path, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(item => item.Name, StringComparer.OrdinalIgnoreCase)
@@ -69,43 +93,29 @@ public class PoiCategoryService : IPoiCategoryService
            gizlenmesi, yöneticinin onu neden seçemediğini göremediği bir ekran
            üretirdi; silinmiş satırın gizlenmesi ise bir alt ağacın neden
            kopuk göründüğünü açıklanamaz kılardı. */
-        var nodes = await ReadNodesAsync(includeHidden: true, cancellationToken);
-
-        var rows = await _dbContext.PoiCategories
-            .IgnoreQueryFilters()
-            .AsNoTracking()
-            .Select(c => new
-            {
-                c.Id,
-                c.CreatedDate,
-                c.ModifiedDate,
-                c.IsActive,
-                c.IsDeleted
-            })
-            .ToListAsync(cancellationToken);
+        var rows = await ReadProjectionsAsync(includeHidden: true, cancellationToken);
+        var nodes = ToNodes(rows);
 
         return
         [
             .. rows
-                .Select(row =>
+                .Select(row => new AdminPoiCategoryResponse
                 {
-                    var node = nodes[row.Id];
-
-                    return new AdminPoiCategoryResponse
-                    {
-                        Id = node.Id,
-                        Name = node.Name,
-                        ParentId = node.ParentId,
-                        ParentName = node.ParentId is int parentId && nodes.TryGetValue(parentId, out var parent)
-                            ? parent.Name
-                            : null,
-                        Path = PoiCategoryHierarchy.BuildPath(nodes, node.Id),
-                        Depth = PoiCategoryHierarchy.DepthOf(nodes, node.Id),
-                        CreatedDate = row.CreatedDate,
-                        ModifiedDate = row.ModifiedDate,
-                        IsActive = row.IsActive,
-                        IsDeleted = row.IsDeleted
-                    };
+                    Id = row.Id,
+                    Name = row.Name,
+                    ParentId = row.ParentId,
+                    ParentName = row.ParentId is int parentId && nodes.TryGetValue(parentId, out var parent)
+                        ? parent.Name
+                        : null,
+                    Path = PoiCategoryHierarchy.BuildPath(nodes, row.Id),
+                    Depth = PoiCategoryHierarchy.DepthOf(nodes, row.Id),
+                    CreatedDate = row.CreatedDate,
+                    ModifiedDate = row.ModifiedDate,
+                    IsActive = row.IsActive,
+                    IsDeleted = row.IsDeleted,
+                    Slug = row.Slug,
+                    IconKey = row.IconKey,
+                    ColorHex = row.ColorHex
                 })
                 .OrderBy(item => item.Path, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(item => item.Name, StringComparer.OrdinalIgnoreCase)
@@ -133,10 +143,41 @@ public class PoiCategoryService : IPoiCategoryService
             return Propagate<int?, AdminPoiCategoryResponse>(parent);
         }
 
+        /* Teknik kimlik BURADA, bir kez üretilir. Güncelleme yolunda karşılığı
+           YOKTUR: slug oluşturulduktan sonra değişmez. */
+        if (!PoiCategorySlug.TryCreate(name.Value, out var slug))
+        {
+            return ServiceResult<AdminPoiCategoryResponse>.Failure(SlugUnusableMessage);
+        }
+
+        /* Tekillik denetimi filtreyi ATLAR: slug küresel olarak tekildir ve
+           pasif ya da silinmiş bir satırın kimliği de yeniden kullanılamaz.
+           Filtreli bir sorgu, gizli bir satırla çakışan slug'ı "boşta" gibi
+           gösterir ve kaçınılmaz olarak veritabanı indeks ihlaline düşerdi. */
+        var slugTaken = await _dbContext.PoiCategories
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .AnyAsync(c => c.Slug == slug, cancellationToken);
+
+        if (slugTaken)
+        {
+            return ServiceResult<AdminPoiCategoryResponse>.Conflict(SlugConflictMessage);
+        }
+
+        var presentation = ValidatePresentation(request.IconKey, request.ColorHex);
+
+        if (!presentation.IsSuccess)
+        {
+            return Propagate<PresentationMetadata, AdminPoiCategoryResponse>(presentation);
+        }
+
         var category = new PoiCategory
         {
             Name = name.Value!,
             ParentId = parent.Value,
+            Slug = slug,
+            IconKey = presentation.Value!.IconKey,
+            ColorHex = presentation.Value.ColorHex,
             IsActive = true,
             IsDeleted = false,
             /* CreatedDate AÇIKÇA damgalanır: AppDbContext yalnızca
@@ -146,7 +187,22 @@ public class PoiCategoryService : IPoiCategoryService
         };
 
         _dbContext.PoiCategories.Add(category);
-        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            /* Yukarıdaki denetim ile yazma arasında başka bir istek aynı slug'ı
+               almış olabilir. Tekilliğin GERÇEK garantisi veritabanı indeksidir;
+               buradaki yakalama yalnızca o garantiyi, sağlayıcıya özgü hata
+               metnini istemciye sızdırmadan projenin kendi çakışma
+               sözleşmesine çevirir. */
+            _dbContext.Entry(category).State = EntityState.Detached;
+
+            return ServiceResult<AdminPoiCategoryResponse>.Conflict(SlugConflictMessage);
+        }
 
         return ServiceResult<AdminPoiCategoryResponse>.Success(
             await ToAdminResponseAsync(category.Id, cancellationToken));
@@ -191,7 +247,7 @@ public class PoiCategoryService : IPoiCategoryService
             /* Döngü kontrolü TÜM satırlar üzerinden yapılır: pasif ya da
                silinmiş bir düğümden geçen bir döngü de döngüdür ve gizli
                kalması, ağacı sessizce bozardı. */
-            var nodes = await ReadNodesAsync(includeHidden: true, cancellationToken);
+            var nodes = ToNodes(await ReadProjectionsAsync(includeHidden: true, cancellationToken));
 
             if (PoiCategoryHierarchy.WouldCreateCycle(nodes, category.Id, parent.Value))
             {
@@ -201,8 +257,22 @@ public class PoiCategoryService : IPoiCategoryService
             category.ParentId = parent.Value;
         }
 
+        var presentation = ValidatePresentation(request.IconKey, request.ColorHex);
+
+        if (!presentation.IsSuccess)
+        {
+            return Propagate<PresentationMetadata, AdminPoiCategoryResponse>(presentation);
+        }
+
         category.Name = name.Value!;
         category.IsActive = request.IsActive;
+        category.IconKey = presentation.Value!.IconKey;
+        category.ColorHex = presentation.Value.ColorHex;
+
+        /* category.Slug'a DOKUNULMAZ. Ad değişse bile teknik kimlik korunur:
+           GeoServer stil kuralı slug'a göre eşleşir ve yeniden adlandırma o
+           kuralı sahipsiz bırakmamalıdır. Slug, güncelleme sözleşmesinde de
+           yoktur — istemci onu gönderemez. */
 
         // ModifiedDate AppDbContext.SaveChanges içinde UTC damgalanır.
         await _dbContext.SaveChangesAsync(cancellationToken);
@@ -259,11 +329,71 @@ public class PoiCategoryService : IPoiCategoryService
             : ServiceResult<int?>.Failure("Üst kategori bulunamadı veya kullanımda değil.");
     }
 
+    /// <summary>Doğrulanmış ve kanonikleştirilmiş sunum metadatası.</summary>
+    private sealed record PresentationMetadata(string IconKey, string ColorHex);
+
+    /// <summary>Tek satırın düz projeksiyonu.</summary>
+    private sealed record CategoryProjection(
+        int Id,
+        string Name,
+        int? ParentId,
+        string Slug,
+        string? IconKey,
+        string? ColorHex,
+        DateTime CreatedDate,
+        DateTime ModifiedDate,
+        bool IsActive,
+        bool IsDeleted);
+
     /// <summary>
-    /// Hiyerarşinin düz projeksiyonu: tek sorgu, yalnızca yol/döngü mantığının
-    /// ihtiyaç duyduğu üç alan.
+    /// Simge ve rengi doğrular; renk kanonik biçime çevrilir.
     /// </summary>
-    private async Task<IReadOnlyDictionary<int, PoiCategoryHierarchy.Node>> ReadNodesAsync(
+    /// <remarks>
+    /// <para>
+    /// <b>İkisi de ZORUNLUDUR.</b> Bu uçlar değiştirme (replacement)
+    /// semantiğine sahiptir — <c>isActive</c> zaten her istekte tam olarak
+    /// bildirilir — dolayısıyla atlanan bir metadata alanı "değiştirme"
+    /// anlamına gelemez; öyle sayılsaydı, kısmi bir istek kategorinin simgesini
+    /// ve rengini sessizce silerdi.
+    /// </para>
+    /// <para>
+    /// <b>Simge doğrulaması bir ÜYELİK sorusudur, desen eşleştirmesi değil.</b>
+    /// Bu değer ileride hem bir bileşen aramasına hem de bir SLD dosya yoluna
+    /// girecektir; kapalı bir küme, dizin geçişi (<c>../</c>), URL ve
+    /// <c>&lt;svg&gt;</c> gövdesi gibi girdilerin tamamını tek bir kuralla ve
+    /// yapısal olarak dışarıda bırakır.
+    /// </para>
+    /// </remarks>
+    private static ServiceResult<PresentationMetadata> ValidatePresentation(string? iconKey, string? colorHex)
+    {
+        var icon = (iconKey ?? string.Empty).Trim();
+
+        if (icon.Length == 0)
+        {
+            return ServiceResult<PresentationMetadata>.Failure(IconRequiredMessage);
+        }
+
+        if (!PoiCategoryIcons.IsApproved(icon))
+        {
+            return ServiceResult<PresentationMetadata>.Failure(IconUnknownMessage);
+        }
+
+        if (string.IsNullOrWhiteSpace(colorHex))
+        {
+            return ServiceResult<PresentationMetadata>.Failure(ColorRequiredMessage);
+        }
+
+        return PoiCategoryColor.TryCanonicalize(colorHex, out var canonicalColor)
+            ? ServiceResult<PresentationMetadata>.Success(new PresentationMetadata(icon, canonicalColor))
+            : ServiceResult<PresentationMetadata>.Failure(ColorInvalidMessage);
+    }
+
+    /// <summary>
+    /// Kategorilerin düz projeksiyonu: TEK sorgu. Ağaç <c>Include</c> ile
+    /// kurulmaz — derinlik kadar sorgu (ya da kartezyen bir sonuç) üretirdi ve
+    /// derinliğin üst sınırı yoktur.
+    /// </summary>
+    private async Task<IReadOnlyList<CategoryProjection>> ReadProjectionsAsync(
         bool includeHidden,
         CancellationToken cancellationToken)
     {
@@ -274,14 +404,30 @@ public class PoiCategoryService : IPoiCategoryService
             query = query.IgnoreQueryFilters();
         }
 
-        var nodes = await query
-            .Select(c => new { c.Id, c.Name, c.ParentId })
+        return await query
+            .Select(c => new CategoryProjection(
+                c.Id,
+                c.Name,
+                c.ParentId,
+                c.Slug,
+                c.IconKey,
+                c.ColorHex,
+                c.CreatedDate,
+                c.ModifiedDate,
+                c.IsActive,
+                c.IsDeleted))
             .ToListAsync(cancellationToken);
-
-        return nodes.ToDictionary(
-            n => n.Id,
-            n => new PoiCategoryHierarchy.Node(n.Id, n.Name, n.ParentId));
     }
+
+    /// <summary>
+    /// Yol/döngü mantığının ihtiyaç duyduğu üç alana indirger. Hiyerarşi
+    /// kuralları <see cref="PoiCategoryHierarchy"/> içinde saf kalır.
+    /// </summary>
+    private static IReadOnlyDictionary<int, PoiCategoryHierarchy.Node> ToNodes(
+        IReadOnlyList<CategoryProjection> rows) =>
+        rows.ToDictionary(
+            row => row.Id,
+            row => new PoiCategoryHierarchy.Node(row.Id, row.Name, row.ParentId));
 
     private async Task<AdminPoiCategoryResponse> ToAdminResponseAsync(int id, CancellationToken cancellationToken)
     {

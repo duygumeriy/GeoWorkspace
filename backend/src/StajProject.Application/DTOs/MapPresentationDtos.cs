@@ -19,6 +19,16 @@ public sealed class MapPresentationRequest
     public int Width { get; set; }
 
     public int Height { get; set; }
+
+    /// <summary>
+    /// <see cref="Width"/>/<see cref="Height"/>'ın CSS pikseline göre yoğunluğu.
+    /// </summary>
+    /// <remarks>
+    /// Varsayılan 1'dir ve bu, yoğunluk bildirmeyen mevcut istemcilerin
+    /// davranışını birebir korur. Doğrulama <c>WmsRenderContract</c>'tadır;
+    /// istemci bu SAYIDAN başka hiçbir çizim parametresi belirleyemez.
+    /// </remarks>
+    public double PixelRatio { get; set; } = 1.0;
 }
 
 /// <summary>GeoServer tarafından üretilmiş, doğrulanmış sunum PNG'si.</summary>

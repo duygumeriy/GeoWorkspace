@@ -33,4 +33,13 @@
     <ProjectReference Include="..\..\src\StajProject.Infrastructure\StajProject.Infrastructure.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- GeoServer stil üreteci (geliştirici aracı). Sürüklenme testleri üretecin
+         KENDİ planını çalıştırıp depodaki dosyalarla karşılaştırır; şablonu test
+         içinde yeniden yazmak ikinci bir gerçek kaynağı üretirdi.
+         Üretim çalışma zamanına HİÇBİR bağımlılık eklemez — bu referans yalnızca
+         test derlemesindedir. -->
+    <ProjectReference Include="..\..\tools\StajProject.GeoServerStyleGenerator\StajProject.GeoServerStyleGenerator.csproj" />
+  </ItemGroup>
+
 </Project>

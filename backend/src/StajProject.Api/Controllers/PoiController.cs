@@ -55,6 +55,37 @@ public class PoiController : ApiControllerBase
             async () => Ok(await _poiService.GetMapPoisAsync(cancellationToken)));
 
     /// <summary>
+    /// Arama kutusu: kayıtlı POI'ler arasında ada göre arama.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Yetki <c>poi.view</c>'dur — POI'yi görebilen herkes onu arayabilmelidir
+    /// de. Rol adına bakan hiçbir kural yoktur; doğrudan verilmiş bir yetki de
+    /// aynı şekilde çalışır.
+    /// </para>
+    /// <para>
+    /// <b>İki skaler değer TEK TEK bağlanır</b>, bir model nesnesi değil:
+    /// sunum uçlarındaki gerekçenin aynısı — hangi sorgu anahtarının okunduğu
+    /// imzanın kendisinde görünür ve tanınmayan her anahtar sessizce yok
+    /// sayılır.
+    /// </para>
+    /// </remarks>
+    [RequirePermission(PermissionCodes.PoiView)]
+    [HttpGet("search")]
+    public Task<ActionResult<IReadOnlyList<PoiSearchResult>>> SearchPois(
+        [FromQuery] string? q,
+        [FromQuery] int? limit,
+        CancellationToken cancellationToken) =>
+        Guard<IReadOnlyList<PoiSearchResult>>(nameof(SearchPois), async () =>
+        {
+            var result = await _poiService.SearchPoisAsync(q, limit, cancellationToken);
+
+            return result.IsSuccess
+                ? Ok(result.Value)
+                : Problem(result);
+        });
+
+    /// <summary>
     /// POI oluşturma açılır listesi için aktif kategoriler.
     /// </summary>
     /// <remarks>

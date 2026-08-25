@@ -30,9 +30,69 @@ public class PoiCategory : IAuditableEntity
     /// <summary>EF <c>HasMaxLength</c> ile aynı sınır.</summary>
     public const int MaxNameLength = 150;
 
+    /// <summary>EF <c>HasMaxLength</c> ile aynı sınır.</summary>
+    public const int MaxSlugLength = 80;
+
+    /// <summary>EF <c>HasMaxLength</c> ile aynı sınır.</summary>
+    public const int MaxIconKeyLength = 50;
+
+    /// <summary><c>#RRGGBB</c> — diyez dâhil sabit uzunluk.</summary>
+    public const int ColorHexLength = 7;
+
     public int Id { get; set; }
 
     public string Name { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Kategorinin <b>teknik kimliği</b>. Görünen addan türetilir ama ona bağlı
+    /// DEĞİLDİR.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Oluşturmada üretilir, sonra DEĞİŞMEZ.</b> GeoServer SLD kuralları bu
+    /// değere göre eşleşir; görünen ad her düzenlendiğinde slug da yeniden
+    /// üretilseydi, bir yeniden adlandırma stil kuralını sessizce sahipsiz
+    /// bırakır ve o kategorinin POI'leri haritada yedek simgeye düşerdi.
+    /// Yeniden adlandırma bir sunum kararıdır; teknik kimliği taşımaz.
+    /// </para>
+    /// <para>
+    /// <b>Küresel olarak tekildir</b> — pasif ve silinmiş satırlar dâhil. SLD
+    /// kuralı slug'a bakarken üst kategoriyi bilmez, dolayısıyla iki farklı
+    /// kategorinin aynı slug'ı taşıması iki farklı şeyin aynı çizilmesi
+    /// demektir. Emekliye ayrılmış bir kategorinin kimliği de yeniden
+    /// kullanılmaz.
+    /// </para>
+    /// </remarks>
+    public string Slug { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Denetimli simge kayıt defterindeki anahtar
+    /// (<see cref="StajProject.Domain.Common.PoiCategoryIcons"/>).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Yalnızca ANAHTAR saklanır.</b> Dosya yolu, URL ya da SVG içeriği
+    /// asla saklanmaz: bu değer ileride hem bir React bileşen aramasına hem de
+    /// bir SLD <c>ExternalGraphic</c> yoluna girecektir, dolayısıyla serbest
+    /// metin olsaydı dizin geçişi (<c>../</c>) ve XML enjeksiyonu için doğrudan
+    /// bir kanal açardı. İzin listesi bu ikisini de yapısal olarak imkânsız
+    /// kılar.
+    /// </para>
+    /// <para>
+    /// <c>null</c> olabilir: göç öncesinden kalan satırlar metadatasız
+    /// kalabilir ve render tarafı yedek simgeye düşer. Yeni kayıtlarda servis
+    /// katmanı zorunlu kılar.
+    /// </para>
+    /// </remarks>
+    public string? IconKey { get; set; }
+
+    /// <summary>Kanonik <c>#RRGGBB</c>; harfler büyük harfe normalize edilir.</summary>
+    /// <remarks>
+    /// <c>null</c> olabilir (bkz. <see cref="IconKey"/>); render tarafı
+    /// <see cref="StajProject.Domain.Common.PoiCategoryPalette.Fallback"/>
+    /// kullanır.
+    /// </remarks>
+    public string? ColorHex { get; set; }
 
     /// <summary>Üst kategori. Kök kategorilerde <c>null</c>.</summary>
     public int? ParentId { get; set; }

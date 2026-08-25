@@ -93,11 +93,11 @@ const POIS = [
 ]
 
 const CATEGORIES = [
-  { id: 1, name: 'Yeme-İçme', parentId: null, parentName: null, path: 'Yeme-İçme', depth: 0, createdDate: '2026-08-01T00:00:00Z', modifiedDate: '2026-08-01T00:00:00Z', isActive: true, isDeleted: false },
-  { id: 3, name: 'Kafe', parentId: 1, parentName: 'Yeme-İçme', path: 'Yeme-İçme / Kafe', depth: 1, createdDate: '2026-08-01T00:00:00Z', modifiedDate: '2026-08-01T00:00:00Z', isActive: true, isDeleted: false },
-  { id: 2, name: 'Restoran', parentId: 1, parentName: 'Yeme-İçme', path: 'Yeme-İçme / Restoran', depth: 1, createdDate: '2026-08-01T00:00:00Z', modifiedDate: '2026-08-01T00:00:00Z', isActive: true, isDeleted: false },
-  { id: 4, name: 'Pasif Kategori', parentId: null, parentName: null, path: 'Pasif Kategori', depth: 0, createdDate: '2026-08-02T00:00:00Z', modifiedDate: '2026-08-02T00:00:00Z', isActive: false, isDeleted: false },
-  { id: 5, name: 'Silinmiş Kategori', parentId: null, parentName: null, path: 'Silinmiş Kategori', depth: 0, createdDate: '2026-08-03T00:00:00Z', modifiedDate: '2026-08-03T00:00:00Z', isActive: true, isDeleted: true },
+  { id: 1, name: 'Yeme-İçme', parentId: null, parentName: null, path: 'Yeme-İçme', depth: 0, slug: 'yeme-icme', iconKey: 'utensils', colorHex: '#F97316', createdDate: '2026-08-01T00:00:00Z', modifiedDate: '2026-08-01T00:00:00Z', isActive: true, isDeleted: false },
+  { id: 3, name: 'Kafe', parentId: 1, parentName: 'Yeme-İçme', path: 'Yeme-İçme / Kafe', depth: 1, slug: 'kafe', iconKey: 'coffee', colorHex: '#F97316', createdDate: '2026-08-01T00:00:00Z', modifiedDate: '2026-08-01T00:00:00Z', isActive: true, isDeleted: false },
+  { id: 2, name: 'Restoran', parentId: 1, parentName: 'Yeme-İçme', path: 'Yeme-İçme / Restoran', depth: 1, slug: 'restoran', iconKey: 'utensils-crossed', colorHex: '#F97316', createdDate: '2026-08-01T00:00:00Z', modifiedDate: '2026-08-01T00:00:00Z', isActive: true, isDeleted: false },
+  { id: 4, name: 'Pasif Kategori', parentId: null, parentName: null, path: 'Pasif Kategori', depth: 0, slug: 'pasif-kategori', iconKey: 'map-pin', colorHex: '#64748B', createdDate: '2026-08-02T00:00:00Z', modifiedDate: '2026-08-02T00:00:00Z', isActive: false, isDeleted: false },
+  { id: 5, name: 'Silinmiş Kategori', parentId: null, parentName: null, path: 'Silinmiş Kategori', depth: 0, slug: 'silinmis-kategori', iconKey: 'map-pin', colorHex: '#64748B', createdDate: '2026-08-03T00:00:00Z', modifiedDate: '2026-08-03T00:00:00Z', isActive: true, isDeleted: true },
 ]
 
 /**
@@ -166,7 +166,7 @@ async function signIn(page, codes, { role = 'Operatör Amiri' } = {}) {
 
     if (request.method() === 'POST') {
       calls.created.push(JSON.parse(request.postData() ?? '{}'))
-      return route.fulfill(json({ id: 9, name: 'Yeni', parentId: null, path: 'Yeni', depth: 0, isActive: true, isDeleted: false }, 201))
+      return route.fulfill(json({ id: 9, name: 'Yeni', parentId: null, path: 'Yeni', depth: 0, slug: 'yeni', iconKey: 'store', colorHex: '#8B5CF6', isActive: true, isDeleted: false }, 201))
     }
 
     calls.categories += 1
@@ -468,20 +468,27 @@ test('there is no category delete action anywhere on the screen', async ({ page 
    5. Kategori oluşturma
    =========================================================================== */
 
-test('create sends only a name and a parent', async ({ page }) => {
+test('create sends name, parent and presentation metadata — but never a slug', async ({ page }) => {
   const { calls } = await signIn(page, [CATEGORIES_MANAGE])
   await page.goto('/admin/poi')
 
   await page.getByRole('button', { name: '+ Yeni Kategori' }).click()
   await dialog(page).getByLabel('Kategori adı').fill('  Tatlıcı  ')
   await dialog(page).getByLabel('Üst kategori').selectOption({ label: 'Yeme-İçme' })
+  await dialog(page).getByLabel('İkon').selectOption('coffee')
   await dialog(page).getByRole('button', { name: 'Kategori Oluştur' }).click()
 
   await expect(page.getByText('Kategori başarıyla oluşturuldu.')).toBeVisible()
 
-  // Gövde SADECE iki alan taşır; durum ve tarihler sunucunundur.
+  /* Gövde DÖRT alan taşır; durum ve tarihler sunucunundur. `slug` de
+     sunucunundur: teknik kimliği istemci seçmez. */
   expect(calls.created).toHaveLength(1)
-  expect(calls.created[0]).toEqual({ name: 'Tatlıcı', parentId: 1 })
+  expect(Object.keys(calls.created[0]).sort()).toEqual(['colorHex', 'iconKey', 'name', 'parentId'])
+  expect(calls.created[0].name).toBe('Tatlıcı')
+  expect(calls.created[0].parentId).toBe(1)
+  expect(calls.created[0].iconKey).toBe('coffee')
+  expect(calls.created[0].colorHex).toMatch(/^#[0-9A-F]{6}$/)
+  expect(calls.created[0]).not.toHaveProperty('slug')
 })
 
 test('inactive and deleted categories are not offered as parents', async ({ page }) => {
@@ -509,6 +516,8 @@ test('a successful create refreshes the list from the server', async ({ page }) 
 
   await page.getByRole('button', { name: '+ Yeni Kategori' }).click()
   await dialog(page).getByLabel('Kategori adı').fill('Tatlıcı')
+  // Simge ZORUNLUDUR: sunucu metadatasız kategori kabul etmez.
+  await dialog(page).getByLabel('İkon').selectOption('coffee')
   await dialog(page).getByRole('button', { name: 'Kategori Oluştur' }).click()
 
   await expect(dialog(page)).toHaveCount(0)
@@ -533,10 +542,19 @@ test('edit sends name, parent and status — and never a deleted flag', async ({
   await expect.poll(() => calls.updated.length).toBe(1)
 
   const body = calls.updated[0].body
-  expect(Object.keys(body).sort()).toEqual(['isActive', 'name', 'parentId'])
-  expect(body).toEqual({ name: 'Kahveci', parentId: 1, isActive: false })
+  expect(Object.keys(body).sort()).toEqual(['colorHex', 'iconKey', 'isActive', 'name', 'parentId'])
+  expect(body).toEqual({
+    name: 'Kahveci',
+    parentId: 1,
+    isActive: false,
+    // Düzenleme kipinde mevcut metadata ile açılır ve olduğu gibi geri gider.
+    iconKey: 'coffee',
+    colorHex: '#F97316',
+  })
   expect(body).not.toHaveProperty('isDeleted')
   expect(body).not.toHaveProperty('createdDate')
+  // Ad değişse bile teknik kimlik gövdede YER ALMAZ.
+  expect(body).not.toHaveProperty('slug')
 })
 
 test('the edit form never offers the category itself as its own parent', async ({ page }) => {

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import MapSheet from './MapSheet.jsx'
-import { CloseIcon, FocusIcon, PinIcon, TrashIcon } from '../ui/icons/index.js'
+import { CloseIcon, FocusIcon, TrashIcon } from '../ui/icons/index.js'
+import PoiCategoryBadge from './PoiCategoryBadge.jsx'
 import {
   DEFAULT_POI_SORT,
   POI_SORT_OPTIONS,
@@ -33,6 +34,15 @@ export default function MyPoisPanel({
   open,
   onClose,
   pois = [],
+  /**
+   * Kategori kimliğinden simge/renk çözen eşleme.
+   *
+   * <b>Yeni bir istek AÇMAZ.</b> Harita zaten `GET /api/poi/categories`'i
+   * okuyor ve `GET /api/poi/mine` her kayıtta `categoryId` taşıyor;
+   * ikisini birleştirmek için sunucudan hiçbir ek alan gerekmedi. Eşleme
+   * gelmemişse satır yine çizilir — nötr renkli bir yedek rozetle.
+   */
+  categoryPresentation = null,
   loading = false,
   error = null,
   onRetry,
@@ -173,15 +183,16 @@ export default function MyPoisPanel({
                       aria-label={`${label} kaydına git`}
                       onClick={() => onSelect?.(poi)}
                     >
-                      <span
-                        className="drawings-item-dot"
-                        style={{ '--dot': 'var(--poi-color, #2563EB)' }}
-                        aria-hidden="true"
+                      {/* Kategorinin GERÇEK simgesi. Önceki hâli genel bir
+                          mavi nokta + raptiyeydi: her POI aynı görünüyordu ve
+                          liste yalnızca metinden okunabiliyordu. Rozet,
+                          haritanın, arama sonuçlarının ve yönetim ağacının
+                          kullandığı AYNI bileşendir. */}
+                      <PoiCategoryBadge
+                        iconKey={categoryPresentation?.get(poi.categoryId)?.iconKey}
+                        colorHex={categoryPresentation?.get(poi.categoryId)?.colorHex}
+                        className="my-pois-badge"
                       />
-
-                      <span className="drawings-item-icon" aria-hidden="true">
-                        <PinIcon size={15} />
-                      </span>
 
                       <span className="drawings-item-text">
                         <span className="drawings-item-title">

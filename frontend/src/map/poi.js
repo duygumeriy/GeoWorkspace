@@ -8,6 +8,8 @@ import Fill from 'ol/style/Fill.js'
 import Stroke from 'ol/style/Stroke.js'
 import CircleStyle from 'ol/style/Circle.js'
 import { DATA_PROJECTION, MAP_PROJECTION } from './drawing.js'
+import { markerSizeForResolution } from './poiMarkerScale.js'
+import { FALLBACK_PRESENTATION, poiMarkerStyle } from './poiMarkerStyle.js'
 
 /**
  * Haritadaki POI katmanı: kaynak, stil, projeksiyon dönüşümü ve feature
@@ -19,9 +21,20 @@ import { DATA_PROJECTION, MAP_PROJECTION } from './drawing.js'
  * kendiliğinden karışır ve <c>/api/drawings/*</c> uçlarına gönderilebilir hâle
  * gelirdi.
  *
- * <b>GeoServer kullanılmaz.</b> POI verisi REST'ten gelir ve istemci tarafı bir
- * vektör kaynağında yaşar: tıklama isabet denetimi ve bilgi paneli, sunucuda
- * üretilmiş bir WMS görüntüsüyle mümkün olmazdı.
+ * <b>Kalıcı GÖRÜNÜM Faz 4'ten beri GeoServer WMS'tedir</b> (bkz.
+ * <c>usePoiPresentationLayer</c>): raster, kategorisine göre simge ve renk
+ * taşıyan resmi gösterimdir. Buradaki vektör kaynağı KİMLİĞİN sahibi olarak
+ * kalır — tıklama isabet denetimi, seçim ve bilgi paneli bir WMS görüntüsüyle
+ * mümkün olmazdı ve bu fazda GetFeatureInfo yoktur. Raster ekrandayken vektör
+ * saydam ama tıklanabilir hâle geçer, dolayısıyla aynı POI iki kez çizilmez.
+ *
+ * <b>Vektör yedeği KATEGORİ FARKINDADIR.</b> Raster ölçek değişimi sırasında
+ * çekildiğinde (Faz 5A) POI'ler eskiden sade bir mavi noktaya dönüşüyordu;
+ * kullanıcının canlı denemede bildirdiği sorun buydu. Artık aynı kategori
+ * rozeti vektör olarak çizilir (<c>poiMarkerStyle</c>), dolayısıyla POI hiçbir
+ * durumda kimliğini kaybetmez. Kalıcı POI için genel mavi işaret ARTIK
+ * KULLANILMAZ; bekleyen ve taslak noktalar ayrı bir kavramdır ve kendi kesikli
+ * dillerini korur.
  */
 
 /** Kendi canvas'ı: koyu tema tile filtresi bu katmana uygulanmaz. */
@@ -59,28 +72,12 @@ export const POI_PENDING_LAYER_Z_INDEX = 14
  */
 export const POI_DRAFT_LAYER_Z_INDEX = 16
 
-/** Mavi: mor çizimlerden, kehribar analizden ve camgöbeği ölçümden ayrı. */
+/** Kesikli geçici işaretlerin mavisi: mor çizimlerden ve kehribar analizden ayrı. */
 const POI_COLOR = '#2563EB'
 const POI_SELECTED_COLOR = '#1D4ED8'
 
-/** Beyaz halka POI'yi hem açık hem koyu temel haritada okunur tutar. */
-const HALO = '#FFFFFF'
-
 /** Feature ayırt edici. Çizim feature'ları `drawingType` taşır, POI bunu. */
 export const POI_FEATURE_KIND = 'poi'
-
-const basePoi = (selected) =>
-  new Style({
-    image: new CircleStyle({
-      // Seçili POI yalnızca renkle değil BOYUTLA da ayrılır.
-      radius: selected ? 9 : 7,
-      fill: new Fill({ color: selected ? POI_SELECTED_COLOR : POI_COLOR }),
-      stroke: new Stroke({ color: HALO, width: selected ? 3 : 2 }),
-    }),
-  })
-
-const POI_STYLE = basePoi(false)
-const POI_SELECTED_STYLE = basePoi(true)
 
 /** Bekleyen nokta kesikli halkayla "henüz kaydedilmedi" der. */
 const POI_PENDING_STYLE = new Style({
@@ -127,19 +124,55 @@ export function createPoiDraftLayer() {
 /**
  * Kalıcı POI katmanı.
  *
- * Stil bir FONKSİYONDUR: seçili POI'nin kimliği React state'inde yaşar ve
- * katman her render'da yeniden kurulmadan onu okuyabilmelidir. Sabit bir stil
- * verilseydi seçim değiştikçe katmanı yeniden yaratmak gerekirdi.
+ * Stil bir FONKSİYONDUR: seçili POI'nin kimliği, rasterin durumu ve haritanın
+ * yakınlığı React render'ından bağımsız değişir ve katman her seferinde
+ * yeniden kurulmadan güncel cevabı okuyabilmelidir. Sabit bir stil verilseydi
+ * bu üç şeyden biri her değiştiğinde katmanı yeniden yaratmak gerekirdi.
+ *
+ * <b>Rozet raster devraldığında ÇİZİLMEZ.</b> WMS görüntüsü ekrandayken vektör
+ * de rozet çizseydi aynı POI iki kez görünürdü. Vektör o durumda saydam ama
+ * tıklanabilir hâle geçer; kimlik, seçim ve bilgi paneli hâlâ ona aittir.
+ *
+ * <b>Seçim geri bildirimi her koşulda VEKTÖRDEDİR.</b> Raster kategorisine göre
+ * boyanmış sabit bir görüntüdür ve neyin seçili olduğunu bilemez. Ama seçim
+ * artık rozetin YERİNE geçmez — çevresine bir halka çizer.
+ *
+ * <b>Boyut ÖLÇEKTEN gelir.</b> <c>markerSizeForResolution</c> SLD'nin ölçek
+ * paydası bantlarını birebir konuşur, dolayısıyla raster gelip gittiğinde
+ * işaretçi boyut değiştirmez — kesirli yakınlıklarda bile.
  *
  * @param {() => number|null} getSelectedId
+ * @param {() => boolean} [isRasterActive] raster kalıcı görünümü devraldı mı
+ * @param {(categoryId: number|null) => ({ iconKey?: string|null, colorHex?: string|null })|null} [getPresentation]
+ *   kategori kimliğinden simge/renk çözer; bilinmiyorsa nötr yedeğe düşülür
+ * @param {() => number|undefined} [getResolution] görünümün o anki çözünürlüğü
  */
-export function createPoiLayer(getSelectedId) {
+export function createPoiLayer(
+  getSelectedId,
+  isRasterActive = () => false,
+  getPresentation = () => null,
+  getResolution = () => undefined,
+) {
   const source = new VectorSource()
   const layer = new VectorLayer({
     source,
     className: POI_LAYER_CLASSNAME,
     zIndex: POI_LAYER_Z_INDEX,
-    style: (feature) => (feature.get('poiId') === getSelectedId() ? POI_SELECTED_STYLE : POI_STYLE),
+    style: (feature) => {
+      /* Kategori metadatası HENÜZ gelmemiş ya da hiç gelmeyecek olabilir
+         (istek uçuyor, ya da göç öncesinden kalan metadatasız bir kategori).
+         O durumda bile POI genel bir noktaya DÜŞMEZ: nötr renkli bir
+         MapPin rozeti çizilir — kimliği eksik, ama yine bir rozet. */
+      const presentation = getPresentation(feature.get('categoryId')) ?? FALLBACK_PRESENTATION
+
+      return poiMarkerStyle({
+        iconKey: presentation.iconKey,
+        colorHex: presentation.colorHex,
+        size: markerSizeForResolution(getResolution()),
+        selected: feature.get('poiId') === getSelectedId(),
+        rasterActive: isRasterActive(),
+      })
+    },
   })
 
   return { source, layer }

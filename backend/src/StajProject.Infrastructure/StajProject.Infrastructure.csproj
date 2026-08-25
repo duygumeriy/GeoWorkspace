@@ -26,4 +26,11 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+
+  <!-- Arama sorgusunun SQL'e ÇEVRİLDİĞİNİ doğrulayan testler için
+       (bkz. PoiService.BuildSearchQuery). Üretim davranışını değiştirmez. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="StajProject.Auth.Tests" />
+  </ItemGroup>
+
 </Project>
