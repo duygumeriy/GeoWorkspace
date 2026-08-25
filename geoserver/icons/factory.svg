@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- GENERATED FILE — DO NOT EDIT MANUALLY
+     Source: PoiCategoryTaxonomy.All
+     Generator: StajProject.GeoServerStyleGenerator
+
+     icon_key = factory
+
+     GeoServer bir React/Lucide bileşeni ÇİZEMEZ; ExternalGraphic'in
+     ihtiyacı olan şey dosya sisteminden okunabilen durağan bir vektördür.
+     Kasıtlı olarak yoktur: uzak adres, CDN, base64, betik, gömülü stil.
+     Batik'in çizeceği tek şey saf geometridir. -->
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="24" height="24" viewBox="0 0 24 24">
+
+  <circle cx="12" cy="12" r="11" fill="#FFFFFF"/>
+  <circle cx="12" cy="12" r="9.5" fill="#334155"/>
+
+  <g transform="translate(12 12) scale(0.55) translate(-12 -12)"
+      fill="none" stroke="#FFFFFF" stroke-width="2.4"
+      stroke-linecap="round" stroke-linejoin="round">
+    <path d="M3 20v-9.4l5 3.2v-3.2l5 3.2V7.6h5.2L20 20z"/><path d="M7 16.4v2M11.4 16.4v2M15.8 16.4v2"/>
+  </g>
+</svg>

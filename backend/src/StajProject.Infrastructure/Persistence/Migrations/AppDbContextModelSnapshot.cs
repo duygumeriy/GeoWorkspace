@@ -544,9 +544,19 @@ namespace StajProject.Infrastructure.Persistence.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("ColorHex")
+                        .HasMaxLength(7)
+                        .HasColumnType("character varying(7)")
+                        .HasColumnName("color_hex");
+
                     b.Property<DateTime>("CreatedDate")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_date");
+
+                    b.Property<string>("IconKey")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("icon_key");
 
                     b.Property<bool>("IsActive")
                         .ValueGeneratedOnAdd()
@@ -574,9 +584,18 @@ namespace StajProject.Infrastructure.Persistence.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("parent_id");
 
+                    b.Property<string>("Slug")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("slug");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ParentId");
+
+                    b.HasIndex("Slug")
+                        .IsUnique();
 
                     b.ToTable("poi_category", (string)null);
                 });

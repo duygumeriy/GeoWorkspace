@@ -1,0 +1,258 @@
+/* POI arama kutusu.
+   Konum: masaüstünde üst-orta. Sol üstte QuickActions (44px dikey sütun, z 20),
+   altta DrawToolbar (alt-orta, z 25) durur; üst-orta ikisiyle de çakışmaz.
+   z-index 24: QuickActions'ın üstünde (açılır liste onları örtebilmeli),
+   panellerin (40+) ve diyalogların (60) altında. */
+
+.poi-search {
+  position: absolute;
+  top: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 24;
+  width: min(420px, calc(100vw - 8rem));
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.poi-search-field {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0 0.55rem;
+  /* 38px: harita denetimlerinin yanında zarif durması için 44px'ten daha
+     kompakt. Metin sıkışmaz — yazı 14px, ikon 16px ve temizle düğmesi 28px
+     dokunma hedefini korur (38 - 28 = her iki yanda 5px). Dar ekranda 42px'e
+     çıkar (bkz. aşağıdaki media query): dokunmatikte 38px fazla incedir. */
+  min-height: 38px;
+  color: var(--text-primary);
+  background: var(--surface-soft);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-panel);
+  backdrop-filter: blur(12px);
+}
+
+.poi-search-field:focus-within {
+  border-color: var(--border-strong);
+}
+
+.poi-search-leading {
+  flex: none;
+  color: var(--text-secondary);
+}
+
+.poi-search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.2rem 0;
+  color: inherit;
+  background: none;
+  border: none;
+  outline: none;
+  font: inherit;
+  /* Yükseklik düştü ama metin küçülmedi: okunabilirlik pahasına
+     kompaktlık istenmiyor. */
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+.poi-search-input::placeholder {
+  color: var(--text-secondary);
+}
+
+.poi-search-spinner {
+  flex: none;
+  color: var(--text-secondary);
+  animation: poi-search-spin 0.9s linear infinite;
+}
+
+@keyframes poi-search-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .poi-search-spinner { animation: none; }
+}
+
+.poi-search-clear {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Görsel olarak küçülmedi: 28px erişilebilir dokunma hedefi korunur. */
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.poi-search-clear:hover {
+  color: var(--text-primary);
+  background: var(--surface-hover, rgba(127, 127, 127, 0.12));
+}
+
+/* Temizle ile KAPAT arasındaki görsel ayraç. İki eylem aynı simgeyi
+   kullanabilir çünkü aynı şeyi yapmıyor olmaları konumlarından okunur:
+   biri metnin yanında, öteki kutunun kenarında. */
+.poi-search-divider {
+  flex: none;
+  width: 1px;
+  align-self: stretch;
+  margin: 0.45rem 0.1rem;
+  background: var(--border-soft);
+}
+
+.poi-search-close {
+  flex: none;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Temizle ile AYNI dokunma hedefi; kutunun 38px yüksekliğine sığar. */
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.poi-search-close:hover {
+  color: var(--text-primary);
+  background: var(--surface-hover, rgba(127, 127, 127, 0.12));
+}
+
+.poi-search-close:focus-visible,
+.poi-search-clear:focus-visible,
+.poi-search-input:focus-visible {
+  outline: 2px solid var(--primary-light);
+  outline-offset: 2px;
+}
+
+/* --- Sonuç listesi ---------------------------------------------------------- */
+
+.poi-search-panel {
+  overflow: hidden;
+  background: var(--surface-solid);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-panel);
+}
+
+.poi-search-list {
+  /* Uzun liste kutuyu değil KENDİNİ kaydırır; harita görünür kalır. */
+  max-height: min(60vh, 22rem);
+  overflow-y: auto;
+  margin: 0;
+  padding: 0.25rem;
+  list-style: none;
+}
+
+.poi-search-option {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.55rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+/* Klavye ve fare AYNI durumu kullanır: iki ayrı "etkin satır" görünümü
+   kullanıcıyı şaşırtırdı. */
+.poi-search-option.is-active {
+  background: var(--surface-hover, rgba(127, 127, 127, 0.12));
+}
+
+/* Kategori rengi ÖLÇÜLÜ bir vurgudur: yalnızca simge rozetinde. Satırın
+   tamamını boyamak, listeyi okunmaz bir renk duvarına çevirirdi. */
+.poi-search-option-icon {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  color: var(--poi-accent, #64748B);
+  background: color-mix(in srgb, var(--poi-accent, #64748B) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--poi-accent, #64748B) 32%, transparent);
+  border-radius: 9px;
+}
+
+.poi-search-option-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 0.1rem;
+}
+
+.poi-search-option-text strong {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: var(--font-small);
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.poi-search-option-text small {
+  overflow: hidden;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.poi-search-note {
+  margin: 0;
+  padding: 0.75rem 0.8rem;
+  color: var(--text-secondary);
+  font-size: var(--font-small);
+}
+
+.poi-search-note-error {
+  color: var(--danger, #EF4444);
+}
+
+/* --- Dar ekran --------------------------------------------------------------
+   QuickActions 640px altında yatay bir SIRAYA döner ve sol üstte durur, bu
+   yüzden arama kutusu üst-ortada kalamaz: onun ALTINA, tam genişliğe alınır.
+   Böylece ne denetimleri örter ne de taşar. */
+
+@media (max-width: 640px) {
+  .poi-search {
+    top: 3.85rem;
+    left: 0.6rem;
+    right: 0.6rem;
+    transform: none;
+    width: auto;
+  }
+
+  /* Dokunmatikte 38px fazla incedir; parmak hedefi 42px'e çıkar. */
+  .poi-search-field {
+    min-height: 42px;
+    padding: 0 0.65rem;
+  }
+}
+
+/* Yatay telefon: denetim sırası daha yukarıdadır ve dikey alan çok dardır. */
+@media (max-height: 480px) and (orientation: landscape) {
+  .poi-search {
+    top: 3.4rem;
+    left: 0.5rem;
+    right: 0.5rem;
+    transform: none;
+    width: auto;
+  }
+
+  .poi-search-list {
+    max-height: 40vh;
+  }
+}

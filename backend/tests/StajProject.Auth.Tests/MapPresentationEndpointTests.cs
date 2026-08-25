@@ -198,6 +198,151 @@ public class MapPresentationEndpointTests
         Assert.NotEqual("image/png", response.Content.Headers.ContentType?.MediaType);
     }
 
+    /* --- POI sunum ucu (Faz 4) ------------------------------------------------- */
+
+    [Fact]
+    public async Task Anonymous_poi_presentation_request_is_rejected_with_401()
+    {
+        await using var host = await CreateHostAsync();
+
+        var response = await host.Client().GetAsync(Url("poi"));
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal(0, host.GeoServer.CallCount);
+    }
+
+    [Fact]
+    public async Task Authenticated_user_without_poi_view_is_rejected_with_403()
+    {
+        await using var host = await CreateHostAsync();
+        await host.CreateCustomRoleAsync("Map Only", PermissionCodes.MapView);
+        var user = await host.CreateUserAsync("poi-presentation-map-only", "Map Only");
+
+        var response = await host.Client(user).GetAsync(Url("poi"));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        // Yetkisiz istek GeoServer'a HİÇ ulaşmaz.
+        Assert.Equal(0, host.GeoServer.CallCount);
+    }
+
+    /// <summary>
+    /// <c>drawings.view</c> POI görüntüsünü AÇMAZ.
+    /// </summary>
+    /// <remarks>
+    /// İki envanter birbirinden bağımsızdır; çizim yetkisinin POI'yi de
+    /// açması, yetki kataloğunu anlamsız kılardı.
+    /// </remarks>
+    [Fact]
+    public async Task Drawings_view_does_not_grant_the_poi_presentation()
+    {
+        await using var host = await CreateHostAsync();
+        await host.CreateCustomRoleAsync("Drawing Reader", PermissionCodes.DrawingsView);
+        var user = await host.CreateUserAsync("poi-presentation-drawings-only", "Drawing Reader");
+
+        Assert.Equal(HttpStatusCode.Forbidden, (await host.Client(user).GetAsync(Url("poi"))).StatusCode);
+    }
+
+    /// <summary>
+    /// <c>poi.view</c> TEK BAŞINA yeterlidir — yönetici olmak gerekmez.
+    /// </summary>
+    [Fact]
+    public async Task Poi_view_alone_is_enough()
+    {
+        await using var host = await CreateHostAsync();
+        await host.CreateCustomRoleAsync("Poi Reader", PermissionCodes.PoiView);
+        var user = await host.CreateUserAsync("poi-presentation-reader", "Poi Reader");
+
+        var response = await host.Client(user).GetAsync(Url("poi"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("image/png", response.Content.Headers.ContentType?.MediaType);
+        Assert.Equal(Png, await response.Content.ReadAsByteArrayAsync());
+        Assert.Contains("private", response.Headers.CacheControl!.ToString(), StringComparison.OrdinalIgnoreCase);
+        Assert.True(response.Headers.CacheControl.NoStore);
+    }
+
+    /// <summary>
+    /// Doğrudan verilen yetki de çalışır: karar etkin yetki kümesine bakar,
+    /// rol adına değil.
+    /// </summary>
+    [Fact]
+    public async Task Direct_poi_view_grant_is_allowed()
+    {
+        await using var host = await CreateHostAsync();
+        await host.CreateRoleAsync("No Permissions");
+        var user = await host.CreateUserAsync("poi-presentation-direct", "No Permissions");
+
+        Assert.Equal(HttpStatusCode.Forbidden, (await host.Client(user).GetAsync(Url("poi"))).StatusCode);
+
+        await host.GrantDirectAsync(user, PermissionCodes.PoiView);
+
+        Assert.Equal(HttpStatusCode.OK, (await host.Client(user).GetAsync(Url("poi"))).StatusCode);
+    }
+
+    [Fact]
+    public async Task Retired_Admin_role_is_not_a_poi_presentation_bypass()
+    {
+        await using var host = await CreateHostAsync();
+        await host.CreateRoleAsync(ApplicationRoles.Admin);
+        var user = await host.CreateUserAsync("legacy-poi-presentation-admin", ApplicationRoles.Admin);
+
+        Assert.Equal(HttpStatusCode.Forbidden, (await host.Client(user).GetAsync(Url("poi"))).StatusCode);
+    }
+
+    /// <summary>
+    /// İstemcinin gönderdiği katman/style/CQL anahtarları GeoServer'a GEÇMEZ.
+    /// </summary>
+    /// <remarks>
+    /// Sorgu dizesi kopyalanmaz; parametreler sunucuda tek tek kurulur.
+    /// Tanınmayan her anahtar sessizce yok sayılır ve istek yine
+    /// <c>poi_read</c> + <c>poi_all</c> ile gider.
+    /// </remarks>
+    [Fact]
+    public async Task Client_supplied_layer_style_and_filter_are_ignored()
+    {
+        await using var host = await CreateHostAsync();
+        await host.CreateCustomRoleAsync("Poi Reader", PermissionCodes.PoiView);
+        var user = await host.CreateUserAsync("poi-presentation-override", "Poi Reader");
+
+        var response = await host.Client(user).GetAsync(
+            "/api/map/presentation/poi?bbox=-1000,-2000,3000,4000&width=512&height=320"
+            + "&layers=geoworkspace:tbl_point_read&LAYERS=evil&styles=poi_eczane&STYLES=evil"
+            + "&cql_filter=1%3D1&CQL_FILTER=1%3D1&sld_body=%3Cx%2F%3E&viewparams=a%3Ab"
+            + "&service=WFS&request=GetFeature&workspace=other&format=image%2Fjpeg");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var form = host.GeoServer.Form();
+        Assert.Equal("geoworkspace:poi_read", form["LAYERS"]);
+        Assert.Equal("poi_all", form["STYLES"]);
+        Assert.Equal("WMS", form["SERVICE"]);
+        Assert.Equal("GetMap", form["REQUEST"]);
+        Assert.Equal("image/png", form["FORMAT"]);
+        Assert.DoesNotContain("CQL_FILTER", form.Keys);
+        Assert.DoesNotContain("SLD_BODY", form.Keys);
+        Assert.DoesNotContain("VIEWPARAMS", form.Keys);
+        Assert.DoesNotContain("evil", host.GeoServer.Body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("poi_eczane", host.GeoServer.Body, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("bbox=not-a-bbox&width=512&height=320")]
+    [InlineData("bbox=1,2,3&width=512&height=320")]
+    [InlineData("bbox=3,2,1,4&width=512&height=320")]
+    [InlineData("bbox=1,2,3,4&width=63&height=320")]
+    [InlineData("bbox=1,2,3,4&width=512&height=2049")]
+    public async Task Invalid_poi_viewport_is_rejected_with_400(string query)
+    {
+        await using var host = await CreateHostAsync();
+        await host.CreateCustomRoleAsync("Poi Reader", PermissionCodes.PoiView);
+        var user = await host.CreateUserAsync("poi-presentation-invalid", "Poi Reader");
+
+        var response = await host.Client(user).GetAsync($"/api/map/presentation/poi?{query}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(0, host.GeoServer.CallCount);
+    }
+
     private static string Url(string kind) =>
         $"/api/map/presentation/{kind}?bbox=-1000,-2000,3000,4000&width=512&height=320";
 
@@ -259,6 +404,8 @@ public class MapPresentationEndpointTests
         PointPresentationStyle = "drawing_point_presentation",
         LinePresentationStyle = "drawing_line_presentation",
         PolygonPresentationStyle = "drawing_polygon_presentation",
+        PoiLayer = "poi_read",
+        PoiStyle = "poi_all",
         HeatmapTimeoutSeconds = 30,
         PresentationTimeoutSeconds = 30
     };

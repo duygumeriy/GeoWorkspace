@@ -6,6 +6,7 @@ using StajProject.Application.Common;
 using StajProject.Application.DTOs;
 using StajProject.Application.Interfaces;
 using StajProject.Application.Options;
+using StajProject.Application.Rendering;
 using StajProject.Domain.Common;
 using StajProject.Infrastructure.GeoServer;
 
@@ -234,7 +235,10 @@ public class GeoServerMapPresentationServiceTests
     {
         var properties = typeof(MapPresentationRequest).GetProperties().Select(property => property.Name).ToArray();
 
-        Assert.Equal(["Bbox", "Width", "Height"], properties);
+        /* Faz 5C `PixelRatio`'yu EKLER. Yüzey hâlâ tam olarak sayılabilir ve
+           eklenen şey bir çizim yetkisi değil, bir SAYIDIR: görüntünün CSS
+           pikseline göre yoğunluğu. Aşağıdaki yüklemler onu da kapsar. */
+        Assert.Equal(["Bbox", "Width", "Height", "PixelRatio"], properties);
         Assert.DoesNotContain(properties, name =>
             name.Contains("User", StringComparison.OrdinalIgnoreCase)
             || name.Contains("Owner", StringComparison.OrdinalIgnoreCase)
@@ -263,12 +267,297 @@ public class GeoServerMapPresentationServiceTests
         Options().Validate();
     }
 
-    private static MapPresentationRequest ValidRequest() => new()
+    private static MapPresentationRequest ValidRequest(double pixelRatio = 1.0) => new()
     {
         Bbox = "-1000,-2000,3000,4000",
         Width = 512,
-        Height = 320
+        Height = 320,
+        PixelRatio = pixelRatio
     };
+
+    /* --- POI sunumu (Faz 4) ---------------------------------------------------- */
+
+    /// <summary>
+    /// Katman ve style SUNUCUNUNDUR: <c>poi_read</c> + <c>poi_all</c>.
+    /// </summary>
+    /// <remarks>
+    /// 44 kategori stili ödev şartının karşılığıdır ve burada KULLANILMAZ —
+    /// tek bir WMS isteği 44 style adı taşıyamaz.
+    /// </remarks>
+    [Fact]
+    public async Task Poi_presentation_uses_the_server_owned_layer_and_composite_style()
+    {
+        var handler = PngHandler();
+
+        var result = await ServiceWith(handler).GetPoiPresentationAsync(ValidRequest(), default);
+
+        Assert.True(result.IsSuccess, result.Error);
+        Assert.Equal(Png, result.Value!.Content);
+
+        var form = handler.Form();
+        Assert.Equal(HttpMethod.Post, handler.Method);
+        Assert.Equal("http://localhost:8080/geoserver/wms", handler.RequestUri!.ToString());
+        Assert.Equal("WMS", form["SERVICE"]);
+        Assert.Equal("1.3.0", form["VERSION"]);
+        Assert.Equal("GetMap", form["REQUEST"]);
+        Assert.Equal("geoworkspace:poi_read", form["LAYERS"]);
+        Assert.Equal("poi_all", form["STYLES"]);
+        Assert.Equal("EPSG:3857", form["CRS"]);
+        Assert.Equal("image/png", form["FORMAT"]);
+        Assert.Equal("true", form["TRANSPARENT"]);
+        Assert.Equal("512", form["WIDTH"]);
+        Assert.Equal("320", form["HEIGHT"]);
+    }
+
+    /// <summary>
+    /// POI sunumu sahiplik filtresi TAŞIMAZ.
+    /// </summary>
+    /// <remarks>
+    /// Çizim sunumu kişinin KENDİ kayıtlarını gösterir; POI ise
+    /// <c>poi.view</c> taşıyan herkese açık ORTAK envanterdir ve
+    /// <c>PoiService.GetMapPoisAsync</c> de sahiplik yüklemi uygulamaz. Buraya
+    /// bir filtre eklemek, REST'te görünen bir POI'nin haritada görünmemesi
+    /// demek olurdu. Silinmiş/pasif eleme zaten <c>poi_read</c> SQL View'ının
+    /// içindedir.
+    /// </remarks>
+    [Fact]
+    public async Task Poi_presentation_sends_no_cql_filter()
+    {
+        var handler = PngHandler();
+
+        await ServiceWith(handler, userId: 7).GetPoiPresentationAsync(ValidRequest(), default);
+
+        Assert.DoesNotContain("CQL_FILTER", handler.Form().Keys);
+        Assert.DoesNotContain("CQL_FILTER", handler.Body, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /* --- Piksel yoğunluğu (Faz 5C) ---------------------------------------------
+
+       WMS görüntüsü coğrafi bir kapsama raptedilip CSS boyutuna küçültülür ve
+       SLD'deki her ÖLÇÜ pikseldir. Yoğunluk bildirilmezse 30 piksellik bir
+       rozet Retina'da 15 CSS pikseli, 12 piksellik etiket 6 CSS pikseli
+       görünür. Düzeltme TEK bir düğmededir: çizim DPI'ı. */
+
+    [Fact]
+    public async Task A_ratio_of_one_sends_no_format_options_at_all()
+    {
+        /* Mevcut davranış BİREBİR korunur: yoğunluk bildirmeyen bir istemcinin
+           isteği bugünküyle aynı kalmalıdır. */
+        var handler = PngHandler();
+
+        await ServiceWith(handler).GetPoiPresentationAsync(ValidRequest(), default);
+
+        Assert.DoesNotContain("FORMAT_OPTIONS", handler.Form().Keys);
+        Assert.DoesNotContain("dpi", handler.Body, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData(1.5, 136)]
+    [InlineData(2.0, 181)]
+    [InlineData(3.0, 272)]
+    public async Task A_higher_ratio_sends_a_renderer_dpi_derived_from_the_ogc_base(
+        double ratio,
+        int expectedDpi)
+    {
+        var handler = PngHandler();
+
+        await ServiceWith(handler).GetPoiPresentationAsync(ValidRequest(ratio), default);
+
+        var form = handler.Form();
+
+        Assert.Equal($"dpi:{expectedDpi}", form["FORMAT_OPTIONS"]);
+
+        // DPI taban değerden TÜRETİLİR, elle seçilmez.
+        Assert.Equal(expectedDpi, (int)Math.Round(WmsRenderContract.BaseDpi * ratio, MidpointRounding.AwayFromZero));
+    }
+
+    [Fact]
+    public async Task The_ratio_never_multiplies_the_requested_dimensions()
+    {
+        /* Boyutu bir de burada çarpmak, piksel bütçesini sessizce dört katına
+           çıkarırdı. Oran yalnızca DPI'ı belirler. */
+        var handler = PngHandler();
+
+        await ServiceWith(handler).GetPoiPresentationAsync(ValidRequest(3.0), default);
+
+        var form = handler.Form();
+        Assert.Equal("512", form["WIDTH"]);
+        Assert.Equal("320", form["HEIGHT"]);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(0.5)]
+    [InlineData(-2)]
+    [InlineData(3.5)]
+    [InlineData(1000)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    public async Task An_out_of_range_ratio_is_rejected_and_never_reaches_geoserver(double ratio)
+    {
+        var handler = PngHandler();
+
+        var result = await ServiceWith(handler).GetPoiPresentationAsync(ValidRequest(ratio), default);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ServiceErrorKind.Validation, result.ErrorKind);
+        Assert.Null(handler.RequestUri);
+    }
+
+    [Fact]
+    public void The_drawing_presentation_contract_is_unchanged_by_the_ratio()
+    {
+        /* Çizim yolunda yoğunluk OKUNMAZ: geometri coğrafidir ve ölçekten
+           bağımsız aynı alanı kaplar. Varsayılan doğrulama hiçbir DPI
+           üretmez. */
+        var render = WmsRenderContract.Validate("-1000,-2000,3000,4000", 512, 320);
+
+        Assert.True(render.IsSuccess);
+        Assert.Equal(1.0, render.Value!.PixelRatio);
+        Assert.Null(render.Value.RendererDpi);
+    }
+
+    [Fact]
+    public async Task The_client_can_never_supply_a_render_parameter_of_its_own()
+    {
+        /* Tarayıcının gönderebildiği TEK ek şey bir sayıdır. Sözlük her istekte
+           sıfırdan kurulur, dolayısıyla tanınmayan hiçbir anahtar GeoServer'a
+           ulaşamaz. */
+        var handler = PngHandler();
+
+        await ServiceWith(handler).GetPoiPresentationAsync(ValidRequest(2.0), default);
+
+        var form = handler.Form();
+
+        Assert.Equal(
+            ["SERVICE", "VERSION", "REQUEST", "LAYERS", "STYLES", "CRS", "BBOX",
+             "WIDTH", "HEIGHT", "FORMAT", "TRANSPARENT", "FORMAT_OPTIONS"],
+            form.Keys);
+    }
+
+    /// <summary>
+    /// Tek istek = tek katman; 44 kategori stili isteğe sızmaz.
+    /// </summary>
+    [Fact]
+    public async Task Poi_request_never_bundles_more_than_one_layer_or_style()
+    {
+        var handler = PngHandler();
+
+        await ServiceWith(handler).GetPoiPresentationAsync(ValidRequest(), default);
+
+        var form = handler.Form();
+        Assert.DoesNotContain(",", form["LAYERS"], StringComparison.Ordinal);
+        Assert.DoesNotContain(",", form["STYLES"], StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// İstemci sözleşmesinde katman/style/CQL alanı YOKTUR.
+    /// </summary>
+    /// <remarks>
+    /// Bu bir davranış değil bir TİP iddiasıdır: DTO'ya böyle bir alan
+    /// eklendiği an test kırılır ve override yolu sessizce açılamaz.
+    /// </remarks>
+    [Fact]
+    public void The_presentation_request_contract_exposes_only_the_viewport()
+    {
+        var properties = typeof(MapPresentationRequest)
+            .GetProperties()
+            .Select(property => property.Name)
+            .OrderBy(name => name, StringComparer.Ordinal);
+
+        /* Görüntü penceresi ARTIK dört değerdir: kapsam, iki boyut ve o
+           boyutların CSS pikseline göre yoğunluğu. Dördü de saf render
+           bilgisidir; hiçbiri katman, style, filtre ya da kimlik taşımaz. */
+        Assert.Equal(["Bbox", "Height", "PixelRatio", "Width"], properties);
+    }
+
+    [Theory]
+    [InlineData("not-a-bbox", 512, 320)]
+    [InlineData("1,2,3", 512, 320)]
+    [InlineData("3,2,1,4", 512, 320)]
+    [InlineData("1,2,3,4", 63, 320)]
+    [InlineData("1,2,3,4", 512, 2049)]
+    [InlineData("1,2,3,4", 2049, 512)]
+    public async Task Poi_presentation_rejects_an_invalid_viewport(string bbox, int width, int height)
+    {
+        var handler = PngHandler();
+
+        var result = await ServiceWith(handler).GetPoiPresentationAsync(
+            new MapPresentationRequest { Bbox = bbox, Width = width, Height = height },
+            default);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ServiceErrorKind.Validation, result.ErrorKind);
+        // Geçersiz istek GeoServer'a HİÇ ulaşmaz.
+        Assert.Equal(0, handler.CallCount);
+    }
+
+    [Fact]
+    public async Task Poi_presentation_rejects_a_missing_request()
+    {
+        var handler = PngHandler();
+
+        var result = await ServiceWith(handler).GetPoiPresentationAsync(null!, default);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(0, handler.CallCount);
+    }
+
+    /// <summary>
+    /// PNG olmayan bir yanıt yukarı akış hatasıdır.
+    /// </summary>
+    /// <remarks>
+    /// Boş/şeffaf bir görüntü UYDURULMAZ: yukarı akış hatası "hiç POI yok" ile
+    /// aynı görüntüye indirgenirse kullanıcı envanterin kaybolduğunu fark
+    /// edemez.
+    /// </remarks>
+    [Fact]
+    public async Task Poi_presentation_rejects_a_non_png_response()
+    {
+        var handler = new RecordingHandler(_ => Response("<ServiceExceptionReport/>"u8.ToArray(), "text/xml"));
+
+        var result = await ServiceWith(handler).GetPoiPresentationAsync(ValidRequest(), default);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ServiceErrorKind.Upstream, result.ErrorKind);
+    }
+
+    [Fact]
+    public async Task Poi_presentation_rejects_a_body_without_a_png_signature()
+    {
+        var handler = new RecordingHandler(_ => Response([1, 2, 3, 4], "image/png"));
+
+        var result = await ServiceWith(handler).GetPoiPresentationAsync(ValidRequest(), default);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ServiceErrorKind.Upstream, result.ErrorKind);
+    }
+
+    [Fact]
+    public async Task Poi_presentation_maps_a_geoserver_failure_to_upstream()
+    {
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.InternalServerError)
+        {
+            Content = new ByteArrayContent([])
+        });
+
+        var result = await ServiceWith(handler).GetPoiPresentationAsync(ValidRequest(), default);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ServiceErrorKind.Upstream, result.ErrorKind);
+    }
+
+    [Fact]
+    public async Task Poi_presentation_maps_an_unreachable_geoserver_to_upstream()
+    {
+        var handler = new RecordingHandler((_, _) =>
+            Task.FromException<HttpResponseMessage>(new HttpRequestException("connection refused")));
+
+        var result = await ServiceWith(handler).GetPoiPresentationAsync(ValidRequest(), default);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ServiceErrorKind.Upstream, result.ErrorKind);
+    }
 
     private static GeoServerMapPresentationService ServiceWith(RecordingHandler handler, int userId = 104) =>
         ServiceWith(handler, CurrentUser(userId));
@@ -302,6 +591,8 @@ public class GeoServerMapPresentationServiceTests
         PointPresentationStyle = "drawing_point_presentation",
         LinePresentationStyle = "drawing_line_presentation",
         PolygonPresentationStyle = "drawing_polygon_presentation",
+        PoiLayer = "poi_read",
+        PoiStyle = "poi_all",
         HeatmapTimeoutSeconds = 30,
         PresentationTimeoutSeconds = 30
     };

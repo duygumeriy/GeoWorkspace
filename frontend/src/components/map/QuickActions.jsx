@@ -1,3 +1,4 @@
+import { Search } from 'lucide-react'
 import { HomeIcon, CrosshairIcon, FocusIcon } from '../ui/icons/index.js'
 import './QuickActions.css'
 
@@ -8,8 +9,29 @@ import './QuickActions.css'
  * button — the basemap picker owns a popover, so it renders itself here rather
  * than being flattened into the `actions` list. Sharing the stack is what keeps
  * every map control one column at one size.
+ *
+ * <b>Arama düğmesi bir KAMERA kısayolu değildir</b>, ama aynı yığına aittir:
+ * kullanıcı için hepsi "haritanın kenarındaki denetimler"dir ve ikinci bir
+ * yüzen düğme, aynı işi yapan iki ayrı görsel dil demek olurdu. Bu yüzden
+ * `children`'dan SONRA, yani yığının en altında çizilir ve `.quick-action`
+ * sınıfını olduğu gibi kullanır — genişlik, yükseklik, kenarlık, gölge, hover
+ * ve odak halkası diğerleriyle birebir aynıdır.
+ *
+ * Düğme yalnızca bir ANAHTARDIR: arama kutusunun kendisi onaylanmış üst-orta
+ * konumunda açılır, buranın yanında değil.
  */
-export default function QuickActions({ onGoTurkey, onGoMyLocation, onFocusAll, children }) {
+export default function QuickActions({
+  onGoTurkey,
+  onGoMyLocation,
+  onFocusAll,
+  /**
+   * `{ permitted, open, onToggle, buttonRef }` — yoksa düğme hiç çizilmez.
+   * `permitted` çağırandan gelir (`poi.view`); burada rol adına bakan bir kural
+   * yoktur.
+   */
+  search = null,
+  children,
+}) {
   const actions = [
     { id: 'turkey', label: "Türkiye'ye Dön", Icon: HomeIcon, onClick: onGoTurkey },
     { id: 'location', label: 'Konumuma Git', Icon: CrosshairIcon, onClick: onGoMyLocation },
@@ -24,6 +46,22 @@ export default function QuickActions({ onGoTurkey, onGoMyLocation, onFocusAll, c
         </button>
       ))}
       {children}
+
+      {search?.permitted && (
+        <button
+          type="button"
+          /* Açık durumun görünümü YENİDEN İCAT EDİLMEZ: temel harita
+             seçicisinin `is-open` durumu zaten bu yığının "etkin" dilidir. */
+          className={`quick-action poi-search-trigger ${search.open ? 'is-open' : ''}`}
+          ref={search.buttonRef}
+          aria-label="POI Ara"
+          title="POI Ara"
+          aria-pressed={Boolean(search.open)}
+          onClick={search.onToggle}
+        >
+          <Search size={18} strokeWidth={2} />
+        </button>
+      )}
     </div>
   )
 }

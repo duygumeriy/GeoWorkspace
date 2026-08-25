@@ -32,6 +32,19 @@ public sealed class GeoServerOptions
 
     public string PolygonPresentationStyle { get; set; } = string.Empty;
 
+    /* POI sunumu. Katman ve style adları BACKEND'e aittir ve istemciden hiçbir
+       biçimde belirlenemez — çizim sunumundaki sözleşmenin aynısı.
+
+       `poi_read` SQL View'ı silinmiş/pasif POI'leri ve kategorileri zaten
+       eler; `poi_all` ise 44 kanonik kategorinin tamamını kendi simgesi ve
+       rengiyle çizen bileşik stildir. Kategori başına ayrı stiller ödev
+       şartının karşılığıdır ve burada KULLANILMAZ: tek bir WMS isteği 44 style
+       adı taşıyamaz. */
+
+    public string PoiLayer { get; set; } = string.Empty;
+
+    public string PoiStyle { get; set; } = string.Empty;
+
     public int PresentationTimeoutSeconds { get; set; } = 30;
 
     public void Validate()
@@ -50,10 +63,12 @@ public sealed class GeoServerOptions
             || string.IsNullOrWhiteSpace(HeatmapStyle)
             || string.IsNullOrWhiteSpace(PointPresentationStyle)
             || string.IsNullOrWhiteSpace(LinePresentationStyle)
-            || string.IsNullOrWhiteSpace(PolygonPresentationStyle))
+            || string.IsNullOrWhiteSpace(PolygonPresentationStyle)
+            || string.IsNullOrWhiteSpace(PoiLayer)
+            || string.IsNullOrWhiteSpace(PoiStyle))
         {
             throw new InvalidOperationException(
-                "GeoServer workspace, drawing layer, heatmap ve sunum style adları tanımlı olmalıdır.");
+                "GeoServer workspace, drawing/POI layer, heatmap ve sunum style adları tanımlı olmalıdır.");
         }
 
         if (!IsSafeCatalogName(Workspace)
@@ -64,7 +79,9 @@ public sealed class GeoServerOptions
             || !IsSafeCatalogName(HeatmapStyle)
             || !IsSafeCatalogName(PointPresentationStyle)
             || !IsSafeCatalogName(LinePresentationStyle)
-            || !IsSafeCatalogName(PolygonPresentationStyle))
+            || !IsSafeCatalogName(PolygonPresentationStyle)
+            || !IsSafeCatalogName(PoiLayer)
+            || !IsSafeCatalogName(PoiStyle))
         {
             throw new InvalidOperationException(
                 "GeoServer catalog adları yalnızca harf, sayı, nokta, tire ve alt çizgi içerebilir.");

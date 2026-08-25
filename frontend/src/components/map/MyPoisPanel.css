@@ -22,3 +22,21 @@
 .my-pois-panel .drawings-action--danger:hover:not(:disabled) {
   background: var(--danger-soft);
 }
+
+/* Kategori rozeti.
+   `.drawings-item-dot`/`.drawings-item-icon` YENİDEN BİÇİMLENDİRİLMEZ: o iki
+   sınıf çizim listesiyle paylaşılır ve orada hâlâ doğrudur. POI satırı kendi
+   rozetini kullanır; ölçüler arama sonuçlarındaki ve yönetim ağacındaki
+   rozetle aynı dili konuşur, yalnızca dar panele göre bir tık küçüktür. */
+.my-pois-badge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  color: var(--poi-accent, #64748B);
+  background: color-mix(in srgb, var(--poi-accent, #64748B) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--poi-accent, #64748B) 32%, transparent);
+  border-radius: 8px;
+}

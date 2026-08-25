@@ -22,6 +22,17 @@ public class PoiCategoryResponse
 
     /// <summary>Kök = 0.</summary>
     public int Depth { get; set; }
+
+    /// <summary>
+    /// Teknik kimlik. Salt okunurdur — istemci onu ne üretir ne değiştirir.
+    /// </summary>
+    public string Slug { get; set; } = string.Empty;
+
+    /// <summary>Denetimli simge anahtarı; metadatasız satırlarda <c>null</c>.</summary>
+    public string? IconKey { get; set; }
+
+    /// <summary>Kanonik <c>#RRGGBB</c>; metadatasız satırlarda <c>null</c>.</summary>
+    public string? ColorHex { get; set; }
 }
 
 /// <summary>
@@ -55,6 +66,17 @@ public class AdminPoiCategoryResponse
     public bool IsActive { get; set; }
 
     public bool IsDeleted { get; set; }
+
+    /// <summary>
+    /// Teknik kimlik. Yönetim ekranında GÖSTERİLİR ama düzenlenemez: bu değer
+    /// GeoServer stil kuralının eşleştiği anahtardır ve görünen ad
+    /// değiştiğinde bile sabit kalır.
+    /// </summary>
+    public string Slug { get; set; } = string.Empty;
+
+    public string? IconKey { get; set; }
+
+    public string? ColorHex { get; set; }
 }
 
 /// <summary>
@@ -68,6 +90,20 @@ public class CreatePoiCategoryRequest
 
     /// <summary>Kök kategori için <c>null</c>; aksi hâlde aktif bir kategori.</summary>
     public int? ParentId { get; set; }
+
+    /// <summary>
+    /// ZORUNLU. <see cref="StajProject.Domain.Common.PoiCategoryIcons"/> izin
+    /// listesindeki bir anahtar.
+    /// </summary>
+    public string? IconKey { get; set; }
+
+    /// <summary>ZORUNLU. <c>#RRGGBB</c>; büyük harfe normalize edilerek saklanır.</summary>
+    public string? ColorHex { get; set; }
+
+    /* Slug BİLİNÇLİ olarak sözleşmede YOKTUR. Teknik kimlik addan sunucuda
+       üretilir; istemciden alınsaydı, iki farklı istemcinin aynı ad için farklı
+       kimlikler üretmesi ve stil kurallarının hangi kimliğe bakacağının
+       belirsizleşmesi mümkün olurdu. */
 }
 
 /// <summary>
@@ -80,6 +116,16 @@ public class CreatePoiCategoryRequest
 /// <c>ModifiedDate</c> ise sözleşmede YOKTUR: silme bu fazın kapsamında
 /// değildir ve audit damgaları istemciden alınamaz.
 /// </para>
+/// <para>
+/// <b>Bu uç DEĞİŞTİRME (replacement) semantiğine sahiptir, kısmi (PATCH)
+/// değil.</b> <see cref="Name"/> ve <see cref="IsActive"/> zaten her istekte
+/// tam olarak bildirilmek zorundadır — atlanan bir <c>isActive</c>, JSON
+/// bağlamasında <c>false</c>'a düşer ve kategoriyi sessizce pasifleştirirdi.
+/// <see cref="IconKey"/> ve <see cref="ColorHex"/> aynı sözleşmeyi izler:
+/// ZORUNLUDURLAR. Atlanmaları "değiştirme" anlamına gelmez, doğrulama hatası
+/// üretir; aksi hâlde bir güncelleme, metadatayı sessizce silen bir işleme
+/// dönüşürdü.
+/// </para>
 /// </remarks>
 public class UpdatePoiCategoryRequest
 {
@@ -90,4 +136,14 @@ public class UpdatePoiCategoryRequest
     public int? ParentId { get; set; }
 
     public bool IsActive { get; set; }
+
+    /// <summary>ZORUNLU — bkz. sınıf açıklamasındaki değiştirme semantiği.</summary>
+    public string? IconKey { get; set; }
+
+    /// <summary>ZORUNLU — bkz. sınıf açıklamasındaki değiştirme semantiği.</summary>
+    public string? ColorHex { get; set; }
+
+    /* Slug sözleşmede YOKTUR ve olmayacaktır: adın yeniden düzenlenmesi bir
+       SUNUM kararıdır, teknik kimliği taşımaz. Mevcut slug olduğu gibi
+       korunur. */
 }

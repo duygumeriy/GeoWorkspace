@@ -25,6 +25,23 @@ export const PRESENTATION_Z_INDEX = Object.freeze({
   point: 9,
 })
 
+/**
+ * POI sunum rasteri.
+ *
+ * <b>11</b>: çizim sunum rasterlarının (7–9) ve çizim etkileşim vektörlerinin
+ * (10) ÜSTÜNDE, bekleyen çizim şeklinin (12), POI etkileşim katmanının (13),
+ * POI yerleştirme işaretinin (14) ve tüm geçici düzenleme katmanlarının
+ * ALTINDA.
+ *
+ * Üstte olmasının sebebi POI'nin küçük bir nokta olmasıdır: büyük bir poligonun
+ * altında kalan bir POI görünmez olurdu. Geçici düzenleme katmanlarının altında
+ * kalmasının sebebi ise tersidir — kullanıcının az önce koyduğu ya da
+ * sürüklediği işaret hiçbir zaman kalıcı bir görüntünün altında kaybolmamalıdır.
+ *
+ * Mevcut hiçbir katmanın numarası DEĞİŞTİRİLMEDİ: 11 zaten boştu.
+ */
+export const POI_PRESENTATION_Z_INDEX = 11
+
 /** Same debounce as the heatmap: one request per settled viewport, not per frame. */
 export const PRESENTATION_REQUEST_DEBOUNCE_MS = 180
 
@@ -37,14 +54,31 @@ export const PRESENTATION_IMAGE_LIMITS = Object.freeze({
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
 
+/** Backend `WmsRenderContract.MinimumPixelRatio`/`MaximumPixelRatio` ile aynı. */
+export const PRESENTATION_PIXEL_RATIO_LIMITS = Object.freeze({ min: 1, max: 3 })
+
 /**
  * A sharp request size that never exceeds the backend contract. The aspect
  * ratio is preserved while the max-side and total-pixel limits are applied;
  * very small viewports still satisfy the 64px minimum.
+ *
+ * <b>İSTENEN yoğunluk ile ELDE EDİLEN yoğunluk aynı şey değildir</b> ve fark
+ * önemlidir. Boyutlar kırpılabilir: geniş bir pencerede 1600 CSS pikseli, oran
+ * 2 ile 3200 ister, 2048'e kırpılır ve gerçekte elde edilen yoğunluk 1.28
+ * olur. Sunucuya İSTENEN oran bildirilseydi, GeoServer sembolleri 2 katıyla
+ * çizer ama görüntü yalnızca 1.28 katı yoğun olurdu — simgeler bu kez ters
+ * yönde, %56 büyük görünürdü.
+ *
+ * Bu yüzden dönen `pixelRatio` her zaman ÖLÇÜLEN orandır: son genişliğin CSS
+ * genişliğine bölümü. Ölçü DPI'ı yalnızca bundan türer.
  */
 export function presentationImageSize(mapSize, devicePixelRatio = 1) {
   const [cssWidth = 0, cssHeight = 0] = mapSize ?? []
-  const ratio = clamp(Number.isFinite(devicePixelRatio) ? devicePixelRatio : 1, 1, 2)
+  const ratio = clamp(
+    Number.isFinite(devicePixelRatio) ? devicePixelRatio : 1,
+    PRESENTATION_PIXEL_RATIO_LIMITS.min,
+    PRESENTATION_PIXEL_RATIO_LIMITS.max,
+  )
   let width = Math.max(PRESENTATION_IMAGE_LIMITS.minSide, Math.round(cssWidth * ratio))
   let height = Math.max(PRESENTATION_IMAGE_LIMITS.minSide, Math.round(cssHeight * ratio))
 
@@ -57,7 +91,21 @@ export function presentationImageSize(mapSize, devicePixelRatio = 1) {
 
   width = clamp(Math.floor(width * scale), PRESENTATION_IMAGE_LIMITS.minSide, PRESENTATION_IMAGE_LIMITS.maxSide)
   height = clamp(Math.floor(height * scale), PRESENTATION_IMAGE_LIMITS.minSide, PRESENTATION_IMAGE_LIMITS.maxSide)
-  return { width, height }
+
+  /* Boyutlar BURADA da yalnızca BİR KEZ çarpılır. Ölçülen oran hesaplanan
+     genişlikten OKUNUR, yeniden çarpılarak değil — ikinci bir çarpım piksel
+     bütçesini sessizce dört katına çıkarırdı. */
+  const measured = cssWidth > 0 ? width / cssWidth : ratio
+
+  return {
+    width,
+    height,
+    pixelRatio: clamp(
+      Number.isFinite(measured) ? measured : 1,
+      PRESENTATION_PIXEL_RATIO_LIMITS.min,
+      PRESENTATION_PIXEL_RATIO_LIMITS.max,
+    ),
+  }
 }
 
 export function presentationBbox(extent) {

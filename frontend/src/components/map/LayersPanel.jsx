@@ -1,3 +1,4 @@
+import { MapPin } from 'lucide-react'
 import MapSheet from './MapSheet.jsx'
 import { DRAWING_TYPE_LIST } from '../../map/drawingTypes.js'
 import { PointIcon, LineIcon, PolygonIcon, ShieldIcon } from '../ui/icons/index.js'
@@ -20,6 +21,16 @@ const TYPE_ICONS = { point: PointIcon, line: LineIcon, polygon: PolygonIcon }
  * Kısıtsız kullanıcıya sahte bir katman gösterilmez; bunun yerine durumun
  * kendisi ("Sınırsız") yazılır. Kapatılabilir ama hiçbir şey göstermeyen bir
  * satır, var olmayan bir sınırı varmış gibi ima ederdi.
+ *
+ * <b>POI çizim türlerinin yanında ama onlardan AYRI durur.</b> Aynı listede
+ * dördüncü satırdır çünkü kullanıcı için hepsi "haritada ne görünüyor"
+ * sorusunun parçasıdır; ama `DRAWING_TYPE_LIST`'e KATILMAZ, çünkü POI bir çizim
+ * değildir — kendi yetkisi (`poi.view`), kendi uçları ve kendi katmanları
+ * vardır. Listeye katılsaydı toplu seçime, stil düzenleyicisine ve
+ * `/api/drawings/*` uçlarına da kendiliğinden karışırdı.
+ *
+ * Satır YALNIZCA `poi.view` taşıyan çağırana gösterilir ve bu karar çağırandan
+ * gelir; burada rol adına bakan hiçbir kural yoktur.
  */
 export default function LayersPanel({
   open,
@@ -27,12 +38,15 @@ export default function LayersPanel({
   visibility,
   counts,
   onToggle,
+  poi = null,
+  onTogglePoi,
   scope = null,
   onToggleScope,
 }) {
   if (!open) return null
 
   const scopeOn = scope?.visible !== false
+  const poiOn = poi?.visible !== false
 
   return (
     <MapSheet open={open} title="Katmanlar" onClose={onClose} className="layers-panel">
@@ -69,6 +83,33 @@ export default function LayersPanel({
             </li>
           )
         })}
+
+        {/* Dördüncü satır: kalıcı POI gösterimi. Çizim türleriyle AYNI görsel
+            dili konuşur — aynı satır, aynı anahtar, aynı AÇIK/KAPALI metni —
+            ama kendi durumundan beslenir. */}
+        {poi?.permitted && (
+          <li>
+            <button
+              type="button"
+              className={`layers-row ${poiOn ? 'is-on' : ''}`}
+              aria-pressed={poiOn}
+              data-testid="layers-poi-row"
+              onClick={onTogglePoi}
+            >
+              <span className="layers-row-icon">
+                <MapPin size={18} strokeWidth={2} />
+              </span>
+              <span className="layers-row-text">
+                <span className="layers-row-label">POI'ler</span>
+                <span className="layers-row-count">{poi.count ?? 0} kayıt</span>
+              </span>
+              <span className="layers-row-state">{poiOn ? 'AÇIK' : 'KAPALI'}</span>
+              <span className="layers-switch" aria-hidden="true">
+                <span className="layers-switch-knob" />
+              </span>
+            </button>
+          </li>
+        )}
       </ul>
 
       {scope?.isRestricted ? (

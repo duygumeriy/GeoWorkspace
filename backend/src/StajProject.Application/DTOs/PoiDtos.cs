@@ -225,3 +225,53 @@ public class DeletedPoiResponse
     /// <summary>Kaydın normal harita gövdesiyle aynı gövde.</summary>
     public PoiResponse Poi { get; set; } = new();
 }
+
+/// <summary>
+/// Arama kutusunun gördüğü POI. Kasıtlı olarak DAR bir sözleşmedir.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <b>Neden <see cref="PoiResponse"/> yeniden kullanılmadı.</b> Arama sonucu
+/// bir liste satırıdır: bir simge, bir ad ve bir kategori gösterir. Harita
+/// sözleşmesi ise mesai programını ve yetenek bayraklarını (<c>canUpdate</c>,
+/// <c>canDelete</c>) taşır; bunlar her tuş vuruşunda hesaplanıp gönderilseydi
+/// hem gereksiz iş hem de arama ucunun cevaplamadığı bir soruya verilmiş bir
+/// yanıt olurdu. Yetenek kararı kaydın kendisi açıldığında verilir.
+/// </para>
+/// <para>
+/// <b>Kategori metadatası ARAMA yanıtından gelir</b>, istemcideki bir kopyadan
+/// değil: renk ve simge anahtarının tek kaynağı veritabanıdır. İstemci yalnızca
+/// <c>icon_key → bileşen</c> eşlemesini bilir.
+/// </para>
+/// <para>
+/// <b>Kategori YOLU (<c>CategoryPath</c>) bilinçli olarak yoktur.</b> Yol,
+/// kategori ağacının tamamının okunmasını gerektirir; arama tek bir sorguyla
+/// yetinmelidir ve arama satırı zaten yaprak kategori adını gösterir.
+/// </para>
+/// </remarks>
+public class PoiSearchResult
+{
+    public int Id { get; set; }
+
+    /// <summary>Fiziksel kolon <c>isim</c>.</summary>
+    public string Name { get; set; } = string.Empty;
+
+    public int CategoryId { get; set; }
+
+    public string CategoryName { get; set; } = string.Empty;
+
+    /// <summary>Değişmez teknik kimlik; GeoServer stilleriyle ortak dil.</summary>
+    public string CategorySlug { get; set; } = string.Empty;
+
+    /// <summary>Denetimli simge anahtarı; istemci bunu bir bileşene eşler.</summary>
+    public string? IconKey { get; set; }
+
+    /// <summary>Kanonik <c>#RRGGBB</c>; yoksa istemci nötr yedeğe düşer.</summary>
+    public string? ColorHex { get; set; }
+
+    /// <summary>Coordinate.X — SRID 4326 boylam.</summary>
+    public double Longitude { get; set; }
+
+    /// <summary>Coordinate.Y — SRID 4326 enlem.</summary>
+    public double Latitude { get; set; }
+}

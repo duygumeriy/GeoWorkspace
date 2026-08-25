@@ -331,6 +331,17 @@ public class GeoServerHeatmapServiceTests
         PointPresentationStyle = "drawing_point_presentation",
         LinePresentationStyle = "drawing_line_presentation",
         PolygonPresentationStyle = "drawing_polygon_presentation",
+        /* POI sunumu bu testin KONUSU değildir ama <c>Validate()</c> ayarın
+           TAMAMINI denetler ve haklı olarak öyle yapar: eksik bir POI katmanı
+           uygulamanın açılışta durması gereken bir yapılandırma hatasıdır.
+
+           Bu fixture POI entegrasyonundan ÖNCE yazıldığı için iki alanı boş
+           bırakıyordu; sonuç, ısı haritası doğrulamasını ölçen testin
+           kendisinin ilgisiz bir eksikten düşmesiydi. Değerler harita sunum
+           testlerindeki geçerli sabitlerin aynısıdır, dolayısıyla her olumsuz
+           doğrulama artık YALNIZCA hedeflediği alanı geçersiz kılar. */
+        PoiLayer = "poi_read",
+        PoiStyle = "poi_all",
         HeatmapTimeoutSeconds = 30
     };
 

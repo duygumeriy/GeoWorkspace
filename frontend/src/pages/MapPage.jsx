@@ -76,6 +76,8 @@ import useAnalysisHighlight from '../hooks/useAnalysisHighlight.js'
 import useHeatmapLayer from '../hooks/useHeatmapLayer.js'
 import useMapPresentationLayer from '../hooks/useMapPresentationLayer.js'
 import usePoiLayer from '../hooks/usePoiLayer.js'
+import usePoiPresentationLayer from '../hooks/usePoiPresentationLayer.js'
+import PoiSearchBar from '../components/map/PoiSearchBar.jsx'
 import usePoiPlacement from '../hooks/usePoiPlacement.js'
 import usePoiInteraction from '../hooks/usePoiInteraction.js'
 import usePoiEditDraft from '../hooks/usePoiEditDraft.js'
@@ -272,6 +274,59 @@ export default function MapPage() {
      görünürdü ve çizim bir kare boyunca iki kez boyanırdı. */
   const presentationActiveRef = useRef({ point: false, line: false, polygon: false })
 
+  /* POI'nin aynı köprüsü. Ayrı bir ref'tir çünkü POI bir çizim değildir: kendi
+     yetkisi (`poi.view`), kendi katmanı ve kendi tazeleme sayacı vardır ve
+     çizim türlerinin görünürlük/askıya alma kavramlarının hiçbirini
+     paylaşmaz. */
+  const poiPresentationActiveRef = useRef(false)
+
+  /* Kalıcı POI görüntüsünün tazelenmesi gereken durumların sayacı. Yalnızca
+     BAŞARILI bir mutasyondan sonra artar — gönderilmiş ama yazılmamış bir
+     değişiklik için görüntü yenilenmez. Çizim tarafındaki
+     `presentationVersion` ile aynı sözleşme. */
+  const [poiPresentationVersion, setPoiPresentationVersion] = useState(0)
+
+  /**
+   * "Katmanlar → POI'ler": kalıcı POI gösteriminin görünürlüğü.
+   *
+   * <b>Çizim görünürlüğüyle aynı kavram, AYRI durum.</b> Çizim türlerinin
+   * görünürlüğü `useDrawingWorkspace`'e aittir ve POI oraya katılamaz — POI bir
+   * çizim değildir. Bu, panelin ikinci sistem satırı olan "Yetki Alanım"la
+   * (`scopeLayerVisible`) aynı kalıptır: kendi state'i, kendi prop'u, aynı
+   * görsel dil.
+   *
+   * Varsayılan AÇIK: POI'ler haritanın normal içeriğidir ve gizli açılmaları
+   * kullanıcıya kayıp veri gibi görünürdü.
+   */
+  const [poiLayerVisible, setPoiLayerVisible] = useState(true)
+
+  /**
+   * POI arama kutusunun açıklığı.
+   *
+   * <b>Varsayılan KAPALI.</b> Arama sürekli duran bir kutu değil, istendiğinde
+   * açılan bir araçtır; haritanın üstünü kalıcı olarak işgal etmesi için bir
+   * sebep yok. Kapalıyken bileşen HİÇ monte edilmez, dolayısıyla hiçbir arama
+   * isteği de açılmaz.
+   */
+  const [poiSearchOpen, setPoiSearchOpen] = useState(false)
+
+  /* Kapanışta odak, aramayı açan düğmeye geri döner: klavyeyle çalışan biri
+     kapattığı anda odağı belgenin başına kaybetmemelidir. */
+  const poiSearchButtonRef = useRef(null)
+
+  const togglePoiSearch = useCallback(() => {
+    setPoiSearchOpen((current) => !current)
+  }, [])
+
+  const closePoiSearch = useCallback(() => {
+    setPoiSearchOpen(false)
+    poiSearchButtonRef.current?.focus()
+  }, [])
+  const invalidatePoiPresentation = useCallback(
+    () => setPoiPresentationVersion((value) => value + 1),
+    [],
+  )
+
   const workspace = useDrawingWorkspace(mapInstance, {
     showToast,
     dismissToast,
@@ -405,17 +460,62 @@ export default function MapPage() {
      yeniden istenmesine yol açıyordu. */
   const [poiCategories, setPoiCategories] = useState({ items: [], loading: false, error: '', loaded: false })
 
+  /**
+   * Kategori kimliği → rozetin ihtiyacı olan iki alan.
+   *
+   * <b>Taksonomi burada İKİNCİ KEZ tanımlanmaz.</b> Yalnızca sunucudan gelen
+   * listenin haritanın soracağı soruya göre indekslenmiş hâlidir; bir kategori
+   * yönetim ekranından düzenlendiğinde bu eşleme de kendiliğinden değişir.
+   *
+   * `Map` bilinçlidir: stil fonksiyonu her POI için çağrılır ve bir dizide
+   * arama yapmak, kayıt sayısıyla çarpan bir maliyet olurdu.
+   */
+  const poiCategoryPresentation = useMemo(() => {
+    const lookup = new Map()
+
+    for (const category of poiCategories.items) {
+      lookup.set(category.id, { iconKey: category.iconKey, colorHex: category.colorHex })
+    }
+
+    return lookup
+  }, [poiCategories.items])
+
   const poi = usePoiLayer(mapInstance, {
     permitted: allowed.canViewPoi,
     selectedId: selectedPoi?.id ?? null,
+    /* Rozet kategorisinin simgesini ve rengini buradan alır; gelmeden önce de
+       POI genel bir noktaya DÜŞMEZ, nötr bir rozetle çizilir. */
+    categoryPresentation: poiCategoryPresentation,
+    /* Görünürlük yetkiden AYRIDIR: katmanı kapatmak veriyi atmaz, yalnızca
+       gizler — tekrar açıldığında yeniden indirilmez. */
+    visible: poiLayerVisible,
     showToast,
+    rasterActiveRef: poiPresentationActiveRef,
   })
   const {
     addPoi: addPoiToLayer,
     updatePoi: updatePoiOnLayer,
     removePoi: removePoiFromLayer,
     findPoi: findPoiOnLayer,
+    notifyRasterChanged: notifyPoiRasterChanged,
   } = poi
+
+  /* POI sunum rasteri. Yetki `poi.view`'dur — yönetici olmak gerekmez ve rol
+     adına bakan hiçbir kural yoktur. Yetki yoksa katman hiç kurulmaz ve uç hiç
+     çağrılmaz; POI'ler kendi vektör işaretleriyle çizilmeye devam eder. */
+  usePoiPresentationLayer(mapInstance, {
+    /* Katman kapalıyken raster HİÇ kurulmaz ve uç HİÇ çağrılmaz: kanca zaten
+       yetkisiz durumda tam olarak bunu yapıyor, dolayısıyla gizlenmiş bir
+       katman için kaydırma/yakınlaşma boyunca istek üretilmez ve uçan istek
+       kancanın kendi temizliğinde iptal edilir. */
+    permitted: allowed.canViewPoi && poiLayerVisible,
+    version: poiPresentationVersion,
+    activeRef: poiPresentationActiveRef,
+    /* Raster devraldığında/bıraktığında vektör katmanının yeniden çizilmesi
+       gerekir: stil fonksiyonu React dışında çalışır ve cevabın değiştiğini
+       ancak böyle öğrenir. */
+    onChange: notifyPoiRasterChanged,
+  })
 
   /* "POI'lerim": kapsamı SUNUCU belirler (`GET /api/poi/mine`). Ortak harita
      listesini tarayıcıda süzmek mümkün değildir — o sözleşme kaydın sahibini
@@ -447,7 +547,13 @@ export default function MapPage() {
      yetkisine (poi.view) bakar — seçim yetkisi olmayan biri de POI'ye
      tıklayabilmelidir. */
   const poiClickEnabled =
-    allowed.canViewPoi && workspaceMode.isSelecting && workspaceMode.activeSelectionTool !== 'polygon'
+    allowed.canViewPoi
+    /* Gizlenmiş bir POI tıklanamaz. Görünmez bir OpenLayers katmanı zaten
+       isabet denetimine girmez; bu koşul aynı kararı okunur kılar ve
+       etkileşimin kaynağını tek bir yerde toplar. */
+    && poiLayerVisible
+    && workspaceMode.isSelecting
+    && workspaceMode.activeSelectionTool !== 'polygon'
 
   /**
    * POI tıklaması: kaydı seç ve POI bağlamını etkinleştir.
@@ -470,10 +576,40 @@ export default function MapPage() {
 
   usePoiInteraction(mapInstance, { enabled: poiClickEnabled, onSelect: handlePoiSelected })
 
-  /* Kategoriler yalnızca GEREKTİĞİNDE okunur: form ilk kez açıldığında. Her
-     harita açılışında istek göndermek, POI eklemeyen kullanıcılar için boşuna
-     bir çağrı olurdu. */
+  /* Kategoriler artık HARİTANIN KENDİSİ için de gereklidir, yalnızca form için
+     değil: POI'nin vektör rozeti kategorisinin simgesini ve rengini taşır ve o
+     metadata yalnızca bu uçtan gelir (harita sözleşmesi `GET /api/poi` bilinçli
+     olarak yalnızca ad/yol taşır — sunum metadatası kategorinin kendisine
+     aittir, kaydın kopyasına değil).
+
+     Yetki aynıdır (`poi.view`), dolayısıyla yeni bir yetki yüzeyi açılmaz;
+     eklenen tek şey, POI görebilen bir kullanıcının harita açılışında bir kez
+     daha küçük bir GET yapmasıdır. Metadata gelmeden de POI kaybolmaz: nötr
+     renkli bir MapPin rozetiyle çizilir ve liste gelince yerine oturur. */
+  /**
+   * Uçan bir kategori okuması var mı.
+   *
+   * <b><c>loading</c> bunu GÜVENİLİR biçimde söyleyemez.</b> O bir React
+   * state'idir ve yalnızca bir sonraki render'da görünür hâle gelir; aynı
+   * karede iki kez çağrılan bir yükleyici ikisinde de <c>false</c> görür ve iki
+   * özdeş GET açar. Ref eşzamanlı güncellenir, dolayısıyla ikinci çağrı
+   * birincisini ANINDA görür.
+   *
+   * Bunun somut görüldüğü yer React'in <c>StrictMode</c>'udur: geliştirme
+   * modunda her effect monte → temizle → yeniden monte edilir ve her iki
+   * çalıştırma da aynı commit içinde, hiçbir state güncellemesi işlenmeden
+   * gerçekleşir. Ama sorun StrictMode'a ÖZGÜ değildir — tetikleyici bayrak
+   * hızlıca değiştiğinde üretimde de aynı çift istek oluşurdu.
+   *
+   * Aynı korumanın POI kaydetme tarafındaki karşılığı <c>poiSaveInFlight</c>'tir.
+   */
+  const poiCategoriesInFlight = useRef(false)
+
   const loadPoiCategories = useCallback(async () => {
+    // İkinci bir eşzamanlı okuma AÇILMAZ: aynı yanıtı iki kez indirmek olurdu.
+    if (poiCategoriesInFlight.current) return
+
+    poiCategoriesInFlight.current = true
     setPoiCategories((current) => ({ ...current, loading: true, error: '' }))
     try {
       const res = await fetchPoiCategories()
@@ -486,11 +622,17 @@ export default function MapPage() {
         error: error.message || 'Kategoriler yüklenemedi.',
         loaded: true,
       })
+    } finally {
+      /* Bayrak HER SONUÇTA bırakılır. Hatadan sonra bırakılmasaydı "Tekrar
+         dene" sessizce hiçbir şey yapmayan bir düğmeye dönerdi. */
+      poiCategoriesInFlight.current = false
     }
   }, [])
 
-  /* Düzenleme formu da aynı listeyi kullanır: iki form, tek okuma. */
-  const poiFormNeedsCategories = poiFormOpen || mapContext.isActive(MAP_CONTEXTS.poiEdit)
+  /* Düzenleme formu da aynı listeyi kullanır: iki form, tek okuma. Harita da
+     aynı okumayı paylaşır — rozetler için ÜÇÜNCÜ bir istek açılmaz. */
+  const poiNeedsCategories =
+    allowed.canViewPoi || poiFormOpen || mapContext.isActive(MAP_CONTEXTS.poiEdit)
 
   /* Okuma bir KEZ yapılır. Ölçüt "elimde kayıt var mı" DEĞİL, "bu okuma
      tamamlandı mı"dır: kategori tanımlanmamış bir kurulumda boş liste geçerli
@@ -504,9 +646,10 @@ export default function MapPage() {
      denemek kullanıcının açık eylemidir ("Tekrar dene") ve `loadPoiCategories`'i
      doğrudan çağırır. */
   useEffect(() => {
-    if (!poiFormNeedsCategories || poiCategories.loading || poiCategories.loaded) return
+    if (!poiNeedsCategories || poiCategories.loading || poiCategories.loaded) return
     loadPoiCategories()
-  }, [poiFormNeedsCategories, poiCategories.loading, poiCategories.loaded, loadPoiCategories])
+  }, [poiNeedsCategories, poiCategories.loading, poiCategories.loaded, loadPoiCategories])
+
 
   /**
    * POI oluşturma bağlamının EMEKLİLİĞİ: form, bekleyen işaret ve yerleştirme
@@ -549,6 +692,10 @@ export default function MapPage() {
       /* Yanıt kaydın kanonik hâlidir ve listeyle AYNI eşlemeden geçer; ikinci
          bir GET, az önce yazılanı yeniden indirmek olurdu. */
       addPoiToLayer(await res.json())
+      /* Raster VERİTABANINDAKİ hâli gösterir; yazma tuttuğuna göre görüntü
+         eskidi. Yeni kayıt, yerine geleni gelene kadar vektör olarak görünür
+         kalır — bu yüzden hiçbir anda kaybolmaz. */
+      invalidatePoiPresentation()
       closePoiForm()
       showToast('success', 'POI başarıyla eklendi.')
     } catch (error) {
@@ -560,7 +707,7 @@ export default function MapPage() {
       poiSaveInFlight.current = false
       setPoiSaving(false)
     }
-  }, [addPoiToLayer, closePoiForm, showToast])
+  }, [addPoiToLayer, closePoiForm, invalidatePoiPresentation, showToast])
 
   /* --- POI düzenleme / silme ------------------------------------------------
      İkisi de SUNUCUNUN kararını uygular, onu ikinci kez üretmez: hangi kayıtta
@@ -740,6 +887,7 @@ export default function MapPage() {
            yenilemesi ya da listenin baştan okunması gerekmez. */
         const updated = await res.json()
         updatePoiOnLayer(updated)
+        invalidatePoiPresentation()
         // Bilgi paneli aynı kaydı gösterdiği için o da tazelenir.
         setSelectedPoi(updated)
         // "POI'lerim" de aynı kaydı gösterebilir; yerinde tazelenir.
@@ -755,7 +903,7 @@ export default function MapPage() {
         setPoiSaving(false)
       }
     },
-    [poiEditing, updatePoiOnLayer, replaceMyPoi, mapContext, showToast],
+    [poiEditing, updatePoiOnLayer, invalidatePoiPresentation, replaceMyPoi, mapContext, showToast],
   )
 
   /** "Sil": önce onay. Soft delete de olsa kullanıcı ne olduğunu bilmelidir. */
@@ -777,6 +925,7 @@ export default function MapPage() {
          temsilidir ve Çöp Kutusu'ndan geri yüklenebilir. */
       removePoiFromLayer(target.id)
       removeMyPoi(target.id)
+      invalidatePoiPresentation()
       // Silinen kaydın bilgi paneli açık kalamaz.
       if (selectedPoi?.id === target.id) mapContext.close(MAP_CONTEXTS.poiInfo)
       showToast('success', 'POI çöp kutusuna taşındı.')
@@ -785,7 +934,7 @@ export default function MapPage() {
     } finally {
       setPoiSaving(false)
     }
-  }, [pendingPoiDelete, removePoiFromLayer, removeMyPoi, selectedPoi, mapContext, showToast])
+  }, [pendingPoiDelete, removePoiFromLayer, removeMyPoi, invalidatePoiPresentation, selectedPoi, mapContext, showToast])
 
   /* --- "POI'lerim" eylemleri -------------------------------------------------
      Üçü de HARİTADAKİ akışların ta kendisini çağırır: ayrı bir seçim, ayrı bir
@@ -815,6 +964,92 @@ export default function MapPage() {
     },
     [mapView, mapContext],
   )
+
+  /**
+   * Arama sonucuna odaklan.
+   *
+   * <b>Kamera yardımcısı YENİDEN YAZILMAZ</b> ama arama POI kamerasını kullanır:
+   * `focusPoi` sabit bir HEDEF yakınlığa yerleşir ve gerekirse UZAKLAŞIR.
+   * `focusPoint`'in "asla geri çekme" kuralı POI'lerim ve envanter gezinmesi
+   * için doğrudur, ama aramada 19. seviyeden başka bir POI'ye gidildiğinde
+   * kullanıcıyı çevresiz bir yakınlıkta bırakırdı. `setCenter`/`setZoom`
+   * çağırmak ise bu kuralın ikinci ve kaçınılmaz olarak ayrışacak bir
+   * kopyasını üretirdi. Aynı yardımcıyı POI Bilgisi panelindeki "Zoom Yap" da
+   * çağırır — iki eylem aynı yerde biter.
+   *
+   * <b>Kalıcı bir işaret EKLENMEZ.</b> POI'nin haritadaki gösterimi Faz 4'teki
+   * WMS rasterine aittir; ikinci bir katman aynı POI'yi iki kez çizerdi.
+   *
+   * Bilgi paneli yalnızca kayıt zaten haritada YÜKLÜYSE açılır: arama sonucu
+   * dar bir sözleşmedir (yetenek bayrakları ve mesai taşımaz) ve paneli eksik
+   * bir kayıtla beslemek, düzenle/sil düğmelerinin yanlış davranması demek
+   * olurdu. Kanonik kayıt vektör kaynağından okunur.
+   */
+  const focusSearchResult = useCallback(
+    (result) => {
+      if (!result) return
+
+      mapView.focusPoi(fromLonLat([result.longitude, result.latitude]))
+
+      /* <b>Gizli katman KENDİLİĞİNDEN açılmaz.</b> Görünürlük kullanıcının
+         açık bir tercihidir; arama onu sessizce geri almaz. Arama yine de
+         çalışır — veri keşfi bir sunum kararı değildir — ama kamera gittiği
+         yerde görünmeyen bir kaydı seçip panelini açmak, katmanı kapatan
+         kişiye tam da gizlediği şeyi göstermek olurdu. */
+      if (!poiLayerVisible) return
+
+      const record = findPoiOnLayer(result.id)
+      if (!record) return
+
+      setSelectedPoi(record)
+      mapContext.activate(MAP_CONTEXTS.poiInfo)
+    },
+    [mapView, mapContext, findPoiOnLayer, poiLayerVisible],
+  )
+
+  /**
+   * "Katmanlar → POI'ler" anahtarı.
+   *
+   * <b>Kapatmak SEÇİMİ de emekliye ayırır.</b> Görünmeyen bir kaydı anlatan
+   * açık bir bilgi paneli bırakmak, kullanıcıya haritada olmayan bir şeyi
+   * gösterirdi. Aynı kural çizim tarafında da geçerlidir: bir tür gizlendiğinde
+   * o türdeki seçimler ayıklanır (`useDrawingWorkspace.toggleVisibility`), yani
+   * burada yapılan o kuralın POI karşılığıdır — yeni bir davranış değil.
+   *
+   * <b>Veritabanına HİÇBİR şey yazılmaz.</b> Bu bir sunum durumudur: silme,
+   * pasifleştirme ya da güncelleme çağrısı yoktur.
+   */
+  const togglePoiLayer = useCallback(() => {
+    setPoiLayerVisible((current) => {
+      const next = !current
+
+      if (!next) {
+        mapContext.close(MAP_CONTEXTS.poiInfo)
+        setSelectedPoi(null)
+      }
+
+      return next
+    })
+  }, [mapContext])
+
+  /**
+   * "Zoom Yap": seçili POI'ye AYNI kamera sözleşmesiyle gider.
+   *
+   * <b>Seçimi ve paneli KIPIRDATMAZ.</b> Bu bir gezinme eylemidir, bir bağlam
+   * değişimi değil: panel açık kalır, POI seçili kalır ve rozetinin çevresindeki
+   * seçim halkası varış boyunca görünür durur. Paneli kapatsaydı kullanıcı,
+   * bakmak için yaklaştığı kaydın bilgilerini tam o anda kaybederdi.
+   *
+   * Arama sonucuyla aynı `focusPoi`'yi çağırır: 19. seviyedeyken basıldığında
+   * hedefe UZAKLAŞARAK gider, 6. seviyedeyken yaklaşarak — iki durumda da aynı
+   * öngörülebilir inceleme ölçeğinde biter.
+   */
+  const zoomToSelectedPoi = useCallback(() => {
+    if (!selectedPoi) return
+    if (!Number.isFinite(selectedPoi.longitude) || !Number.isFinite(selectedPoi.latitude)) return
+
+    mapView.focusPoi(fromLonLat([selectedPoi.longitude, selectedPoi.latitude]))
+  }, [selectedPoi, mapView])
 
   /** "Düzenle": haritadakiyle AYNI düzenleme bağlamı ve aynı form. */
   const editMyPoi = useCallback(
@@ -885,6 +1120,7 @@ export default function MapPage() {
          değildir. Panel bir sonraki açılışında sunucudan tazelenir ve kapsam
          kararını yine sunucu verir. */
       if (restored) addPoiToLayer(restored)
+      invalidatePoiPresentation()
     },
   })
 
@@ -1877,6 +2113,12 @@ export default function MapPage() {
           {mapReady && (
             <>
               <QuickActions
+                search={{
+                  permitted: allowed.canViewPoi,
+                  open: poiSearchOpen,
+                  onToggle: togglePoiSearch,
+                  buttonRef: poiSearchButtonRef,
+                }}
                 onGoTurkey={mapView.goToTurkey}
                 onGoMyLocation={mapView.goToMyLocation}
                 onFocusAll={focusAllDrawings}
@@ -1888,7 +2130,28 @@ export default function MapPage() {
                   options={basemap.basemaps}
                   onChange={basemap.selectBasemap}
                 />
+
+                {/* Yığının en altındaki dördüncü denetim. Yalnızca bir
+                    ANAHTARDIR: kutu kendi onaylanmış üst-orta konumunda açılır.
+                    Görünürlüğü YETKİDEN türer — `poi.view` yoksa ne düğme ne
+                    kutu vardır ve hiçbir istek açılmaz. */}
               </QuickActions>
+
+              {/* Arama kutusu yetkiden VE açıklıktan türer: `poi.view` yoksa
+                  ya da kutu kapalıysa hiç çizilmez ve hiçbir arama isteği
+                  açılmaz. Rol adına bakan kural yoktur.
+
+                  Koşullu monte etmek bilinçlidir: kapanış, bileşenin
+                  SÖKÜLMESİDİR ve uçan isteğin iptali, açılır listenin
+                  kaybolması, klavye imlecinin sıfırlanması ve sorgunun
+                  temizlenmesi bundan kendiliğinden gelir. */}
+              {allowed.canViewPoi && poiSearchOpen && (
+                <PoiSearchBar
+                  enabled
+                  onSelect={focusSearchResult}
+                  onClose={closePoiSearch}
+                />
+              )}
 
               {/* Everything below renders straight from the canonical mode —
                   no component keeps its own idea of the active tool. */}
@@ -2071,6 +2334,9 @@ export default function MapPage() {
                 error={myPois.error}
                 onRetry={myPois.reload}
                 onSelect={focusMyPoi}
+                /* Haritanın zaten okuduğu kategori metadatası; POI'lerim için
+                   ikinci bir istek açılmaz. */
+                categoryPresentation={poiCategoryPresentation}
                 onEdit={editMyPoi}
                 onDelete={deleteMyPoi}
                 busyId={poiSaving ? pendingPoiDelete?.id ?? poiEditing?.id ?? null : null}
@@ -2095,6 +2361,15 @@ export default function MapPage() {
                 visibility={workspace.visibility}
                 counts={layerCounts}
                 onToggle={workspace.toggleVisibility}
+                /* POI satırı YETKİDEN türer: `poi.view` yoksa satır hiç
+                   çizilmez, raster istenmez ve vektör katmanı zaten kurulmaz.
+                   Rol adına bakan hiçbir kural yoktur. */
+                poi={{
+                  permitted: allowed.canViewPoi,
+                  visible: poiLayerVisible,
+                  count: poi.count,
+                }}
+                onTogglePoi={togglePoiLayer}
                 /* Salt görselleştirme: katman kapatılabilir ama silinemez ve
                    başka bir kullanıcının alanını göstermez. */
                 scope={{
@@ -2197,6 +2472,10 @@ export default function MapPage() {
                    kuralı tarayıcıda yeniden hesaplanmaz. */
                 onEdit={startPoiEdit}
                 onDelete={requestPoiDelete}
+                /* "Zoom Yap" bir yetkiye bağlı DEĞİLDİR: paneli görebilen zaten
+                   kaydı görebiliyor demektir ve kameranın hareketi hiçbir veriyi
+                   açığa çıkarmaz. */
+                onZoom={zoomToSelectedPoi}
                 busy={poiSaving}
               />
 

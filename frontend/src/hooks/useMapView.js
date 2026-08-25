@@ -9,7 +9,12 @@ import Stroke from 'ol/style/Stroke'
 import CircleStyle from 'ol/style/Circle'
 import { fromLonLat } from 'ol/proj'
 import { TURKEY_CENTER_LON_LAT, TURKEY_ZOOM } from '../map/turkey.js'
-import { POINT_ZOOM, focusZoomFor } from '../map/mapView.js'
+import {
+  POI_FOCUS_ANIMATION_MS,
+  POI_FOCUS_TARGET_ZOOM,
+  POINT_ZOOM,
+  focusZoomFor,
+} from '../map/mapView.js'
 import useReducedMotion from './useReducedMotion.js'
 
 /* Türkiye açılış görünümü tek yerde tanımlıdır (`map/turkey.js`) ve buradan
@@ -108,6 +113,47 @@ export default function useMapView(map, { showToast } = {}) {
   )
 
   /**
+   * Bir POI'ye odaklanır: HEDEF bir yakınlığa yerleşir.
+   *
+   * <b>POI kamerasının TEK uygulaması budur.</b> Arama sonucuna tıklamak da
+   * POI Bilgisi panelindeki "Zoom Yap" da buradan geçer; iki ayrı yol, aynı
+   * eylemin iki farklı yerde bitmesi ve birinin sessizce ayrışması demek
+   * olurdu.
+   *
+   * <b><see cref="focusPoint"/>'ten farkı "geri çekilebilmesi"dir</b> ve bu,
+   * global davranışı değiştirmemek için AYRI bir yol olarak durur. `focusPoint`
+   * asla uzaklaşmaz — POI'lerim, envanter ve çizim gezinmesi bu kurala
+   * güvenir ve orada doğrudur.
+   *
+   * Bir POI'ye gitmek başka bir eylemdir: kullanıcı bilerek oraya gider ve her
+   * seferinde aynı yerde bitmelidir. 19. seviyede çalışırken başka bir POI
+   * arayan biri hedefe 19'da götürülseydi, POI'yi çevresiz ve kullanışsız bir
+   * yakınlıkta görürdü. Bu yüzden yakınlık bir alt sınır değil, sabit bir
+   * hedeftir ve gerekirse UZAKLAŞIR.
+   *
+   * Tek aşamalı bir <c>animate</c> yeterlidir: OpenLayers merkez ve yakınlığı
+   * birlikte yumuşatır, dolayısıyla ayrı bir "uzaklaş → taşı → yaklaş"
+   * koreografisi gereksiz karmaşıklık olurdu.
+   *
+   * <b>Seçime ve panele DOKUNMAZ.</b> Yaptığı tek şey kamerayı taşımaktır;
+   * "Zoom Yap"a basan kullanıcı açık duran bilgi panelini kaybetmemelidir.
+   */
+  const focusPoi = useCallback(
+    (coordinate) => {
+      const view = map?.getView()
+      if (!view || !coordinate) return
+
+      view.animate({
+        center: coordinate,
+        // Alt sınır DEĞİL, hedef: gerekirse UZAKLAŞIR.
+        zoom: POI_FOCUS_TARGET_ZOOM,
+        duration: reducedMotion ? 0 : POI_FOCUS_ANIMATION_MS,
+      })
+    },
+    [map, reducedMotion],
+  )
+
+  /**
    * Pans only if the coordinate is off screen (or crowded against an edge).
    *
    * Used when a selection is made from the PANEL: moving the map every time a
@@ -203,5 +249,14 @@ export default function useMapView(map, { showToast } = {}) {
     [map],
   )
 
-  return { goToTurkey, fitExtent, panTo, focusPoint, ensureVisible, goToMyLocation, reducedMotion }
+  return {
+    goToTurkey,
+    fitExtent,
+    panTo,
+    focusPoint,
+    focusPoi,
+    ensureVisible,
+    goToMyLocation,
+    reducedMotion,
+  }
 }

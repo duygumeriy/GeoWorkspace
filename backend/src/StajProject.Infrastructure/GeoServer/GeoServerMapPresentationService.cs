@@ -85,8 +85,97 @@ public sealed class GeoServerMapPresentationService : IGeoServerMapPresentationS
         }
 
         var (layer, style) = Resources(kind);
-        var validated = render.Value!;
 
+        return await RequestImageAsync(
+            layer,
+            style,
+            /* Sahiplik/durum yüklemi. userId doğrulanmış backend bağlamından
+               gelen bir int'tir; istemciden gelen hiçbir metin bu filtreye
+               eklenmez. */
+            BuildCqlFilter(userId.Value),
+            render.Value!,
+            $"DrawingKind: {kind}",
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// POI envanterinin haritadaki genel gösterimi.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>CQL filtresi YOKTUR ve olmamalıdır.</b> Çizim sunumu kişinin KENDİ
+    /// kayıtlarını gösterir ve bu yüzden sahiplik yüklemi taşır; POI ise
+    /// <c>poi.view</c> taşıyan herkese açık ORTAK envanterdir —
+    /// <c>PoiService.GetMapPoisAsync</c> de sahiplik yüklemi uygulamaz ve iki
+    /// yolun aynı şeyi göstermesi gerekir. Silinmiş/pasif POI ve kategori
+    /// elemesi <c>poi_read</c> SQL View'ının içindedir, dolayısıyla burada
+    /// tekrar edilmesine de gerek yoktur.
+    /// </para>
+    /// <para>
+    /// <b>Coğrafi kapsam da UYGULANMAZ</b> — POI okuma yolunda hiç
+    /// uygulanmıyor; kapsam yalnızca YAZMA anının kuralıdır
+    /// (<c>PoiService</c> create/move). Burada uygulamak, kullanıcının REST
+    /// üzerinden görebildiği bir POI'nin haritada görünmemesi demek olurdu.
+    /// </para>
+    /// </remarks>
+    public async Task<ServiceResult<MapPresentationImage>> GetPoiPresentationAsync(
+        MapPresentationRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request is null)
+        {
+            return ServiceResult<MapPresentationImage>.Failure("Harita sunum parametreleri zorunludur.");
+        }
+
+        /* Piksel oranı YALNIZCA POI yolunda okunur. Çizim sunumunda geometrinin
+           kendisi coğrafidir ve ölçekten bağımsız aynı alanı kaplar; POI ise
+           tamamen piksel tanımlı bir SEMBOLDÜR ve yoğunluk düzeltmesi olmadan
+           küçülür. Çizim isteklerinin sorgusu bu yüzden birebir aynı kalır. */
+        var render = WmsRenderContract.Validate(
+            request.Bbox,
+            request.Width,
+            request.Height,
+            request.PixelRatio);
+
+        if (!render.IsSuccess)
+        {
+            return ServiceResult<MapPresentationImage>.Failure(render.Error!);
+        }
+
+        return await RequestImageAsync(
+            _options.PoiLayer,
+            _options.PoiStyle,
+            cqlFilter: null,
+            render.Value!,
+            "Poi",
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// WMS <c>GetMap</c> isteğinin TEK gövdesi: parametre kurulumu, gönderim,
+    /// hata çevirisi ve PNG doğrulaması.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Katman ve style ÇAĞIRANDAN gelir, istekten değil.</b> İkisi de
+    /// backend'in kendi ayarından okunur; istemcinin gönderdiği hiçbir metin bu
+    /// parametrelere ulaşamaz. Aynı şekilde SERVICE, REQUEST, VERSION, CRS,
+    /// FORMAT ve TRANSPARENT burada sabittir.
+    /// </para>
+    /// <para>
+    /// <b>Sorgu dizesi ASLA istemciden kopyalanmaz</b> — parametreler tek tek
+    /// ve açıkça kurulur, böylece tanınmayan bir anahtar GeoServer'a hiçbir
+    /// yoldan geçemez.
+    /// </para>
+    /// </remarks>
+    private async Task<ServiceResult<MapPresentationImage>> RequestImageAsync(
+        string layer,
+        string style,
+        string? cqlFilter,
+        ValidatedRender validated,
+        string logContext,
+        CancellationToken cancellationToken)
+    {
         var parameters = new Dictionary<string, string>
         {
             ["SERVICE"] = "WMS",
@@ -99,9 +188,23 @@ public sealed class GeoServerMapPresentationService : IGeoServerMapPresentationS
             ["WIDTH"] = validated.Width.ToString(CultureInfo.InvariantCulture),
             ["HEIGHT"] = validated.Height.ToString(CultureInfo.InvariantCulture),
             ["FORMAT"] = PngMediaType,
-            ["TRANSPARENT"] = "true",
-            ["CQL_FILTER"] = BuildCqlFilter(userId.Value)
+            ["TRANSPARENT"] = "true"
         };
+
+        // Filtresi olmayan sunum (POI) için anahtar HİÇ eklenmez.
+        if (cqlFilter is not null)
+        {
+            parameters["CQL_FILTER"] = cqlFilter;
+        }
+
+        /* Çizim DPI'ı SUNUCUDA türetilir ve yalnızca yoğunluk bildirilmişse
+           eklenir. İstemci FORMAT_OPTIONS'ı ne gönderebilir ne etkileyebilir:
+           gönderdiği tek şey doğrulanmış bir sayıdır ve bu sözlük her istekte
+           sıfırdan kurulur. */
+        if (validated.RendererDpi is { } dpi)
+        {
+            parameters["FORMAT_OPTIONS"] = string.Create(CultureInfo.InvariantCulture, $"dpi:{dpi}");
+        }
 
         using var content = new FormUrlEncodedContent(parameters);
         using var requestMessage = new HttpRequestMessage(
@@ -122,13 +225,13 @@ public sealed class GeoServerMapPresentationService : IGeoServerMapPresentationS
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            _logger.LogError("GeoServer sunum isteği zaman aşımına uğradı. DrawingKind: {DrawingKind}", kind);
+            _logger.LogError("GeoServer sunum isteği zaman aşımına uğradı. {LogContext}", logContext);
             return ServiceResult<MapPresentationImage>.Timeout(
                 "GeoServer harita sunum isteği zaman aşımına uğradı.");
         }
         catch (HttpRequestException exception)
         {
-            _logger.LogError(exception, "GeoServer sunum isteğine ulaşılamadı. DrawingKind: {DrawingKind}", kind);
+            _logger.LogError(exception, "GeoServer sunum isteğine ulaşılamadı. {LogContext}", logContext);
             return ServiceResult<MapPresentationImage>.Upstream("GeoServer harita sunum servisine ulaşılamadı.");
         }
 
@@ -137,8 +240,8 @@ public sealed class GeoServerMapPresentationService : IGeoServerMapPresentationS
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogError(
-                    "GeoServer sunum isteği başarısız. DrawingKind: {DrawingKind}, StatusCode: {StatusCode}",
-                    kind,
+                    "GeoServer sunum isteği başarısız. {LogContext}, StatusCode: {StatusCode}",
+                    logContext,
                     (int)response.StatusCode);
                 return ServiceResult<MapPresentationImage>.Upstream("GeoServer harita görüntüsü üretilemedi.");
             }
@@ -146,8 +249,8 @@ public sealed class GeoServerMapPresentationService : IGeoServerMapPresentationS
             if (!IsPng(response.Content.Headers.ContentType))
             {
                 _logger.LogError(
-                    "GeoServer sunum yanıt türü geçersiz. DrawingKind: {DrawingKind}, ContentType: {ContentType}",
-                    kind,
+                    "GeoServer sunum yanıt türü geçersiz. {LogContext}, ContentType: {ContentType}",
+                    logContext,
                     response.Content.Headers.ContentType?.ToString() ?? "(missing)");
                 return ServiceResult<MapPresentationImage>.Upstream(
                     "GeoServer geçerli bir PNG yanıtı döndürmedi.");
@@ -155,14 +258,14 @@ public sealed class GeoServerMapPresentationService : IGeoServerMapPresentationS
 
             var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
 
-            /* Boş/şeffaf bir PNG UYDURULMAZ: yukarı akış hatası, "hiç çizim yok"
+            /* Boş/şeffaf bir PNG UYDURULMAZ: yukarı akış hatası, "hiç kayıt yok"
                ile aynı görüntüye indirgenirse kullanıcı verisinin kaybolduğunu
                fark edemez. Geçersiz yanıt hata olarak yukarı çıkar. */
             if (!bytes.AsSpan().StartsWith(PngSignature))
             {
                 _logger.LogError(
-                    "GeoServer sunum yanıtında PNG imzası bulunamadı. DrawingKind: {DrawingKind}",
-                    kind);
+                    "GeoServer sunum yanıtında PNG imzası bulunamadı. {LogContext}",
+                    logContext);
                 return ServiceResult<MapPresentationImage>.Upstream(
                     "GeoServer geçerli bir PNG yanıtı döndürmedi.");
             }

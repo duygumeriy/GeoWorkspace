@@ -1,4 +1,6 @@
+import PoiCategoryBadge from '../map/PoiCategoryBadge.jsx'
 import { categoryStatus, indentOf } from './poiCategories.js'
+import { displayColor, iconLabel } from './poiCategoryMetadata.js'
 
 /**
  * Kategori hiyerarşisi.
@@ -75,12 +77,37 @@ export default function PoiCategoryTree({
                   seçiciyi React'in özel özellik serileştirmesine bağlardı. */}
               {indentOf(category) > 0 && <span className="admin-poi-tree-rail" aria-hidden="true" />}
 
+              {/* Kategorinin GERÇEK simgesi, rengiyle birlikte.
+                  Önceki hâli 12 piksellik renkli bir kareydi: rengi doğru
+                  söylüyordu ama hangi kategori olduğunu söylemiyordu — ve
+                  yöneticinin listede aradığı tam olarak oydu. Simge, haritanın
+                  ve arama sonuçlarının kullandığı AYNI kayıttan çözülür
+                  (`poiIconRegistry`), dolayısıyla üç ekran aynı kategoriyi aynı
+                  glifle gösterir.
+
+                  Her satır KENDİ `iconKey`'ini kullanır; alt kategori üstünün
+                  simgesini devralmaz — "Giyim Mağazaları" gömlek, "Alışveriş"
+                  çanta gösterir. Renk `displayColor` ile normalleştirilir ve
+                  bozuk/eksik değer nötr griye düşer. */}
+              <PoiCategoryBadge
+                iconKey={category.iconKey}
+                colorHex={displayColor(category)}
+                className="admin-poi-tree-swatch"
+              />
+
               <span className="admin-poi-tree-identity">
                 <strong>{category.name}</strong>
                 {/* Üst bağlam yalnızca kök olmayan satırlarda anlamlıdır. */}
                 {category.parentName && (
                   <small>{category.path}</small>
                 )}
+                {/* Teknik metadata İKİNCİL kalır: yönetici için gerekli
+                    (ileride SLD kuralı slug'a bakacak) ama satırın konusu
+                    kategorinin kendisidir. */}
+                <small className="admin-poi-tree-meta">
+                  <code>{category.slug}</code>
+                  {category.iconKey && <> · {iconLabel(category.iconKey)}</>}
+                </small>
               </span>
 
               <span className={`admin-badge ${status.tone}`}>{status.label}</span>

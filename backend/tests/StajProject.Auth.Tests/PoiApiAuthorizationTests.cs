@@ -55,6 +55,7 @@ public class PoiApiAuthorizationTests
     private const string MapCategoriesRoute = "/api/poi/categories";
     private const string DeletedRoute = "/api/poi/deleted";
     private const string MineRoute = "/api/poi/mine";
+    private const string SearchRoute = "/api/poi/search?q=kafe";
     private const string AdminRoute = "/api/admin/poi";
     private const string AdminCategoriesRoute = "/api/admin/poi/categories";
 
@@ -165,6 +166,115 @@ public class PoiApiAuthorizationTests
         Assert.Equal(HttpStatusCode.Created,
             (await host.Client(user).PostAsJsonAsync(MapRoute, NewPoi())).StatusCode);
         Assert.Equal([GisRoles.Viewer], await host.RolesOfAsync(user));
+    }
+
+    /* --- Arama (Faz 5) ---------------------------------------------------------- */
+
+    [Fact]
+    public async Task Search_requires_authentication()
+    {
+        await using var host = await CreateHostAsync();
+
+        Assert.Equal(HttpStatusCode.Unauthorized, (await host.Client().GetAsync(SearchRoute)).StatusCode);
+        await host.Pois.DidNotReceive().SearchPoisAsync(
+            Arg.Any<string?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Search_requires_poi_view()
+    {
+        await using var host = await CreateHostAsync();
+        // Emekli rolün hiçbir yetki satırı yoktur (bkz. yukarıdaki harita testi).
+        var user = await host.CreateUserAsync("search-without-poi-view", ApplicationRoles.Admin);
+
+        Assert.Equal(HttpStatusCode.Forbidden, (await host.Client(user).GetAsync(SearchRoute)).StatusCode);
+        // Yetkisiz istek servise HİÇ ulaşmaz.
+        await host.Pois.DidNotReceive().SearchPoisAsync(
+            Arg.Any<string?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// <c>poi.view</c> TEK BAŞINA yeterlidir: POI'yi görebilen onu
+    /// arayabilmelidir de. Yönetici olmak gerekmez.
+    /// </summary>
+    [Fact]
+    public async Task Poi_view_alone_allows_searching()
+    {
+        await using var host = await CreateHostAsync();
+        var user = await host.CreateUserAsync("search-reader", GisRoles.GisEditor);
+
+        Assert.Equal(HttpStatusCode.OK, (await host.Client(user).GetAsync(SearchRoute)).StatusCode);
+        await host.Pois.Received(1).SearchPoisAsync("kafe", null, Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// Doğrudan verilen yetki de çalışır ve rol DEĞİŞMEZ: karar etkin yetki
+    /// kümesine bakar, rol adına değil.
+    /// </summary>
+    [Fact]
+    public async Task A_direct_poi_view_grant_allows_searching_without_changing_the_role()
+    {
+        await using var host = await CreateHostAsync();
+        var user = await host.CreateUserAsync("search-direct-grant", ApplicationRoles.Admin);
+
+        Assert.Equal(HttpStatusCode.Forbidden, (await host.Client(user).GetAsync(SearchRoute)).StatusCode);
+
+        await host.GrantDirectAsync(user, PermissionCodes.PoiView);
+
+        Assert.Equal(HttpStatusCode.OK, (await host.Client(user).GetAsync(SearchRoute)).StatusCode);
+        // Rol DEĞİŞMEDİ: yetki doğrudan kullanıcıya verildi.
+        Assert.Equal([ApplicationRoles.Admin], await host.RolesOfAsync(user));
+    }
+
+    /// <summary>
+    /// Sıradan kullanıcı profili (Viewer) aramayı KULLANABİLİR.
+    /// </summary>
+    /// <remarks>
+    /// Ödevin şartı budur: arama, POI görme yeteneği olan normal kullanıcılara
+    /// da açık olmalıdır. Viewer profili <c>poi.view</c> taşır
+    /// (<c>RolePermissionDefaults</c>), dolayısıyla yönetici olmayan bir
+    /// kullanıcı da arayabilir.
+    /// </remarks>
+    [Fact]
+    public async Task An_ordinary_viewer_can_search()
+    {
+        await using var host = await CreateHostAsync();
+        var user = await host.CreateUserAsync("ordinary-viewer-search", GisRoles.Viewer);
+
+        Assert.Equal(HttpStatusCode.OK, (await host.Client(user).GetAsync(SearchRoute)).StatusCode);
+        await host.Pois.Received(1).SearchPoisAsync("kafe", null, Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// Sorgu ve limit servise OLDUĞU GİBİ geçer; doğrulama servisin
+    /// sözleşmesidir ve controller onu tekrar yazmaz.
+    /// </summary>
+    [Fact]
+    public async Task The_query_and_limit_reach_the_service_unchanged()
+    {
+        await using var host = await CreateHostAsync();
+        var user = await host.CreateUserAsync("search-args", GisRoles.GisEditor);
+
+        await host.Client(user).GetAsync("/api/poi/search?q=test%20eczane&limit=5");
+
+        await host.Pois.Received(1).SearchPoisAsync("test eczane", 5, Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// Servisin doğrulama hatası HTTP 400'e çevrilir.
+    /// </summary>
+    [Fact]
+    public async Task A_service_validation_failure_becomes_400()
+    {
+        await using var host = await CreateHostAsync();
+        var user = await host.CreateUserAsync("search-invalid", GisRoles.GisEditor);
+
+        host.Pois.SearchPoisAsync(Arg.Any<string?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
+            .Returns(ServiceResult<IReadOnlyList<PoiSearchResult>>.Failure("Arama metni en az 2 karakter olmalıdır."));
+
+        var response = await host.Client(user).GetAsync("/api/poi/search?q=a");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     /* --- poi.manage ------------------------------------------------------------- */
@@ -417,14 +527,18 @@ public class PoiApiAuthorizationTests
         Latitude = 39.93
     };
 
-    private static CreatePoiCategoryRequest NewCategory() => new() { Name = "Yeme-İçme" };
+    private static CreatePoiCategoryRequest NewCategory() =>
+        new() { Name = "Yeme-İçme", IconKey = "utensils", ColorHex = "#F97316" };
 
-    private static UpdatePoiCategoryRequest NewCategoryUpdate() => new() { Name = "Yeme-İçme", IsActive = true };
+    private static UpdatePoiCategoryRequest NewCategoryUpdate() =>
+        new() { Name = "Yeme-İçme", IsActive = true, IconKey = "utensils", ColorHex = "#F97316" };
 
     private static async Task<PoiTestHost> CreateHostAsync()
     {
         var pois = Substitute.For<IPoiService>();
         pois.GetMapPoisAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<PoiResponse>());
+        pois.SearchPoisAsync(Arg.Any<string?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
+            .Returns(ServiceResult<IReadOnlyList<PoiSearchResult>>.Success(Array.Empty<PoiSearchResult>()));
         pois.GetAdminPoisAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<AdminPoiResponse>());
         pois.CreatePoiAsync(Arg.Any<CreatePoiRequest>(), Arg.Any<CancellationToken>())
             .Returns(ServiceResult<PoiResponse>.Success(new PoiResponse()));

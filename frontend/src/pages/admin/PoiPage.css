@@ -216,12 +216,46 @@
   background: var(--border-strong);
 }
 
+/* Kategori rengi. Renk TEK BAŞINA bilgi taşımaz (renk körlüğü, siyah-beyaz
+   çıktı): satır ayrıca adı, slug'ı ve simge etiketini metin olarak gösterir. */
+/* Kategori rozeti: renkli kare DEĞİL, kategorinin kendi simgesi.
+   Ölçüler bilinçli olarak ölçülü — 28px rozet + 16px glif satırı
+   yükseltmez ve başlıkla aynı optik hatta oturur. Renk ÖLÇÜLÜ bir vurgudur
+   (yumuşak zemin + ince kenarlık); satırın tamamını boyamak listeyi okunmaz
+   bir renk duvarına çevirirdi — arama sonuçlarındaki rozetle aynı gerekçe. */
+.admin-poi-tree-swatch {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  color: var(--poi-accent, #64748B);
+  background: color-mix(in srgb, var(--poi-accent, #64748B) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--poi-accent, #64748B) 32%, transparent);
+  border-radius: 8px;
+}
+
 .admin-poi-tree-identity {
   display: flex;
   flex-direction: column;
   min-width: 0;
   gap: .2rem;
   margin-right: auto;
+}
+
+/* Teknik metadata ikincildir: okunur ama satırın konusunu gölgelemez. */
+.admin-poi-tree-meta {
+  display: flex;
+  align-items: center;
+  gap: .3rem;
+  color: var(--text-secondary);
+  font-size: var(--font-tiny, .75rem);
+  opacity: .85;
+}
+
+.admin-poi-tree-meta code {
+  font-size: inherit;
 }
 
 .admin-poi-tree-identity small {
@@ -269,6 +303,54 @@
   border-radius: var(--radius-sm);
   font: inherit;
   font-weight: 400;
+}
+
+/* Renk alanı üç denetimi tek satırda taşır: seçici, palet ve kanonik değer.
+   Dar ekranda sarar — diyalog bu yüzden büyümez. */
+.admin-poi-color-field .admin-poi-field-label {
+  color: var(--text-secondary);
+  font-size: var(--font-small);
+  font-weight: 600;
+}
+
+.admin-poi-color-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .5rem;
+}
+
+.admin-poi-color-row input[type="color"] {
+  flex: none;
+  width: 52px;
+  min-height: 44px;
+  padding: .25rem;
+  cursor: pointer;
+}
+
+.admin-poi-color-row select {
+  flex: 1 1 12rem;
+  width: auto;
+}
+
+.admin-poi-color-value {
+  flex: none;
+  color: var(--text-secondary);
+  font-size: var(--font-small);
+}
+
+/* Slug salt okunur bir NOT'tur, bir alan değil: düzenlenebilir görünmemelidir. */
+.admin-poi-slug-note {
+  display: flex;
+  flex-direction: column;
+  gap: .15rem;
+  margin: 0;
+  padding: .6rem .75rem;
+  color: var(--text-secondary);
+  background: var(--surface-muted, var(--surface-solid));
+  border: 1px dashed var(--border-soft);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-small);
 }
 
 .admin-poi-dialog .admin-dialog-error {

@@ -4,6 +4,7 @@ using NSubstitute;
 using StajProject.Application.Common;
 using StajProject.Application.DTOs;
 using StajProject.Application.Geographic;
+using StajProject.Application.Pois;
 using StajProject.Application.Interfaces;
 using StajProject.Domain.Entities;
 using StajProject.Infrastructure.Persistence;
@@ -766,6 +767,9 @@ public class PoiServiceTests
 
         public PoiCategoryService Categories { get; }
 
+        /// <summary>Aynı addan türeyen slug'ları ayırt eden test sayacı.</summary>
+        private int _slugCounter;
+
         public static Task<PoiFixture> CreateAsync()
         {
             var options = new DbContextOptionsBuilder<AppDbContext>()
@@ -884,16 +888,40 @@ public class PoiServiceTests
             return user;
         }
 
+        /// <summary>
+        /// Test verisi için kategori ekler.
+        /// </summary>
+        /// <remarks>
+        /// Slug, gerçek üretim yolundaki kuralla (<see cref="PoiCategorySlug"/>)
+        /// türetilir ki testlerdeki satırlar üretimdekilerle aynı biçimi
+        /// taşısın. InMemory sağlayıcı tekillik indeksini UYGULAMAZ, dolayısıyla
+        /// aynı adı iki kez ekleyen testlerin çakışmaması için ayırt edici bir
+        /// sayaç eklenir — tekilliğin gerçek sınaması servis katmanındadır.
+        /// </remarks>
         public async Task<PoiCategory> AddCategoryAsync(
             string name,
             int? parentId = null,
             bool isActive = true,
-            bool isDeleted = false)
+            bool isDeleted = false,
+            string? slug = null,
+            string? iconKey = "map-pin",
+            string? colorHex = "#8B5CF6")
         {
+            var resolvedSlug = slug
+                ?? (PoiCategorySlug.TryCreate(name, out var generated) ? generated : "kategori");
+
+            if (Db.PoiCategories.IgnoreQueryFilters().Any(c => c.Slug == resolvedSlug))
+            {
+                resolvedSlug = $"{resolvedSlug}-{++_slugCounter}";
+            }
+
             var category = new PoiCategory
             {
                 Name = name,
                 ParentId = parentId,
+                Slug = resolvedSlug,
+                IconKey = iconKey,
+                ColorHex = colorHex,
                 IsActive = isActive,
                 IsDeleted = isDeleted,
                 CreatedDate = DateTime.UtcNow

@@ -670,6 +670,63 @@ export async function fetchMapPresentationImage(typeId, { bbox, width, height, s
   return blob
 }
 
+/* --- POI arama ----------------------------------------------------------------
+   Kayıtlı POI'ler arasında ada göre arama. Veri yolu PostgreSQL'dir:
+   React → ASP.NET → EF Core → PostGIS. Tarayıcı GeoServer'a hiçbir biçimde
+   sormaz; WMS yalnızca SUNUM katmanıdır ve kimlik/metin sorgusu bilmez.
+
+   `signal` zorunlu değildir ama çağıran daima verir: eski bir sorgunun geç
+   gelen cevabı, yenisinin sonucunu EZMEMELİDİR. */
+
+export const POI_SEARCH_PATH = '/api/poi/search'
+
+/** Backend `PoiSearchContract` ile aynı sınırlar; sunucu hepsini yeniden uygular. */
+export const POI_SEARCH_LIMITS = Object.freeze({
+  minQueryLength: 2,
+  maxQueryLength: 100,
+  defaultLimit: 8,
+})
+
+export function searchPois({ query, limit, signal } = {}) {
+  const params = new URLSearchParams({ q: query ?? '' })
+  if (limit) params.set('limit', String(limit))
+
+  return authFetch(`${POI_SEARCH_PATH}?${params}`, { signal })
+}
+
+/* --- POI envanterinin genel gösterimi (WMS) -----------------------------------
+   Çizim sunumuyla AYNI sınır: tarayıcı yalnızca uygulamanın kimlik doğrulamalı
+   PNG ucunu bilir. GeoServer adresi, workspace, `poi_read` katmanı ve `poi_all`
+   style adı bu sınırı hiçbir yönde geçmez — istemcinin gönderdiği tek şey
+   görüntü penceresidir.
+
+   Yol SABİTTİR ve bir sorgu değeri değildir: istemci bir katman ya da style adı
+   ima edebilecek serbest metin gönderemez. */
+
+const POI_PRESENTATION_PATH = '/api/map/presentation/poi'
+
+export async function fetchPoiPresentationImage({ bbox, width, height, pixelRatio = 1, signal }) {
+  const query = new URLSearchParams({
+    bbox,
+    width: String(width),
+    height: String(height),
+    /* Tek ek skaler: görüntünün CSS pikseline göre yoğunluğu. Sunucu bundan
+       kendi çizim DPI'ını türetir; tarayıcı FORMAT_OPTIONS, LAYERS, STYLES,
+       CQL_FILTER ya da başka bir WMS parametresi GÖNDEREMEZ. */
+    pixelRatio: String(pixelRatio),
+  })
+  const response = await authFetch(`${POI_PRESENTATION_PATH}?${query}`, { signal })
+
+  if (!response.ok) throw new Error('POI görünümü şu anda yüklenemedi.')
+
+  const contentType = response.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase()
+  if (contentType !== 'image/png') throw new Error('POI görünümü şu anda yüklenemedi.')
+
+  const blob = await response.blob()
+  if (blob.size === 0) throw new Error('POI görünümü şu anda yüklenemedi.')
+  return blob
+}
+
 /* --- Aktivite geçmişi --------------------------------------------------------
    Yalnızca OKUMA. `activity.view` + yönetim uçlarının MFA şartı geçerlidir.
    Sayfalama sunucu tarafındadır; sayfa boyutu sunucuda sınırlanır. */
@@ -807,28 +864,37 @@ export function fetchAdminPoiCategories() {
 /**
  * Yeni kategori.
  *
- * Gövde YALNIZCA ad ve üst kategori taşır; durum ve tarih alanları sunucuya
- * aittir ve istemciden gönderilmez.
+ * Gövde ad, üst kategori ve sunum metadatası taşır; durum ve tarih alanları
+ * sunucuya aittir ve istemciden gönderilmez.
+ *
+ * <b>`slug` GÖNDERİLMEZ.</b> Teknik kimliği sunucu addan kendisi üretir.
+ * İstemciden gönderilseydi iki farklı istemci aynı ad için farklı kimlikler
+ * üretebilir ve ileride GeoServer stil kurallarının hangi kimliğe bakacağı
+ * belirsizleşirdi.
  */
-export function createAdminPoiCategory({ name, parentId }) {
+export function createAdminPoiCategory({ name, parentId, iconKey, colorHex }) {
   return authFetch('/api/admin/poi/categories', {
     method: 'POST',
     headers: JSON_HEADERS,
-    body: JSON.stringify({ name, parentId: parentId ?? null }),
+    body: JSON.stringify({ name, parentId: parentId ?? null, iconKey, colorHex }),
   })
 }
 
 /**
- * Kategori düzenleme: ad, üst kategori ve aktiflik.
+ * Kategori düzenleme: ad, üst kategori, aktiflik ve sunum metadatası.
  *
  * `isDeleted`, `createdDate` ve `modifiedDate` gövdede YER ALMAZ — sunucu
  * sözleşmesinde de yoktur.
+ *
+ * <b>`slug` burada da GÖNDERİLMEZ</b> ve sunucu sözleşmesinde yoktur: adın
+ * düzenlenmesi bir sunum kararıdır, teknik kimliği taşımaz. Mevcut slug
+ * korunur ve yanıtta salt okunur olarak geri döner.
  */
-export function updateAdminPoiCategory(id, { name, parentId, isActive }) {
+export function updateAdminPoiCategory(id, { name, parentId, isActive, iconKey, colorHex }) {
   return authFetch(`/api/admin/poi/categories/${id}`, {
     method: 'PUT',
     headers: JSON_HEADERS,
-    body: JSON.stringify({ name, parentId: parentId ?? null, isActive }),
+    body: JSON.stringify({ name, parentId: parentId ?? null, isActive, iconKey, colorHex }),
   })
 }
 

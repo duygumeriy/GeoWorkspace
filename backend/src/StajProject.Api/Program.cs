@@ -378,6 +378,35 @@ using (var scope = app.Services.CreateScope())
         effectivePermissions,
         adminSeedOptions,
         logger);
+
+    /* Kanonik POI kategori taksonomisi. Güvenlik seeder'larından SONRA çalışır:
+       kategoriler hiçbir kimlik/yetki kararını beslemez, dolayısıyla onların
+       önüne geçmesi için bir neden yoktur ve sıranın değişmesi bootstrap
+       yollarını etkileyebilirdi.
+
+       DİKKAT: bu seeder slug/icon_key/color_hex kolonlarını okur. Proje
+       göçleri ELLE uygular (uygulamada Database.Migrate() çağrısı yoktur ve
+       burada da eklenmez), dolayısıyla göç uygulanmamış bir veritabanında
+       kolonlar bulunamaz. Bu durumda hata yutulmaz: startup, ne yapılması
+       gerektiğini söyleyen açık bir mesajla durur — yarı seed edilmiş bir
+       taksonomi ile devam etmek, sonraki her hatayı açıklanamaz kılardı. */
+    var taxonomyLogger = scope.ServiceProvider
+        .GetRequiredService<ILoggerFactory>()
+        .CreateLogger("PoiCategoryTaxonomySeed");
+
+    try
+    {
+        await PoiCategoryTaxonomySeeder.SeedAsync(dbContext, taxonomyLogger);
+    }
+    catch (Exception exception)
+    {
+        taxonomyLogger.LogCritical(
+            exception,
+            "POI kategori taksonomisi seed edilemedi. Veritabanı göçlerinin uygulandığından emin olun "
+            + "(dotnet ef database update).");
+
+        throw;
+    }
 }
 
 // Configure the HTTP request pipeline.

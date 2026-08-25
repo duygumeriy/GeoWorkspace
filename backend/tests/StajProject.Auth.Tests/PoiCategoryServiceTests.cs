@@ -26,7 +26,7 @@ public class PoiCategoryServiceTests
         await using var fixture = await PoiServiceTests.PoiFixture.CreateAsync();
 
         var before = DateTime.UtcNow;
-        var result = await fixture.Categories.CreateCategoryAsync(new CreatePoiCategoryRequest { Name = "  Yeme-İçme  " });
+        var result = await fixture.Categories.CreateCategoryAsync(new CreatePoiCategoryRequest { Name = "  Yeme-İçme  ", IconKey = "map-pin", ColorHex = "#8B5CF6" });
         var after = DateTime.UtcNow;
 
         Assert.True(result.IsSuccess);
@@ -53,7 +53,7 @@ public class PoiCategoryServiceTests
         var parent = await fixture.AddCategoryAsync("Yeme-İçme", isActive: true, isDeleted: false);
 
         var result = await fixture.Categories.CreateCategoryAsync(
-            new CreatePoiCategoryRequest { Name = "Restoran", ParentId = parent.Id });
+            new CreatePoiCategoryRequest { Name = "Restoran", ParentId = parent.Id, IconKey = "map-pin", ColorHex = "#8B5CF6" });
 
         Assert.True(result.IsSuccess);
         Assert.Equal(parent.Id, result.Value!.ParentId);
@@ -70,7 +70,7 @@ public class PoiCategoryServiceTests
     {
         await using var fixture = await PoiServiceTests.PoiFixture.CreateAsync();
 
-        Assert.False((await fixture.Categories.CreateCategoryAsync(new CreatePoiCategoryRequest { Name = name })).IsSuccess);
+        Assert.False((await fixture.Categories.CreateCategoryAsync(new CreatePoiCategoryRequest { Name = name, IconKey = "map-pin", ColorHex = "#8B5CF6" })).IsSuccess);
     }
 
     [Fact]
@@ -79,7 +79,7 @@ public class PoiCategoryServiceTests
         await using var fixture = await PoiServiceTests.PoiFixture.CreateAsync();
 
         var result = await fixture.Categories.CreateCategoryAsync(
-            new CreatePoiCategoryRequest { Name = new string('a', PoiCategory.MaxNameLength + 1) });
+            new CreatePoiCategoryRequest { Name = new string('a', PoiCategory.MaxNameLength + 1), IconKey = "map-pin", ColorHex = "#8B5CF6" });
 
         Assert.False(result.IsSuccess);
     }
@@ -100,7 +100,7 @@ public class PoiCategoryServiceTests
         var parent = await fixture.AddCategoryAsync("Kullanılmaz", isActive: isActive, isDeleted: isDeleted);
 
         var result = await fixture.Categories.CreateCategoryAsync(
-            new CreatePoiCategoryRequest { Name = "Alt", ParentId = parent.Id });
+            new CreatePoiCategoryRequest { Name = "Alt", ParentId = parent.Id, IconKey = "map-pin", ColorHex = "#8B5CF6" });
 
         Assert.False(result.IsSuccess);
     }
@@ -111,7 +111,7 @@ public class PoiCategoryServiceTests
         await using var fixture = await PoiServiceTests.PoiFixture.CreateAsync();
 
         Assert.False((await fixture.Categories.CreateCategoryAsync(
-            new CreatePoiCategoryRequest { Name = "Alt", ParentId = 9999 })).IsSuccess);
+            new CreatePoiCategoryRequest { Name = "Alt", ParentId = 9999, IconKey = "map-pin", ColorHex = "#8B5CF6" })).IsSuccess);
     }
 
     /* --- Döngü koruması ------------------------------------------------------------ */
@@ -124,7 +124,7 @@ public class PoiCategoryServiceTests
 
         var result = await fixture.Categories.UpdateCategoryAsync(
             category.Id,
-            new UpdatePoiCategoryRequest { Name = "Kendi", ParentId = category.Id, IsActive = true });
+            new UpdatePoiCategoryRequest { Name = "Kendi", ParentId = category.Id, IsActive = true, IconKey = "map-pin", ColorHex = "#8B5CF6" });
 
         Assert.False(result.IsSuccess);
         Assert.Equal(ServiceErrorKind.Validation, result.ErrorKind);
@@ -145,7 +145,7 @@ public class PoiCategoryServiceTests
 
         var result = await fixture.Categories.UpdateCategoryAsync(
             a.Id,
-            new UpdatePoiCategoryRequest { Name = "A", ParentId = c.Id, IsActive = true });
+            new UpdatePoiCategoryRequest { Name = "A", ParentId = c.Id, IsActive = true, IconKey = "map-pin", ColorHex = "#8B5CF6" });
 
         Assert.False(result.IsSuccess);
         Assert.Null((await fixture.Db.PoiCategories.SingleAsync(x => x.Id == a.Id)).ParentId);
@@ -163,7 +163,7 @@ public class PoiCategoryServiceTests
 
         var result = await fixture.Categories.UpdateCategoryAsync(
             a.Id,
-            new UpdatePoiCategoryRequest { Name = "A", ParentId = leaf.Id, IsActive = true });
+            new UpdatePoiCategoryRequest { Name = "A", ParentId = leaf.Id, IsActive = true, IconKey = "map-pin", ColorHex = "#8B5CF6" });
 
         Assert.False(result.IsSuccess);
     }
@@ -214,7 +214,7 @@ public class PoiCategoryServiceTests
 
         var result = await fixture.Categories.UpdateCategoryAsync(
             cafe.Id,
-            new UpdatePoiCategoryRequest { Name = "Kafe", ParentId = food.Id, IsActive = true });
+            new UpdatePoiCategoryRequest { Name = "Kafe", ParentId = food.Id, IsActive = true, IconKey = "map-pin", ColorHex = "#8B5CF6" });
 
         Assert.True(result.IsSuccess);
         Assert.Equal(food.Id, result.Value!.ParentId);
@@ -230,7 +230,7 @@ public class PoiCategoryServiceTests
 
         var result = await fixture.Categories.UpdateCategoryAsync(
             category.Id,
-            new UpdatePoiCategoryRequest { Name = "Taşınacak", ParentId = hidden.Id, IsActive = true });
+            new UpdatePoiCategoryRequest { Name = "Taşınacak", ParentId = hidden.Id, IsActive = true, IconKey = "map-pin", ColorHex = "#8B5CF6" });
 
         Assert.False(result.IsSuccess);
     }
@@ -245,7 +245,7 @@ public class PoiCategoryServiceTests
 
         var result = await fixture.Categories.UpdateCategoryAsync(
             category.Id,
-            new UpdatePoiCategoryRequest { Name = "Yeniden Aktif", IsActive = true });
+            new UpdatePoiCategoryRequest { Name = "Yeniden Aktif", IsActive = true, IconKey = "map-pin", ColorHex = "#8B5CF6" });
 
         Assert.True(result.IsSuccess);
         Assert.True(result.Value!.IsActive);
@@ -259,7 +259,7 @@ public class PoiCategoryServiceTests
 
         var result = await fixture.Categories.UpdateCategoryAsync(
             category.Id,
-            new UpdatePoiCategoryRequest { Name = "Geri", IsActive = true });
+            new UpdatePoiCategoryRequest { Name = "Geri", IsActive = true, IconKey = "map-pin", ColorHex = "#8B5CF6" });
 
         Assert.False(result.IsSuccess);
         Assert.Equal(ServiceErrorKind.NotFound, result.ErrorKind);
@@ -270,8 +270,13 @@ public class PoiCategoryServiceTests
     {
         var properties = typeof(UpdatePoiCategoryRequest).GetProperties().Select(p => p.Name).ToArray();
 
+        /* Sözleşmenin TAMAMI sayılır, "şu alan yok" denmez: kapalı bir liste,
+           yazılabilir bir alanın yanlışlıkla EKLENMESİNİ de yakalar. Faz 2'de
+           IconKey ve ColorHex bilinçli olarak eklendi; Slug ise burada YOKTUR
+           ve olmamalıdır — teknik kimlik oluşturmada üretilir ve yeniden
+           adlandırmayla değişmez. */
         Assert.Equal(
-            ["IsActive", "Name", "ParentId"],
+            ["ColorHex", "IconKey", "IsActive", "Name", "ParentId"],
             properties.OrderBy(name => name, StringComparer.Ordinal));
     }
 

@@ -413,10 +413,31 @@
 
 /* --- Bilgi panelindeki eylemler ---------------------------------------- */
 
+/* Üç eylem sığar. Dar panelde (telefonda alttan açılan sayfa) düğmeler TAŞMAZ,
+   ALT SATIRA geçer: yatay kaydırma bir panelde her zaman bir hatadır. Her
+   düğme kendi metnine göre büyür ama en az 7rem'dir, dolayısıyla sarma
+   sonrasında da tutulabilir kalır. */
 .poi-info-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 12px;
+}
+
+.poi-info-actions .poi-button {
+  flex: 1 1 7rem;
+  min-width: 0;
+}
+
+/* Gezinme eylemi: simge ve metin tek bir satırda, ortalanmış. İkincil
+   görünümünü `.secondary`den alır — yıkıcı olmadığı için "Sil"in kırmızısını
+   ya da birincil eylemin dolgusunu paylaşmaz. */
+.poi-button-zoom {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .4rem;
+  white-space: nowrap;
 }
 
 .poi-button.danger {
