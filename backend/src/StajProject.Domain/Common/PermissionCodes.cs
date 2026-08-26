@@ -59,6 +59,21 @@ public static class PermissionCodes
 
     public const string HeatmapView = "heatmap.view";
 
+    /* --- Konum analizi ---------------------------------------------------------- */
+
+    /* Konum analizi ÜÇÜNCÜ bir yetenektir ve ne inventory.analysis ne de
+       heatmap.view altına gizlenir: envanter analizi kişinin KENDİ çizim
+       envanteriyle bir alanın kesişimini sayar; ısı haritası yine KENDİ
+       noktalarının yoğunluğunu gösterir; konum analizi ise ORTAK POI
+       envanterini, kullanıcının seçtiği kategori ağırlıklarıyla puanlar.
+       Üçünün verisi de, kapsamı da farklıdır — birine sahip olmak diğerini
+       ima etmemelidir.
+
+       Kod alan-önce/yetenek-sonra yazılır (inventory.analysis ile aynı
+       biçim): ilk parça alanı, son parça yeteneği söyler. */
+
+    public const string LocationAnalysis = "location.analysis";
+
     /* --- Katmanlar ------------------------------------------------------------- */
 
     public const string LayersView = "layers.view";

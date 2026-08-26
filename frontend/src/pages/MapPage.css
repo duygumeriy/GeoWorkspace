@@ -99,6 +99,9 @@
 [data-theme='dark'] .map-container .vertex-layer canvas,
 [data-theme='dark'] .map-container .analysis-highlight-layer canvas,
 [data-theme='dark'] .map-container .heatmap-layer canvas,
+[data-theme='dark'] .map-container .location-analysis-layer canvas,
+[data-theme='dark'] .map-container .location-analysis-points-layer canvas,
+[data-theme='dark'] .map-container .location-analysis-labels-layer canvas,
 /* Kalıcı çizimlerin WMS genel gösterimi de kendi tuvalindedir. Filtreye
    bırakılsaydı sunucuda üretilen görüntü, aynı çizimin vektör hâliyle
    TAMAMEN farklı bir renge dönerdi — seçili çizim mor, seçili olmayan aynı

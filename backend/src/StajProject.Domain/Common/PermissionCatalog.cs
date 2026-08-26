@@ -127,6 +127,21 @@ public static class PermissionCatalog
             "Isı haritası analizini açabilir ve kendi kayıtlarının yoğunluk görüntüsünü görebilir.",
             PermissionCategories.Heatmap, 550),
 
+        /* --- Konum analizi -----------------------------------------------------
+
+           Kategori YENİ DEĞİLDİR: konum analizinin çıktısı da bir yoğunluk
+           haritasıdır, dolayısıyla yetki ekranında ısı haritasının yanında
+           okunur. Kategori yalnızca GÖSTERİM grubudur — hiçbir yetkilendirme
+           kararı ona bakarak verilmez ve iki kod tamamen ayrıdır.
+
+           Sıra numarası 550 ile 600 arasındaki boşluğa girer; mevcut hiçbir
+           satır yeniden numaralanmaz. */
+
+        new(PermissionCodes.LocationAnalysis,
+            "Konum Analizi",
+            "Bir analiz alanı seçip POI kategorilerini ağırlıklandırarak konum analizi çalıştırabilir.",
+            PermissionCategories.Heatmap, 560),
+
         /* --- Katmanlar --------------------------------------------------------- */
 
         new(PermissionCodes.LayersView,

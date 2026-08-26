@@ -84,6 +84,55 @@ public static class PoiCategoryHierarchy
     }
 
     /// <summary>
+    /// <paramref name="id"/> kategorisini KAPSAYAN seçili kategori: kendisi ya
+    /// da en yakın seçili atası. Hiçbiri seçili değilse <c>null</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Alt ağaç genişletmesinin tersten okunuşudur.</b> "Seçili kategorinin
+    /// tüm torunlarını bul" sorusu, her düğüm için "atalarımdan hangisi
+    /// seçili" sorusuna çevrilir. İkisi aynı cevabı verir ama bu yön mevcut
+    /// <see cref="Ancestry"/> yürüyüşünü olduğu gibi kullanır — ikinci bir
+    /// hiyerarşi motoru yazılmaz ve döngü/derinlik koruması kendiliğinden
+    /// devralınır.
+    /// </para>
+    /// <para>
+    /// <b>Sonuç TEKTİR.</b> Ata zinciri bir zincirdir, ağaç değil: EN YAKIN
+    /// seçili ata döndüğü için bir düğüm asla iki seçime birden ait olamaz.
+    /// Bu, ağırlıklı analizde bir kaydın iki ölçüte birden sayılmasını
+    /// yapısal olarak imkânsız kılar.
+    /// </para>
+    /// </remarks>
+    public static int? SelectionCovering(
+        IReadOnlyDictionary<int, Node> nodes,
+        int id,
+        IReadOnlySet<int> selectedIds) =>
+        Ancestry(nodes, id)
+            .Where(node => selectedIds.Contains(node.Id))
+            .Select(node => (int?)node.Id)
+            .FirstOrDefault();
+
+    /// <summary>
+    /// <paramref name="id"/>'nin seçili bir ÜST kategorisi var mı — kendisi
+    /// sayılmaz.
+    /// </summary>
+    /// <remarks>
+    /// Çakışma tespitinin tek ölçütü budur: hem üst hem alt seçilmişse, alt
+    /// zaten üstün kapsamındadır ve ikisini birlikte ağırlıklandırmak aynı
+    /// kaydı iki kez saymak olurdu. Kural derinlikten BAĞIMSIZDIR — bir
+    /// kategori ile torununun torunu da aynı şekilde yakalanır.
+    /// </remarks>
+    public static int? SelectedAncestorOf(
+        IReadOnlyDictionary<int, Node> nodes,
+        int id,
+        IReadOnlySet<int> selectedIds) =>
+        Ancestry(nodes, id)
+            .Skip(1)
+            .Where(node => selectedIds.Contains(node.Id))
+            .Select(node => (int?)node.Id)
+            .FirstOrDefault();
+
+    /// <summary>
     /// Sıralama anahtarı: önce hiyerarşi yolu, sonra ad. Aynı üst altındaki
     /// kardeşler alfabetik gelir ve her alt ağaç kendi üstünün hemen ardında
     /// durur.

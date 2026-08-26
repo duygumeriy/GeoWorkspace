@@ -44,6 +44,13 @@ export const PERMISSIONS = Object.freeze({
      haritasını da görebildiği varsayımı bilinçli olarak yoktur. */
   HEATMAP_VIEW: 'heatmap.view',
 
+  /* --- Konum analizi ------------------------------------------------------- */
+  /* Envanter analizinden de ısı haritasından da AYRIDIR: konum analizi ortak
+     POI envanterini kategori ağırlıklarıyla puanlar, diğer ikisi kullanıcının
+     kendi kayıtlarına bakar. Kod henüz hiçbir arayüz yüzeyinde okunmaz —
+     özellik sonraki fazlarda gelir. */
+  LOCATION_ANALYSIS: 'location.analysis',
+
   /* --- Katmanlar ---------------------------------------------------------- */
   LAYERS_VIEW: 'layers.view',
   LAYERS_MANAGE: 'layers.manage',

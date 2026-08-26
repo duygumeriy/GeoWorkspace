@@ -31,7 +31,17 @@ public static class RolePermissionDefaults
 
         /* POI görüntüleme temel bir harita yeteneğidir: ödevin "Kullanıcı"
            rolü POI'leri görebilmelidir ve Viewer bu profilin karşılığıdır. */
-        PermissionCodes.PoiView
+        PermissionCodes.PoiView,
+
+        /* Konum analizi de aynı gerekçeyle Viewer profilindedir: ödev, normal
+           kullanıcının konum analizi yapabilmesini AÇIKÇA ister ve Viewer o
+           kullanıcının karşılığıdır. Profiller birbirinin üzerine kurulduğu
+           için Editor/Analyst/Manager da bunu Viewer'dan devralır — analiz
+           çalıştırmak, veri üretme yetkisinden bağımsız temel bir yetenektir.
+
+           inventory.analysis ve heatmap.view'a DOKUNULMAZ: onlar ayrı
+           yeteneklerdir ve Viewer'da hâlâ yoktur. */
+        PermissionCodes.LocationAnalysis
     ];
 
     private static readonly string[] GisEditorPermissions =

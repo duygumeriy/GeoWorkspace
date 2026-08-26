@@ -479,6 +479,13 @@ public class PermissionEnforcementTests
                    yalnızca controller'ın kurulabilmesi için gerekir. */
                 services.AddScoped(_ => Substitute.For<IUserPermissionManagementService>());
 
+                /* AnalysisController konum analizi uçlarını da taşır; bu dosya
+                   yalnızca FİLTRE katmanını sınadığı için servislerin gerçek
+                   uygulamaları değil, controller kurulabilsin diye taklitleri
+                   kaydedilir. */
+                services.AddScoped(_ => Substitute.For<ILocationAnalysisService>());
+                services.AddScoped(_ => Substitute.For<ILocationAnalysisImageService>());
+
                 /* Üretimdeki kayıtların AYNISI. Test kendi yetkilendirme
                    mantığını kurmaz; Program.cs'teki hattı çalıştırır. */
                 services.AddScoped(_ => Substitute.For<IGeographicAuthorizationService>());

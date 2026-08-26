@@ -93,6 +93,36 @@ public static class RolePermissionExpansions
     ];
 
     /// <summary>
+    /// Konum analizi kataloğu genişlemesi.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// POI genişlemesiyle aynı gerekçe: konum analizi, coğrafi yetki yönetimi
+    /// ya da denetim kaydı gibi YÖNETİMSEL bir yetenek değil, kullanıcının
+    /// haritada çalıştırdığı temel bir analizdir — ödev normal kullanıcının
+    /// yapabilmesini açıkça ister. Yalnızca ayrıcalıklı rollere verilseydi,
+    /// mevcut kurulumlardaki Viewer/Editor/Analyst kullanıcıları için özellik
+    /// hiç açılmazdı.
+    /// </para>
+    /// <para>
+    /// Dağılım <see cref="RolePermissionDefaults"/> matrisiyle birebir aynıdır;
+    /// genişlemenin işi yeni kodu zaten provision edilmiş rollere ULAŞTIRMAKTIR,
+    /// farklı bir profil tanımlamak değil. Özel roller DIŞARIDADIR ve yetkiyi
+    /// Rol Yetki Düzenleyicisi'nden AÇIKÇA alır.
+    /// </para>
+    /// <para>
+    /// <c>inventory.analysis</c> ya da <c>heatmap.view</c> taşıyan roller bu
+    /// koda kendiliğinden SAHİP OLMAZ: üçü ayrı yeteneklerdir ve "analiz
+    /// yetkisi konum analizi de demektir" varsayımı ayrımın kendisini
+    /// geçersiz kılardı.
+    /// </para>
+    /// </remarks>
+    private static readonly string[] LocationAnalysisPermissions =
+    [
+        PermissionCodes.LocationAnalysis
+    ];
+
+    /// <summary>
     /// POI kataloğu genişlemesi (Phase 2A).
     /// </summary>
     /// <remarks>
@@ -151,11 +181,14 @@ public static class RolePermissionExpansions
     public static readonly IReadOnlyList<Expansion> All =
     [
         new(GisRoles.Administrator,
-            [.. GeographyPermissions, .. AuditPermissions, .. HeatmapPermissions, .. PoiManagePermissions]),
-        new(GisRoles.GisManager, [.. HeatmapPermissions, .. PoiManagePermissions]),
-        new(GisRoles.GisAnalyst, [.. HeatmapPermissions, .. PoiViewOnly]),
-        new(GisRoles.GisEditor, PoiCreatePermissions),
-        new(GisRoles.Viewer, PoiViewOnly)
+            [.. GeographyPermissions, .. AuditPermissions, .. HeatmapPermissions, .. PoiManagePermissions,
+             .. LocationAnalysisPermissions]),
+        new(GisRoles.GisManager,
+            [.. HeatmapPermissions, .. PoiManagePermissions, .. LocationAnalysisPermissions]),
+        new(GisRoles.GisAnalyst,
+            [.. HeatmapPermissions, .. PoiViewOnly, .. LocationAnalysisPermissions]),
+        new(GisRoles.GisEditor, [.. PoiCreatePermissions, .. LocationAnalysisPermissions]),
+        new(GisRoles.Viewer, [.. PoiViewOnly, .. LocationAnalysisPermissions])
     ];
 
     /// <summary>Genişlemelerde geçen tüm kodlar (tekrarsız).</summary>

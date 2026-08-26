@@ -1,0 +1,96 @@
+/* Haritaya çakılı POI kartı. Ölçüler ve renkler mevcut panel değişkenlerinden
+   gelir; bu kart için yeni bir tasarım dili tanımlanmaz. */
+
+.analysis-poi-popup {
+  /* Kapalıyken hiçbir yeri kaplamaz: Overlay konumu boş olsa da düğüm DOM'da
+     kalır ve boş bir kutu tıklamayı yutabilirdi. */
+  display: none;
+}
+
+.analysis-poi-popup.is-open {
+  display: block;
+}
+
+.analysis-poi-popup .app-card {
+  width: max-content;
+  max-width: min(280px, 80vw);
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface-solid);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-panel);
+  font-size: var(--font-small);
+}
+
+/* Kartı işaret ettiği noktaya bağlayan uç. Ayrı bir vektör katmanı
+   eklemeden "burası" demenin en ucuz yolu. */
+/* Ok ucu, kartın hangi yöne açıldığına göre yer değiştirir: sola açılan bir
+   kartın ucu ortada dursaydı, işaret ettiği noktayı göstermezdi. */
+.analysis-poi-popup[data-grow='left'] .app-card::after {
+  left: auto;
+  right: 14px;
+  transform: rotate(45deg);
+}
+
+.analysis-poi-popup .app-card::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -6px;
+  width: 11px;
+  height: 11px;
+  transform: translateX(-50%) rotate(45deg);
+  background: var(--surface-solid);
+  border-right: 1px solid var(--border-soft);
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.analysis-poi-popup .app-card {
+  position: relative;
+}
+
+.analysis-poi-popup header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.analysis-poi-popup header strong {
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.analysis-poi-popup dl {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+}
+
+.analysis-poi-popup dl > div {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.analysis-poi-popup dt {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.analysis-poi-popup dd {
+  margin: 0;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+
+.analysis-poi-popup .app-error {
+  margin: 0.5rem 0 0;
+  color: var(--danger);
+  font-size: var(--font-small);
+}

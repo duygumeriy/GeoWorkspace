@@ -43,6 +43,11 @@ export default function Sidebar({
      BAĞIMSIZDIR: çizim yetkisi olmayan biri de kendi POI'lerini görebilmelidir.
      Hesap MapPage'deki yetki katmanındadır; burada yalnızca sonucu tüketilir. */
   canOpenMyPois = false,
+  /* "Konum Analizi" İKİ yetki birden ister (location.analysis + poi.view):
+     her iki uç da ikisini arar, dolayısıyla yalnızca birine sahip birine
+     satırı göstermek garanti 403 alacak bir akışa davet etmek olurdu. Hesap
+     MapPage'deki yetki katmanındadır; burada yalnızca sonucu tüketilir. */
+  canOpenLocationAnalysis = false,
   username,
   remaining,
   onLogout,
@@ -89,6 +94,13 @@ export default function Sidebar({
     ...(can(PERMISSIONS.LAYERS_VIEW) ? [{ id: 'layers', label: 'Katmanlar', Icon: LayersIcon }] : []),
     ...(can(PERMISSIONS.HEATMAP_VIEW)
       ? [{ id: 'heatmap', label: 'Isı Haritası Analizi', Icon: AnalysisIcon }]
+      : []),
+    /* Isı Haritası Analizi'nin hemen ardında ama ONDAN AYRI bir satır: o,
+       kişinin KENDİ çizim noktalarının yoğunluğudur; bu, ortak açık veri POI
+       kümesini kategori ağırlıklarıyla puanlar. Aynı düğmeye bağlamak iki
+       farklı soruyu tek yere koymak olurdu. */
+    ...(canOpenLocationAnalysis
+      ? [{ id: 'locationAnalysis', label: 'Konum Analizi', Icon: AnalysisIcon }]
       : []),
     // Right after "Çizimlerim"/"Katmanlar" because it is the same subject seen
     // from the other side: the records that are no longer on the map.

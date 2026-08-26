@@ -232,6 +232,98 @@ namespace StajProject.Infrastructure.Persistence.Migrations
                     b.ToTable("activity_logs", (string)null);
                 });
 
+            modelBuilder.Entity("StajProject.Domain.Entities.AnalysisPoi", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("CategoryId")
+                        .HasColumnType("integer")
+                        .HasColumnName("category_id");
+
+                    b.Property<Point>("Coordinate")
+                        .IsRequired()
+                        .HasColumnType("geometry(Point,4326)")
+                        .HasColumnName("coordinate");
+
+                    b.Property<string>("ExternalId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("external_id");
+
+                    b.Property<DateTime>("ImportedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("imported_at");
+
+                    b.Property<string>("Name")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("source");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CategoryId");
+
+                    b.HasIndex("Coordinate");
+
+                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("Coordinate"), "gist");
+
+                    b.HasIndex("Source", "ExternalId")
+                        .IsUnique();
+
+                    b.ToTable("analysis_poi", (string)null);
+                });
+
+            modelBuilder.Entity("StajProject.Domain.Entities.AnalysisPoiFeature", b =>
+                {
+                    b.Property<int>("CategoryId")
+                        .HasColumnType("integer")
+                        .HasColumnName("category_id");
+
+                    b.Property<Point>("Coordinate")
+                        .IsRequired()
+                        .HasColumnType("geometry(Point,4326)")
+                        .HasColumnName("coordinate");
+
+                    b.Property<string>("FeatureId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("feature_id");
+
+                    b.Property<string>("Name")
+                        .HasColumnType("text")
+                        .HasColumnName("name");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("source");
+
+                    b.Property<int>("SourceId")
+                        .HasColumnType("integer")
+                        .HasColumnName("source_id");
+
+                    b.Property<string>("SourceKind")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("source_kind");
+
+                    b.ToTable((string)null);
+
+                    b.ToView("analysis_poi_union", (string)null);
+                });
+
             modelBuilder.Entity("StajProject.Domain.Entities.GeographicAuthorization", b =>
                 {
                     b.Property<int>("Id")
@@ -1014,6 +1106,17 @@ namespace StajProject.Infrastructure.Persistence.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("StajProject.Domain.Entities.AnalysisPoi", b =>
+                {
+                    b.HasOne("StajProject.Domain.Entities.PoiCategory", "Category")
+                        .WithMany()
+                        .HasForeignKey("CategoryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Category");
                 });
 
             modelBuilder.Entity("StajProject.Domain.Entities.GeographicAuthorization", b =>

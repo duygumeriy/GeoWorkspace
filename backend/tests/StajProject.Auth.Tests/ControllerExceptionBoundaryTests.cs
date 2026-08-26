@@ -136,7 +136,7 @@ public class ControllerExceptionBoundaryTests
             .CountIntersectionsAsync(Arg.Any<IntersectionAnalysisRequest>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException(LeakyMessage));
 
-        var controller = WithHttpContext(new AnalysisController(analysis, NullLogger<AnalysisController>.Instance));
+        var controller = WithHttpContext(new AnalysisController(analysis, Substitute.For<ILocationAnalysisService>(), Substitute.For<ILocationAnalysisImageService>(), NullLogger<AnalysisController>.Instance));
 
         var response = await controller.CountIntersections(new IntersectionAnalysisRequest(), default);
 
@@ -152,7 +152,7 @@ public class ControllerExceptionBoundaryTests
             .CountIntersectionsAsync(Arg.Any<IntersectionAnalysisRequest>(), Arg.Any<CancellationToken>())
             .Returns(ServiceResult<IntersectionAnalysisResponse>.Failure("Geçersiz poligon."));
 
-        var controller = WithHttpContext(new AnalysisController(analysis, NullLogger<AnalysisController>.Instance));
+        var controller = WithHttpContext(new AnalysisController(analysis, Substitute.For<ILocationAnalysisService>(), Substitute.For<ILocationAnalysisImageService>(), NullLogger<AnalysisController>.Instance));
 
         var response = await controller.CountIntersections(new IntersectionAnalysisRequest(), default);
 

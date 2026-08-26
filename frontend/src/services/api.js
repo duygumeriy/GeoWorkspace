@@ -1062,3 +1062,141 @@ export function analyzeIntersections(wkt, { excludePolygonId = null } = {}) {
     body: JSON.stringify({ wkt, excludePolygonId }),
   })
 }
+
+/* --- Konum analizi -----------------------------------------------------------
+   Tarayıcı yalnızca UYGULAMA düzeyindeki alanları gönderir: hedef alan,
+   ölçütler ve görüntü penceresi. GeoServer adresi, workspace, katman/style adı,
+   CQL, `env` ve SLD bu sınırı HİÇBİR yönde geçmez — hepsi sunucuda kurulur.
+
+   İki uç AYRIDIR ve öyle kalmalıdır: özet, görünümden bağımsızdır ve harita
+   hareketinde değişmez; raster yalnızca tanımlı bir LOD sınırı geçildiğinde yenilenir.
+   Tek uçta birleştirmek, yalnızca sayı isteyen her çağrıda bir PNG
+   çizdirmek olurdu. */
+
+/** Seçilen alandaki ağırlıklı POI özeti (`location.analysis` + `poi.view`). */
+export function analyzeLocation({ areaWkts, criteria }) {
+  return authFetch('/api/analysis/location', {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ areaWkts, criteria }),
+  })
+}
+
+/**
+ * Ağırlıklı ısı haritası görüntüsü (`location.analysis` + `poi.view`).
+ *
+ * `bbox` KANONİK EPSG:4326 düzenindedir: `minLon,minLat,maxLon,maxLat`.
+ * WMS 1.3.0'ın EPSG:4326 için istediği enlem-önce sırasını sunucu uygular;
+ * burada takas EDİLMEZ.
+ */
+export async function fetchLocationAnalysisImage(payload) {
+  return fetchAnalysisPng('/api/analysis/location/image', payload, 'Isı haritası üretilemedi.')
+}
+
+/**
+ * Analiz POI'lerinin nokta örtüsü (PNG).
+ *
+ * <b>Aynı gövde, aynı doğrulama, farklı görünüm.</b> Süzgeç sunucuda ısı
+ * haritasıyla AYNI koddan üretilir; tarayıcı burada da yalnızca bir pencere
+ * söyler — katman, stil, CQL ve `env` sunucuya aittir.
+ */
+export async function fetchLocationAnalysisPointsImage(payload) {
+  return fetchAnalysisPng(
+    '/api/analysis/location/points/image',
+    payload,
+    'Analiz POI örtüsü üretilemedi.',
+  )
+}
+
+/**
+ * Aktif analize giren POI'ler (`location.analysis` + `poi.view`).
+ *
+ * <b>Tüm tabloyu isteyen bir yol YOKTUR.</b> Gövde yalnızca aktif analizi
+ * taşır; alan süzgeci, kategori kapanışı ve üst sınır sunucuda uygulanır.
+ * Koordinatlar KANONİK derecelerdir (boylam, enlem) — GeoServer görüntü
+ * yollarındaki CRS:84 sözleşmesi buraya UYGULANMAZ.
+ */
+export async function fetchLocationAnalysisPoints({ areaWkts, criteria, signal }) {
+  const response = await authFetch('/api/analysis/location/points', {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ areaWkts, criteria }),
+    signal,
+  })
+
+  if (!response.ok) {
+    const error = new Error(await readApiError(response, 'Analiz POI\'leri alınamadı.'))
+    error.status = response.status
+    throw error
+  }
+
+  return response.json()
+}
+
+/**
+ * Tıklanan noktaya en yakın analiz POI'si (`location.analysis` + `poi.view`).
+ *
+ * <b>Koordinat KANONİKTİR: boylam, enlem.</b> Bu bir JSON uygulama ucudur;
+ * GeoServer görüntü yollarındaki CRS:84 / eksen sırası sözleşmesi buraya
+ * UYGULANMAZ ve uygulanmamalıdır.
+ *
+ * <b>Boş sonuç bir hata DEĞİLDİR</b>: boşluğa tıklamak `{ poi: null }` döner.
+ */
+export async function hitTestLocationAnalysisPoint({
+  areaWkts,
+  criteria,
+  longitude,
+  latitude,
+  toleranceMeters,
+  signal,
+}) {
+  const response = await authFetch('/api/analysis/location/points/hit-test', {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ areaWkts, criteria, longitude, latitude, toleranceMeters }),
+    signal,
+  })
+
+  if (!response.ok) {
+    const error = new Error(await readApiError(response, 'POI bilgisi alınamadı.'))
+    error.status = response.status
+    throw error
+  }
+
+  return response.json()
+}
+
+async function fetchAnalysisPng(path, {
+  areaWkts,
+  criteria,
+  bbox,
+  width,
+  height,
+  pixelRatio,
+  criterionSlug,
+  heatmapLod,
+  signal,
+}, failureMessage) {
+  const response = await authFetch(path, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ areaWkts, criteria, bbox, width, height, pixelRatio, criterionSlug, heatmapLod }),
+    signal,
+  })
+
+  if (!response.ok) {
+    /* Durum kodu ÇAĞIRANA taşınır: 502/504 geçici bir sunucu sorunudur ve
+       yeniden denenebilir, 403 ise denenmemelidir. Tek tip bir mesaj ikisini
+       ayırt edilemez kılardı. */
+    const error = new Error(await readApiError(response, failureMessage))
+    error.status = response.status
+    throw error
+  }
+
+  const contentType = response.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase()
+  if (contentType !== 'image/png') throw new Error('Sunucu geçerli bir görüntü döndürmedi.')
+
+  const blob = await response.blob()
+  if (blob.size === 0) throw new Error('Sunucu boş bir görüntü döndürdü.')
+  return blob
+}

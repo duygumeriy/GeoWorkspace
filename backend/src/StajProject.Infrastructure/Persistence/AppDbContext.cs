@@ -39,6 +39,14 @@ public class AppDbContext : IdentityDbContext<User, IdentityRole<int>, int>
 
     public DbSet<PoiCategory> PoiCategories => Set<PoiCategory>();
 
+    /* --- Konum analizi veri kümesi ------------------------------------------
+       Dış kaynaklı (açık veri) POI'ler. Normal POI envanterinden AYRI bir
+       tablodur — sahiplik, çöp kutusu ve CRUD akışlarına girmez — ama aynı
+       kategori taksonomisini kullanır, bu yüzden aynı context'te durur:
+       kategori FK'sı ile analiz sorgusu tek bir bağlantıyı paylaşmalıdır. */
+
+    public DbSet<AnalysisPoi> AnalysisPois => Set<AnalysisPoi>();
+
     /* --- Dinamik yetkilendirme ---------------------------------------------
        Yetki kataloğu ve grant tabloları. Identity'nin rol/kullanıcı tabloları
        ile aynı context'te durur: bir rolün yetkilendirilmesi ile o rolün

@@ -49,6 +49,12 @@ export const MAP_CONTEXTS = Object.freeze({
   /* --- Analiz ------------------------------------------------------------- */
   /** Envanter analizi: alan çizimi ve sonuç paneli tek bir bağlamdır. */
   inventory: 'inventory',
+  /**
+   * Konum analizi: hedef alan seçimi, ölçüt formu ve ağırlıklı ısı haritası
+   * tek bir bağlamdır. Envanter analizinden AYRIDIR — farklı veri kümesi,
+   * farklı yetki, farklı çıktı.
+   */
+  locationAnalysis: 'locationAnalysis',
 
   /* --- Kenar çubuğu panelleri ---------------------------------------------
      Kimlikler kenar çubuğunun `id` değerleriyle BİREBİR aynıdır; böylece
@@ -93,6 +99,7 @@ export const SIDEBAR_CONTEXTS = Object.freeze([
   MAP_CONTEXTS.layers,
   MAP_CONTEXTS.trash,
   MAP_CONTEXTS.heatmap,
+  MAP_CONTEXTS.locationAnalysis,
   MAP_CONTEXTS.settings,
   MAP_CONTEXTS.about,
 ])
