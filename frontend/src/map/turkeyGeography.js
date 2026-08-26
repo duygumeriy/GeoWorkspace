@@ -1,4 +1,8 @@
-import data from './data/turkeyProvinces.json'
+/* İçe aktarma niteliği (`with { type: 'json' }`) STANDARTTIR ve iki tarafı
+   birden çalıştırır: Vite paketlemeyi zaten yapıyordu, Node ise nitelik
+   olmadan bir JSON modülünü ESM olarak yükleyemez. Niteliksiz hâli, bu
+   modülü kullanan her şeyi birim testlerinin dışında bırakıyordu. */
+import data from './data/turkeyProvinces.json' with { type: 'json' }
 
 /**
  * Türkiye il ve coğrafi bölge sınırları — YEREL veri kümesi.

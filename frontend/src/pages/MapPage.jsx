@@ -11,6 +11,7 @@ import { usePermissions } from '../auth/permissionStore.js'
 import { PERMISSIONS } from '../auth/permissionCodes.js'
 import { useTransition } from '../transition/TransitionContext.jsx'
 import {
+  analyzeLocation,
   createPoi,
   deletePoi,
   fetchPoiCategories,
@@ -36,6 +37,8 @@ import ConfirmDialog from '../components/map/ConfirmDialog.jsx'
 import AttributePopup from '../components/map/AttributePopup.jsx'
 import AnalysisPanel from '../components/map/AnalysisPanel.jsx'
 import HeatmapPanel from '../components/map/HeatmapPanel.jsx'
+import LocationAnalysisPanel from '../components/map/LocationAnalysisPanel.jsx'
+import AnalysisPoiPopup from '../components/map/AnalysisPoiPopup.jsx'
 import { SettingsPanel, AboutPanel } from '../components/map/InfoPanels.jsx'
 import PoiFormSheet from '../components/map/PoiFormSheet.jsx'
 import PoiInfoSheet from '../components/map/PoiInfoSheet.jsx'
@@ -74,6 +77,10 @@ import useEditSession from '../hooks/useEditSession.js'
 import useVertexOverlay from '../hooks/useVertexOverlay.js'
 import useAnalysisHighlight from '../hooks/useAnalysisHighlight.js'
 import useHeatmapLayer from '../hooks/useHeatmapLayer.js'
+import useLocationAnalysisArea from '../hooks/useLocationAnalysisArea.js'
+import useLocationAnalysisLayer from '../hooks/useLocationAnalysisLayer.js'
+import useLocationAnalysisPoiLayer from '../hooks/useLocationAnalysisPoiLayer.js'
+import useLocationAnalysisPoiInspect from '../hooks/useLocationAnalysisPoiInspect.js'
 import useMapPresentationLayer from '../hooks/useMapPresentationLayer.js'
 import usePoiLayer from '../hooks/usePoiLayer.js'
 import usePoiPresentationLayer from '../hooks/usePoiPresentationLayer.js'
@@ -83,6 +90,18 @@ import usePoiInteraction from '../hooks/usePoiInteraction.js'
 import usePoiEditDraft from '../hooks/usePoiEditDraft.js'
 import { DRAWING_TYPES, DRAWING_TYPE_LIST, colorPatchFor, normalizeTags } from '../map/drawingTypes.js'
 import { trashRecordOf } from '../map/trashFilters.js'
+import {
+  MAX_CRITERIA,
+  MIN_CRITERIA,
+  emptyCriterion,
+  provinceAreaWkts,
+  toRequestCriteria,
+  validateAnalysis,
+  provincesWithinScope,
+  regionAreaWkts,
+  regionsWithinScope,
+} from '../map/locationAnalysis.js'
+import { PROVINCES, REGIONS, provinceByCodeOrNull, regionByKeyOrNull } from '../map/turkeyGeography.js'
 import { isGeometryInsideScope } from '../map/geographicScope.js'
 import {
   formatArea,
@@ -257,6 +276,7 @@ export default function MapPage() {
     scopeVersion: `${geographic.areaCount}:${geographic.effectiveWkt ?? ''}`,
   })
 
+
   /* Canlı yetki yenilemesi bu ekran açıkken erişimi kaldırabilir. Katmanı
      sökmek hook'un, artık erişilemeyen paneli kapatmak bu sayfanın işidir. */
   useEffect(() => {
@@ -299,6 +319,14 @@ export default function MapPage() {
    * kullanıcıya kayıp veri gibi görünürdü.
    */
   const [poiLayerVisible, setPoiLayerVisible] = useState(true)
+
+  /* Konum analizi normal POI görünürlüğünü DEĞİŞTİRMEZ; yalnızca sonuç
+     oturumu boyunca bastırır. Böylece Temizle, kullanıcının analizden önceki
+     tercihini (açık ya da kapalı) kendiliğinden geri getirir. Ayrı bayrak,
+     taslak değişirken ve analiz yeniden çalışırken normal POI'lerin bir kare
+     için bile geri parlamasını önler. */
+  const [activeAnalysis, setActiveAnalysis] = useState(null)
+  const [locationAnalysisResultActive, setLocationAnalysisResultActive] = useState(false)
 
   /**
    * POI arama kutusunun açıklığı.
@@ -480,6 +508,8 @@ export default function MapPage() {
     return lookup
   }, [poiCategories.items])
 
+  const normalPoiLayerVisible = poiLayerVisible && !locationAnalysisResultActive
+
   const poi = usePoiLayer(mapInstance, {
     permitted: allowed.canViewPoi,
     selectedId: selectedPoi?.id ?? null,
@@ -488,7 +518,7 @@ export default function MapPage() {
     categoryPresentation: poiCategoryPresentation,
     /* Görünürlük yetkiden AYRIDIR: katmanı kapatmak veriyi atmaz, yalnızca
        gizler — tekrar açıldığında yeniden indirilmez. */
-    visible: poiLayerVisible,
+    visible: normalPoiLayerVisible,
     showToast,
     rasterActiveRef: poiPresentationActiveRef,
   })
@@ -508,7 +538,7 @@ export default function MapPage() {
        yetkisiz durumda tam olarak bunu yapıyor, dolayısıyla gizlenmiş bir
        katman için kaydırma/yakınlaşma boyunca istek üretilmez ve uçan istek
        kancanın kendi temizliğinde iptal edilir. */
-    permitted: allowed.canViewPoi && poiLayerVisible,
+    permitted: allowed.canViewPoi && normalPoiLayerVisible,
     version: poiPresentationVersion,
     activeRef: poiPresentationActiveRef,
     /* Raster devraldığında/bıraktığında vektör katmanının yeniden çizilmesi
@@ -551,7 +581,7 @@ export default function MapPage() {
     /* Gizlenmiş bir POI tıklanamaz. Görünmez bir OpenLayers katmanı zaten
        isabet denetimine girmez; bu koşul aynı kararı okunur kılar ve
        etkileşimin kaynağını tek bir yerde toplar. */
-    && poiLayerVisible
+    && normalPoiLayerVisible
     && workspaceMode.isSelecting
     && workspaceMode.activeSelectionTool !== 'polygon'
 
@@ -649,6 +679,291 @@ export default function MapPage() {
     if (!poiNeedsCategories || poiCategories.loading || poiCategories.loaded) return
     loadPoiCategories()
   }, [poiNeedsCategories, poiCategories.loading, poiCategories.loaded, loadPoiCategories])
+
+  /* --- Konum analizi ---------------------------------------------------------
+
+     Ödevin "Konum Analizi" özelliği. Mevcut ısı haritasının KARDEŞİDİR, devamı
+     değil: o, kişinin kendi çizim noktalarının yoğunluğunu gösterir; bu, ortak
+     açık veri POI kümesini (analysis_poi) kategori ağırlıklarıyla puanlar ve
+     `location.analysis` + `poi.view` ister.
+
+     Durum sahipliği üçe ayrılır ve hiçbiri diğerini kopyalamaz:
+       · TASLAK form (burada): alan kipi, il, ölçütler, ağırlıklar.
+       · GÖNDERİLMİŞ analiz (burada, `activeAnalysis`): "ANALİZİ BAŞLAT"
+         anındaki anlık görüntü.
+       · Katman yaşam döngüsü (`useLocationAnalysisLayer`): yalnızca gönderilmiş
+         anlık görüntüyü okur.
+
+     Ayrım ödevin gereğidir: kullanıcı bir ağırlığı değiştirdiğinde harita
+     SESSİZCE yeniden boyanmaz — analiz, kullanıcının başlattığı bir eylemdir. */
+
+  const canOpenLocationAnalysis = allowed.canRunLocationAnalysis
+
+  const [areaMode, setAreaMode] = useState('province')
+  const [provinceCode, setProvinceCode] = useState('')
+  const [criteria, setCriteria] = useState(() => [emptyCriterion(), emptyCriterion()])
+  const [analysisStatus, setAnalysisStatus] = useState('idle')
+  const [analysisSummary, setAnalysisSummary] = useState(null)
+  const [analysisError, setAnalysisError] = useState('')
+
+  const locationArea = useLocationAnalysisArea(mapInstance, {
+    // Çizim etkileşimi YALNIZCA mod ona aitken canlıdır — diğer araçlarla
+    // aynı sözleşme, dolayısıyla dışlayıcılık yapısaldır.
+    active: workspaceMode.activeLocationAnalysisTool !== null,
+    /* Analiz alanı da çizim/POI ile AYNI coğrafi sınıra tabidir. */
+    scope: geographic.scope,
+    onRejected: (message) =>
+      showToast('error', message, { id: 'geographic-scope', timeout: 5000, placement: 'top' }),
+  })
+
+  /* Isı haritası görünümü: boş = ağırlıklı birleşik, dolu = tek ölçüt.
+     Gönderilmiş analiz DEĞİŞMEZ; bu yalnızca aynı analizin hangi kesitinin
+     çizildiğidir. */
+  const [heatmapCriterion, setHeatmapCriterion] = useState('')
+
+  const locationAnalysisLayer = useLocationAnalysisLayer(mapInstance, {
+    analysis: activeAnalysis,
+    permitted: canOpenLocationAnalysis,
+    criterionSlug: heatmapCriterion,
+  })
+
+  /* Örtü VARSAYILAN OLARAK KAPALIDIR. Analizin cevabı ısı haritasıdır;
+     binlerce nokta onun üstüne kendiliğinden serilirse, kullanıcının
+     sormadığı bir ayrıntı asıl sonucu örterdi. */
+  const [poiOverlayVisible, setPoiOverlayVisible] = useState(false)
+
+  /* Coğrafi yetki analiz alanına da uygulanır. Süzme BİR KEZ yapılır: 81 il
+     için kapsama sınaması her render'da tekrarlanacak bir iş değildir. */
+  const analysisProvinces = useMemo(
+    () => provincesWithinScope(geographic.scope, PROVINCES),
+    [geographic.scope],
+  )
+
+  const analysisRegions = useMemo(
+    () => regionsWithinScope(geographic.scope, REGIONS),
+    [geographic.scope],
+  )
+
+  /* Bölge, ilin ÜSTÜdür: seçilince il listesi o bölgenin illerine daralır.
+     Bölge tek başına da bir hedef alandır. */
+  const [regionKey, setRegionKey] = useState('')
+
+  /* Bölge seçiliyse il listesi o bölgenin illerine daralır; yetki süzmesi
+     ZATEN uygulanmıştır, bu ikinci bir daraltmadır. */
+  const visibleProvinces = useMemo(() => {
+    const region = regionKey ? regionByKeyOrNull(regionKey) : null
+    if (!region) return analysisProvinces
+    const codes = new Set(region.provinceCodes)
+    return analysisProvinces.filter((province) => codes.has(province.code))
+  }, [analysisProvinces, regionKey])
+
+  const locationAnalysisPoiLayer = useLocationAnalysisPoiLayer(mapInstance, {
+    analysis: activeAnalysis,
+    permitted: canOpenLocationAnalysis,
+    visible: poiOverlayVisible,
+    categories: poiCategories.items,
+    criterionSlug: heatmapCriterion,
+    /* Rozetin simgesi ve rengi NORMAL POI'lerle AYNI eşlemeden gelir; analiz
+       için ikinci bir kategori metadatası kurulmaz. */
+    categoryPresentation: poiCategoryPresentation,
+  })
+
+  /* İnceleme, POI bilgi paneli ve çizim seçimiyle AYNI sahiplik kuralına
+     uyar: haritanın tıklamasının sahibi olan bir araç varken devreye girmez.
+     Ek olarak yalnızca örtü AÇIKKEN anlamlıdır — görünmeyen bir noktayı
+     tıklamak diye bir şey yoktur. */
+  const analysisPoiClickEnabled =
+    poiOverlayVisible
+    && workspaceMode.isSelecting
+    && workspaceMode.activeSelectionTool !== 'polygon'
+
+  const analysisPoiInspect = useLocationAnalysisPoiInspect(mapInstance, {
+    analysis: activeAnalysis,
+    permitted: canOpenLocationAnalysis,
+    visible: poiOverlayVisible,
+    enabled: analysisPoiClickEnabled,
+  })
+
+  /* Gönderilmiş analiz, TASLAK değiştiği anda düşer. Eski bir ısı haritasını
+     yeni ölçütlerin sonucuymuş gibi ekranda bırakmak, kullanıcıya yanlış bir
+     cevabı doğru gibi göstermek olurdu. */
+  const invalidateAnalysis = useCallback(() => {
+    setActiveAnalysis(null)
+    setAnalysisSummary(null)
+    setAnalysisError('')
+    setAnalysisStatus('idle')
+  }, [])
+
+  const locationValidation = useMemo(
+    () => validateAnalysis({ areaWkts: locationArea.areaWkts, criteria, categories: poiCategories.items }),
+    [locationArea.areaWkts, criteria, poiCategories.items],
+  )
+
+  const handleAreaModeChange = useCallback(
+    (nextMode) => {
+      invalidateAnalysis()
+      setAreaMode(nextMode)
+      setProvinceCode('')
+      locationArea.clearArea()
+
+      /* Çizim kipi MOD MAKİNESİNDEN açılır; burada doğrudan bir Draw
+         eklenmez. İl kipine dönmek de modu bırakır, yoksa görünmeyen bir
+         çizim aracı ayakta kalırdı. */
+      if (nextMode === 'draw') {
+        if (!workspaceMode.isSelectingAnalysisArea) allowed.toggleLocationAnalysisTool()
+      } else if (workspaceMode.isSelectingAnalysisArea) {
+        workspaceMode.stopLocationAnalysis()
+      }
+    },
+    [invalidateAnalysis, locationArea, workspaceMode, allowed],
+  )
+
+  /**
+   * Bölge seçimi.
+   *
+   * Bölge TEK BAŞINA da bir hedef alandır: kullanıcı il seçmeden "İç Anadolu"
+   * için analiz çalıştırabilir. İl seçilirse il KAZANIR — daha dar olan
+   * kullanıcının son söylediği şeydir.
+   */
+  const handleRegionChange = useCallback(
+    (key) => {
+      invalidateAnalysis()
+      setRegionKey(key)
+      setProvinceCode('')
+
+      if (!key) {
+        locationArea.clearArea()
+        return
+      }
+
+      const wkts = regionAreaWkts(key)
+      const region = regionByKeyOrNull(key)
+      locationArea.setProvinceArea(
+        wkts,
+        `${region?.name ?? 'Seçilen bölge'} Bölgesi`,
+      )
+      locationArea.fitToArea()
+    },
+    [invalidateAnalysis, locationArea],
+  )
+
+  const handleProvinceChange = useCallback(
+    (code) => {
+      invalidateAnalysis()
+      setProvinceCode(code)
+
+      if (!code) {
+        locationArea.clearArea()
+        return
+      }
+
+      /* Çok parçalı iller BİRLEŞTİRİLMEZ: sözleşme zaten bir liste alır ve
+         yalnızca en büyük parçayı almak o ilin adalarını analiz dışında
+         bırakırdı. */
+      const wkts = provinceAreaWkts(code)
+      const province = provinceByCodeOrNull(code)?.name ?? 'Seçilen il'
+      locationArea.setProvinceArea(wkts, wkts.length > 1 ? `${province} (${wkts.length} parça)` : province)
+      locationArea.fitToArea()
+    },
+    [invalidateAnalysis, locationArea],
+  )
+
+  const handleCriterionChange = useCallback(
+    (index, patch) => {
+      invalidateAnalysis()
+      setCriteria((current) => current.map((row, i) => (i === index ? { ...row, ...patch } : row)))
+    },
+    [invalidateAnalysis],
+  )
+
+  const handleAddCriterion = useCallback(() => {
+    invalidateAnalysis()
+    setCriteria((current) => (current.length >= MAX_CRITERIA ? current : [...current, emptyCriterion()]))
+  }, [invalidateAnalysis])
+
+  const handleRemoveCriterion = useCallback(
+    (index) => {
+      invalidateAnalysis()
+      setCriteria((current) => (current.length <= MIN_CRITERIA ? current : current.filter((_, i) => i !== index)))
+    },
+    [invalidateAnalysis],
+  )
+
+  /**
+   * "ANALİZİ BAŞLAT".
+   *
+   * ÖNCE kompakt özet istenir, SONRA raster. İki nedeni var: özet sunucunun
+   * doğrulamasını ve gerçekten eşleşen POI olup olmadığını söyler, ve boş bir
+   * sonuçta saydam bir rasteri "sonuç" diye göstermek yerine dürüst bir boş
+   * durum gösterilebilir. Özet binlerce nokta DEĞİL, ölçüt başına birer sayaç
+   * döndürür.
+   */
+  const handleRunAnalysis = useCallback(async () => {
+    if (!locationValidation.valid) return
+
+    const snapshot = {
+      areaWkts: [...locationArea.areaWkts],
+      criteria: toRequestCriteria(criteria, poiCategories.items),
+    }
+
+    setActiveAnalysis(null)
+    setAnalysisSummary(null)
+    setAnalysisError('')
+    setAnalysisStatus('loading')
+
+    try {
+      const res = await analyzeLocation(snapshot)
+      if (!res.ok) throw new Error(await readApiError(res, 'Analiz çalıştırılamadı.'))
+
+      const body = await res.json()
+      setAnalysisSummary(body)
+      /* Başarılı özet (boş sonuç dahil) artık analiz sonucudur. Normal POI
+         tercihi yerinde kalır ama Temizle'ye kadar haritada bastırılır. */
+      setLocationAnalysisResultActive(true)
+
+      if (!body.totalMatchingPoiCount) {
+        // Boş sonuç bir HATA değildir; ama saydam bir raster de bir cevap değildir.
+        setAnalysisStatus('empty')
+        return
+      }
+
+      setAnalysisStatus('done')
+      /* Yeni analiz birleşik görünümle açılır: önceki analizin ölçüt kesiti,
+         yeni ölçüt kümesinde var olmayabilir. */
+      setHeatmapCriterion('')
+      setActiveAnalysis(snapshot)
+    } catch (runError) {
+      setAnalysisError(runError?.message || 'Analiz çalıştırılamadı.')
+      setAnalysisStatus('error')
+    }
+  }, [locationValidation.valid, locationArea.areaWkts, criteria, poiCategories.items])
+
+  const handleClearAnalysis = useCallback(() => {
+    invalidateAnalysis()
+    setLocationAnalysisResultActive(false)
+    /* Örtü de kapanır: "Temizle" ekranı analiz öncesine döndürür ve açık
+       kalan bir anahtar, bir sonraki analizde sorulmadan nokta çizerdi.
+       Açık POI kartı da onunla gider — gösterdiği kayıt silinen analize
+       aitti. */
+    setPoiOverlayVisible(false)
+    setHeatmapCriterion('')
+    analysisPoiInspect.close()
+    setCriteria([emptyCriterion(), emptyCriterion()])
+    setProvinceCode('')
+    setRegionKey('')
+    locationArea.clearArea()
+    if (workspaceMode.isSelectingAnalysisArea) workspaceMode.stopLocationAnalysis()
+  }, [invalidateAnalysis, locationArea, workspaceMode, analysisPoiInspect])
+
+  /* Canlı yetki yenilemesi bu ekran açıkken erişimi kaldırabilir. Katmanı
+     sökmek hook'un, paneli kapatmak ve gönderilmiş analizi düşürmek bu
+     sayfanın işidir. */
+  useEffect(() => {
+    if (canOpenLocationAnalysis) return
+    invalidateAnalysis()
+    setLocationAnalysisResultActive(false)
+    mapContext.close(MAP_CONTEXTS.locationAnalysis)
+  }, [canOpenLocationAnalysis, invalidateAnalysis, mapContext])
 
 
   /**
@@ -2043,6 +2358,16 @@ export default function MapPage() {
     /* Kenar çubuğu panelleri yalnızca birer görünümdür: bıraktıkları bir durum
        yoktur. Isı haritası da buradadır — paneli kapanır, KATMANI kalır. */
     [MAP_CONTEXTS.heatmap]: () => {},
+    /* Konum analizi ısı haritasıyla aynı sözleşmeyi izler: panel kapanır,
+       TAMAMLANMIŞ analiz haritada kalır — kullanıcı sonucu görmek için paneli
+       açık tutmak zorunda değildir.
+
+       Ama CANLI BİR ÇİZİM ETKİLEŞİMİ bir panel DEĞİLDİR: paneli kapatmak
+       görünmeyen bir Draw aracını ayakta bırakırdı ve bir sonraki tık hâlâ
+       poligon başlatırdı. Mod bu yüzden burada bırakılır. */
+    [MAP_CONTEXTS.locationAnalysis]: () => {
+      workspaceMode.stopLocationAnalysis()
+    },
     [MAP_CONTEXTS.drawings]: () => {},
     /* "POI'lerim" de yalnızca bir GÖRÜNÜMDÜR: kapanması POI katmanını
        gizlemez, seçimi düşürmez, hiçbir kaydı silmez. */
@@ -2093,6 +2418,7 @@ export default function MapPage() {
         onSelectPanel={handleSelectPanel}
         canOpenTrash={canOpenTrash}
         canOpenMyPois={canOpenMyPois}
+        canOpenLocationAnalysis={canOpenLocationAnalysis}
         username={username}
         remaining={remaining}
         onLogout={handleLogout}
@@ -2394,6 +2720,57 @@ export default function MapPage() {
                 onToggle={() => setHeatmapEnabled((value) => !value)}
                 onOpacityChange={heatmap.setOpacity}
                 onRetry={heatmap.refresh}
+              />
+
+              <AnalysisPoiPopup
+                map={mapInstance}
+                poi={analysisPoiInspect.poi}
+                error={analysisPoiInspect.error}
+                onClose={analysisPoiInspect.close}
+              />
+
+              <LocationAnalysisPanel
+                open={mapContext.isActive(MAP_CONTEXTS.locationAnalysis) && canOpenLocationAnalysis}
+                onClose={() => mapContext.close(MAP_CONTEXTS.locationAnalysis)}
+                areaMode={areaMode}
+                onAreaModeChange={handleAreaModeChange}
+                provinceCode={provinceCode}
+                onProvinceChange={handleProvinceChange}
+                areaLabel={locationArea.areaLabel}
+                isDrawing={workspaceMode.isSelectingAnalysisArea}
+                provinces={visibleProvinces}
+                regions={analysisRegions}
+                regionKey={regionKey}
+                onRegionChange={handleRegionChange}
+                scopeRestricted={geographic.isRestricted}
+                categories={poiCategories.items}
+                categoriesLoading={poiCategories.loading}
+                categoriesError={poiCategories.error}
+                onRetryCategories={loadPoiCategories}
+                criteria={criteria}
+                onCriterionChange={handleCriterionChange}
+                onAddCriterion={handleAddCriterion}
+                onRemoveCriterion={handleRemoveCriterion}
+                validation={locationValidation}
+                onAnalyze={handleRunAnalysis}
+                onClear={handleClearAnalysis}
+                status={analysisStatus}
+                summary={analysisSummary}
+                error={analysisError}
+                imageLoading={locationAnalysisLayer.loading}
+                imageError={locationAnalysisLayer.error}
+                onRetryImage={locationAnalysisLayer.refresh}
+                opacity={locationAnalysisLayer.opacity}
+                onOpacityChange={locationAnalysisLayer.setOpacity}
+                hasActiveAnalysis={activeAnalysis !== null}
+                heatmapCriterion={heatmapCriterion}
+                onHeatmapCriterionChange={setHeatmapCriterion}
+                poiOverlayVisible={poiOverlayVisible}
+                onPoiOverlayVisibleChange={setPoiOverlayVisible}
+                poiOverlayLoading={locationAnalysisPoiLayer.loading}
+                poiOverlayCount={locationAnalysisPoiLayer.count}
+                poiOverlayTruncated={locationAnalysisPoiLayer.truncated}
+                poiOverlayError={locationAnalysisPoiLayer.error}
               />
 
               <SettingsPanel

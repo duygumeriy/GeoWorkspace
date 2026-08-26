@@ -49,6 +49,8 @@ public class AuthorizationFoundationTests
 
             "heatmap.view",
 
+            "location.analysis",
+
             "layers.view",
             "layers.manage",
 
@@ -223,7 +225,11 @@ public class AuthorizationFoundationTests
                 "selection.use",
                 "inventory.view",
                 "layers.view",
-                "poi.view"),
+                "poi.view",
+                /* Konum analizi Viewer profilindedir: ödev normal kullanıcının
+                   konum analizi yapabilmesini açıkça ister. inventory.analysis
+                   ve heatmap.view hâlâ YOKTUR — üçü ayrı yeteneklerdir. */
+                "location.analysis"),
             await PermissionCodesOfAsync(scope, GisRoles.Viewer));
     }
 
@@ -262,7 +268,10 @@ public class AuthorizationFoundationTests
                    üreticisi envanteri yalnızca büyütebilir. İkisi de YALNIZCA
                    kendi kayıtlarında geçerlidir. */
                 "poi.update",
-                "poi.delete"),
+                "poi.delete",
+
+                // Viewer profilinden devralınır; çizim yetkilerinden bağımsızdır.
+                "location.analysis"),
             codes);
 
         // Varsayılan olarak verilmeyenler açıkça doğrulanır: bir "hepsini ver"
@@ -301,7 +310,8 @@ public class AuthorizationFoundationTests
                 "inventory.analysis",
                 "heatmap.view",
                 "layers.view",
-                "poi.view"),
+                "poi.view",
+                "location.analysis"),
             codes);
 
         // Analist operasyonel çizim verisini düzenlemez.
@@ -348,7 +358,9 @@ public class AuthorizationFoundationTests
                 "poi.update",
                 "poi.delete",
                 "poi.manage",
-                "poi.categories.manage"),
+                "poi.categories.manage",
+
+                "location.analysis"),
             codes);
 
         // Sistem yönetimi yetkileri GIS Manager'a varsayılan olarak verilmez.

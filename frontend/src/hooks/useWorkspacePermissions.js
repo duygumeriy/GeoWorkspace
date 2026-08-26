@@ -35,6 +35,7 @@ export default function useWorkspacePermissions(workspaceMode) {
     activeDrawTool,
     activeMeasureTool,
     activeAnalysisTool,
+    activeLocationAnalysisTool,
     isEditing,
     isPlacingPoi,
     selectDrawTool,
@@ -42,6 +43,8 @@ export default function useWorkspacePermissions(workspaceMode) {
     selectMeasureTool,
     selectSelectionTool,
     toggleAnalysisTool,
+    toggleLocationAnalysisTool,
+    stopLocationAnalysis,
     stopDrawing,
     stopMeasuring,
     stopAnalysis,
@@ -67,6 +70,15 @@ export default function useWorkspacePermissions(workspaceMode) {
   const canMeasure = can(PERMISSIONS.MEASUREMENT_USE)
   const canSelect = can(PERMISSIONS.SELECTION_USE)
   const canAnalyze = can(PERMISSIONS.INVENTORY_ANALYSIS)
+
+  /* Konum analizi İKİ yetki birden ister ve bu, POI oluşturma akışıyla aynı
+     gerekçedir: her iki uç da (`/api/analysis/location` ve `.../image`)
+     `location.analysis` VE `poi.view` arar. Yalnızca birine sahip birine giriş
+     göstermek, garanti 403 alacak bir akışa davet etmek olurdu.
+
+     Bu bir yetki genişletmesi DEĞİL, bir yetenek tanımıdır: uçların kendi
+     kapıları backend'de olduğu gibi durur. */
+  const canRunLocationAnalysis = canAll([PERMISSIONS.LOCATION_ANALYSIS, PERMISSIONS.POI_VIEW])
   const canViewDrawings = can(PERMISSIONS.DRAWINGS_VIEW)
 
   /* POI yetkileri çizim yetkilerinden AYRIDIR ve birine sahip olmak diğerini
@@ -176,6 +188,12 @@ export default function useWorkspacePermissions(workspaceMode) {
     togglePoiTool()
   }, [canCreatePoi, isPlacingPoi, togglePoiTool])
 
+  const guardedToggleLocationAnalysisTool = useCallback(() => {
+    // Açmak yetki ister; açıkken kapatmak istemez.
+    if (!canRunLocationAnalysis && !activeLocationAnalysisTool) return
+    toggleLocationAnalysisTool()
+  }, [canRunLocationAnalysis, activeLocationAnalysisTool, toggleLocationAnalysisTool])
+
   const guardedToggleAnalysisTool = useCallback(() => {
     // Açmak yetki ister; açıkken kapatmak istemez.
     if (!canAnalyze && !activeAnalysisTool) return
@@ -201,6 +219,10 @@ export default function useWorkspacePermissions(workspaceMode) {
   }, [activeAnalysisTool, canAnalyze, stopAnalysis])
 
   useEffect(() => {
+    if (activeLocationAnalysisTool && !canRunLocationAnalysis) stopLocationAnalysis()
+  }, [activeLocationAnalysisTool, canRunLocationAnalysis, stopLocationAnalysis])
+
+  useEffect(() => {
     if (isEditing && !canEditDrawing) stopEditing()
   }, [isEditing, canEditDrawing, stopEditing])
 
@@ -218,6 +240,7 @@ export default function useWorkspacePermissions(workspaceMode) {
     canMeasure,
     canSelect,
     canAnalyze,
+    canRunLocationAnalysis,
     canViewDrawings,
     canEditDrawing,
     canUpdateStyle,
@@ -235,6 +258,7 @@ export default function useWorkspacePermissions(workspaceMode) {
     selectMeasureTool: guardedSelectMeasureTool,
     selectSelectionTool: guardedSelectSelectionTool,
     toggleAnalysisTool: guardedToggleAnalysisTool,
+    toggleLocationAnalysisTool: guardedToggleLocationAnalysisTool,
     togglePoiTool: guardedTogglePoiTool,
   }
 }

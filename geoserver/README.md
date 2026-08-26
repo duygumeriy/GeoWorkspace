@@ -11,6 +11,7 @@ used by `GET /api/map/presentation/{point|line|polygon}` (Phase 5), and for the
 | `drawing_polygon_presentation.sld` | `drawing_polygon_presentation` | `geoworkspace:tbl_polygon_read` |
 | `poi_<slug>.sld` (44 files) | `poi_<slug>` | `geoworkspace:poi_read` |
 | `poi_all.sld` | `poi_all` | `geoworkspace:poi_read` |
+| `analysis_poi_points.sld` | `analysis_poi_points` | `geoworkspace:analysis_poi_read` |
 
 **The `poi_*` styles and every file in `icons/` are GENERATED.** Do not edit
 them by hand — change `PoiCategoryTaxonomy.All` and regenerate:
@@ -22,8 +23,49 @@ dotnet run --project backend/tools/StajProject.GeoServerStyleGenerator -- check
 
 `check` exits non-zero when a committed artifact is missing, stale, or
 orphaned; `GeoServerPoiStyleArtifactTests` asserts the same thing from the test
-suite. The `drawing_*` styles above are **hand-authored** and carry no generated
-marker, so the generator's stale-file cleanup can never touch them.
+suite. The `drawing_*` and `analysis_poi_points` styles above are
+**hand-authored** and carry no generated marker, so the generator's stale-file
+cleanup can never touch them.
+
+**`analysis_weighted_heatmap` is gone.** The Location Analysis weighted density
+surface is no longer produced by GeoServer: the assignment's model normalises
+*each criterion's* density surface before the weights combine them, and
+`vec:Heatmap` makes a single pass over all features and normalises only the
+final surface — the equation cannot be expressed as an SLD. The surface is now
+computed in the backend from the same PostGIS rows the summary counts. The
+style file, its 48 `env` weight slots and the `GeoServer:AnalysisHeatmapStyle`
+setting were removed together; see
+[`docs/location-analysis-heatmap.md`](../docs/location-analysis-heatmap.md).
+
+`analysis_poi_points` still needs the `analysis_poi_read` SQL View, which does
+not exist by default and whose definition **changed** in this phase (it now
+reads the `analysis_poi_union` view so the overlay shows application POIs too).
+The exact SQL and the manual steps are in the same document.
+
+## `analysis_poi_points` — NOT REGISTERED YET
+
+`analysis_poi_points` backs the server-rendered analysis POI overlay raster. It
+draws `geoworkspace:analysis_poi_read` with a point symbolizer and **no**
+rendering transformation: it is a presentation, not a density calculation.
+
+The overlay and the weighted heatmap must always show the same rows, and they
+still do — but through a **shared database view** rather than a shared WMS
+layer. `analysis_poi_read` now selects from `analysis_poi_union`, which is the
+same union (`analysis_poi` + active, non-deleted `poi`) the backend reads for
+the summary counts, the vector point list and the heatmap raster.
+
+The style is committed here but **is not in the running catalog**. Until it is
+registered, `POST /api/analysis/location/points/image` returns 502 and the
+overlay reports an upstream error; the weighted heatmap is unaffected.
+
+Register it once per instance (Admin → Styles → Add a new style):
+
+1. Workspace `geoworkspace`, name `analysis_poi_points`, format `SLD 1.0`.
+2. Paste the contents of `styles/analysis_poi_points.sld` and **Apply**.
+
+`analysis_poi_read` does **not** need a new default style — the backend always
+names the style explicitly in the `STYLES` parameter, so registering the style
+is the only step.
 
 There is one style per canonical category — the assignment requires *"Her bir
 POI kategorisi için GeoServer'da ayrı bir Style (SLD)"*. `poi_all` renders all

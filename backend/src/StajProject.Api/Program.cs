@@ -83,6 +83,17 @@ builder.Services.AddHttpClient<IGeoServerHeatmapService, GeoServerHeatmapService
    (seçim, düzenleme, taşıma, popup) yukarıdaki WFS okumasıyla sürer. İkisi
    ayrı istemcilerdir çünkü biri kısa ömürlü bir görüntü, diğeri bir veri
    okumasıdır ve zaman aşımı beklentileri aynı değildir. */
+/* Konum analizinin NOKTA ÖRTÜSÜ AYRI bir HttpClient'tir: kendi zaman aşımı
+   ayarı vardır ve çizim ısı haritasının ayarını paylaşmaz.
+
+   <b>Ağırlıklı ısı haritası buradan GEÇMEZ.</b> O yüzey artık sunucuda
+   hesaplanıyor (LocationAnalysisImageService): ödevin istediği
+   `S(x) = Σ w_c · normalize(D_c(x))` denklemi ölçüt BAŞINA normalleştirme
+   gerektirir ve vec:Heatmap bunu tek bir istekte üretemez. GeoServer'a kalan
+   iş bir hesap değil, bir sunumdur. */
+builder.Services.AddHttpClient<ILocationAnalysisPointsImageService, GeoServerLocationAnalysisImageService>(client =>
+    client.Timeout = TimeSpan.FromSeconds(geoServerOptions.AnalysisTimeoutSeconds));
+
 builder.Services.AddHttpClient<IGeoServerMapPresentationService, GeoServerMapPresentationService>(client =>
     client.Timeout = TimeSpan.FromSeconds(geoServerOptions.PresentationTimeoutSeconds));
 
@@ -248,6 +259,16 @@ builder.Services.AddScoped<IActivityLogQueryService, ActivityLogQueryService>();
 builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, ActivityAuthorizationResultHandler>();
 builder.Services.AddScoped<IDrawingService, DrawingService>();
 builder.Services.AddScoped<ISpatialAnalysisService, SpatialAnalysisService>();
+
+/* Konum analizi envanter analizinden AYRI bir servistir: ortak açık veri
+   kümesini okur, sahiplik yüklemi taşımaz ve kendi yetkisiyle korunur.
+   Lifetime aynı gerekçeyle scoped'dır — AppDbContext scoped'dır. */
+builder.Services.AddScoped<ILocationAnalysisAreaGuard, LocationAnalysisAreaGuard>();
+builder.Services.AddScoped<ILocationAnalysisService, LocationAnalysisService>();
+
+/* Ağırlıklı yoğunluk yüzeyi: veritabanından okunan noktalardan sunucuda
+   üretilir; nokta örtüsü isteğini yukarıdaki GeoServer istemcisine devreder. */
+builder.Services.AddScoped<ILocationAnalysisImageService, LocationAnalysisImageService>();
 
 /* POI servisleri. Çizim servisiyle aynı lifetime ve aynı gerekçe: AppDbContext
    scoped'dır ve her istek kendi transaction sınırını görmelidir. */

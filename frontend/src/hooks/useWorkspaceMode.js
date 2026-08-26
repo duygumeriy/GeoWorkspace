@@ -17,6 +17,7 @@ import { useCallback, useMemo, useState } from 'react'
  *   mode: 'select'   -> activeSelectionTool single | box | polygon
  *   mode: 'measure'  -> activeMeasureTool   distance | area
  *   mode: 'analysis' -> activeAnalysisTool  polygon
+ *   mode: 'locationAnalysis' -> activeLocationAnalysisTool  polygon
  *   mode: 'edit'     -> isEditing           (geometry of the selected record)
  *   mode: 'poi'      -> isPlacingPoi        (a single point for a new POI)
  *
@@ -49,6 +50,16 @@ export const WORKSPACE_MODES = Object.freeze({
   select: 'select',
   measure: 'measure',
   analysis: 'analysis',
+  /**
+   * Konum analizinin hedef alanı.
+   *
+   * `analysis` ailesinin bir varyantı DEĞİL, ayrı bir ailedir: envanter
+   * analizi çağıranın KENDİ çizimlerini sayar ve sonucu bir listedir; bu ise
+   * ortak açık veri POI kümesini ağırlıklandırır ve sonucu bir rasterdir.
+   * İkisini aynı moda bağlamak, birini açmanın diğerinin alanını sessizce
+   * silmesi demek olurdu.
+   */
+  locationAnalysis: 'locationAnalysis',
   edit: 'edit',
   poi: 'poi',
 })
@@ -82,6 +93,16 @@ export const STYLE_PANEL_MODES = Object.freeze({
  */
 export const ANALYSIS_TOOL = 'polygon'
 
+/** Konum analizinin tek aracı: hedef alanı belirleyen geçici poligon. */
+export const LOCATION_ANALYSIS_TOOL = 'polygon'
+
+/** Toolbar/hint copy for the location analysis tool. */
+export const LOCATION_ANALYSIS_TOOL_INFO = Object.freeze({
+  id: LOCATION_ANALYSIS_TOOL,
+  label: 'Konum Analizi Alanı',
+  hint: 'Analiz alanını çizin · Çift tıklayarak bitirin · Bu alan veritabanına kaydedilmez.',
+})
+
 /** Toolbar/hint copy for the analysis tool, alongside the other tool tables. */
 export const ANALYSIS_TOOL_INFO = Object.freeze({
   id: ANALYSIS_TOOL,
@@ -97,6 +118,7 @@ const INITIAL = Object.freeze({
   measureTool: 'distance',
   /** The analysis family has a single tool today; kept symmetrical on purpose. */
   analysisTool: ANALYSIS_TOOL,
+  locationAnalysisTool: LOCATION_ANALYSIS_TOOL,
 })
 
 export default function useWorkspaceMode() {
@@ -176,6 +198,25 @@ export default function useWorkspaceMode() {
     )
   }, [])
 
+  /* --- Konum analizi -------------------------------------------------------- */
+
+  /** Toolbar behaviour: pressing the active tool again leaves the mode. */
+  const toggleLocationAnalysisTool = useCallback(() => {
+    setState((current) =>
+      current.mode === WORKSPACE_MODES.locationAnalysis
+        ? { ...current, mode: WORKSPACE_MODES.select }
+        : { ...current, mode: WORKSPACE_MODES.locationAnalysis, locationAnalysisTool: LOCATION_ANALYSIS_TOOL },
+    )
+  }, [])
+
+  const stopLocationAnalysis = useCallback(() => {
+    setState((current) =>
+      current.mode === WORKSPACE_MODES.locationAnalysis
+        ? { ...current, mode: WORKSPACE_MODES.select }
+        : current,
+    )
+  }, [])
+
   /* --- POI ----------------------------------------------------------------- */
 
   /** Toolbar behaviour: pressing the active POI tool again leaves the mode. */
@@ -219,6 +260,8 @@ export default function useWorkspaceMode() {
       activeSelectionTool: state.mode === WORKSPACE_MODES.select ? state.selectionTool : null,
       activeMeasureTool: state.mode === WORKSPACE_MODES.measure ? state.measureTool : null,
       activeAnalysisTool: state.mode === WORKSPACE_MODES.analysis ? state.analysisTool : null,
+      activeLocationAnalysisTool:
+        state.mode === WORKSPACE_MODES.locationAnalysis ? state.locationAnalysisTool : null,
       /**
        * Type the style panel edits in `drawing-default` mode: the live tool if
        * there is one, otherwise the one that would come back next.
@@ -228,6 +271,7 @@ export default function useWorkspaceMode() {
       isMeasuring: state.mode === WORKSPACE_MODES.measure,
       isSelecting: state.mode === WORKSPACE_MODES.select,
       isAnalyzing: state.mode === WORKSPACE_MODES.analysis,
+      isSelectingAnalysisArea: state.mode === WORKSPACE_MODES.locationAnalysis,
       isEditing: state.mode === WORKSPACE_MODES.edit,
       isPlacingPoi: state.mode === WORKSPACE_MODES.poi,
       selectDrawTool,
@@ -238,6 +282,8 @@ export default function useWorkspaceMode() {
       stopMeasuring,
       toggleAnalysisTool,
       stopAnalysis,
+      toggleLocationAnalysisTool,
+      stopLocationAnalysis,
       togglePoiTool,
       stopPoiPlacement,
       startEditing,
@@ -253,6 +299,8 @@ export default function useWorkspaceMode() {
       stopMeasuring,
       toggleAnalysisTool,
       stopAnalysis,
+      toggleLocationAnalysisTool,
+      stopLocationAnalysis,
       togglePoiTool,
       stopPoiPlacement,
       startEditing,

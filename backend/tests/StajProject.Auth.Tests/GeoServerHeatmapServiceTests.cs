@@ -342,6 +342,13 @@ public class GeoServerHeatmapServiceTests
            doğrulama artık YALNIZCA hedeflediği alanı geçersiz kılar. */
         PoiLayer = "poi_read",
         PoiStyle = "poi_all",
+
+        /* Konum analizi bu dosyanın konusu DEĞİLDİR ama Validate() ayarın
+           TAMAMINI denetler: eksik bir analiz katmanı, ısı haritası
+           doğrulamasını ölçen testin ilgisiz bir sebeple düşmesine yol
+           açardı. POI alanlarında da aynı gerekçeyle aynı şey yapılmıştı. */
+        AnalysisPoiLayer = "analysis_poi_read",
+        AnalysisPoiPointStyle = "analysis_poi_points",
         HeatmapTimeoutSeconds = 30
     };
 

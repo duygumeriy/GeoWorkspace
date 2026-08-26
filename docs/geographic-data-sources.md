@@ -3,6 +3,13 @@
 Bu belge, uygulamada kullanılan **coğrafi sınır verilerinin** nereden geldiğini,
 hangi lisansla kullanıldığını ve üzerinde hangi işlemlerin yapıldığını kaydeder.
 
+> **Kapsam:** buradaki veri kümeleri **Natural Earth** kaynaklıdır ve **kamu
+> malıdır**. Konum analizi için kullanılacak **OpenStreetMap** POI verisi bu
+> belgenin kapsamı DIŞINDADIR ve lisansı farklıdır (**ODbL** — atıf zorunlu,
+> share-alike): bkz. [`osm-poi-import.md`](osm-poi-import.md). İkisi bilinçli
+> olarak ayrı belgelerde tutulur; biri için doğru olan lisans cümlesi diğeri
+> için yanlıştır.
+
 Kaydın amacı tekrar üretilebilirliktir: veri kümesi bir gün güncellenecekse,
 aşağıdaki bilgiler o güncellemenin aynı adımlarla yapılabilmesini sağlar.
 

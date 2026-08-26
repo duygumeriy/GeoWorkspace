@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  DETERMİNİSTİK TEST ÇIKARIMI — elle yazılmıştır, indirilmemiştir.
+
+  Gerçek OSM XML biçimidir (JOSM/Overpass'ın ürettiği biçimin aynısı) ama
+  içeriği UYDURMADIR: koordinatlar Ankara çevresinde seçilmiş, kimlikler
+  küçük tutulmuştur. Hiçbir gerçek OSM verisi içermez, dolayısıyla ODbL
+  atıf yükümlülüğü doğurmaz.
+
+  Kapsanan durumlar: adlı okul düğümü, adsız eczane, kafe, restoran, banka,
+  ATM, şarj istasyonu, giyim mağazası, park poligonu (kapalı yol), hastane
+  çok parçalı ilişkisi, üst/alt örtüşme adayı (pharmacy + healthcare),
+  ilgisiz çoklu eşleşme adayı, eşlenmeyen nesne, geçersiz koordinat,
+  kapanmayan yol, yalnızca-nokta kuralına sahip etiketin alan olarak
+  çizilmesi.
+-->
+<osm version="0.6" generator="StajProject test fixture">
+
+  <!-- ADLI okul düğümü -->
+  <node id="101" lat="39.9300" lon="32.8500">
+    <tag k="amenity" v="school"/>
+    <tag k="name" v="Atatürk İlkokulu"/>
+  </node>
+
+  <!-- ADSIZ eczane: ad UYDURULMAMALI, null kalmalı.
+       `healthcare` etiketi de var: eczane (torun) kazanmalı. -->
+  <node id="102" lat="39.9310" lon="32.8510">
+    <tag k="amenity" v="pharmacy"/>
+    <tag k="healthcare" v="pharmacy"/>
+  </node>
+
+  <!-- Kafe: `kafe` olmalı, `yeme-icme` DEĞİL -->
+  <node id="103" lat="39.9320" lon="32.8520">
+    <tag k="amenity" v="cafe"/>
+    <tag k="name" v="Köşe Kahve"/>
+  </node>
+
+  <!-- Restoran -->
+  <node id="104" lat="39.9330" lon="32.8530">
+    <tag k="amenity" v="restaurant"/>
+    <tag k="name" v="Anadolu Lokantası"/>
+  </node>
+
+  <!-- Banka ve ATM: aynı kanonik kategori, iki ayrı nesne -->
+  <node id="105" lat="39.9340" lon="32.8540">
+    <tag k="amenity" v="bank"/>
+    <tag k="name" v="Ziraat Bankası Kızılay"/>
+  </node>
+  <node id="106" lat="39.9350" lon="32.8550">
+    <tag k="amenity" v="atm"/>
+  </node>
+
+  <!-- Şarj istasyonu -->
+  <node id="107" lat="39.9360" lon="32.8560">
+    <tag k="amenity" v="charging_station"/>
+    <tag k="name" v="Şarj Noktası"/>
+  </node>
+
+  <!-- Giyim mağazası -->
+  <node id="108" lat="39.9370" lon="32.8570">
+    <tag k="shop" v="clothes"/>
+    <tag k="name" v="Moda Giyim"/>
+  </node>
+
+  <!-- İLGİSİZ çoklu eşleşme: ikisi de otomotiv-sektoru → tek satır, belirsizlik YOK -->
+  <node id="109" lat="39.9380" lon="32.8580">
+    <tag k="amenity" v="fuel"/>
+    <tag k="shop" v="car_repair"/>
+    <tag k="name" v="Petrol ve Servis"/>
+  </node>
+
+  <!-- İLGİSİZ ve EŞİT özgüllükte çoklu eşleşme: çözülemez → atlanmalı -->
+  <node id="110" lat="39.9390" lon="32.8590">
+    <tag k="amenity" v="restaurant"/>
+    <tag k="shop" v="clothes"/>
+    <tag k="name" v="Belirsiz Yer"/>
+  </node>
+
+  <!-- EŞLENMEYEN nesne: hiçbir kural tutmaz, çöp kategorisine DÜŞMEMELİ -->
+  <node id="111" lat="39.9400" lon="32.8600">
+    <tag k="amenity" v="bench"/>
+    <tag k="name" v="Bank"/>
+  </node>
+
+  <!-- GEÇERSİZ koordinat: enlem aralık dışı -->
+  <node id="112" lat="139.9410" lon="32.8610">
+    <tag k="amenity" v="cafe"/>
+    <tag k="name" v="Uzay Kafe"/>
+  </node>
+
+  <!-- Yalnızca-nokta kuralı (ATM) ALAN olarak çizilmiş: desteklenmemeli -->
+  <node id="200" lat="39.9200" lon="32.8200"/>
+  <node id="201" lat="39.9200" lon="32.8210"/>
+  <node id="202" lat="39.9210" lon="32.8210"/>
+  <node id="203" lat="39.9210" lon="32.8200"/>
+  <way id="301">
+    <nd ref="200"/><nd ref="201"/><nd ref="202"/><nd ref="203"/><nd ref="200"/>
+    <tag k="amenity" v="atm"/>
+    <tag k="name" v="Alan Olarak ATM"/>
+  </way>
+
+  <!-- PARK poligonu: kapalı yol → temsilî nokta -->
+  <node id="210" lat="39.9000" lon="32.8000"/>
+  <node id="211" lat="39.9000" lon="32.8100"/>
+  <node id="212" lat="39.9100" lon="32.8100"/>
+  <node id="213" lat="39.9100" lon="32.8000"/>
+  <way id="302">
+    <nd ref="210"/><nd ref="211"/><nd ref="212"/><nd ref="213"/><nd ref="210"/>
+    <tag k="leisure" v="park"/>
+    <tag k="name" v="Kurtuluş Parkı"/>
+  </way>
+
+  <!-- KAPANMAYAN yol: alan değildir → incomplete_geometry -->
+  <node id="220" lat="39.8900" lon="32.7900"/>
+  <node id="221" lat="39.8900" lon="32.7950"/>
+  <way id="303">
+    <nd ref="220"/><nd ref="221"/>
+    <tag k="leisure" v="park"/>
+    <tag k="name" v="Yarım Park"/>
+  </way>
+
+  <!-- HASTANE çok parçalı ilişkisi: dış üye KAPALI bir yol -->
+  <node id="230" lat="39.8800" lon="32.7800"/>
+  <node id="231" lat="39.8800" lon="32.7900"/>
+  <node id="232" lat="39.8850" lon="32.7900"/>
+  <node id="233" lat="39.8850" lon="32.7800"/>
+  <way id="304">
+    <nd ref="230"/><nd ref="231"/><nd ref="232"/><nd ref="233"/><nd ref="230"/>
+  </way>
+  <relation id="401">
+    <member type="way" ref="304" role="outer"/>
+    <tag k="type" v="multipolygon"/>
+    <tag k="amenity" v="hospital"/>
+    <tag k="name" v="Şehir Hastanesi"/>
+  </relation>
+
+  <!-- Çok parçalı OLMAYAN ilişki: alan değildir → unsupported_geometry -->
+  <relation id="402">
+    <member type="way" ref="302" role="outer"/>
+    <tag k="type" v="route"/>
+    <tag k="leisure" v="park"/>
+    <tag k="name" v="Park Rotası"/>
+  </relation>
+
+</osm>

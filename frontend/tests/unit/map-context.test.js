@@ -184,6 +184,6 @@ test('the coordinator owns map context only — no app navigation', () => {
      bilinçli bir karar olmalıdır ve buradan geçmeden eklenememelidir. */
   assert.deepEqual(
     [...SIDEBAR_CONTEXTS],
-    ['drawings', 'myPois', 'layers', 'trash', 'heatmap', 'settings', 'about'],
+    ['drawings', 'myPois', 'layers', 'trash', 'heatmap', 'locationAnalysis', 'settings', 'about'],
   )
 })

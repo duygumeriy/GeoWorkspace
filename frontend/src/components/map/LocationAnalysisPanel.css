@@ -1,0 +1,506 @@
+/* Konum analizi paneli. Ölçüler ve renkler mevcut panel değişkenlerinden
+   gelir; bu ekran için yeni bir tasarım dili tanımlanmaz. */
+
+.la-intro {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-small);
+  line-height: 1.55;
+}
+
+.la-section {
+  display: grid;
+  gap: 0.6rem;
+  padding: 0.85rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface-soft);
+}
+
+.la-section h3 {
+  margin: 0;
+  font-size: var(--font-small);
+  color: var(--text-primary);
+}
+
+/* --- Alan seçimi ---------------------------------------------------------- */
+
+.la-mode-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.la-mode {
+  padding: 0.55rem 0.6rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: var(--font-small);
+  cursor: pointer;
+}
+
+.la-mode.is-active {
+  border-color: var(--primary);
+  background: var(--surface);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.la-province {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.la-field {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.la-field > label {
+  font-size: var(--font-small);
+  color: var(--text-secondary);
+}
+
+.la-field input,
+.la-field select {
+  width: 100%;
+  min-width: 0;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-primary);
+  font-size: var(--font-small);
+}
+
+.la-hint,
+.la-area-state {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-small);
+  line-height: 1.5;
+}
+
+/* --- Kriterler ------------------------------------------------------------ */
+
+.la-criteria {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Satır DARALABİLİR: telefonda yatay taşma olmaması için sütunlar sabit
+   genişlik değil, esnek paylardır.
+
+   Hizalama `start`tır: kategori sütunundaki açılır liste satırın
+   yüksekliğini değiştirmemeli, ağırlık ve kaldırma düğmesi yerinden
+   oynamamalıdır. */
+.la-criterion {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 5.5rem auto;
+  align-items: start;
+  gap: 0.5rem;
+}
+
+/* --- Aranabilir kategori seçici -------------------------------------------
+
+   Liste, satırın AKIŞINDAN çıkarılır (`position: absolute`): akışta kalsaydı
+   açılan liste ölçüt satırını uzatır, ağırlık alanını ve kaldırma düğmesini
+   aşağı iterdi — yani liste her açıldığında panel zıplardı. */
+.la-combobox {
+  position: relative;
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.la-combobox > label {
+  font-size: var(--font-small);
+  color: var(--text-secondary);
+}
+
+.la-combobox-control {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.la-combobox-control input {
+  width: 100%;
+  min-width: 0;
+  /* Sağda temizleme düğmesi ve ok için yer bırakılır. */
+  padding: 0.5rem 3rem 0.5rem 0.6rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-primary);
+  font-size: var(--font-small);
+  text-overflow: ellipsis;
+}
+
+.la-combobox-control input:disabled {
+  opacity: 0.6;
+}
+
+.la-combobox-clear,
+.la-combobox-caret {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  color: var(--text-secondary);
+  font-size: var(--font-small);
+  pointer-events: none;
+}
+
+.la-combobox-caret {
+  right: 0.6rem;
+}
+
+.la-combobox-clear {
+  right: 1.7rem;
+  width: 1.4rem;
+  height: 1.4rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  cursor: pointer;
+  pointer-events: auto;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.la-combobox-clear:hover {
+  color: var(--text-primary);
+  background: var(--surface-soft);
+}
+
+.la-combobox-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 5;
+  margin: 0.15rem 0 0;
+  padding: 0.2rem;
+  max-height: 13rem;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: 0 8px 20px rgb(0 0 0 / 18%);
+}
+
+.la-combobox-list[hidden] {
+  display: none;
+}
+
+.la-combobox-option {
+  padding: 0.4rem 0.5rem;
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: var(--font-small);
+  line-height: 1.35;
+  cursor: pointer;
+}
+
+/* Etkin satır (klavye) ile seçili satır (mevcut değer) AYRI işaretlenir:
+   ikisini aynı görünüme indirmek, gezinirken seçimin değiştiği izlenimini
+   verirdi. */
+.la-combobox-option.is-active {
+  background: var(--surface-soft);
+}
+
+/* İşaret `content` ile DEĞİL, koyu yazı ve `aria-selected` ile verilir:
+   Chrome, `::after` içeriğini erişilebilir ADA katar ve seçili satırın adı
+   "… ✓" olurdu — yani satır, seçildiği anda kendi adıyla bulunamaz hâle
+   gelirdi. */
+.la-combobox-option.is-selected {
+  font-weight: 600;
+}
+
+.la-combobox-empty {
+  padding: 0.4rem 0.5rem;
+  color: var(--text-secondary);
+  font-size: var(--font-small);
+}
+
+.la-field-weight input {
+  text-align: right;
+}
+
+.la-remove {
+  height: 2.25rem;
+  width: 2.25rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.la-remove:disabled,
+.la-add:disabled,
+.la-analyze:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.la-add {
+  justify-self: start;
+  padding: 0.45rem 0.7rem;
+  border: 1px dashed var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--font-small);
+  cursor: pointer;
+}
+
+/* --- Toplam --------------------------------------------------------------- */
+
+.la-total {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--border-soft);
+  border-left-width: 4px;
+  border-radius: var(--radius-md);
+  background: var(--surface-soft);
+}
+
+.la-total output {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.la-total-note {
+  font-size: var(--font-small);
+  color: var(--text-secondary);
+}
+
+/* Renk tek başına anlam taşımaz: durum her hâlde `la-total-note` metniyle de
+   söylenir (bkz. panel bileşeni). */
+.la-total--valid { border-left-color: #16a34a; }
+.la-total--under { border-left-color: #f59e0b; }
+.la-total--over { border-left-color: #dc2626; }
+
+/* --- Eylemler ------------------------------------------------------------- */
+
+.la-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 0.5rem;
+}
+
+/* Birincil eylem, uygulamanın geri kalanıyla AYNI belirteci kullanır
+   (`--gradient-primary`). Burada bir zamanlar hiçbir yerde TANIMLI OLMAYAN
+   `--accent` vardı: geçersiz bir `var()` arka planı `transparent` yapıyor,
+   `color: #fff` ile birleşince düğme açık temada beyaz zemin üzerinde beyaz
+   metne dönüşüp gözden tamamen kayboluyordu. */
+.la-analyze {
+  padding: 0.65rem 0.8rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--gradient-primary);
+  color: #fff;
+  font-size: var(--font-small);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+
+.la-clear {
+  padding: 0.65rem 0.8rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: var(--font-small);
+  cursor: pointer;
+}
+
+.la-reason {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-small);
+  line-height: 1.5;
+}
+
+/* --- Sonuç ---------------------------------------------------------------- */
+
+.la-status {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.la-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid #dc2626;
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: var(--font-small);
+}
+
+.la-error button {
+  flex: none;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-primary);
+  font-size: var(--font-small);
+  cursor: pointer;
+}
+
+.la-empty {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-small);
+}
+
+.la-summary {
+  display: grid;
+  gap: 0.4rem;
+  font-size: var(--font-small);
+  color: var(--text-secondary);
+}
+
+.la-summary p { margin: 0; }
+
+.la-summary-note {
+  color: var(--text-tertiary);
+}
+.la-summary strong { color: var(--text-primary); }
+
+.la-summary ul {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.la-summary li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 0.6rem;
+}
+
+.la-summary li > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- Analiz POI örtüsü ---------------------------------------------------- */
+
+.la-poi-toggle {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 0.6rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface-soft);
+  cursor: pointer;
+}
+
+.la-poi-toggle input {
+  /* 44px dokunma hedefi kutunun kendisinden gelir; onay kutusu görsel
+     olarak küçük kalır. */
+  width: 1.05rem;
+  height: 1.05rem;
+  margin: 0.1rem 0 0;
+  accent-color: var(--primary);
+}
+
+.la-poi-toggle > span {
+  display: grid;
+  gap: 0.2rem;
+  font-size: var(--font-small);
+}
+
+.la-poi-toggle strong { color: var(--text-primary); }
+.la-poi-toggle small { color: var(--text-secondary); }
+
+/* --- Saydamlık + efsane --------------------------------------------------- */
+
+.la-opacity {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.85rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface-soft);
+}
+
+.la-opacity > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: var(--font-small);
+  color: var(--text-secondary);
+}
+
+.la-opacity strong { color: var(--text-primary); }
+
+.la-legend {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface-soft);
+  font-size: var(--font-small);
+  color: var(--text-secondary);
+}
+
+.la-legend strong { color: var(--text-primary); }
+
+/* Duraklar backend LocationAnalysisHeatmapRenderer rampasıyla aynıdır. */
+.la-legend-gradient {
+  height: 0.6rem;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    rgba(44, 123, 182, 0) 0%,
+    #2c7bb6 25%,
+    #00a6ca 50%,
+    #f9d057 75%,
+    #d7191c 100%
+  );
+}
+
+.la-legend-labels {
+  display: flex;
+  justify-content: space-between;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Telefon --------------------------------------------------------------- */
+
+@media (max-width: 480px) {
+  .la-criterion {
+    grid-template-columns: minmax(0, 1fr) 4.5rem auto;
+  }
+
+  .la-actions {
+    grid-template-columns: 1fr;
+  }
+}

@@ -33,6 +33,7 @@ export const ALL_PERMISSIONS = Object.freeze([
   'inventory.view',
   'inventory.analysis',
   'heatmap.view',
+  'location.analysis',
   'layers.view',
   'layers.manage',
   'users.view',

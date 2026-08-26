@@ -40,6 +40,12 @@
          Üretim çalışma zamanına HİÇBİR bağımlılık eklemez — bu referans yalnızca
          test derlemesindedir. -->
     <ProjectReference Include="..\..\tools\StajProject.GeoServerStyleGenerator\StajProject.GeoServerStyleGenerator.csproj" />
+
+    <!-- OSM POI içe aktarıcısı (geliştirici aracı). Eşleme kuralları ve
+         idempotens sözleşmesi aracın KENDİ kodundan sınanır; kuralları test
+         içinde yeniden yazmak ikinci bir gerçek kaynağı üretirdi.
+         Üretim çalışma zamanına HİÇBİR bağımlılık eklemez. -->
+    <ProjectReference Include="..\..\tools\StajProject.OsmPoiImporter\StajProject.OsmPoiImporter.csproj" />
   </ItemGroup>
 
 </Project>
