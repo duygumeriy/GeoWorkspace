@@ -40,6 +40,9 @@ export default function LayersPanel({
   onToggle,
   poi = null,
   onTogglePoi,
+  transport = null,
+  onToggleTransportRoutes,
+  onToggleTransportStops,
   scope = null,
   onToggleScope,
 }) {
@@ -111,6 +114,23 @@ export default function LayersPanel({
           </li>
         )}
       </ul>
+
+      {transport?.permitted && <>
+        <h3 className="layers-group-title">Ulaşım</h3>
+        <ul className="layers-list">
+          {[
+            ['routes', 'Güzergahlar', transport.routeCount ?? 0, transport.routesVisible !== false, onToggleTransportRoutes],
+            ['stops', 'Duraklar', transport.stopCount ?? 0, transport.stopsVisible !== false, onToggleTransportStops],
+          ].map(([id, label, count, isOn, toggle]) => <li key={id}>
+            <button type="button" className={`layers-row ${isOn ? 'is-on' : ''}`} aria-pressed={isOn} data-testid={`layers-transport-${id}`} onClick={toggle}>
+              <span className="layers-row-icon"><MapPin size={18} strokeWidth={2} /></span>
+              <span className="layers-row-text"><span className="layers-row-label">{label}</span><span className="layers-row-count">{count} kayıt</span></span>
+              <span className="layers-row-state">{isOn ? 'AÇIK' : 'KAPALI'}</span>
+              <span className="layers-switch" aria-hidden="true"><span className="layers-switch-knob" /></span>
+            </button>
+          </li>)}
+        </ul>
+      </>}
 
       {scope?.isRestricted ? (
         <>

@@ -273,7 +273,59 @@ public static class PermissionCatalog
         new(PermissionCodes.PoiCategoriesManage,
             "POI Kategori Yönetimi",
             "POI kategori hiyerarşisini oluşturabilir ve düzenleyebilir.",
-            PermissionCategories.Poi, 1230)
+            PermissionCategories.Poi, 1230),
+
+        /* --- Akıllı ulaşım ---------------------------------------------------- */
+
+        new(PermissionCodes.TransportView,
+            "Ulaşım Ağını Görüntüleme",
+            "Ulaşım rotalarını ve aktif duraklarını görüntüleyebilir.",
+            PermissionCategories.Transport, 1300),
+
+        new(PermissionCodes.TransportStopCreate,
+            "Ulaşım Durağı Ekleme",
+            "Bir ulaşım rotasına yeni durak ekleyebilir.",
+            PermissionCategories.Transport, 1310),
+
+        new(PermissionCodes.TransportStopUpdate,
+            "Ulaşım Durağı Düzenleme",
+            "Ulaşım durağının bilgilerini ve konumunu düzenleyebilir.",
+            PermissionCategories.Transport, 1320),
+
+        new(PermissionCodes.TransportStopDelete,
+            "Ulaşım Durağı Silme",
+            "Ulaşım durağını çöp kutusuna taşıyabilir.",
+            PermissionCategories.Transport, 1330),
+
+        new(PermissionCodes.TransportStopRestore,
+            "Ulaşım Durağı Geri Yükleme",
+            "Çöp kutusundaki ulaşım durağını geri yükleyebilir.",
+            PermissionCategories.Transport, 1340),
+
+        new(PermissionCodes.TransportRouteCreate,
+            "Ulaşım Rotası Ekleme",
+            "Yeni ulaşım rotası oluşturabilir.",
+            PermissionCategories.Transport, 1350),
+
+        new(PermissionCodes.TransportRouteUpdate,
+            "Ulaşım Rotası Düzenleme",
+            "Ulaşım rotasının bilgilerini düzenleyebilir.",
+            PermissionCategories.Transport, 1360),
+
+        new(PermissionCodes.TransportRouteDelete,
+            "Ulaşım Rotası Silme",
+            "Ulaşım rotasını çöp kutusuna taşıyabilir.",
+            PermissionCategories.Transport, 1370),
+
+        new(PermissionCodes.TransportRouteRestore,
+            "Ulaşım Rotası Geri Yükleme",
+            "Çöp kutusundaki ulaşım rotasını geri yükleyebilir.",
+            PermissionCategories.Transport, 1380),
+
+        new(PermissionCodes.TransportRouteReorder,
+            "Ulaşım Rotası Duraklarını Sıralama",
+            "Bir rotadaki durakların sırasını değiştirebilir.",
+            PermissionCategories.Transport, 1390)
     ];
 
     /// <summary>Katalogdaki tüm kodlar.</summary>

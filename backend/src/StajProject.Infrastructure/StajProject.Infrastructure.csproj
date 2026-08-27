@@ -20,6 +20,14 @@
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="7.1.2" />
   </ItemGroup>
 
+  <!-- İl/bölge ilişkisinin TEK kaynağı frontend'in yönetici kapsam
+       seçicisinde kullandığı veri kümesidir. Dosya derlemeye gömülür;
+       publish dizininde kaynak kod yoluna bağımlı kalınmaz. -->
+  <ItemGroup>
+    <EmbeddedResource Include="../../../frontend/src/map/data/turkeyProvinces.json"
+                      LogicalName="StajProject.Infrastructure.Data.turkeyProvinces.json" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>

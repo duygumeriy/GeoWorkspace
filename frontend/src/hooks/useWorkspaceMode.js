@@ -20,6 +20,7 @@ import { useCallback, useMemo, useState } from 'react'
  *   mode: 'locationAnalysis' -> activeLocationAnalysisTool  polygon
  *   mode: 'edit'     -> isEditing           (geometry of the selected record)
  *   mode: 'poi'      -> isPlacingPoi        (a single point for a new POI)
+ *   mode: 'transportStop' -> isPlacingTransportStop (a single point for a new stop)
  *
  * `edit` is a mode for the same reason the others are: while the user is
  * dragging the vertices of an existing record, a click must not start a new
@@ -62,6 +63,8 @@ export const WORKSPACE_MODES = Object.freeze({
   locationAnalysis: 'locationAnalysis',
   edit: 'edit',
   poi: 'poi',
+  transportStop: 'transportStop',
+  transportStopRelocate: 'transportStopRelocate',
 })
 
 /** Selection tools, in toolbar order. */
@@ -234,6 +237,34 @@ export default function useWorkspaceMode() {
     )
   }, [])
 
+  /* --- Ulaşım durağı ------------------------------------------------------ */
+
+  const toggleTransportStopTool = useCallback(() => {
+    setState((current) =>
+      current.mode === WORKSPACE_MODES.transportStop
+        ? { ...current, mode: WORKSPACE_MODES.select }
+        : { ...current, mode: WORKSPACE_MODES.transportStop },
+    )
+  }, [])
+
+  const stopTransportStopPlacement = useCallback(() => {
+    setState((current) =>
+      current.mode === WORKSPACE_MODES.transportStop ? { ...current, mode: WORKSPACE_MODES.select } : current,
+    )
+  }, [])
+
+  const startTransportStopRelocation = useCallback(() => {
+    setState((current) => ({ ...current, mode: WORKSPACE_MODES.transportStopRelocate }))
+  }, [])
+
+  const stopTransportStopRelocation = useCallback(() => {
+    setState((current) =>
+      current.mode === WORKSPACE_MODES.transportStopRelocate
+        ? { ...current, mode: WORKSPACE_MODES.select }
+        : current,
+    )
+  }, [])
+
   /* --- Edit ---------------------------------------------------------------- */
 
   /**
@@ -274,6 +305,8 @@ export default function useWorkspaceMode() {
       isSelectingAnalysisArea: state.mode === WORKSPACE_MODES.locationAnalysis,
       isEditing: state.mode === WORKSPACE_MODES.edit,
       isPlacingPoi: state.mode === WORKSPACE_MODES.poi,
+      isPlacingTransportStop: state.mode === WORKSPACE_MODES.transportStop,
+      isRelocatingTransportStop: state.mode === WORKSPACE_MODES.transportStopRelocate,
       selectDrawTool,
       setDrawTool,
       stopDrawing,
@@ -286,6 +319,10 @@ export default function useWorkspaceMode() {
       stopLocationAnalysis,
       togglePoiTool,
       stopPoiPlacement,
+      toggleTransportStopTool,
+      stopTransportStopPlacement,
+      startTransportStopRelocation,
+      stopTransportStopRelocation,
       startEditing,
       stopEditing,
     }),
@@ -303,6 +340,10 @@ export default function useWorkspaceMode() {
       stopLocationAnalysis,
       togglePoiTool,
       stopPoiPlacement,
+      toggleTransportStopTool,
+      stopTransportStopPlacement,
+      startTransportStopRelocation,
+      stopTransportStopRelocation,
       startEditing,
       stopEditing,
     ],

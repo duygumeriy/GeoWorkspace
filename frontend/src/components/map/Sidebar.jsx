@@ -43,6 +43,7 @@ export default function Sidebar({
      BAĞIMSIZDIR: çizim yetkisi olmayan biri de kendi POI'lerini görebilmelidir.
      Hesap MapPage'deki yetki katmanındadır; burada yalnızca sonucu tüketilir. */
   canOpenMyPois = false,
+  canOpenMyStops = false,
   /* "Konum Analizi" İKİ yetki birden ister (location.analysis + poi.view):
      her iki uç da ikisini arar, dolayısıyla yalnızca birine sahip birine
      satırı göstermek garanti 403 alacak bir akışa davet etmek olurdu. Hesap
@@ -91,6 +92,7 @@ export default function Sidebar({
     ...(can(PERMISSIONS.DRAWINGS_VIEW) ? [{ id: 'drawings', label: 'Çizimlerim', Icon: ListIcon }] : []),
     // Çizimlerim'in hemen ardında: aynı soru, farklı alan nesnesi.
     ...(canOpenMyPois ? [{ id: 'myPois', label: "POI'lerim", Icon: PinIcon }] : []),
+    ...(canOpenMyStops ? [{ id: 'myStops', label: 'Duraklarım', Icon: PinIcon }] : []),
     ...(can(PERMISSIONS.LAYERS_VIEW) ? [{ id: 'layers', label: 'Katmanlar', Icon: LayersIcon }] : []),
     ...(can(PERMISSIONS.HEATMAP_VIEW)
       ? [{ id: 'heatmap', label: 'Isı Haritası Analizi', Icon: AnalysisIcon }]

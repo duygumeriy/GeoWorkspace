@@ -342,8 +342,11 @@ test.describe('polygon geometry editor', () => {
     const newCentre = await mapCentre(page)
     await dragFrom(page, newCentre, 70, 0)
 
-    const dragged = await longitudeOf(page, 'Köşe 1')
-    expect(dragged).toBeGreaterThan(moved)
+    /* `modifyend` commits through React state. The pointer gesture is complete
+       here, but a busy full-suite render need not have painted the controlled
+       coordinate input in the same task. Keep the semantic assertion (the live
+       handle really moved east) while waiting for that commit to become visible. */
+    await expect.poll(() => longitudeOf(page, 'Köşe 1')).toBeGreaterThan(moved)
   })
 
   test('undo, redo and reset walk the geometry back and forward', async ({ page }) => {

@@ -38,6 +38,19 @@
   border-color: var(--border-strong);
 }
 
+.global-search-type {
+  flex: 0 0 auto;
+  max-width: 8.5rem;
+  min-height: 30px;
+  padding: 0 .45rem;
+  color: var(--text-primary);
+  background: var(--surface-solid);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: 13px;
+}
+
 .poi-search-leading {
   flex: none;
   color: var(--text-secondary);
@@ -187,6 +200,11 @@
   border-radius: 9px;
 }
 
+.global-search-icon { --poi-accent: var(--primary); }
+.global-search-icon.is-stop { --poi-accent: #2563EB; }
+.global-search-icon.is-route { --poi-accent: #7C3AED; }
+.global-search-icon.is-drawing { --poi-accent: #059669; }
+
 .poi-search-option-text {
   display: flex;
   flex-direction: column;
@@ -240,6 +258,19 @@
     min-height: 42px;
     padding: 0 0.65rem;
   }
+
+  .global-search-field {
+    flex-wrap: wrap;
+    padding-block: .35rem;
+  }
+
+  .global-search-type {
+    order: 1;
+    flex: 1 1 7rem;
+  }
+
+  .global-search-field .poi-search-leading { order: 0; }
+  .global-search-field .poi-search-input { order: 2; flex-basis: 55%; }
 }
 
 /* Yatay telefon: denetim sırası daha yukarıdadır ve dikey alan çok dardır. */

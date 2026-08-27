@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react'
 import MapSheet from './MapSheet.jsx'
 import CategoryCombobox from './CategoryCombobox.jsx'
-import { PROVINCES } from '../../map/turkeyGeography.js'
 import { categoryLabel, isSelectableCategory } from '../../map/poiCategorySearch.js'
 import {
   LOCATION_ANALYSIS_STOPS,
@@ -52,6 +51,8 @@ export default function LocationAnalysisPanel({
   /* Coğrafi yetki: liste zaten süzülmüş gelir, panel yalnızca ANLATIR. */
   provinces: allowedProvinces,
   regions,
+  catalogLoading,
+  catalogError,
   regionKey,
   onRegionChange,
   scopeRestricted,
@@ -98,7 +99,7 @@ export default function LocationAnalysisPanel({
   /* Liste MapPage'den süzülmüş gelir: kullanıcının yetkisi dışındaki bir il
      hiç görünmez. Sunucu kararı yine kendi verir; buradaki iş, seçilemeyecek
      bir ili gösterip sonra 403'le karşılamamaktır. */
-  const source = allowedProvinces ?? PROVINCES
+  const source = allowedProvinces ?? []
 
   const provinces = useMemo(() => {
     const needle = provinceSearch.trim().toLocaleLowerCase('tr')
@@ -158,6 +159,7 @@ export default function LocationAnalysisPanel({
                 value={provinceSearch}
                 placeholder="Örn. Ankara"
                 autoComplete="off"
+                disabled={catalogLoading || Boolean(catalogError)}
                 onChange={(event) => setProvinceSearch(event.target.value)}
               />
             </div>
@@ -171,6 +173,7 @@ export default function LocationAnalysisPanel({
               <select
                 id="la-region"
                 value={regionKey ?? ''}
+                disabled={catalogLoading || Boolean(catalogError)}
                 onChange={(event) => onRegionChange(event.target.value)}
               >
                 <option value="">Tüm bölgeler</option>
@@ -193,6 +196,7 @@ export default function LocationAnalysisPanel({
               <select
                 id="la-province"
                 value={provinceCode}
+                disabled={catalogLoading || Boolean(catalogError)}
                 onChange={(event) => onProvinceChange(event.target.value)}
               >
                 <option value="">Seçiniz…</option>
@@ -206,10 +210,13 @@ export default function LocationAnalysisPanel({
           </div>
         )}
 
+        {catalogLoading && <p className="la-hint" role="status">Analiz hedefleri yükleniyor…</p>}
+        {catalogError && <p className="la-hint" role="alert">{catalogError}</p>}
+
         {scopeRestricted && (
           <p className="la-hint" role="status">
             {source.length > 0
-              ? `Coğrafi yetkiniz sınırlı: yalnızca ${source.length} il listeleniyor. Daha dar bir alan için haritada çizebilirsiniz.`
+              ? 'Coğrafi yetkinize uygun bölgeler ve iller listeleniyor. Daha dar bir alan için haritada çizebilirsiniz.'
               : 'Coğrafi yetkiniz tek bir ilin tamamını kapsamıyor. Hedef alanı haritada, yetki alanınızın içinde çizin.'}
           </p>
         )}

@@ -1,4 +1,4 @@
-import { transformExtent } from 'ol/proj'
+import { transformExtent } from 'ol/proj.js'
 import { DATA_PROJECTION, MAP_PROJECTION } from './drawing.js'
 
 /**

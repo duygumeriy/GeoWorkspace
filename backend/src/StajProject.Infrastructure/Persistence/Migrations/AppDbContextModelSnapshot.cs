@@ -914,6 +914,125 @@ namespace StajProject.Infrastructure.Persistence.Migrations
                     b.ToTable("role_permissions", (string)null);
                 });
 
+            modelBuilder.Entity("StajProject.Domain.Entities.TransportRoute", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("ColorHex")
+                        .IsRequired()
+                        .HasMaxLength(7)
+                        .HasColumnType("character varying(7)")
+                        .HasColumnName("color_hex");
+
+                    b.Property<DateTime>("CreatedDate")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_date");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_deleted");
+
+                    b.Property<DateTime>("ModifiedDate")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("modified_date");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("transport_route", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_transport_route_color_hex", "color_hex ~ '^#[0-9A-F]{6}$'");
+                        });
+                });
+
+            modelBuilder.Entity("StajProject.Domain.Entities.TransportStop", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<Point>("Coordinate")
+                        .IsRequired()
+                        .HasColumnType("geometry(Point,4326)")
+                        .HasColumnName("coordinate");
+
+                    b.Property<DateTime>("CreatedDate")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_date");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_deleted");
+
+                    b.Property<DateTime>("ModifiedDate")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("modified_date");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name");
+
+                    b.Property<int>("RouteId")
+                        .HasColumnType("integer")
+                        .HasColumnName("route_id");
+
+                    b.Property<int>("SequenceOrder")
+                        .HasColumnType("integer")
+                        .HasColumnName("sequence_order");
+
+                    b.Property<int?>("UserId")
+                        .HasColumnType("integer")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Coordinate");
+
+                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("Coordinate"), "gist");
+
+                    b.HasIndex("RouteId");
+
+                    b.HasIndex("RouteId", "SequenceOrder");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("transport_stop", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_transport_stop_sequence_order_positive", "sequence_order > 0");
+                        });
+                });
+
             modelBuilder.Entity("StajProject.Domain.Entities.User", b =>
                 {
                     b.Property<int>("Id")
@@ -1232,6 +1351,24 @@ namespace StajProject.Infrastructure.Persistence.Migrations
                     b.Navigation("Role");
                 });
 
+            modelBuilder.Entity("StajProject.Domain.Entities.TransportStop", b =>
+                {
+                    b.HasOne("StajProject.Domain.Entities.TransportRoute", "Route")
+                        .WithMany("Stops")
+                        .HasForeignKey("RouteId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StajProject.Domain.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Route");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("StajProject.Domain.Entities.User", b =>
                 {
                     b.HasOne("StajProject.Domain.Entities.User", null)
@@ -1267,6 +1404,11 @@ namespace StajProject.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("StajProject.Domain.Entities.PoiCategory", b =>
                 {
                     b.Navigation("Children");
+                });
+
+            modelBuilder.Entity("StajProject.Domain.Entities.TransportRoute", b =>
+                {
+                    b.Navigation("Stops");
                 });
 #pragma warning restore 612, 618
         }

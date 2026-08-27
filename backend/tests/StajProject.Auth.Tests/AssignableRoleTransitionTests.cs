@@ -291,7 +291,8 @@ public class AssignableRoleTransitionTests
         Assert.Equal(
             [
                 GisRoles.Viewer, GisRoles.GisEditor, GisRoles.GisAnalyst,
-                GisRoles.GisManager, GisRoles.Administrator, "Field Surveyor"
+                GisRoles.GisManager, GisRoles.TransportOperator,
+                GisRoles.TransportUser, GisRoles.Administrator, "Field Surveyor"
             ],
             offered);
 

@@ -70,6 +70,18 @@ public static class ActivityActionCatalog
     public const string PoiCategoryCreate = "poi_category.create";
     public const string PoiCategoryUpdate = "poi_category.update";
 
+    /* --- Akıllı ulaşım ------------------------------------------------------- */
+
+    public const string TransportRouteCreate = "transport.route.create";
+    public const string TransportRouteUpdate = "transport.route.update";
+    public const string TransportRouteDelete = "transport.route.delete";
+    public const string TransportRouteRestore = "transport.route.restore";
+    public const string TransportRouteReorder = "transport.route.reorder";
+    public const string TransportStopCreate = "transport.stop.create";
+    public const string TransportStopUpdate = "transport.stop.update";
+    public const string TransportStopDelete = "transport.stop.delete";
+    public const string TransportStopRestore = "transport.stop.restore";
+
     /// <summary>Kanonik katalog.</summary>
     public static readonly IReadOnlyList<Definition> All =
     [
@@ -104,7 +116,17 @@ public static class ActivityActionCatalog
         new(PoiDelete, "POI silindi"),
         new(PoiRestore, "POI geri yüklendi"),
         new(PoiCategoryCreate, "POI kategorisi oluşturuldu"),
-        new(PoiCategoryUpdate, "POI kategorisi güncellendi")
+        new(PoiCategoryUpdate, "POI kategorisi güncellendi"),
+
+        new(TransportRouteCreate, "Güzergah oluşturuldu"),
+        new(TransportRouteUpdate, "Güzergah güncellendi"),
+        new(TransportRouteDelete, "Güzergah silindi"),
+        new(TransportRouteRestore, "Güzergah geri yüklendi"),
+        new(TransportRouteReorder, "Durak sırası güncellendi"),
+        new(TransportStopCreate, "Durak oluşturuldu"),
+        new(TransportStopUpdate, "Durak güncellendi"),
+        new(TransportStopDelete, "Durak silindi"),
+        new(TransportStopRestore, "Durak geri yüklendi")
     ];
 
     private static readonly IReadOnlyDictionary<string, string> Names =

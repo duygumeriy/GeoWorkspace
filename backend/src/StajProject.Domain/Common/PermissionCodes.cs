@@ -152,6 +152,21 @@ public static class PermissionCodes
     public const string PoiManage = "poi.manage";
     public const string PoiCategoriesManage = "poi.categories.manage";
 
+    /* --- Akıllı ulaşım -------------------------------------------------------- */
+
+    public const string TransportView = "transport.view";
+
+    public const string TransportStopCreate = "transport.stop.create";
+    public const string TransportStopUpdate = "transport.stop.update";
+    public const string TransportStopDelete = "transport.stop.delete";
+    public const string TransportStopRestore = "transport.stop.restore";
+
+    public const string TransportRouteCreate = "transport.route.create";
+    public const string TransportRouteUpdate = "transport.route.update";
+    public const string TransportRouteDelete = "transport.route.delete";
+    public const string TransportRouteRestore = "transport.route.restore";
+    public const string TransportRouteReorder = "transport.route.reorder";
+
     /// <summary>EF <c>HasMaxLength</c> ile aynı sınır.</summary>
     public const int MaxLength = 128;
 }

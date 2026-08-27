@@ -46,6 +46,11 @@ export const MAP_CONTEXTS = Object.freeze({
   /** Var olan bir POI'nin düzenleme formu. */
   poiEdit: 'poiEdit',
 
+  /* --- Akıllı ulaşım ------------------------------------------------------ */
+  transportStopInfo: 'transportStopInfo',
+  transportStopCreate: 'transportStopCreate',
+  transportStopEdit: 'transportStopEdit',
+
   /* --- Analiz ------------------------------------------------------------- */
   /** Envanter analizi: alan çizimi ve sonuç paneli tek bir bağlamdır. */
   inventory: 'inventory',
@@ -63,6 +68,7 @@ export const MAP_CONTEXTS = Object.freeze({
   /* "POI'lerim" Çizimlerim'in kardeşidir, alt kümesi değil: ayrı bir alan
      nesnesini listeler ve ayrı bir yetkiyle (poi.view) açılır. */
   myPois: 'myPois',
+  myStops: 'myStops',
   layers: 'layers',
   trash: 'trash',
   heatmap: 'heatmap',
@@ -92,10 +98,17 @@ export const SELECTION_CONTEXTS = Object.freeze([
  */
 export const POI_CONTEXTS = Object.freeze([MAP_CONTEXTS.poiInfo, MAP_CONTEXTS.poiEdit])
 
+/** Stop information and edit surfaces share the same selected stop. */
+export const TRANSPORT_STOP_CONTEXTS = Object.freeze([
+  MAP_CONTEXTS.transportStopInfo,
+  MAP_CONTEXTS.transportStopEdit,
+])
+
 /** Kenar çubuğunun açtığı bağlamlar — satır vurgusu bunlardan birinde durur. */
 export const SIDEBAR_CONTEXTS = Object.freeze([
   MAP_CONTEXTS.drawings,
   MAP_CONTEXTS.myPois,
+  MAP_CONTEXTS.myStops,
   MAP_CONTEXTS.layers,
   MAP_CONTEXTS.trash,
   MAP_CONTEXTS.heatmap,

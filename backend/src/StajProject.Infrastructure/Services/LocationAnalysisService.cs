@@ -110,7 +110,11 @@ public class LocationAnalysisService : ILocationAnalysisService
 
         /* Coğrafi yetki, kategori çözümünden ÖNCE denetlenir: yetkisiz bir
            alan için taksonomi okumaya gerek yoktur. */
-        var authorized = await _areaGuard.AuthorizeAsync(analysis.Target, cancellationToken);
+        var authorized = await _areaGuard.AuthorizeAsync(
+            analysis.Target,
+            analysis.AdministrativeTargetType,
+            analysis.AdministrativeTargetKey,
+            cancellationToken);
 
         if (!authorized.IsSuccess)
         {
@@ -265,7 +269,11 @@ public class LocationAnalysisService : ILocationAnalysisService
 
         var analysis = validated.Value!;
 
-        var authorized = await _areaGuard.AuthorizeAsync(analysis.Target, cancellationToken);
+        var authorized = await _areaGuard.AuthorizeAsync(
+            analysis.Target,
+            analysis.AdministrativeTargetType,
+            analysis.AdministrativeTargetKey,
+            cancellationToken);
 
         if (!authorized.IsSuccess)
         {
@@ -369,7 +377,11 @@ public class LocationAnalysisService : ILocationAnalysisService
 
         var analysis = validated.Value!;
 
-        var authorized = await _areaGuard.AuthorizeAsync(analysis.Target, cancellationToken);
+        var authorized = await _areaGuard.AuthorizeAsync(
+            analysis.Target,
+            analysis.AdministrativeTargetType,
+            analysis.AdministrativeTargetKey,
+            cancellationToken);
 
         if (!authorized.IsSuccess)
         {

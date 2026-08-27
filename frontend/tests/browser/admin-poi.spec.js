@@ -28,6 +28,11 @@ const json = (body, status = 200) => ({
   body: JSON.stringify(body),
 })
 
+const PIXEL_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+X8vZVwAAAABJRU5ErkJggg==',
+  'base64',
+)
+
 /** Haritanın açılış merkezi: kabın orta pikseli tam bu koordinattır. */
 const MAP_CENTER = { longitude: 35.2433, latitude: 38.9637 }
 
@@ -213,6 +218,15 @@ async function signIn(page, codes, { role = 'Operatör Amiri' } = {}) {
   await page.route('**/api/poi', (route) =>
     route.fulfill(json(POIS.filter((p) => !p.isDeleted && p.isActive).map(mapPoi))),
   )
+
+  /* `poi.view` legitimately starts the authenticated presentation raster on
+     the map. Keep this isolated fixture hermetic instead of letting that image
+     request fall through to a backend process the browser suite does not run. */
+  await page.route('**/api/map/presentation/poi**', (route) => route.fulfill({
+    status: 200,
+    contentType: 'image/png',
+    body: PIXEL_PNG,
+  }))
 
   await page.addInitScript((expiresAt) => {
     sessionStorage.setItem('token', 'browser-test-token')

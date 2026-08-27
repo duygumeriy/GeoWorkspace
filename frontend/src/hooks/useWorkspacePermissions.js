@@ -38,6 +38,7 @@ export default function useWorkspacePermissions(workspaceMode) {
     activeLocationAnalysisTool,
     isEditing,
     isPlacingPoi,
+    isPlacingTransportStop,
     selectDrawTool,
     setDrawTool,
     selectMeasureTool,
@@ -51,6 +52,8 @@ export default function useWorkspacePermissions(workspaceMode) {
     stopEditing,
     togglePoiTool,
     stopPoiPlacement,
+    toggleTransportStopTool,
+    stopTransportStopPlacement,
   } = workspaceMode
 
   /* Üç oluşturma yetkisi AYRI kalır ve tek bir `canDraw`a indirgenmez: yalnızca
@@ -100,6 +103,13 @@ export default function useWorkspacePermissions(workspaceMode) {
      Bu bir yetki genişletmesi DEĞİL, bir yetenek tanımıdır: uçların kendi
      kapıları backend'de olduğu gibi durur. */
   const canCreatePoi = canAll([PERMISSIONS.POI_CREATE, PERMISSIONS.POI_VIEW])
+
+  const canViewTransport = can(PERMISSIONS.TRANSPORT_VIEW)
+  const canCreateTransportStop = can(PERMISSIONS.TRANSPORT_STOP_CREATE)
+  const canUpdateTransportStop = can(PERMISSIONS.TRANSPORT_STOP_UPDATE)
+  const canDeleteTransportStop = can(PERMISSIONS.TRANSPORT_STOP_DELETE)
+  const canRestoreTransportStop = can(PERMISSIONS.TRANSPORT_STOP_RESTORE)
+  const canRestoreTransportRoute = can(PERMISSIONS.TRANSPORT_ROUTE_RESTORE)
 
   /* Düzenleme/silme YETENEĞİ ile bir KAYITTA yetki farklı sorulardır.
      Buradaki değerler yalnızca ilkini yanıtlar — "bu kişi hiç POI
@@ -188,6 +198,11 @@ export default function useWorkspacePermissions(workspaceMode) {
     togglePoiTool()
   }, [canCreatePoi, isPlacingPoi, togglePoiTool])
 
+  const guardedToggleTransportStopTool = useCallback(() => {
+    if (!canCreateTransportStop && !isPlacingTransportStop) return
+    toggleTransportStopTool()
+  }, [canCreateTransportStop, isPlacingTransportStop, toggleTransportStopTool])
+
   const guardedToggleLocationAnalysisTool = useCallback(() => {
     // Açmak yetki ister; açıkken kapatmak istemez.
     if (!canRunLocationAnalysis && !activeLocationAnalysisTool) return
@@ -234,6 +249,10 @@ export default function useWorkspacePermissions(workspaceMode) {
     if (isPlacingPoi && !canCreatePoi) stopPoiPlacement()
   }, [isPlacingPoi, canCreatePoi, stopPoiPlacement])
 
+  useEffect(() => {
+    if (isPlacingTransportStop && !canCreateTransportStop) stopTransportStopPlacement()
+  }, [isPlacingTransportStop, canCreateTransportStop, stopTransportStopPlacement])
+
   return {
     drawTools,
     canDrawAny,
@@ -253,6 +272,12 @@ export default function useWorkspacePermissions(workspaceMode) {
     canDeletePoi,
     canManagePoi,
     canRestorePoi,
+    canViewTransport,
+    canCreateTransportStop,
+    canUpdateTransportStop,
+    canDeleteTransportStop,
+    canRestoreTransportStop,
+    canRestoreTransportRoute,
     selectDrawTool: guardedSelectDrawTool,
     setDrawTool: guardedSetDrawTool,
     selectMeasureTool: guardedSelectMeasureTool,
@@ -260,5 +285,6 @@ export default function useWorkspacePermissions(workspaceMode) {
     toggleAnalysisTool: guardedToggleAnalysisTool,
     toggleLocationAnalysisTool: guardedToggleLocationAnalysisTool,
     togglePoiTool: guardedTogglePoiTool,
+    toggleTransportStopTool: guardedToggleTransportStopTool,
   }
 }

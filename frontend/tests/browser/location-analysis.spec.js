@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { mockPermissions } from './permissions.js'
+import { provinceAreaWkts, regionAreaWkts } from '../../src/map/locationAnalysis.js'
+import { PROVINCES, REGIONS } from '../../src/map/turkeyGeography.js'
 
 /**
  * "Konum Analizi" — ödevin kullanıcıya görünen yüzü.
@@ -15,6 +17,26 @@ const LOCATION_ANALYSIS = 'location.analysis'
 const POI_VIEW = 'poi.view'
 const BASE_PERMISSIONS = ['map.view', 'drawings.view', 'layers.view']
 const BOTH = [...BASE_PERMISSIONS, LOCATION_ANALYSIS, POI_VIEW]
+
+const provinceTarget = (province) => ({
+  key: province.code,
+  name: province.name,
+  areaWkts: provinceAreaWkts(province.code),
+  provinceKeys: [],
+})
+
+const regionTarget = (region) => ({
+  key: region.key,
+  name: region.name,
+  areaWkts: regionAreaWkts(region.key),
+  provinceKeys: region.provinceCodes,
+})
+
+const unrestrictedCatalog = {
+  isRestricted: false,
+  regions: REGIONS.map(regionTarget),
+  provinces: PROVINCES.map(provinceTarget),
+}
 
 /**
  * Zarfın TAMAMINI dolduran opak bir raster.
@@ -103,6 +125,7 @@ async function prepareMap(page, {
   heatmapBody = PIXEL_PNG,
   pointsHandler = null,
   scopeWkt = null,
+  targetCatalog = null,
   normalPois = [],
 } = {}) {
   await mockPermissions(page, permissions, { userId: 42 })
@@ -111,6 +134,7 @@ async function prepareMap(page, {
   const imageRequests = []
   const pointRequests = []
   const rasterPointRequests = []
+  const catalogRequests = []
 
   await page.addInitScript((expiresAt) => {
     sessionStorage.setItem('token', 'location-analysis-token')
@@ -128,6 +152,19 @@ async function prepareMap(page, {
       ? { isRestricted: true, effectiveWkt: scopeWkt, areaCount: 1 }
       : { isRestricted: false, effectiveWkt: null, areaCount: 0 },
   )))
+  const resolvedCatalog = targetCatalog ?? (scopeWkt
+    ? {
+        isRestricted: true,
+        regions: [],
+        provinces: scopeWkt === ANKARA_SCOPE
+          ? PROVINCES.filter((province) => province.code === 'TR-06').map(provinceTarget)
+          : [],
+      }
+    : unrestrictedCatalog)
+  await page.route('**/api/analysis/location/catalog', (route) => {
+    catalogRequests.push({ method: route.request().method(), url: route.request().url() })
+    return route.fulfill(json(resolvedCatalog))
+  })
   // Genel POI listesi ÖNCE kaydedilir: Playwright son eklenen route'u önce
   // dener ve geniş POI deseni kategori ucuyla da eşleşirdi — kategoriler boş
   // gelir, açılır listeler boş kalırdı.
@@ -189,7 +226,7 @@ async function prepareMap(page, {
   await page.goto('/map')
   await expect(page.locator('.map-container canvas').first()).toBeVisible()
 
-  return { summaryRequests, imageRequests, pointRequests, rasterPointRequests }
+  return { catalogRequests, summaryRequests, imageRequests, pointRequests, rasterPointRequests }
 }
 
 async function openPanel(page) {
@@ -198,6 +235,7 @@ async function openPanel(page) {
   }
   await page.getByRole('button', { name: 'Konum Analizi', exact: true }).click()
   await expect(page.getByRole('dialog', { name: 'Konum Analizi' })).toBeVisible()
+  await expect(page.getByLabel('İl', { exact: true })).toBeEnabled()
 }
 
 /**
@@ -238,8 +276,34 @@ async function configure(page, { first = 'Eczane', firstWeight = 50, second = 'E
 /* --- Yetki kapısı ------------------------------------------------------------- */
 
 test('both permissions together reveal the entry', async ({ page }) => {
-  await prepareMap(page)
+  const { catalogRequests, summaryRequests, imageRequests, pointRequests } = await prepareMap(page)
   await expect(page.getByRole('button', { name: 'Konum Analizi', exact: true })).toBeVisible()
+  expect(catalogRequests).toHaveLength(0)
+  expect(summaryRequests).toHaveLength(0)
+  expect(imageRequests).toHaveLength(0)
+  expect(pointRequests).toHaveLength(0)
+})
+
+test('the authorized catalog loads lazily once and remains usable after reopening', async ({ page }) => {
+  const { catalogRequests, summaryRequests } = await prepareMap(page)
+  expect(catalogRequests).toHaveLength(0)
+
+  await openPanel(page)
+  await expect.poll(() => catalogRequests.length).toBe(1)
+  expect(catalogRequests[0]).toMatchObject({
+    method: 'GET',
+    url: expect.stringContaining('/api/analysis/location/catalog'),
+  })
+  await expect(page.getByLabel('İl', { exact: true }).locator('option')).toHaveCount(PROVINCES.length + 1)
+  expect(summaryRequests).toHaveLength(0)
+
+  await page.getByRole('button', { name: 'Konum Analizi panelini kapat' }).click()
+  await expect(page.getByRole('dialog', { name: 'Konum Analizi' })).toHaveCount(0)
+  await openPanel(page)
+
+  expect(catalogRequests).toHaveLength(1)
+  await expect(page.getByLabel('İl', { exact: true }).locator('option')).toHaveCount(PROVINCES.length + 1)
+  expect(summaryRequests).toHaveLength(0)
 })
 
 test('location.analysis alone does not reveal the entry', async ({ page }) => {
@@ -505,6 +569,16 @@ const ANKARA_SCOPE = 'POLYGON ((30 38, 35 38, 35 41, 30 41, 30 38))'
 /** Ankara'nın yalnızca küçük bir parçası: hiçbir il tamamen içine sığmaz. */
 const TINY_SCOPE = 'POLYGON ((32.8 39.9, 32.95 39.9, 32.95 40.0, 32.8 40.0, 32.8 39.9))'
 
+const CENTRAL_ANATOLIA = REGIONS.find((region) => region.key === 'IC_ANADOLU')
+const SAMSUN = PROVINCES.find((province) => province.code === 'TR-55')
+const CENTRAL_ANATOLIA_AND_SAMSUN = {
+  isRestricted: true,
+  regions: [regionTarget(CENTRAL_ANATOLIA)],
+  provinces: PROVINCES
+    .filter((province) => CENTRAL_ANATOLIA.provinceCodes.includes(province.code) || province.code === SAMSUN.code)
+    .map(provinceTarget),
+}
+
 test('an unrestricted user still sees every province', async ({ page }) => {
   /* Kural değişikliği, coğrafi alanı tanımlı olmayan mevcut kurulumları
      KAPATMAMALIDIR. */
@@ -527,7 +601,7 @@ test('a restricted user only sees provinces inside their own area', async ({ pag
   expect(labels).not.toContain('İstanbul')
   expect(labels).not.toContain('İzmir')
 
-  await expect(page.getByText(/Coğrafi yetkiniz sınırlı/)).toBeVisible()
+  await expect(page.getByText(/Coğrafi yetkinize uygun bölgeler ve iller/)).toBeVisible()
 })
 
 test('a user whose area covers no whole province is told to draw instead', async ({ page }) => {
@@ -542,6 +616,76 @@ test('a user whose area covers no whole province is told to draw instead', async
   expect(labels.filter((label) => label !== 'Seçiniz…')).toHaveLength(0)
 
   await expect(page.getByText(/haritada, yetki alanınızın içinde çizin/)).toBeVisible()
+})
+
+test('backend-authorized İç Anadolu and standalone Samsun populate only their legitimate selectors', async ({ page }) => {
+  await prepareMap(page, { scopeWkt: ANKARA_SCOPE, targetCatalog: CENTRAL_ANATOLIA_AND_SAMSUN })
+  await openPanel(page)
+
+  const regionLabels = await page.getByLabel('Bölge').locator('option').allTextContents()
+  expect(regionLabels).toEqual(['Tüm bölgeler', 'İç Anadolu'])
+
+  const provinceLabels = await page.getByLabel('İl', { exact: true }).locator('option').allTextContents()
+  expect(provinceLabels).toContain('Samsun')
+  for (const code of CENTRAL_ANATOLIA.provinceCodes) {
+    expect(provinceLabels).toContain(PROVINCES.find((province) => province.code === code).name)
+  }
+  expect(provinceLabels).not.toContain('İstanbul')
+  await expect(page.getByText('Coğrafi yetkinize uygun bölgeler ve iller listeleniyor. Daha dar bir alan için haritada çizebilirsiniz.')).toBeVisible()
+})
+
+test('selecting an authorized region sends its canonical identity and geometry', async ({ page }) => {
+  const requests = await prepareMap(page, { scopeWkt: ANKARA_SCOPE, targetCatalog: CENTRAL_ANATOLIA_AND_SAMSUN })
+  await openPanel(page)
+
+  await page.getByLabel('Bölge').selectOption('IC_ANADOLU')
+  await chooseCategory(page, 1, 'Sağlık Kurumları')
+  await page.getByLabel('Ağırlık 1').fill('50')
+  await chooseCategory(page, 2, 'Eğitim Kurumları')
+  await page.getByLabel('Ağırlık 2').fill('50')
+  await page.getByRole('button', { name: 'ANALİZİ BAŞLAT' }).click()
+
+  await expect.poll(() => requests.summaryRequests.length).toBe(1)
+  expect(requests.summaryRequests[0]).toMatchObject({
+    administrativeTargetType: 'region',
+    administrativeTargetKey: 'IC_ANADOLU',
+    areaWkts: regionAreaWkts('IC_ANADOLU'),
+  })
+})
+
+test('selecting standalone Samsun does not promote Karadeniz and sends province identity', async ({ page }) => {
+  const requests = await prepareMap(page, { scopeWkt: ANKARA_SCOPE, targetCatalog: CENTRAL_ANATOLIA_AND_SAMSUN })
+  await openPanel(page)
+
+  await expect(page.getByLabel('Bölge').locator('option', { hasText: 'Karadeniz' })).toHaveCount(0)
+  await page.getByLabel('İl', { exact: true }).selectOption('TR-55')
+  await chooseCategory(page, 1, 'Sağlık Kurumları')
+  await page.getByLabel('Ağırlık 1').fill('50')
+  await chooseCategory(page, 2, 'Eğitim Kurumları')
+  await page.getByLabel('Ağırlık 2').fill('50')
+  await page.getByRole('button', { name: 'ANALİZİ BAŞLAT' }).click()
+
+  await expect.poll(() => requests.summaryRequests.length).toBe(1)
+  expect(requests.summaryRequests[0]).toMatchObject({
+    administrativeTargetType: 'province',
+    administrativeTargetKey: 'TR-55',
+  })
+})
+
+test('authorized search and mode switches cannot leak a prior administrative selection', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await prepareMap(page, { scopeWkt: ANKARA_SCOPE, targetCatalog: CENTRAL_ANATOLIA_AND_SAMSUN })
+  await openPanel(page)
+
+  await page.getByLabel('İl ara').fill('sam')
+  await expect(page.getByLabel('İl', { exact: true }).locator('option')).toHaveText(['Seçiniz…', 'Samsun'])
+  await page.getByLabel('İl', { exact: true }).selectOption('TR-55')
+  await page.getByRole('button', { name: 'Haritada Çiz' }).click()
+  await page.getByRole('button', { name: 'İl Seç' }).click()
+
+  await expect(page.getByLabel('Bölge')).toHaveValue('')
+  await expect(page.getByLabel('İl', { exact: true })).toHaveValue('')
+  await expect(page.getByRole('dialog', { name: 'Konum Analizi' })).toBeVisible()
 })
 
 /* --- Aranabilir kategori kutusu ---------------------------------------------------
@@ -962,7 +1106,17 @@ test('the browser never sends GeoServer internals', async ({ page }) => {
     expect(keys).not.toContain(forbidden)
   }
   expect(keys.sort()).toEqual(
-    ['areawkts', 'bbox', 'criteria', 'heatmaplod', 'height', 'pixelratio', 'width'].sort(),
+    [
+      'administrativetargetkey',
+      'administrativetargettype',
+      'areawkts',
+      'bbox',
+      'criteria',
+      'heatmaplod',
+      'height',
+      'pixelratio',
+      'width',
+    ].sort(),
   )
 })
 
@@ -1624,7 +1778,12 @@ test('the analysis POIs are vectors, and the raster overlay is never requested',
 
   // İstek yalnızca aktif analizi taşır; GeoServer iç bilgisi YOKTUR.
   const keys = Object.keys(pointRequests[0]).map((key) => key.toLowerCase())
-  expect(keys.sort()).toEqual(['areawkts', 'criteria'].sort())
+  expect(keys.sort()).toEqual([
+    'administrativetargetkey',
+    'administrativetargettype',
+    'areawkts',
+    'criteria',
+  ].sort())
   for (const forbidden of ['cql_filter', 'cql', 'env', 'sld', 'layers', 'styles', 'viewparams', 'sql']) {
     expect(keys).not.toContain(forbidden)
   }

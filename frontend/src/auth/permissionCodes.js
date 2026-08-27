@@ -100,6 +100,18 @@ export const PERMISSIONS = Object.freeze({
   POI_DELETE: 'poi.delete',
   POI_MANAGE: 'poi.manage',
   POI_CATEGORIES_MANAGE: 'poi.categories.manage',
+
+  /* --- Akıllı ulaşım ------------------------------------------------------ */
+  TRANSPORT_VIEW: 'transport.view',
+  TRANSPORT_STOP_CREATE: 'transport.stop.create',
+  TRANSPORT_STOP_UPDATE: 'transport.stop.update',
+  TRANSPORT_STOP_DELETE: 'transport.stop.delete',
+  TRANSPORT_STOP_RESTORE: 'transport.stop.restore',
+  TRANSPORT_ROUTE_CREATE: 'transport.route.create',
+  TRANSPORT_ROUTE_UPDATE: 'transport.route.update',
+  TRANSPORT_ROUTE_DELETE: 'transport.route.delete',
+  TRANSPORT_ROUTE_RESTORE: 'transport.route.restore',
+  TRANSPORT_ROUTE_REORDER: 'transport.route.reorder',
 })
 
 /**
@@ -128,6 +140,14 @@ export const POI_SECTION_PERMISSIONS = Object.freeze([
   PERMISSIONS.POI_CATEGORIES_MANAGE,
 ])
 
+/** Güzergah yönetimi menüsünü ve rotasını açan bağımsız işlem yetkileri. */
+export const TRANSPORT_ROUTE_SECTION_PERMISSIONS = Object.freeze([
+  PERMISSIONS.TRANSPORT_ROUTE_CREATE,
+  PERMISSIONS.TRANSPORT_ROUTE_UPDATE,
+  PERMISSIONS.TRANSPORT_ROUTE_DELETE,
+  PERMISSIONS.TRANSPORT_ROUTE_REORDER,
+])
+
 /**
  * Yönetim panelinin bölümleri, kenar çubuğundaki SIRAYLA.
  *
@@ -149,6 +169,7 @@ export const ADMIN_SECTIONS = Object.freeze([
      POI listesini göremez ama taksonomiyi yönetebilmelidir; tek bir yetkiye
      bağlansaydı o kişi bölüme hiç giremezdi. */
   { path: '/admin/poi', anyOf: POI_SECTION_PERMISSIONS },
+  { path: '/admin/transport', anyOf: TRANSPORT_ROUTE_SECTION_PERMISSIONS },
 ])
 
 /** Yönetim paneline girişi açan yetkiler: en az biri yeterlidir. */

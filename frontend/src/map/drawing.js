@@ -17,6 +17,9 @@ export const DATA_PROJECTION = 'EPSG:4326'
  */
 export const DRAWING_LAYER_CLASSNAME = 'drawing-layer'
 
+/** Unsaved preview layer; separate from the one logical persisted drawing layer. */
+export const DRAWING_PENDING_LAYER_CLASSNAME = 'drawing-pending-layer'
+
 /** Same trick for the throwaway measurement layer. */
 export const MEASURE_LAYER_CLASSNAME = 'measure-layer'
 
@@ -58,7 +61,9 @@ export function createPendingDrawingLayer() {
   const source = new VectorSource()
   const layer = new VectorLayer({
     source,
-    className: DRAWING_LAYER_CLASSNAME,
+    /* This is not part of the persisted drawing source and must not claim the
+       class used by selectors/interactions for that one logical layer. */
+    className: DRAWING_PENDING_LAYER_CLASSNAME,
     // The pending shape is always fully visible and never selected.
     style: createLayerStyleFunction(() => ({ selectedKeys: new Set(), visibility: {} })),
     // Just above the persisted drawings so the pending shape stays legible.

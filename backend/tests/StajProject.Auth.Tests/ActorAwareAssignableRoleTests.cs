@@ -37,7 +37,15 @@ namespace StajProject.Auth.Tests;
 public class ActorAwareAssignableRoleTests
 {
     private static readonly string[] CanonicalOrder =
-        [GisRoles.Viewer, GisRoles.GisEditor, GisRoles.GisAnalyst, GisRoles.GisManager, GisRoles.Administrator];
+        [
+            GisRoles.Viewer,
+            GisRoles.GisEditor,
+            GisRoles.GisAnalyst,
+            GisRoles.GisManager,
+            GisRoles.TransportOperator,
+            GisRoles.TransportUser,
+            GisRoles.Administrator
+        ];
 
     /* --- Tam yetkili aktörler ------------------------------------------------------ */
 
@@ -305,9 +313,9 @@ public class ActorAwareAssignableRoleTests
 
         var offered = await service.GetAssignableRolesAsync(actor.Id);
 
-        Assert.Equal(17, offered.Count);
+        Assert.Equal(CanonicalOrder.Length + 12, offered.Count);
 
-        /* Rol başına yetki sorgusu açan bir uygulama burada 17 çağrı yapardı.
+        /* Rol başına yetki sorgusu açan bir uygulama burada 19 çağrı yapardı.
            Otorite bir kez çözülür ve tüm rollere karşı bellekte karşılaştırılır;
            hedef rollerin yetkileri de tek sorguda toplanır. */
         await spy.Received(1).GetEffectivePermissionCodesAsync(actor.Id, Arg.Any<CancellationToken>());

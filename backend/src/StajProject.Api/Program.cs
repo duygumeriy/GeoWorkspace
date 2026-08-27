@@ -264,6 +264,7 @@ builder.Services.AddScoped<ISpatialAnalysisService, SpatialAnalysisService>();
    kümesini okur, sahiplik yüklemi taşımaz ve kendi yetkisiyle korunur.
    Lifetime aynı gerekçeyle scoped'dır — AppDbContext scoped'dır. */
 builder.Services.AddScoped<ILocationAnalysisAreaGuard, LocationAnalysisAreaGuard>();
+builder.Services.AddScoped<ILocationAnalysisTargetCatalogService, LocationAnalysisTargetCatalogService>();
 builder.Services.AddScoped<ILocationAnalysisService, LocationAnalysisService>();
 
 /* Ağırlıklı yoğunluk yüzeyi: veritabanından okunan noktalardan sunucuda
@@ -274,6 +275,10 @@ builder.Services.AddScoped<ILocationAnalysisImageService, LocationAnalysisImageS
    scoped'dır ve her istek kendi transaction sınırını görmelidir. */
 builder.Services.AddScoped<IPoiService, PoiService>();
 builder.Services.AddScoped<IPoiCategoryService, PoiCategoryService>();
+
+/* Akıllı ulaşım CRUD ve sıralama servisi. Coğrafi yazma sınırını mevcut
+   IGeographicAuthorizationService üzerinden uygular; okumalara alan filtresi eklemez. */
+builder.Services.AddScoped<ITransportService, TransportService>();
 
 /* POI sahiplik/yetki kararının TEK yeri. Çizim tarafındaki
    IDrawingAuthorizationService ile aynı gerekçe: servis katmanı kuralı

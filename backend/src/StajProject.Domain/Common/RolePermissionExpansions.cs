@@ -173,6 +173,20 @@ public static class RolePermissionExpansions
         PermissionCodes.PoiCategoriesManage
     ];
 
+    private static readonly string[] TransportPermissions =
+    [
+        PermissionCodes.TransportView,
+        PermissionCodes.TransportStopCreate,
+        PermissionCodes.TransportStopUpdate,
+        PermissionCodes.TransportStopDelete,
+        PermissionCodes.TransportStopRestore,
+        PermissionCodes.TransportRouteCreate,
+        PermissionCodes.TransportRouteUpdate,
+        PermissionCodes.TransportRouteDelete,
+        PermissionCodes.TransportRouteRestore,
+        PermissionCodes.TransportRouteReorder
+    ];
+
     /// <summary>
     /// Uygulanacak genişlemeler. Rol adları yalnızca <b>başlangıç verisi</b>
     /// üretmek için kullanılır; çalışma zamanı yetkilendirmesi hâlâ tamamen
@@ -182,7 +196,7 @@ public static class RolePermissionExpansions
     [
         new(GisRoles.Administrator,
             [.. GeographyPermissions, .. AuditPermissions, .. HeatmapPermissions, .. PoiManagePermissions,
-             .. LocationAnalysisPermissions]),
+             .. LocationAnalysisPermissions, .. TransportPermissions]),
         new(GisRoles.GisManager,
             [.. HeatmapPermissions, .. PoiManagePermissions, .. LocationAnalysisPermissions]),
         new(GisRoles.GisAnalyst,

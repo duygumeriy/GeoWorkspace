@@ -26,13 +26,16 @@ public sealed class LocationAnalysisAreaGuard : ILocationAnalysisAreaGuard
 {
     private readonly ICurrentUserService _currentUser;
     private readonly IGeographicAuthorizationService _authorization;
+    private readonly ILocationAnalysisTargetCatalogService _catalog;
 
     public LocationAnalysisAreaGuard(
         ICurrentUserService currentUser,
-        IGeographicAuthorizationService authorization)
+        IGeographicAuthorizationService authorization,
+        ILocationAnalysisTargetCatalogService catalog)
     {
         _currentUser = currentUser;
         _authorization = authorization;
+        _catalog = catalog;
     }
 
     public async Task<ServiceResult<bool>> AuthorizeAsync(
@@ -61,5 +64,29 @@ public sealed class LocationAnalysisAreaGuard : ILocationAnalysisAreaGuard
            kendisini sızdırmak olurdu. Ön yüz zaten kendi sınırını çizer. */
         return ServiceResult<bool>.Forbidden(
             "Seçilen alan coğrafi yetki alanınızın dışında. Analizi yalnızca yetkili olduğunuz bölgede çalıştırabilirsiniz.");
+    }
+
+    public Task<ServiceResult<bool>> AuthorizeAsync(
+        Geometry target,
+        string? administrativeTargetType,
+        string? administrativeTargetKey,
+        CancellationToken cancellationToken = default)
+    {
+        if (administrativeTargetType is null && administrativeTargetKey is null)
+        {
+            return AuthorizeAsync(target, cancellationToken);
+        }
+
+        if (administrativeTargetType is null || administrativeTargetKey is null)
+        {
+            return Task.FromResult(ServiceResult<bool>.Forbidden(
+                "Seçilen idari hedef doğrulanamadı."));
+        }
+
+        return _catalog.AuthorizeTargetAsync(
+            administrativeTargetType,
+            administrativeTargetKey,
+            target,
+            cancellationToken);
     }
 }

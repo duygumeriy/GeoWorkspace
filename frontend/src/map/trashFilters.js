@@ -38,6 +38,8 @@ import { TYPE_FILTERS, foldForSearch } from './drawingFilters.js'
 export const TRASH_TYPE_FILTERS = Object.freeze([
   ...TYPE_FILTERS,
   { id: 'poi', label: 'POI' },
+  { id: 'transport-stop', label: 'Durak' },
+  { id: 'transport-route', label: 'Güzergah' },
 ])
 
 export const TRASH_SORT_OPTIONS = Object.freeze([
@@ -63,7 +65,7 @@ function deletedTimeOf(item) {
  * bir kod yolu doğmaz.
  */
 export function trashRecordOf(item) {
-  return item?.drawing ?? item?.poi ?? null
+  return item?.drawing ?? item?.poi ?? item?.stop ?? item?.route ?? null
 }
 
 /** Stable tiebreaker: two records deleted in the same batch share a timestamp. */

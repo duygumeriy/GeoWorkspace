@@ -26,7 +26,9 @@ public sealed record ValidatedLocationCriterion(string CategorySlug, int Weight)
 public sealed record ValidatedLocationAnalysisRequest(
     Geometry Target,
     int PartCount,
-    IReadOnlyList<ValidatedLocationCriterion> Criteria);
+    IReadOnlyList<ValidatedLocationCriterion> Criteria,
+    string? AdministrativeTargetType,
+    string? AdministrativeTargetKey);
 
 /// <summary>
 /// Konum analizi isteğinin <b>saf</b> doğrulaması: hedef geometri ve ölçüt
@@ -98,11 +100,41 @@ public static class LocationAnalysisValidator
             return Fail(criteria.Error!);
         }
 
+        var administrativeTarget = ValidateAdministrativeTarget(
+            request.AdministrativeTargetType,
+            request.AdministrativeTargetKey);
+        if (!administrativeTarget.IsSuccess)
+        {
+            return Fail(administrativeTarget.Error!);
+        }
+
         return ServiceResult<ValidatedLocationAnalysisRequest>.Success(
             new ValidatedLocationAnalysisRequest(
                 target.Value!,
                 request.AreaWkts!.Count,
-                criteria.Value!));
+                criteria.Value!,
+                administrativeTarget.Value.Type,
+                administrativeTarget.Value.Key));
+    }
+
+    private static ServiceResult<(string? Type, string? Key)> ValidateAdministrativeTarget(
+        string? type,
+        string? key)
+    {
+        var normalizedType = string.IsNullOrWhiteSpace(type) ? null : type.Trim().ToLowerInvariant();
+        var normalizedKey = string.IsNullOrWhiteSpace(key) ? null : key.Trim();
+
+        if (normalizedType is null && normalizedKey is null)
+        {
+            return ServiceResult<(string?, string?)>.Success((null, null));
+        }
+
+        if (normalizedType is not ("province" or "region") || normalizedKey is null)
+        {
+            return ServiceResult<(string?, string?)>.Failure("Geçersiz idari analiz hedefi.");
+        }
+
+        return ServiceResult<(string?, string?)>.Success((normalizedType, normalizedKey));
     }
 
     /* --- Hedef alan ------------------------------------------------------------ */

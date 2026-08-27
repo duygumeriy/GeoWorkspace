@@ -179,6 +179,10 @@ public class LocationAnalysisPermissionCatalogTests
         Assert.Contains(Code, RolePermissionDefaults.For(GisRoles.GisEditor));
         Assert.Contains(Code, RolePermissionDefaults.For(GisRoles.GisAnalyst));
         Assert.Contains(Code, RolePermissionDefaults.For(GisRoles.GisManager));
+
+        /* Amaç-odaklı ulaşım rolleri bu ilgisiz analizi devralmaz. */
+        Assert.DoesNotContain(Code, RolePermissionDefaults.For(GisRoles.TransportOperator));
+        Assert.DoesNotContain(Code, RolePermissionDefaults.For(GisRoles.TransportUser));
     }
 
     [Fact]
@@ -215,10 +219,13 @@ public class LocationAnalysisPermissionCatalogTests
 
         foreach (var roleName in GisRoles.All)
         {
-            Assert.True(
-                await HasGrantAsync(scope, roleName),
-                $"'{roleName}' rolü konum analizi yetkisini almalıydı.");
+            Assert.Equal(
+                RolePermissionDefaults.For(roleName).Contains(Code),
+                await HasGrantAsync(scope, roleName));
         }
+
+        Assert.False(await HasGrantAsync(scope, GisRoles.TransportOperator));
+        Assert.False(await HasGrantAsync(scope, GisRoles.TransportUser));
     }
 
     /* --- Mevcut kurulum genişlemesi --------------------------------------------- */

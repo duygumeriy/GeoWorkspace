@@ -17,10 +17,18 @@ import './MapOverlays.css'
  * ihlal edildiğinde öğretmek olurdu; kural önce söylenir, sonra uygulanır.
  * Ölçüm ve seçim araçları veri üretmediği için not onlarda görünmez.
  */
-export function DrawingHint({ activeTool, measureMode, selectionTool, analysisActive, scopeRestricted = false }) {
+export function DrawingHint({
+  activeTool,
+  measureMode,
+  selectionTool,
+  analysisActive,
+  transportStopActive = false,
+  scopeRestricted = false,
+}) {
   let text = ''
 
   if (activeTool) text = DRAWING_TYPES[activeTool]?.hint ?? ''
+  else if (transportStopActive) text = 'Durak konumunu seçmek için haritaya tıklayın · ESC ile iptal.'
   else if (analysisActive) text = ANALYSIS_TOOL_INFO.hint
   else if (measureMode) {
     const mode = MEASURE_MODES.find((item) => item.id === measureMode)
@@ -34,7 +42,7 @@ export function DrawingHint({ activeTool, measureMode, selectionTool, analysisAc
     text = SELECTION_TOOLS.find((tool) => tool.id === selectionTool)?.hint ?? ''
   }
 
-  const showScopeNote = scopeRestricted && Boolean(activeTool)
+  const showScopeNote = scopeRestricted && Boolean(activeTool || transportStopActive)
 
   if (!text && !showScopeNote) return null
 
@@ -43,7 +51,9 @@ export function DrawingHint({ activeTool, measureMode, selectionTool, analysisAc
       {text}
       {showScopeNote && (
         <span className="map-hint-scope">
-          Yalnızca haritada gösterilen yetki alanınız içinde çizim yapabilirsiniz.
+          {transportStopActive
+            ? 'Yalnızca haritada gösterilen yetki alanınız içinde durak ekleyebilirsiniz.'
+            : 'Yalnızca haritada gösterilen yetki alanınız içinde çizim yapabilirsiniz.'}
         </span>
       )}
     </div>

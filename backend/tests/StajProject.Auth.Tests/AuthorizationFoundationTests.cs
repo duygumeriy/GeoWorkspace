@@ -81,7 +81,18 @@ public class AuthorizationFoundationTests
             "poi.update",
             "poi.delete",
             "poi.manage",
-            "poi.categories.manage"
+            "poi.categories.manage",
+
+            "transport.view",
+            "transport.stop.create",
+            "transport.stop.update",
+            "transport.stop.delete",
+            "transport.stop.restore",
+            "transport.route.create",
+            "transport.route.update",
+            "transport.route.delete",
+            "transport.route.restore",
+            "transport.route.reorder"
         ];
 
         /* Beklenen liste kasıtlı olarak literal yazılır: katalog sabitlerinden

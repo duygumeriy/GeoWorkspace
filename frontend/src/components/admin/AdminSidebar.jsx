@@ -1,6 +1,10 @@
 import { NavLink } from 'react-router-dom'
 import { usePermissions } from '../../auth/permissionStore.js'
-import { PERMISSIONS, POI_SECTION_PERMISSIONS } from '../../auth/permissionCodes.js'
+import {
+  PERMISSIONS,
+  POI_SECTION_PERMISSIONS,
+  TRANSPORT_ROUTE_SECTION_PERMISSIONS,
+} from '../../auth/permissionCodes.js'
 import { ClockIcon, KeyIcon, MapIcon, PinIcon, ShieldIcon, UserIcon } from '../ui/icons/index.js'
 import './AdminSidebar.css'
 
@@ -20,6 +24,7 @@ const NAV_ITEMS = [
      bulunabilir. Tek bir koda bağlansaydı, yalnızca kategori yetkisi olan
      yönetici bölüme hiç giremezdi. */
   { to: '/admin/poi', label: 'POI Yönetimi', Icon: PinIcon, anyOf: POI_SECTION_PERMISSIONS },
+  { to: '/admin/transport', label: 'Güzergah Yönetimi', Icon: MapIcon, anyOf: TRANSPORT_ROUTE_SECTION_PERMISSIONS },
 ]
 
 /**

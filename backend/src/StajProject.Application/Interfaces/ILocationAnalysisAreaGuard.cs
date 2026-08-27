@@ -35,4 +35,16 @@ public interface ILocationAnalysisAreaGuard
     /// kendisidir.
     /// </remarks>
     Task<ServiceResult<bool>> AuthorizeAsync(Geometry target, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Hazır il/bölge seçiminde kaynak kimliğini ve gönderilen geometriyi
+    /// backend kataloğuyla da doğrular. Varsayılan uygulama eski test
+    /// koruyucularının geometrik sözleşmesini korur.
+    /// </summary>
+    Task<ServiceResult<bool>> AuthorizeAsync(
+        Geometry target,
+        string? administrativeTargetType,
+        string? administrativeTargetKey,
+        CancellationToken cancellationToken = default) =>
+        AuthorizeAsync(target, cancellationToken);
 }

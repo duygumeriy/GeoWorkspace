@@ -99,6 +99,40 @@ public class ActivityHistoryTests
         }
     }
 
+    [Theory]
+    [InlineData("CreateRoute", ActivityActionCatalog.TransportRouteCreate, "transport_route", null)]
+    [InlineData("UpdateRoute", ActivityActionCatalog.TransportRouteUpdate, "transport_route", "id")]
+    [InlineData("DeleteRoute", ActivityActionCatalog.TransportRouteDelete, "transport_route", "id")]
+    [InlineData("RestoreRoute", ActivityActionCatalog.TransportRouteRestore, "transport_route", "id")]
+    [InlineData("ReorderStops", ActivityActionCatalog.TransportRouteReorder, "transport_route", "routeId")]
+    [InlineData("CreateStop", ActivityActionCatalog.TransportStopCreate, "transport_stop", null)]
+    [InlineData("UpdateStop", ActivityActionCatalog.TransportStopUpdate, "transport_stop", "id")]
+    [InlineData("DeleteStop", ActivityActionCatalog.TransportStopDelete, "transport_stop", "id")]
+    [InlineData("RestoreStop", ActivityActionCatalog.TransportStopRestore, "transport_stop", "id")]
+    public void Every_transport_mutation_has_an_explicit_activity_descriptor(
+        string action,
+        string expectedCode,
+        string expectedResource,
+        string? expectedRouteKey)
+    {
+        var descriptor = ActivityActionRegistry.Find("Transport", action);
+        Assert.NotNull(descriptor);
+        Assert.Equal(expectedCode, descriptor!.Action);
+        Assert.Equal(expectedResource, descriptor.ResourceType);
+        Assert.Equal(expectedRouteKey, descriptor.ResourceRouteKey);
+        Assert.NotEqual(expectedCode, ActivityActionCatalog.NameOf(expectedCode));
+    }
+
+    [Theory]
+    [InlineData("GetRoutes")]
+    [InlineData("GetRoute")]
+    [InlineData("GetRouteStops")]
+    [InlineData("GetOwnStops")]
+    [InlineData("GetRouteTrash")]
+    [InlineData("GetStopTrash")]
+    public void Transport_reads_are_not_activity_mutations(string action) =>
+        Assert.Null(ActivityActionRegistry.Find("Transport", action));
+
     [Fact]
     public void Details_never_carry_text_from_the_request_body()
     {
@@ -190,6 +224,66 @@ public class ActivityHistoryTests
         await host.Client(actor).GetAsync("/api/admin/activity");
 
         // Tablo bir istek izi değildir: okumalar hiç girmez.
+        Assert.Empty(await host.LogsAsync());
+    }
+
+    [Fact]
+    public async Task Successful_transport_mutations_are_recorded_with_actor_action_and_resource()
+    {
+        await using var host = await StartAsync();
+        var actor = await host.CreateActorAsync("transport-auditor", [
+            PermissionCodes.TransportRouteCreate,
+            PermissionCodes.TransportRouteUpdate,
+            PermissionCodes.TransportRouteDelete,
+            PermissionCodes.TransportRouteRestore,
+            PermissionCodes.TransportRouteReorder,
+            PermissionCodes.TransportStopCreate,
+            PermissionCodes.TransportStopUpdate,
+            PermissionCodes.TransportStopDelete,
+            PermissionCodes.TransportStopRestore
+        ]);
+        var client = host.Client(actor);
+
+        await client.PostAsJsonAsync("/api/transport/routes", new CreateTransportRouteRequest { Name = "Hat", ColorHex = "#6D4AFF" });
+        await client.PutAsJsonAsync("/api/transport/routes/12", new UpdateTransportRouteRequest { Name = "Hat 2", ColorHex = "#6D4AFF" });
+        await client.DeleteAsync("/api/transport/routes/12");
+        await client.PostAsync("/api/transport/routes/12/restore", null);
+        await client.PutAsJsonAsync("/api/transport/routes/12/stops/order", new ReorderTransportStopsRequest { StopIds = [37] });
+        await client.PostAsJsonAsync("/api/transport/stops", new CreateTransportStopRequest { Name = "Durak", RouteId = 12, Longitude = 32.85, Latitude = 39.93 });
+        await client.PutAsJsonAsync("/api/transport/stops/37", new UpdateTransportStopRequest { Name = "Durak 2", RouteId = 12, Longitude = 32.86, Latitude = 39.94 });
+        await client.DeleteAsync("/api/transport/stops/37");
+        await client.PostAsync("/api/transport/stops/37/restore", null);
+
+        var logs = await host.LogsAsync();
+        Assert.Equal([
+            ActivityActionCatalog.TransportRouteCreate,
+            ActivityActionCatalog.TransportRouteUpdate,
+            ActivityActionCatalog.TransportRouteDelete,
+            ActivityActionCatalog.TransportRouteRestore,
+            ActivityActionCatalog.TransportRouteReorder,
+            ActivityActionCatalog.TransportStopCreate,
+            ActivityActionCatalog.TransportStopUpdate,
+            ActivityActionCatalog.TransportStopDelete,
+            ActivityActionCatalog.TransportStopRestore
+        ], logs.Select(log => log.Action));
+        Assert.All(logs, log => Assert.Equal(actor.Id, log.ActorUserId));
+        Assert.All(logs, log => Assert.InRange(log.StatusCode, 200, 299));
+        Assert.Equal("12", logs.Single(log => log.Action == ActivityActionCatalog.TransportRouteReorder).ResourceId);
+        Assert.Equal("37", logs.Single(log => log.Action == ActivityActionCatalog.TransportStopUpdate).ResourceId);
+    }
+
+    [Fact]
+    public async Task Transport_reads_and_mine_do_not_create_activity_rows()
+    {
+        await using var host = await StartAsync();
+        var actor = await host.CreateActorAsync("transport-reader", [PermissionCodes.TransportView]);
+        var client = host.Client(actor);
+
+        await client.GetAsync("/api/transport/routes");
+        await client.GetAsync("/api/transport/routes/12");
+        await client.GetAsync("/api/transport/routes/12/stops");
+        await client.GetAsync("/api/transport/stops/mine");
+
         Assert.Empty(await host.LogsAsync());
     }
 
@@ -473,6 +567,7 @@ public class ActivityHistoryTests
                 services.AddScoped<IRoleManagementService, RoleManagementService>();
                 services.AddScoped<IUserManagementService, UserManagementService>();
                 services.AddScoped<IUserPermissionManagementService, UserPermissionManagementService>();
+                services.AddSingleton(TransportServiceStub());
 
                 // Sınanan mekanizmanın kendisi: yazıcı, sorgu ve iki kayıt yolu.
                 services.AddScoped<IActivityLogWriter, ActivityLogWriter>();
@@ -523,6 +618,29 @@ public class ActivityHistoryTests
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(JwtKey)),
         ClockSkew = TimeSpan.Zero
     };
+
+    private static ITransportService TransportServiceStub()
+    {
+        var service = Substitute.For<ITransportService>();
+        var route = new TransportRouteResponse { Id = 12, Name = "Merkez Hattı", ColorHex = "#6D4AFF", IsActive = true };
+        var stop = new TransportStopResponse { Id = 37, RouteId = 12, RouteName = route.Name, Name = "Meydan", Longitude = 32.85, Latitude = 39.93, SequenceOrder = 1, IsActive = true };
+        service.GetRoutesAsync(Arg.Any<CancellationToken>()).Returns(ServiceResult<IReadOnlyList<TransportRouteResponse>>.Success([route]));
+        service.GetRouteAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(ServiceResult<TransportRouteResponse>.Success(route));
+        service.GetRouteStopsAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(ServiceResult<IReadOnlyList<TransportStopResponse>>.Success([stop]));
+        service.GetOwnStopsAsync(Arg.Any<CancellationToken>()).Returns(ServiceResult<IReadOnlyList<TransportStopResponse>>.Success([stop]));
+        service.GetRouteTrashAsync(Arg.Any<CancellationToken>()).Returns(ServiceResult<IReadOnlyList<TransportRouteResponse>>.Success([]));
+        service.GetStopTrashAsync(Arg.Any<CancellationToken>()).Returns(ServiceResult<IReadOnlyList<TransportStopResponse>>.Success([]));
+        service.CreateRouteAsync(Arg.Any<CreateTransportRouteRequest>(), Arg.Any<CancellationToken>()).Returns(ServiceResult<TransportRouteResponse>.Success(route));
+        service.UpdateRouteAsync(Arg.Any<int>(), Arg.Any<UpdateTransportRouteRequest>(), Arg.Any<CancellationToken>()).Returns(ServiceResult<TransportRouteResponse>.Success(route));
+        service.DeleteRouteAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(ServiceResult<int>.Success(route.Id));
+        service.RestoreRouteAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(ServiceResult<TransportRouteResponse>.Success(route));
+        service.CreateStopAsync(Arg.Any<CreateTransportStopRequest>(), Arg.Any<CancellationToken>()).Returns(ServiceResult<TransportStopResponse>.Success(stop));
+        service.UpdateStopAsync(Arg.Any<int>(), Arg.Any<UpdateTransportStopRequest>(), Arg.Any<CancellationToken>()).Returns(ServiceResult<TransportStopResponse>.Success(stop));
+        service.DeleteStopAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(ServiceResult<int>.Success(stop.Id));
+        service.RestoreStopAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(ServiceResult<TransportStopResponse>.Success(stop));
+        service.ReorderStopsAsync(Arg.Any<int>(), Arg.Any<ReorderTransportStopsRequest>(), Arg.Any<CancellationToken>()).Returns(ServiceResult<IReadOnlyList<TransportStopResponse>>.Success([stop]));
+        return service;
+    }
 
     private sealed class ActivityHost : IAsyncDisposable
     {

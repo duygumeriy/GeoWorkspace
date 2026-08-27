@@ -110,6 +110,21 @@ public static class RolePermissionDefaults
     private static readonly string[] AdministratorPermissions =
         [.. PermissionCatalog.AllCodes];
 
+    private static readonly string[] TransportUserPermissions =
+    [
+        PermissionCodes.TransportView,
+        PermissionCodes.PoiView
+    ];
+
+    private static readonly string[] TransportOperatorPermissions =
+    [
+        .. TransportUserPermissions,
+        PermissionCodes.TransportStopCreate,
+        PermissionCodes.TransportStopUpdate,
+        PermissionCodes.TransportStopDelete,
+        PermissionCodes.TransportStopRestore
+    ];
+
     /// <summary>
     /// Rol adı → o role verilecek başlangıç yetki kodları.
     /// </summary>
@@ -120,6 +135,8 @@ public static class RolePermissionDefaults
             [GisRoles.GisEditor] = GisEditorPermissions,
             [GisRoles.GisAnalyst] = GisAnalystPermissions,
             [GisRoles.GisManager] = GisManagerPermissions,
+            [GisRoles.TransportOperator] = TransportOperatorPermissions,
+            [GisRoles.TransportUser] = TransportUserPermissions,
             [GisRoles.Administrator] = AdministratorPermissions
         };
 
