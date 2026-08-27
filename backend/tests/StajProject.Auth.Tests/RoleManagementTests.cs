@@ -34,7 +34,7 @@ public class RoleManagementTests
 
         var roles = await Service(scope).GetRolesAsync();
 
-        Assert.Equal(7, roles.Count);
+        Assert.Equal(RoleCatalog.Canonical.Count + ApplicationRoles.Retired.Count, roles.Count);
 
         var administrator = roles.Single(r => r.Name == GisRoles.Administrator);
         Assert.True(administrator.IsSystem);
@@ -89,9 +89,19 @@ public class RoleManagementTests
 
         // Kanonik roller mantıksal sıralarında; geri kalanlar alfabetik.
         Assert.Equal(
-            [GisRoles.Viewer, GisRoles.GisEditor, GisRoles.GisAnalyst, GisRoles.GisManager, GisRoles.Administrator],
-            names.Take(5));
-        Assert.Equal(["Admin", "Field Surveyor", "User", "Zonal Editor"], names.Skip(5));
+            [
+                GisRoles.Viewer,
+                GisRoles.GisEditor,
+                GisRoles.GisAnalyst,
+                GisRoles.GisManager,
+                GisRoles.TransportOperator,
+                GisRoles.TransportUser,
+                GisRoles.Administrator
+            ],
+            names.Take(RoleCatalog.Canonical.Count));
+        Assert.Equal(
+            ["Admin", "Field Surveyor", "User", "Zonal Editor"],
+            names.Skip(RoleCatalog.Canonical.Count));
     }
 
     /* --- Atanabilir roller ------------------------------------------------------- */
@@ -109,7 +119,15 @@ public class RoleManagementTests
         var assignable = (await Service(scope).GetAssignableRolesAsync(actor.Id)).Select(r => r.Name).ToArray();
 
         Assert.Equal(
-            [GisRoles.Viewer, GisRoles.GisEditor, GisRoles.GisAnalyst, GisRoles.GisManager, GisRoles.Administrator],
+            [
+                GisRoles.Viewer,
+                GisRoles.GisEditor,
+                GisRoles.GisAnalyst,
+                GisRoles.GisManager,
+                GisRoles.TransportOperator,
+                GisRoles.TransportUser,
+                GisRoles.Administrator
+            ],
             assignable);
 
         // Geçiş köprüsü yeni atamalara kapalı; mevcut kullanıcılar etkilenmez.

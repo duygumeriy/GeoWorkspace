@@ -6,6 +6,12 @@ import {
   restoreDrawings,
   restorePoi,
 } from '../services/api.js'
+import {
+  fetchDeletedTransportRoutes,
+  fetchDeletedTransportStops,
+  restoreTransportRoute,
+  restoreTransportStop,
+} from '../services/transportApi.js'
 
 /**
  * Owns the "Çöp Kutusu" data: the caller's soft-deleted records — drawings AND
@@ -87,8 +93,11 @@ export default function useTrash({
      garanti 403 alacak bir istek açmanın anlamı yok. */
   includeDrawings = false,
   includePois = false,
+  includeTransportStops = false,
+  includeTransportRoutes = false,
   /** Geri yüklenen POI'yi haritaya geri koyar. */
   onPoiRestored = null,
+  onTransportRestored = null,
 }) {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(false)
@@ -113,6 +122,18 @@ export default function useTrash({
     const sources = [
       ...(includeDrawings ? [loadTrashSource(fetchDeletedDrawings)] : []),
       ...(includePois ? [loadTrashSource(fetchDeletedPois)] : []),
+      ...(includeTransportStops ? [loadTrashSource(async () => {
+        const response = await fetchDeletedTransportStops()
+        if (!response.ok) return response
+        const rows = await response.json()
+        return new Response(JSON.stringify(rows.map((stop) => ({ type: 'transport-stop', stop, deletedAt: stop.modifiedDate }))), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      })] : []),
+      ...(includeTransportRoutes ? [loadTrashSource(async () => {
+        const response = await fetchDeletedTransportRoutes()
+        if (!response.ok) return response
+        const rows = await response.json()
+        return new Response(JSON.stringify(rows.map((route) => ({ type: 'transport-route', route, deletedAt: route.modifiedDate }))), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      })] : []),
     ]
 
     if (sources.length === 0) {
@@ -141,7 +162,7 @@ export default function useTrash({
 
     setItems(results.flatMap((result) => result.items))
     return true
-  }, [includeDrawings, includePois])
+  }, [includeDrawings, includePois, includeTransportStops, includeTransportRoutes])
 
   // Loaded when the panel opens rather than once at mount: the list is a
   // snapshot of what has been deleted, and deletions keep happening while the
@@ -164,7 +185,7 @@ export default function useTrash({
   const restore = useCallback(
     async (item) => {
       const type = item?.type
-      const record = item?.drawing ?? item?.poi
+      const record = item?.drawing ?? item?.poi ?? item?.stop ?? item?.route
       const id = record?.id
       if (!type || !id) return false
 
@@ -177,23 +198,32 @@ export default function useTrash({
            sunucudaki tek gerçekleştirimidir. Sahiplik, geometri, ad ve
            kategori sunucu tarafında kalır — istek yalnızca kaydın kimliğini
            taşır. */
-        const res = isPoi ? await restorePoi(id) : await restoreDrawings([{ type, id }])
+        const isTransportStop = type === 'transport-stop'
+        const isTransportRoute = type === 'transport-route'
+        const res = isPoi
+          ? await restorePoi(id)
+          : isTransportStop
+            ? await restoreTransportStop(id)
+            : isTransportRoute
+              ? await restoreTransportRoute(id)
+              : await restoreDrawings([{ type, id }])
         if (!res.ok) throw new Error(await readApiError(res, 'Kayıt geri yüklenemedi'))
 
         /* POI geri yükleme kaydın kanonik hâlini döndürür ve o hâl doğrudan
            haritaya konur; ikinci bir GET, az önce okunanı yeniden indirmek
            olurdu. */
-        const restored = isPoi ? await res.json() : null
+        const restored = isPoi || isTransportStop || isTransportRoute ? await res.json() : null
 
         setItems((current) =>
-          current.filter((entry) => !(entry.type === type && (entry.drawing ?? entry.poi)?.id === id)),
+          current.filter((entry) => !(entry.type === type && (entry.drawing ?? entry.poi ?? entry.stop ?? entry.route)?.id === id)),
         )
 
         // Haritanın öbür yarısı: kaydın oradan da geri gelmesi gerekir.
         if (isPoi) await onPoiRestored?.(restored)
+        else if (isTransportStop || isTransportRoute) await onTransportRestored?.(restored, type)
         else await onRestored?.()
 
-        showToast('success', isPoi ? 'POI geri yüklendi.' : 'Çizim geri yüklendi.')
+        showToast('success', isPoi ? 'POI geri yüklendi.' : isTransportStop ? 'Durak geri yüklendi.' : isTransportRoute ? 'Güzergah geri yüklendi.' : 'Çizim geri yüklendi.')
         return true
       } catch (restoreError) {
         showToast('error', restoreError?.message || 'Kayıt geri yüklenemedi.')
@@ -202,7 +232,7 @@ export default function useTrash({
         setRestoringKey(null)
       }
     },
-    [onRestored, onPoiRestored, showToast],
+    [onRestored, onPoiRestored, onTransportRestored, showToast],
   )
 
   return { items, loading, error, restoringKey, reload: load, restore }

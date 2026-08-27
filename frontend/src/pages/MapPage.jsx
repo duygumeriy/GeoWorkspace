@@ -4,6 +4,7 @@ import 'ol/ol.css'
 import Map from 'ol/Map'
 import View from 'ol/View'
 import { defaults as defaultControls, ScaleLine } from 'ol/control'
+import { boundingExtent } from 'ol/extent'
 import { fromLonLat, toLonLat } from 'ol/proj'
 import { useAuth } from '../auth/AuthContext'
 import { canManageAll, canManageDrawing } from '../auth/permissions.js'
@@ -32,6 +33,7 @@ import LayersPanel from '../components/map/LayersPanel.jsx'
 import DrawingsPanel from '../components/map/DrawingsPanel.jsx'
 import TrashPanel from '../components/map/TrashPanel.jsx'
 import MyPoisPanel from '../components/map/MyPoisPanel.jsx'
+import MyStopsPanel from '../components/map/MyStopsPanel.jsx'
 import BasemapSelector from '../components/map/BasemapSelector.jsx'
 import ConfirmDialog from '../components/map/ConfirmDialog.jsx'
 import AttributePopup from '../components/map/AttributePopup.jsx'
@@ -42,6 +44,9 @@ import AnalysisPoiPopup from '../components/map/AnalysisPoiPopup.jsx'
 import { SettingsPanel, AboutPanel } from '../components/map/InfoPanels.jsx'
 import PoiFormSheet from '../components/map/PoiFormSheet.jsx'
 import PoiInfoSheet from '../components/map/PoiInfoSheet.jsx'
+import TransportStopForm from '../components/map/TransportStopForm.jsx'
+import TransportStopEditForm from '../components/map/TransportStopEditForm.jsx'
+import TransportStopPopup from '../components/map/TransportStopPopup.jsx'
 import {
   DrawingHint,
   HoverTooltip,
@@ -53,6 +58,7 @@ import useToasts from '../hooks/useToasts.js'
 import useDrawingWorkspace from '../hooks/useDrawingWorkspace.js'
 import useTrash from '../hooks/useTrash.js'
 import useMyPois from '../hooks/useMyPois.js'
+import useMyStops from '../hooks/useMyStops.js'
 import useBasemap from '../hooks/useBasemap.js'
 import useInventoryAnalysis from '../hooks/useInventoryAnalysis.js'
 import useWorkspaceMode, { STYLE_PANEL_MODES } from '../hooks/useWorkspaceMode.js'
@@ -62,6 +68,7 @@ import {
   POI_CONTEXTS,
   SELECTION_CONTEXTS,
   SIDEBAR_CONTEXTS,
+  TRANSPORT_STOP_CONTEXTS,
   sharesState,
 } from '../map/mapContexts.js'
 import useWorkspacePermissions from '../hooks/useWorkspacePermissions.js'
@@ -81,6 +88,7 @@ import useLocationAnalysisArea from '../hooks/useLocationAnalysisArea.js'
 import useLocationAnalysisLayer from '../hooks/useLocationAnalysisLayer.js'
 import useLocationAnalysisPoiLayer from '../hooks/useLocationAnalysisPoiLayer.js'
 import useLocationAnalysisPoiInspect from '../hooks/useLocationAnalysisPoiInspect.js'
+import useLocationAnalysisTargetCatalog from '../hooks/useLocationAnalysisTargetCatalog.js'
 import useMapPresentationLayer from '../hooks/useMapPresentationLayer.js'
 import usePoiLayer from '../hooks/usePoiLayer.js'
 import usePoiPresentationLayer from '../hooks/usePoiPresentationLayer.js'
@@ -88,20 +96,20 @@ import PoiSearchBar from '../components/map/PoiSearchBar.jsx'
 import usePoiPlacement from '../hooks/usePoiPlacement.js'
 import usePoiInteraction from '../hooks/usePoiInteraction.js'
 import usePoiEditDraft from '../hooks/usePoiEditDraft.js'
+import useTransportLayer from '../hooks/useTransportLayer.js'
+import useTransportStopPlacement from '../hooks/useTransportStopPlacement.js'
+import useTransportStopInteraction from '../hooks/useTransportStopInteraction.js'
+import useTransportStopRelocation from '../hooks/useTransportStopRelocation.js'
+import { createTransportStop, deleteTransportStop, updateTransportStop } from '../services/transportApi.js'
 import { DRAWING_TYPES, DRAWING_TYPE_LIST, colorPatchFor, normalizeTags } from '../map/drawingTypes.js'
 import { trashRecordOf } from '../map/trashFilters.js'
 import {
   MAX_CRITERIA,
   MIN_CRITERIA,
   emptyCriterion,
-  provinceAreaWkts,
   toRequestCriteria,
   validateAnalysis,
-  provincesWithinScope,
-  regionAreaWkts,
-  regionsWithinScope,
 } from '../map/locationAnalysis.js'
-import { PROVINCES, REGIONS, provinceByCodeOrNull, regionByKeyOrNull } from '../map/turkeyGeography.js'
 import { isGeometryInsideScope } from '../map/geographicScope.js'
 import {
   formatArea,
@@ -264,12 +272,15 @@ export default function MapPage() {
      yarısı için drawings.view + drawings.restore, POI yarısı için poi.view +
      (poi.delete ya da poi.manage). Yalnızca birine sahip olmak paneli açmaya
      yeter — açılan panel diğer yarıyı zaten hiç istemez. */
-  const canOpenTrash = (allowed.canViewDrawings && allowed.canRestoreDrawings) || allowed.canRestorePoi
+  const canOpenTrash = (allowed.canViewDrawings && allowed.canRestoreDrawings)
+    || allowed.canRestorePoi
+    || (allowed.canViewTransport && (allowed.canRestoreTransportStop || allowed.canRestoreTransportRoute))
 
   /* "POI'lerim" yalnızca `poi.view` ister: kendi kayıtlarını görebilmek ayrı
      bir yetenek değildir. Yönetim yetkileri (poi.manage / poi.categories.manage)
      İSTENMEZ — uç zaten yalnızca çağıranın kendi kayıtlarını döndürür. */
   const canOpenMyPois = allowed.canViewPoi
+  const canOpenMyStops = allowed.canViewTransport
   const heatmap = useHeatmapLayer(mapInstance, {
     enabled: heatmapEnabled,
     permitted: canUseHeatmap,
@@ -606,6 +617,259 @@ export default function MapPage() {
 
   usePoiInteraction(mapInstance, { enabled: poiClickEnabled, onSelect: handlePoiSelected })
 
+  /* --- Akıllı ulaşım -------------------------------------------------------
+     Güzergah çizgileri ve duraklar POI kaynağına KATILMAZ. Kanca iki ayrı
+     vektör kaynağını sahiplenir; çizgileri her okumada sıralı duraklardan
+     yeniden türetir. */
+  const [selectedTransportStop, setSelectedTransportStop] = useState(null)
+  const [selectedTransportRouteId, setSelectedTransportRouteId] = useState(null)
+  const [transportStopFormOpen, setTransportStopFormOpen] = useState(false)
+  const [transportStopEditing, setTransportStopEditing] = useState(null)
+  const [transportStopEditVersion, setTransportStopEditVersion] = useState(0)
+  const [transportStopSaving, setTransportStopSaving] = useState(false)
+  const [transportStopError, setTransportStopError] = useState('')
+  const [transportStopBusyId, setTransportStopBusyId] = useState(null)
+  const [pendingTransportStopDelete, setPendingTransportStopDelete] = useState(null)
+  const [transportRoutesVisible, setTransportRoutesVisible] = useState(true)
+  const [transportStopsVisible, setTransportStopsVisible] = useState(true)
+  const transportStopSaveInFlight = useRef(false)
+
+  const transport = useTransportLayer(mapInstance, {
+    permitted: allowed.canViewTransport,
+    selectedStopId: selectedTransportStop?.id ?? null,
+    selectedRouteId: selectedTransportRouteId,
+    routesVisible: transportRoutesVisible,
+    stopsVisible: transportStopsVisible,
+    showToast,
+  })
+
+  const myStops = useMyStops({
+    active: mapContext.isActive(MAP_CONTEXTS.myStops),
+    permitted: canOpenMyStops,
+  })
+
+  const handleTransportStopPlaced = useCallback(() => {
+    setTransportStopError('')
+    setTransportStopFormOpen(true)
+  }, [])
+
+  const transportPlacement = useTransportStopPlacement(mapInstance, {
+    active: workspaceMode.isPlacingTransportStop && allowed.canCreateTransportStop,
+    onPlaced: handleTransportStopPlaced,
+  })
+
+  const transportRelocation = useTransportStopRelocation(mapInstance, {
+    active: workspaceMode.isRelocatingTransportStop && allowed.canUpdateTransportStop,
+  })
+
+  const handleTransportStopSelected = useCallback((stop) => {
+    if (!stop) {
+      mapContext.close(MAP_CONTEXTS.transportStopInfo)
+      return
+    }
+    setSelectedTransportRouteId(null)
+    setSelectedTransportStop({ ...stop, colorHex: stop.colorHex || stop.routeColor })
+    mapContext.activate(MAP_CONTEXTS.transportStopInfo)
+  }, [mapContext])
+
+  useTransportStopInteraction(mapInstance, {
+    enabled: allowed.canViewTransport && workspaceMode.isSelecting,
+    hoverEnabled: hasFinePointer,
+    onSelect: handleTransportStopSelected,
+  })
+
+  const retireTransportStopCreate = useCallback(() => {
+    setTransportStopFormOpen(false)
+    setTransportStopError('')
+    transportPlacement.clearPending()
+    workspaceMode.stopTransportStopPlacement()
+  }, [transportPlacement, workspaceMode])
+
+  const closeTransportStopForm = useCallback(() => {
+    mapContext.close(MAP_CONTEXTS.transportStopCreate)
+  }, [mapContext])
+
+  const saveTransportStop = useCallback(async (payload) => {
+    if (transportStopSaveInFlight.current) return
+    transportStopSaveInFlight.current = true
+    setTransportStopSaving(true)
+    setTransportStopError('')
+    try {
+      const response = await createTransportStop(payload)
+      if (!response.ok) {
+        const message = await readApiError(response, 'Durak eklenemedi.')
+        if (response.status === 403) showToast('error', message)
+        throw new Error(message)
+      }
+      await transport.refresh()
+      await myStops.reload()
+      closeTransportStopForm()
+      showToast('success', 'Durak başarıyla eklendi.')
+    } catch (error) {
+      setTransportStopError(error.message || 'Durak eklenemedi.')
+    } finally {
+      transportStopSaveInFlight.current = false
+      setTransportStopSaving(false)
+    }
+  }, [closeTransportStopForm, showToast, transport, myStops])
+
+  const focusMyStop = useCallback((stop) => {
+    if (!stop || !Number.isFinite(stop.longitude) || !Number.isFinite(stop.latitude)) return
+    mapView.focusPoint(fromLonLat([stop.longitude, stop.latitude]))
+    setSelectedTransportRouteId(null)
+    setSelectedTransportStop({ ...stop, colorHex: stop.colorHex || stop.routeColor })
+    mapContext.activate(MAP_CONTEXTS.transportStopInfo)
+  }, [mapView, mapContext])
+
+  const showTransportRoute = useCallback((routeId) => {
+    const routeStops = transport.stops
+      .filter((stop) => stop.routeId === Number(routeId))
+      .sort((left, right) => left.sequenceOrder - right.sequenceOrder || left.id - right.id)
+
+    setSelectedTransportRouteId(Number(routeId))
+    if (selectedTransportStop?.routeId !== Number(routeId)) setSelectedTransportStop(null)
+    if (routeStops.length === 0) {
+      showToast('info', 'Bu güzergahın haritada gösterilecek etkin durağı yok.')
+      return
+    }
+    if (routeStops.length === 1) {
+      setSelectedTransportStop({
+        ...routeStops[0],
+        colorHex: routeStops[0].colorHex || routeStops[0].routeColor,
+      })
+      mapView.focusPoint(fromLonLat([routeStops[0].longitude, routeStops[0].latitude]))
+      return
+    }
+    mapView.fitExtent(boundingExtent(routeStops.map((stop) => fromLonLat([stop.longitude, stop.latitude]))))
+  }, [transport.stops, selectedTransportStop, mapView, showToast])
+
+  const editTransportStop = useCallback((stop) => {
+    if (!stop?.id || !allowed.canUpdateTransportStop) return
+    const normalized = { ...stop, colorHex: stop.colorHex || stop.routeColor }
+    setSelectedTransportStop(normalized)
+    setTransportStopEditing(normalized)
+    setTransportStopError('')
+    setTransportStopEditVersion((value) => value + 1)
+    mapContext.activate(MAP_CONTEXTS.transportStopEdit)
+  }, [allowed.canUpdateTransportStop, mapContext])
+
+  const cancelTransportStopRelocation = useCallback(() => {
+    transportRelocation.clearPending()
+    workspaceMode.stopTransportStopRelocation()
+  }, [transportRelocation, workspaceMode])
+
+  const closeTransportStopEdit = useCallback(() => {
+    mapContext.close(MAP_CONTEXTS.transportStopEdit)
+  }, [mapContext])
+
+  const saveTransportStopEdit = useCallback(async (payload) => {
+    const target = transportStopEditing
+    if (!target?.id || transportStopSaveInFlight.current) return
+    transportStopSaveInFlight.current = true
+    setTransportStopSaving(true)
+    setTransportStopError('')
+    try {
+      const response = await updateTransportStop(target.id, payload)
+      if (!response.ok) throw new Error(await readApiError(response, 'Durak güncellenemedi.'))
+      const updated = await response.json()
+      cancelTransportStopRelocation()
+      await transport.refresh()
+      await myStops.reload()
+      setSelectedTransportStop({ ...updated, colorHex: updated.colorHex || updated.routeColor })
+      setTransportStopEditing(null)
+      mapContext.activate(MAP_CONTEXTS.transportStopInfo)
+      showToast('success', 'Durak başarıyla güncellendi.')
+    } catch (error) {
+      cancelTransportStopRelocation()
+      setTransportStopEditVersion((value) => value + 1)
+      setTransportStopError(error?.message || 'Durak güncellenemedi.')
+      showToast('error', error?.message || 'Durak güncellenemedi.')
+    } finally {
+      transportStopSaveInFlight.current = false
+      setTransportStopSaving(false)
+    }
+  }, [transportStopEditing, cancelTransportStopRelocation, transport, myStops, mapContext, showToast])
+
+  const requestTransportStopDelete = useCallback((stop) => {
+    if (!stop?.id || !allowed.canDeleteTransportStop || transportStopBusyId != null) return
+    setPendingTransportStopDelete(stop)
+  }, [allowed.canDeleteTransportStop, transportStopBusyId])
+
+  const confirmTransportStopDelete = useCallback(async () => {
+    const stop = pendingTransportStopDelete
+    setPendingTransportStopDelete(null)
+    if (!stop?.id || transportStopBusyId != null) return
+    setTransportStopBusyId(stop.id)
+    try {
+      const response = await deleteTransportStop(stop.id)
+      if (!response.ok) throw new Error(await readApiError(response, 'Durak silinemedi.'))
+      myStops.remove(stop.id)
+      if (selectedTransportStop?.id === stop.id) {
+        setSelectedTransportStop(null)
+        mapContext.close(MAP_CONTEXTS.transportStopInfo)
+        mapContext.close(MAP_CONTEXTS.transportStopEdit)
+      }
+      await transport.refresh()
+      await myStops.reload()
+      showToast('success', 'Durak çöp kutusuna taşındı.')
+    } catch (error) {
+      showToast('error', error?.message || 'Durak silinemedi.')
+    } finally {
+      setTransportStopBusyId(null)
+    }
+  }, [pendingTransportStopDelete, transportStopBusyId, myStops, selectedTransportStop, mapContext, transport, showToast])
+
+  useEffect(() => {
+    if (allowed.canViewTransport) return
+    setSelectedTransportStop(null)
+    setSelectedTransportRouteId(null)
+    mapContext.close(MAP_CONTEXTS.transportStopInfo)
+    mapContext.close(MAP_CONTEXTS.transportStopEdit)
+    mapContext.close(MAP_CONTEXTS.myStops)
+  }, [allowed.canViewTransport, mapContext])
+
+  useEffect(() => {
+    if (allowed.canCreateTransportStop) return
+    mapContext.close(MAP_CONTEXTS.transportStopCreate)
+  }, [allowed.canCreateTransportStop, mapContext])
+
+  useEffect(() => {
+    if (allowed.canUpdateTransportStop) return
+    mapContext.close(MAP_CONTEXTS.transportStopEdit)
+    cancelTransportStopRelocation()
+  }, [allowed.canUpdateTransportStop, mapContext, cancelTransportStopRelocation])
+
+  useEffect(() => {
+    if (workspaceMode.isPlacingTransportStop) return
+    mapContext.close(MAP_CONTEXTS.transportStopCreate)
+  }, [workspaceMode.isPlacingTransportStop, mapContext])
+
+  useEffect(() => {
+    if (!selectedTransportStop) return
+    if (transport.stops.some((stop) => stop.id === selectedTransportStop.id)) return
+    setSelectedTransportStop(null)
+    mapContext.close(MAP_CONTEXTS.transportStopInfo)
+    mapContext.close(MAP_CONTEXTS.transportStopEdit)
+  }, [selectedTransportStop, transport.stops, mapContext])
+
+  useEffect(() => {
+    if (selectedTransportRouteId == null) return
+    if (transport.routes.some((route) => route.id === selectedTransportRouteId)) return
+    setSelectedTransportRouteId(null)
+  }, [selectedTransportRouteId, transport.routes])
+
+  const globalSearchTypes = useMemo(() => [
+    ...(allowed.canViewPoi ? [{ id: 'poi', label: 'POI' }] : []),
+    ...(allowed.canViewDrawings ? [{ id: 'drawing', label: 'Çizim' }] : []),
+    ...(allowed.canViewTransport
+      ? [{ id: 'stop', label: 'Durak' }, { id: 'route', label: 'Güzergah' }]
+      : []),
+  ], [allowed.canViewPoi, allowed.canViewDrawings, allowed.canViewTransport])
+
+  useEffect(() => {
+    if (globalSearchTypes.length === 0) setPoiSearchOpen(false)
+  }, [globalSearchTypes])
+
   /* Kategoriler artık HARİTANIN KENDİSİ için de gereklidir, yalnızca form için
      değil: POI'nin vektör rozeti kategorisinin simgesini ve rengini taşır ve o
      metadata yalnızca bu uçtan gelir (harita sözleşmesi `GET /api/poi` bilinçli
@@ -698,6 +962,12 @@ export default function MapPage() {
      SESSİZCE yeniden boyanmaz — analiz, kullanıcının başlattığı bir eylemdir. */
 
   const canOpenLocationAnalysis = allowed.canRunLocationAnalysis
+  const locationAnalysisOpen =
+    canOpenLocationAnalysis && mapContext.isActive(MAP_CONTEXTS.locationAnalysis)
+  const analysisCatalog = useLocationAnalysisTargetCatalog({
+    enabled: locationAnalysisOpen,
+    cacheKey: canOpenLocationAnalysis ? userId : null,
+  })
 
   const [areaMode, setAreaMode] = useState('province')
   const [provinceCode, setProvinceCode] = useState('')
@@ -732,17 +1002,10 @@ export default function MapPage() {
      sormadığı bir ayrıntı asıl sonucu örterdi. */
   const [poiOverlayVisible, setPoiOverlayVisible] = useState(false)
 
-  /* Coğrafi yetki analiz alanına da uygulanır. Süzme BİR KEZ yapılır: 81 il
-     için kapsama sınaması her render'da tekrarlanacak bir iş değildir. */
-  const analysisProvinces = useMemo(
-    () => provincesWithinScope(geographic.scope, PROVINCES),
-    [geographic.scope],
-  )
-
-  const analysisRegions = useMemo(
-    () => regionsWithinScope(geographic.scope, REGIONS),
-    [geographic.scope],
-  )
+  /* İdari hedefler birleşik WKT'den tarayıcıda yeniden TÜRETİLMEZ.
+     Backend, yürürlükteki kaynak kimliklerini ve kanonik ilişkiyi kullanır. */
+  const analysisProvinces = analysisCatalog.provinces
+  const analysisRegions = analysisCatalog.regions
 
   /* Bölge, ilin ÜSTÜdür: seçilince il listesi o bölgenin illerine daralır.
      Bölge tek başına da bir hedef alandır. */
@@ -751,11 +1014,11 @@ export default function MapPage() {
   /* Bölge seçiliyse il listesi o bölgenin illerine daralır; yetki süzmesi
      ZATEN uygulanmıştır, bu ikinci bir daraltmadır. */
   const visibleProvinces = useMemo(() => {
-    const region = regionKey ? regionByKeyOrNull(regionKey) : null
+    const region = regionKey ? analysisRegions.find((item) => item.key === regionKey) : null
     if (!region) return analysisProvinces
-    const codes = new Set(region.provinceCodes)
+    const codes = new Set(region.provinceKeys ?? [])
     return analysisProvinces.filter((province) => codes.has(province.code))
-  }, [analysisProvinces, regionKey])
+  }, [analysisProvinces, analysisRegions, regionKey])
 
   const locationAnalysisPoiLayer = useLocationAnalysisPoiLayer(mapInstance, {
     analysis: activeAnalysis,
@@ -804,6 +1067,7 @@ export default function MapPage() {
       invalidateAnalysis()
       setAreaMode(nextMode)
       setProvinceCode('')
+      setRegionKey('')
       locationArea.clearArea()
 
       /* Çizim kipi MOD MAKİNESİNDEN açılır; burada doğrudan bir Draw
@@ -836,15 +1100,15 @@ export default function MapPage() {
         return
       }
 
-      const wkts = regionAreaWkts(key)
-      const region = regionByKeyOrNull(key)
+      const region = analysisRegions.find((item) => item.key === key)
+      const wkts = region?.areaWkts ?? []
       locationArea.setProvinceArea(
         wkts,
         `${region?.name ?? 'Seçilen bölge'} Bölgesi`,
       )
       locationArea.fitToArea()
     },
-    [invalidateAnalysis, locationArea],
+    [analysisRegions, invalidateAnalysis, locationArea],
   )
 
   const handleProvinceChange = useCallback(
@@ -860,12 +1124,13 @@ export default function MapPage() {
       /* Çok parçalı iller BİRLEŞTİRİLMEZ: sözleşme zaten bir liste alır ve
          yalnızca en büyük parçayı almak o ilin adalarını analiz dışında
          bırakırdı. */
-      const wkts = provinceAreaWkts(code)
-      const province = provinceByCodeOrNull(code)?.name ?? 'Seçilen il'
+      const selectedProvince = analysisProvinces.find((item) => item.key === code)
+      const wkts = selectedProvince?.areaWkts ?? []
+      const province = selectedProvince?.name ?? 'Seçilen il'
       locationArea.setProvinceArea(wkts, wkts.length > 1 ? `${province} (${wkts.length} parça)` : province)
       locationArea.fitToArea()
     },
-    [invalidateAnalysis, locationArea],
+    [analysisProvinces, invalidateAnalysis, locationArea],
   )
 
   const handleCriterionChange = useCallback(
@@ -904,6 +1169,8 @@ export default function MapPage() {
     const snapshot = {
       areaWkts: [...locationArea.areaWkts],
       criteria: toRequestCriteria(criteria, poiCategories.items),
+      administrativeTargetType: provinceCode ? 'province' : regionKey ? 'region' : undefined,
+      administrativeTargetKey: provinceCode || regionKey || undefined,
     }
 
     setActiveAnalysis(null)
@@ -936,7 +1203,7 @@ export default function MapPage() {
       setAnalysisError(runError?.message || 'Analiz çalıştırılamadı.')
       setAnalysisStatus('error')
     }
-  }, [locationValidation.valid, locationArea.areaWkts, criteria, poiCategories.items])
+  }, [locationValidation.valid, locationArea.areaWkts, criteria, poiCategories.items, provinceCode, regionKey])
 
   const handleClearAnalysis = useCallback(() => {
     invalidateAnalysis()
@@ -1304,6 +1571,24 @@ export default function MapPage() {
     (result) => {
       if (!result) return
 
+      if (result.searchType === 'drawing') {
+        workspace.selectFeature(result.key)
+        const extent = workspace.extentOf(result.key)
+        if (extent) mapView.fitExtent(extent)
+        mapContext.activate(MAP_CONTEXTS.drawingInfo)
+        return
+      }
+
+      if (result.searchType === 'stop') {
+        focusMyStop(result)
+        return
+      }
+
+      if (result.searchType === 'route') {
+        showTransportRoute(result.id)
+        return
+      }
+
       mapView.focusPoi(fromLonLat([result.longitude, result.latitude]))
 
       /* <b>Gizli katman KENDİLİĞİNDEN açılmaz.</b> Görünürlük kullanıcının
@@ -1319,7 +1604,7 @@ export default function MapPage() {
       setSelectedPoi(record)
       mapContext.activate(MAP_CONTEXTS.poiInfo)
     },
-    [mapView, mapContext, findPoiOnLayer, poiLayerVisible],
+    [workspace, mapView, mapContext, findPoiOnLayer, poiLayerVisible, focusMyStop, showTransportRoute],
   )
 
   /**
@@ -1426,6 +1711,8 @@ export default function MapPage() {
        düşürerek kendi sildiği POI'yi görmesini engellerdi. */
     includeDrawings: allowed.canViewDrawings && allowed.canRestoreDrawings,
     includePois: allowed.canRestorePoi,
+    includeTransportStops: allowed.canViewTransport && allowed.canRestoreTransportStop,
+    includeTransportRoutes: allowed.canViewTransport && allowed.canRestoreTransportRoute,
     onPoiRestored: (restored) => {
       /* Geri yüklenen kayıt sunucudan kanonik hâliyle döner ve doğrudan
          haritaya konur; ikinci bir GET gereksizdir.
@@ -1436,6 +1723,10 @@ export default function MapPage() {
          kararını yine sunucu verir. */
       if (restored) addPoiToLayer(restored)
       invalidatePoiPresentation()
+    },
+    onTransportRestored: async () => {
+      await transport.refresh()
+      await myStops.reload()
     },
   })
 
@@ -2241,7 +2532,7 @@ export default function MapPage() {
      Sarmalayıcılar yalnızca kendi bağlamlarını bilir — hiçbiri "önce POI
      panelini kapat, sonra çizim panelini kapat" demez. */
 
-  const { isPlacingPoi, activeAnalysisTool } = workspaceMode
+  const { isPlacingPoi, isPlacingTransportStop, activeAnalysisTool } = workspaceMode
 
   /** "POI Ekle": yerleştirme + form bağlamı. */
   const togglePoiPlacement = useCallback(() => {
@@ -2251,6 +2542,25 @@ export default function MapPage() {
     if (wasActive) mapContext.close(MAP_CONTEXTS.poiCreate)
     else if (allowed.canCreatePoi) mapContext.activate(MAP_CONTEXTS.poiCreate)
   }, [isPlacingPoi, allowed, mapContext])
+
+  /** "Durak Ekle": etkin güzergah seçimi zorunlu tek nokta yerleştirmesi. */
+  const toggleTransportStopPlacement = useCallback(() => {
+    if (!isPlacingTransportStop) {
+      if (transport.loading) {
+        showToast('info', 'Güzergahlar yükleniyor. Lütfen kısa bir süre sonra tekrar deneyin.')
+        return
+      }
+      if (transport.activeRoutes.length === 0) {
+        showToast('error', 'Durak eklemek için etkin bir güzergah bulunmalıdır.')
+        return
+      }
+    }
+
+    const wasActive = isPlacingTransportStop
+    allowed.toggleTransportStopTool()
+    if (wasActive) mapContext.close(MAP_CONTEXTS.transportStopCreate)
+    else if (allowed.canCreateTransportStop) mapContext.activate(MAP_CONTEXTS.transportStopCreate)
+  }, [isPlacingTransportStop, transport.loading, transport.activeRoutes, allowed, mapContext, showToast])
 
   /** "Envanter Analizi": alan çizimi ve sonucu tek bağlamdır. */
   const toggleInventoryAnalysis = useCallback(() => {
@@ -2349,6 +2659,16 @@ export default function MapPage() {
       if (!sharesState(POI_CONTEXTS, next)) setSelectedPoi(null)
     },
     [MAP_CONTEXTS.poiCreate]: retirePoiCreate,
+    [MAP_CONTEXTS.transportStopInfo]: (next) => {
+      if (!sharesState(TRANSPORT_STOP_CONTEXTS, next)) setSelectedTransportStop(null)
+    },
+    [MAP_CONTEXTS.transportStopEdit]: (next) => {
+      cancelTransportStopRelocation()
+      setTransportStopEditing(null)
+      setTransportStopError('')
+      if (!sharesState(TRANSPORT_STOP_CONTEXTS, next)) setSelectedTransportStop(null)
+    },
+    [MAP_CONTEXTS.transportStopCreate]: retireTransportStopCreate,
     [MAP_CONTEXTS.inventory]: () => {
       /* Analiz alanı geçicidir ve sonuç onunla birlikte gider; veritabanına
          hiçbir şey yazılmamıştı. Çizim katmanları etkilenmez. */
@@ -2372,6 +2692,7 @@ export default function MapPage() {
     /* "POI'lerim" de yalnızca bir GÖRÜNÜMDÜR: kapanması POI katmanını
        gizlemez, seçimi düşürmez, hiçbir kaydı silmez. */
     [MAP_CONTEXTS.myPois]: () => {},
+    [MAP_CONTEXTS.myStops]: () => {},
     [MAP_CONTEXTS.layers]: () => {},
     [MAP_CONTEXTS.trash]: () => {},
     [MAP_CONTEXTS.settings]: () => {},
@@ -2418,6 +2739,7 @@ export default function MapPage() {
         onSelectPanel={handleSelectPanel}
         canOpenTrash={canOpenTrash}
         canOpenMyPois={canOpenMyPois}
+        canOpenMyStops={canOpenMyStops}
         canOpenLocationAnalysis={canOpenLocationAnalysis}
         username={username}
         remaining={remaining}
@@ -2440,7 +2762,7 @@ export default function MapPage() {
             <>
               <QuickActions
                 search={{
-                  permitted: allowed.canViewPoi,
+                  permitted: globalSearchTypes.length > 0,
                   open: poiSearchOpen,
                   onToggle: togglePoiSearch,
                   buttonRef: poiSearchButtonRef,
@@ -2471,9 +2793,13 @@ export default function MapPage() {
                   SÖKÜLMESİDİR ve uçan isteğin iptali, açılır listenin
                   kaybolması, klavye imlecinin sıfırlanması ve sorgunun
                   temizlenmesi bundan kendiliğinden gelir. */}
-              {allowed.canViewPoi && poiSearchOpen && (
+              {globalSearchTypes.length > 0 && poiSearchOpen && (
                 <PoiSearchBar
                   enabled
+                  availableTypes={globalSearchTypes}
+                  drawings={workspace.drawings}
+                  stops={transport.stops}
+                  routes={transport.routes}
                   onSelect={focusSearchResult}
                   onClose={closePoiSearch}
                 />
@@ -2497,6 +2823,8 @@ export default function MapPage() {
                 onToggleAnalysis={toggleInventoryAnalysis}
                 poiActive={workspaceMode.isPlacingPoi}
                 onTogglePoi={togglePoiPlacement}
+                transportStopActive={workspaceMode.isPlacingTransportStop}
+                onToggleTransportStop={toggleTransportStopPlacement}
                 onOpenStyle={openStyleForTool}
                 canUndo={workspace.canUndo}
                 canRedo={workspace.canRedo}
@@ -2515,9 +2843,10 @@ export default function MapPage() {
                 measureMode={workspaceMode.activeMeasureTool}
                 selectionTool={workspaceMode.activeSelectionTool}
                 analysisActive={Boolean(workspaceMode.activeAnalysisTool)}
+                transportStopActive={workspaceMode.isPlacingTransportStop}
                 /* Kısıt, araç seçilir seçilmez SÖYLENİR — ilk geçersiz tıkla
                    öğrenilmesi beklenmez. */
-                scopeRestricted={geographic.isRestricted}
+                scopeRestricted={analysisCatalog.isRestricted}
               />
 
               {/* One readout for both analysis entry points: the temporary tool
@@ -2668,6 +2997,21 @@ export default function MapPage() {
                 busyId={poiSaving ? pendingPoiDelete?.id ?? poiEditing?.id ?? null : null}
               />
 
+              <MyStopsPanel
+                open={mapContext.isActive(MAP_CONTEXTS.myStops) && canOpenMyStops}
+                onClose={() => mapContext.close(MAP_CONTEXTS.myStops)}
+                stops={myStops.items}
+                loading={myStops.loading}
+                error={myStops.error}
+                onRetry={myStops.reload}
+                onSelect={focusMyStop}
+                onEdit={editTransportStop}
+                onDelete={requestTransportStopDelete}
+                canEdit={allowed.canUpdateTransportStop}
+                canDelete={allowed.canDeleteTransportStop}
+                busyId={transportStopBusyId}
+              />
+
               {/* Soft delete made visible: the rows the database kept, with
                   the one action that puts them back. No permanent delete. */}
               <TrashPanel
@@ -2696,6 +3040,15 @@ export default function MapPage() {
                   count: poi.count,
                 }}
                 onTogglePoi={togglePoiLayer}
+                transport={{
+                  permitted: allowed.canViewTransport,
+                  routesVisible: transportRoutesVisible,
+                  stopsVisible: transportStopsVisible,
+                  routeCount: transport.routes.length,
+                  stopCount: transport.stops.length,
+                }}
+                onToggleTransportRoutes={() => setTransportRoutesVisible((value) => !value)}
+                onToggleTransportStops={() => setTransportStopsVisible((value) => !value)}
                 /* Salt görselleştirme: katman kapatılabilir ama silinemez ve
                    başka bir kullanıcının alanını göstermez. */
                 scope={{
@@ -2729,8 +3082,21 @@ export default function MapPage() {
                 onClose={analysisPoiInspect.close}
               />
 
+              <TransportStopPopup
+                map={mapInstance}
+                stop={mapContext.isActive(MAP_CONTEXTS.transportStopInfo) ? selectedTransportStop : null}
+                onClose={() => mapContext.close(MAP_CONTEXTS.transportStopInfo)}
+                onZoom={focusMyStop}
+                onShowRoute={showTransportRoute}
+                onEdit={editTransportStop}
+                onDelete={requestTransportStopDelete}
+                canEdit={allowed.canUpdateTransportStop}
+                canDelete={allowed.canDeleteTransportStop}
+                busy={transportStopBusyId === selectedTransportStop?.id}
+              />
+
               <LocationAnalysisPanel
-                open={mapContext.isActive(MAP_CONTEXTS.locationAnalysis) && canOpenLocationAnalysis}
+                open={locationAnalysisOpen}
                 onClose={() => mapContext.close(MAP_CONTEXTS.locationAnalysis)}
                 areaMode={areaMode}
                 onAreaModeChange={handleAreaModeChange}
@@ -2740,6 +3106,8 @@ export default function MapPage() {
                 isDrawing={workspaceMode.isSelectingAnalysisArea}
                 provinces={visibleProvinces}
                 regions={analysisRegions}
+                catalogLoading={analysisCatalog.loading}
+                catalogError={analysisCatalog.error}
                 regionKey={regionKey}
                 onRegionChange={handleRegionChange}
                 scopeRestricted={geographic.isRestricted}
@@ -2812,6 +3180,38 @@ export default function MapPage() {
                 error={poiError}
                 onSave={savePoi}
                 onCancel={closePoiForm}
+              />
+
+              <TransportStopForm
+                key={transportPlacement.pending
+                  ? `${transportPlacement.pending.longitude},${transportPlacement.pending.latitude}`
+                  : 'transport-stop-form'}
+                open={
+                  transportStopFormOpen
+                  && allowed.canCreateTransportStop
+                  && mapContext.isActive(MAP_CONTEXTS.transportStopCreate)
+                }
+                point={transportPlacement.pending}
+                routes={transport.activeRoutes}
+                saving={transportStopSaving}
+                error={transportStopError}
+                onSave={saveTransportStop}
+                onCancel={closeTransportStopForm}
+              />
+
+              <TransportStopEditForm
+                key={transportStopEditing ? `transport-stop-edit-${transportStopEditing.id}-${transportStopEditVersion}` : 'transport-stop-edit'}
+                open={mapContext.isActive(MAP_CONTEXTS.transportStopEdit) && Boolean(transportStopEditing)}
+                stop={transportStopEditing}
+                routes={transport.activeRoutes}
+                pendingPoint={transportRelocation.pending}
+                moving={workspaceMode.isRelocatingTransportStop}
+                saving={transportStopSaving}
+                error={transportStopError}
+                onStartMove={workspaceMode.startTransportStopRelocation}
+                onCancelMove={cancelTransportStopRelocation}
+                onSave={saveTransportStopEdit}
+                onCancel={closeTransportStopEdit}
               />
 
               {/* Düzenleme formu OLUŞTURMA formuyla aynı bileşendir; `key`
@@ -2899,6 +3299,16 @@ export default function MapPage() {
                 confirmLabel="Sil"
                 onConfirm={confirmPoiDelete}
                 onCancel={() => setPendingPoiDelete(null)}
+              />
+
+              <ConfirmDialog
+                open={Boolean(pendingTransportStopDelete)}
+                title="Durağı sil"
+                message={pendingTransportStopDelete ? `“${pendingTransportStopDelete.name || 'Durak'}” durağını silmek istediğinize emin misiniz?` : ''}
+                description="Durak haritadan ve Duraklarım listesinden kaldırılır, sıra sunucuda yeniden düzenlenir ve kayıt Çöp Kutusu'na taşınır."
+                confirmLabel="Sil"
+                onConfirm={confirmTransportStopDelete}
+                onCancel={() => setPendingTransportStopDelete(null)}
               />
 
               {/* Restore confirmation. Same dialog component as the delete one,

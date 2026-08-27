@@ -86,7 +86,13 @@ export default function useLocationAnalysisLayer(map, { analysis, permitted, cri
      ve eski raster ile isteği birlikte gider. Nesne kimliğine güvenmek, her
      render'da yeni bir istek açardı. */
   const analysisKey = analysis
-    ? JSON.stringify([analysis.areaWkts, analysis.criteria, criterionSlug ?? ''])
+    ? JSON.stringify([
+        analysis.areaWkts,
+        analysis.criteria,
+        analysis.administrativeTargetType,
+        analysis.administrativeTargetKey,
+        criterionSlug ?? '',
+      ])
     : ''
 
   useEffect(() => {
@@ -163,6 +169,8 @@ export default function useLocationAnalysisLayer(map, { analysis, permitted, cri
         const blob = await fetchLocationAnalysisImage({
           areaWkts: analysis.areaWkts,
           criteria: analysis.criteria,
+          administrativeTargetType: analysis.administrativeTargetType,
+          administrativeTargetKey: analysis.administrativeTargetKey,
           bbox: serialized,
           ...size,
           /* Oran 1'dir ve bu ARTIK doğrudur: raster ekran değil ALAN

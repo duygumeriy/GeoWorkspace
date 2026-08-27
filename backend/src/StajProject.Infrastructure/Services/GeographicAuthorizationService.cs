@@ -279,6 +279,35 @@ public class GeographicAuthorizationService : IGeographicAuthorizationService
             : Restrict(roleAreas);
     }
 
+    public async Task<IReadOnlyList<EffectiveGeographicAreaSource>> GetEffectiveAreaSourcesAsync(
+        int userId,
+        CancellationToken cancellationToken = default)
+    {
+        /* Geometri çözümüyle AYNI öncelik: tek bir doğrudan satır bile
+           varsa rol kaynakları kataloğa karışmaz. Bu, katalog için ikinci
+           bir "kullanıcı ∪ rol" yetki modeli kurulmasını engeller. */
+        var direct = await _dbContext.GeographicAuthorizations
+            .AsNoTracking()
+            .Where(g => g.UserId == userId)
+            .OrderBy(g => g.Id)
+            .Select(g => new EffectiveGeographicAreaSource(g.SourceType, g.SourceKey))
+            .ToListAsync(cancellationToken);
+
+        if (direct.Count > 0)
+        {
+            return direct;
+        }
+
+        return await (
+            from userRole in _dbContext.UserRoles
+            join area in _dbContext.GeographicAuthorizations on userRole.RoleId equals area.RoleId
+            where userRole.UserId == userId
+            orderby area.Id
+            select new EffectiveGeographicAreaSource(area.SourceType, area.SourceKey))
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<SelfGeographicScopeResponse> GetSelfScopeAsync(
         int userId,
         CancellationToken cancellationToken = default)

@@ -68,7 +68,10 @@ public class GeographicAuthorization
     /// </remarks>
     public string Name { get; set; } = string.Empty;
 
-    /// <summary>Alanın nasıl üretildiği. Yetkilendirmede OKUNMAZ.</summary>
+    /// <summary>
+    /// Alanın nasıl üretildiği. Geometrik yetkilendirme kararında
+    /// okunmaz; açık il/bölge atamasını idari analiz kataloğunda korur.
+    /// </summary>
     public GeographicAreaSource SourceType { get; set; } = GeographicAreaSource.ManualPolygon;
 
     /// <summary>

@@ -159,7 +159,11 @@ public sealed class LocationAnalysisImageService : ILocationAnalysisImageService
             return Fail("heatmapLod; far, medium, near veya very_near olmalıdır.");
         }
 
-        var authorized = await _areaGuard.AuthorizeAsync(analysis.Target, cancellationToken);
+        var authorized = await _areaGuard.AuthorizeAsync(
+            analysis.Target,
+            analysis.AdministrativeTargetType,
+            analysis.AdministrativeTargetKey,
+            cancellationToken);
 
         if (!authorized.IsSuccess)
         {

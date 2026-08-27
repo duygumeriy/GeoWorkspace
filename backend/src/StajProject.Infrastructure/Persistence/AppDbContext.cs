@@ -47,6 +47,12 @@ public class AppDbContext : IdentityDbContext<User, IdentityRole<int>, int>
 
     public DbSet<AnalysisPoi> AnalysisPois => Set<AnalysisPoi>();
 
+    /* --- Akıllı ulaşım ------------------------------------------------------ */
+
+    public DbSet<TransportRoute> TransportRoutes => Set<TransportRoute>();
+
+    public DbSet<TransportStop> TransportStops => Set<TransportStop>();
+
     /* --- Dinamik yetkilendirme ---------------------------------------------
        Yetki kataloğu ve grant tabloları. Identity'nin rol/kullanıcı tabloları
        ile aynı context'te durur: bir rolün yetkilendirilmesi ile o rolün

@@ -5,11 +5,11 @@ namespace StajProject.Domain.Common;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Bu alan yetkilendirmede KULLANILMAZ.</b> "Bu kullanıcı buraya çizebilir
-/// mi" sorusunun tek cevabı saklanan poligonun kendisidir; kaynak bilgisi
-/// yalnızca yönetim arayüzünün alanı doğru rozetle, doğru adla ve doğru
-/// düzenleme kipiyle göstermesi içindir. Karar burayı okusaydı, satırın
-/// etiketini elle değiştiren biri kapsamı da değiştirmiş olurdu.
+/// <b>Bu alan geometrik yetkilendirmede KULLANILMAZ.</b> "Bu kullanıcı buraya
+/// çizebilir mi" sorusunun tek cevabı saklanan poligonun kendisidir. Kaynak
+/// bilgisi yönetim sunumuna ek olarak konum analizinin idari hedef kataloğunda
+/// açık il/bölge atamasını korur; katalogdan seçilen geometri yine saklanan
+/// etkin poligona karşı <c>Covers</c> denetiminden geçer.
 /// </para>
 /// <para>
 /// <b>Sayısal değerler saklanır ve DEĞİŞTİRİLEMEZ</b> — <see cref="AccountStatus"/>

@@ -113,14 +113,16 @@ public class PoiPermissionCatalogTests
     }
 
     [Fact]
-    public void Poi_sort_orders_come_after_every_existing_permission()
+    public void Poi_sort_orders_are_unique_and_keep_their_internal_order()
     {
-        /* Mevcut hiçbir yetki yeniden numaralanmamıştır: POI satırları
-           katalogdaki en büyük eski değerin üstünden devam eder. */
+        /* Yeni kategoriler POI'den sonra eklenebilir. Kalıcı sözleşme,
+           POI satırlarının kendi içindeki deterministik sırası ve katalog
+           genelinde çakışmayan sıra değerleridir. */
         var poiOrders = PermissionCatalog.All.Where(p => Poi.Contains(p.Code)).Select(p => p.SortOrder).ToArray();
-        var otherOrders = PermissionCatalog.All.Where(p => !Poi.Contains(p.Code)).Select(p => p.SortOrder).ToArray();
-
-        Assert.True(poiOrders.Min() > otherOrders.Max());
+        Assert.Equal(poiOrders.Length, poiOrders.Distinct().Count());
+        Assert.Equal(
+            PermissionCatalog.All.Count,
+            PermissionCatalog.All.Select(permission => permission.SortOrder).Distinct().Count());
 
         /* Görüntüleme → ekleme → düzenleme → silme → yönetme sırası kategori
            içinde korunur: yetenekler artan otorite sırasında okunur. */
@@ -308,18 +310,26 @@ public class PoiPermissionCatalogTests
     }
 
     [Fact]
-    public void Operator_is_not_a_canonical_role()
+    public void Legacy_generic_operator_is_not_a_canonical_role()
     {
-        /* Ödevin "Operatör" rolü KANONİK DEĞİLDİR: rol yönetimi ekranından
-           tanımlanacak özel bir roldür ve yetkilerini oradan açıkça alır.
-           Kanonik listeye eklenmesi, onu silinemez/yeniden adlandırılamaz
-           kılar ve dinamik rol mimarisini baypas ederdi. */
+        /* Yasaklanan eski genel ad tam olarak "Operatör"dür. Alanı belli olan
+           "Ulaşım Operatörü" ayrı ve meşru bir kanonik roldür. */
         Assert.Equal(
-            new[] { GisRoles.Viewer, GisRoles.GisEditor, GisRoles.GisAnalyst, GisRoles.GisManager, GisRoles.Administrator },
+            new[]
+            {
+                GisRoles.Viewer,
+                GisRoles.GisEditor,
+                GisRoles.GisAnalyst,
+                GisRoles.GisManager,
+                GisRoles.TransportOperator,
+                GisRoles.TransportUser,
+                GisRoles.Administrator
+            },
             GisRoles.All);
 
-        Assert.DoesNotContain(GisRoles.All, role => role.Contains("perat", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(RoleCatalog.Reserved, role => role.Contains("perat", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(GisRoles.All, role => string.Equals(role, "Operatör", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(RoleCatalog.Reserved, role => string.Equals(role, "Operatör", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(GisRoles.TransportOperator, GisRoles.All);
 
         // Kanonik olmadığı için özel roldür ve serbestçe tanımlanabilir.
         Assert.True(RoleCatalog.IsCustom("Operatör"));
@@ -327,14 +337,15 @@ public class PoiPermissionCatalogTests
     }
 
     [Fact]
-    public async Task Seeding_provisions_no_operator_role()
+    public async Task Seeding_provisions_no_legacy_generic_operator_role()
     {
         await using var scope = CreateScope();
         await SeedAsync(scope);
 
         var roles = await Roles(scope).Roles.Select(r => r.Name).ToListAsync();
 
-        Assert.DoesNotContain(roles, role => role!.Contains("perat", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(roles, role => string.Equals(role, "Operatör", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(GisRoles.TransportOperator, roles);
     }
 
     [Fact]

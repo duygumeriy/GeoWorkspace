@@ -14,7 +14,15 @@ const OUTCOMES = [
 ]
 
 /** Kaynak türünün Türkçe karşılığı; tanınmayan tür ham hâliyle gösterilir. */
-const RESOURCE_LABELS = { user: 'Kullanıcı', role: 'Rol', drawing: 'Çizim' }
+const RESOURCE_LABELS = {
+  user: 'Kullanıcı',
+  role: 'Rol',
+  drawing: 'Çizim',
+  poi: 'POI',
+  poi_category: 'POI Kategorisi',
+  transport_route: 'Güzergah',
+  transport_stop: 'Durak',
+}
 
 /**
  * Aktivite geçmişi — SALT OKUNUR.
@@ -85,7 +93,7 @@ export default function ActivityPage() {
         title="Aktivite Geçmişi"
         /* Metin kapsamı DÜRÜSTÇE söyler: bu bir istek izi değil, değişiklik
            defteridir. */
-        description="Sistemde yapılan yönetim ve çizim işlemlerinin kaydı. En yeni işlem en üstte; okuma istekleri kaydedilmez."
+        description="Sistemde yapılan yönetim, çizim, POI ve ulaşım değişikliklerinin kaydı. En yeni işlem en üstte; okuma istekleri kaydedilmez."
       />
 
       <section className="admin-toolbar admin-activity-toolbar" aria-label="Aktivite filtreleri">

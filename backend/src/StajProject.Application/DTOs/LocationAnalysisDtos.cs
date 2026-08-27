@@ -26,6 +26,19 @@ namespace StajProject.Application.DTOs;
 public class LocationAnalysisRequest
 {
     /// <summary>
+    /// Hazır idari hedefin türü: <c>province</c> veya <c>region</c>.
+    /// Serbest çizimde boş bırakılır.
+    /// </summary>
+    public string? AdministrativeTargetType { get; set; }
+
+    /// <summary>
+    /// Hazır hedefin kanonik anahtarı (<c>TR-55</c>, <c>IC_ANADOLU</c>).
+    /// Ad değil anahtar taşınır; sunucu hem yetkiyi hem geometriyi kendi
+    /// kataloğundan doğrular.
+    /// </summary>
+    public string? AdministrativeTargetKey { get; set; }
+
+    /// <summary>
     /// Hedef alanın parçaları; her biri EPSG:4326 <b>POLYGON</b> WKT'si.
     /// </summary>
     /// <remarks>
@@ -52,6 +65,36 @@ public class LocationAnalysisRequest
 
     /// <summary>Ağırlıklandırılmış kategori ölçütleri: en az 2, en çok 5.</summary>
     public List<LocationAnalysisCriterionRequest>? Criteria { get; set; }
+}
+
+/// <summary>
+/// Kullanıcının konum analizinde seçebileceği idari hedefler.
+/// </summary>
+public sealed class LocationAnalysisTargetCatalogResponse
+{
+    public bool IsRestricted { get; set; }
+
+    public List<LocationAnalysisAdministrativeTargetResponse> Regions { get; set; } = [];
+
+    public List<LocationAnalysisAdministrativeTargetResponse> Provinces { get; set; } = [];
+}
+
+/// <summary>Backend tarafından yetkilendirilmiş tek bir il veya bölge.</summary>
+public sealed class LocationAnalysisAdministrativeTargetResponse
+{
+    public string Key { get; set; } = string.Empty;
+
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Katalogdaki EPSG:4326 Polygon parçaları. İstemci bunları haritada
+    /// gösterir; analiz ucu aynı parçaları yeniden backend kataloğuyla
+    /// karşılaştırır.
+    /// </summary>
+    public List<string> AreaWkts { get; set; } = [];
+
+    /// <summary>Bölge kaydında, kataloğa girebilen üye il anahtarları.</summary>
+    public List<string> ProvinceKeys { get; set; } = [];
 }
 
 /// <summary>Tek bir ağırlıklandırılmış kategori ölçütü.</summary>

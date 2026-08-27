@@ -57,7 +57,7 @@ public static class AuthorizationDataSeeder
     /// <summary>
     /// <see cref="GisRoles.All"/> rollerinin var olmasını sağlar.
     /// </summary>
-    /// <remarks>Bunlar uygulamanın kalıcı beş sistem rolüdür.</remarks>
+    /// <remarks>Bunlar uygulamanın kalıcı sistem rolleridir.</remarks>
     private static async Task EnsureTargetRolesAsync(
         RoleManager<IdentityRole<int>> roleManager,
         ILogger logger,

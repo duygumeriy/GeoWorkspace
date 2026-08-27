@@ -17,10 +17,12 @@ import data from './data/turkeyProvinces.json' with { type: 'json' }
  * ve uygulanan sadeleştirme `docs/geographic-data-sources.md` dosyasındadır.
  * Betik: `scripts/build-turkey-provinces.mjs`.
  *
- * <b>Bu veri bir yetkilendirme kaynağı DEĞİLDİR.</b> Buradan üretilen poligon,
- * yöneticinin kaydetmeyi seçtiği bir BAŞLANGIÇ geometrisidir; kaydedildikten
- * sonra yetkinin kaynağı veritabanındaki poligonun kendisi olur. Veri kümesi
- * ileride güncellenirse, kaydedilmiş alanlar değişmez.
+ * <b>Bu veri geometrik güvenlik sınırı DEĞİLDİR.</b> Buradan üretilen
+ * poligon, yöneticinin kaydetmeyi seçtiği bir BAŞLANGIÇ geometrisidir;
+ * kaydedildikten sonra Covers kararının kaynağı veritabanındaki poligonun
+ * kendisi olur. Aynı dosya backend'e gömülerek konum analizinin idari
+ * il/bölge ilişkisini sağlar; katalog seçimi yine saklanan etkin geometriye
+ * karşı doğrulanır.
  */
 
 /** Kaydedilecek alanın kaynağı — backend'in `GeographicAreaSource` enum'u. */

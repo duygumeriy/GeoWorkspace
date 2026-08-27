@@ -185,6 +185,45 @@ public class GeographicMultiAreaTests
         Assert.True(effective.Allows(Wkt("POINT (37.5 40)")));
     }
 
+    [Fact]
+    public async Task Effective_source_catalog_uses_the_same_direct_override_rule_as_geometry()
+    {
+        await using var scope = await CreateScopeAsync();
+        var role = await CreateRoleAsync(scope, "Bölge Rolü");
+        var user = await CreateUserAsync(scope, "source-override", role);
+
+        await Geographic(scope).CreateRoleAreaAsync(
+            role.Id, Save(Wide, "İç Anadolu", GeographicAreaSource.Region, "IC_ANADOLU"));
+        await Geographic(scope).CreateUserAreaAsync(
+            user.Id, Save(North, "Samsun", GeographicAreaSource.Province, "TR-55"));
+
+        var sources = await Geographic(scope).GetEffectiveAreaSourcesAsync(user.Id);
+
+        var source = Assert.Single(sources);
+        Assert.Equal(GeographicAreaSource.Province, source.SourceType);
+        Assert.Equal("TR-55", source.SourceKey);
+    }
+
+    [Fact]
+    public async Task Deleting_last_direct_source_restores_role_sources_for_catalog_too()
+    {
+        await using var scope = await CreateScopeAsync();
+        var role = await CreateRoleAsync(scope, "Kaynak Rolü");
+        var user = await CreateUserAsync(scope, "source-fallback", role);
+
+        await Geographic(scope).CreateRoleAreaAsync(
+            role.Id, Save(Wide, "İç Anadolu", GeographicAreaSource.Region, "IC_ANADOLU"));
+        var direct = await Geographic(scope).CreateUserAreaAsync(
+            user.Id, Save(North, "Samsun", GeographicAreaSource.Province, "TR-55"));
+        await Geographic(scope).DeleteUserAreaAsync(user.Id, Assert.Single(direct.Value!.Areas).Id);
+
+        var sources = await Geographic(scope).GetEffectiveAreaSourcesAsync(user.Id);
+
+        var source = Assert.Single(sources);
+        Assert.Equal(GeographicAreaSource.Region, source.SourceType);
+        Assert.Equal("IC_ANADOLU", source.SourceKey);
+    }
+
     /* --- Rol alanlarının birleşimi --------------------------------------------- */
 
     [Fact]

@@ -1074,11 +1074,15 @@ export function analyzeIntersections(wkt, { excludePolygonId = null } = {}) {
    çizdirmek olurdu. */
 
 /** Seçilen alandaki ağırlıklı POI özeti (`location.analysis` + `poi.view`). */
-export function analyzeLocation({ areaWkts, criteria }) {
+export function fetchLocationAnalysisTargetCatalog({ signal } = {}) {
+  return authFetch('/api/analysis/location/catalog', { signal })
+}
+
+export function analyzeLocation({ areaWkts, criteria, administrativeTargetType, administrativeTargetKey }) {
   return authFetch('/api/analysis/location', {
     method: 'POST',
     headers: JSON_HEADERS,
-    body: JSON.stringify({ areaWkts, criteria }),
+    body: JSON.stringify({ areaWkts, criteria, administrativeTargetType, administrativeTargetKey }),
   })
 }
 
@@ -1116,11 +1120,17 @@ export async function fetchLocationAnalysisPointsImage(payload) {
  * Koordinatlar KANONİK derecelerdir (boylam, enlem) — GeoServer görüntü
  * yollarındaki CRS:84 sözleşmesi buraya UYGULANMAZ.
  */
-export async function fetchLocationAnalysisPoints({ areaWkts, criteria, signal }) {
+export async function fetchLocationAnalysisPoints({
+  areaWkts,
+  criteria,
+  administrativeTargetType,
+  administrativeTargetKey,
+  signal,
+}) {
   const response = await authFetch('/api/analysis/location/points', {
     method: 'POST',
     headers: JSON_HEADERS,
-    body: JSON.stringify({ areaWkts, criteria }),
+    body: JSON.stringify({ areaWkts, criteria, administrativeTargetType, administrativeTargetKey }),
     signal,
   })
 
@@ -1148,12 +1158,22 @@ export async function hitTestLocationAnalysisPoint({
   longitude,
   latitude,
   toleranceMeters,
+  administrativeTargetType,
+  administrativeTargetKey,
   signal,
 }) {
   const response = await authFetch('/api/analysis/location/points/hit-test', {
     method: 'POST',
     headers: JSON_HEADERS,
-    body: JSON.stringify({ areaWkts, criteria, longitude, latitude, toleranceMeters }),
+    body: JSON.stringify({
+      areaWkts,
+      criteria,
+      longitude,
+      latitude,
+      toleranceMeters,
+      administrativeTargetType,
+      administrativeTargetKey,
+    }),
     signal,
   })
 
@@ -1175,12 +1195,25 @@ async function fetchAnalysisPng(path, {
   pixelRatio,
   criterionSlug,
   heatmapLod,
+  administrativeTargetType,
+  administrativeTargetKey,
   signal,
 }, failureMessage) {
   const response = await authFetch(path, {
     method: 'POST',
     headers: JSON_HEADERS,
-    body: JSON.stringify({ areaWkts, criteria, bbox, width, height, pixelRatio, criterionSlug, heatmapLod }),
+    body: JSON.stringify({
+      areaWkts,
+      criteria,
+      bbox,
+      width,
+      height,
+      pixelRatio,
+      criterionSlug,
+      heatmapLod,
+      administrativeTargetType,
+      administrativeTargetKey,
+    }),
     signal,
   })
 

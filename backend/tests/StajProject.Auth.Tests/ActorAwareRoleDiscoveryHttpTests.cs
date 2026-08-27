@@ -113,7 +113,15 @@ public class ActorAwareRoleDiscoveryHttpTests
         var offered = await host.OfferedAsync(actor);
 
         Assert.Equal(
-            [GisRoles.Viewer, GisRoles.GisEditor, GisRoles.GisAnalyst, GisRoles.GisManager, GisRoles.Administrator],
+            [
+                GisRoles.Viewer,
+                GisRoles.GisEditor,
+                GisRoles.GisAnalyst,
+                GisRoles.GisManager,
+                GisRoles.TransportOperator,
+                GisRoles.TransportUser,
+                GisRoles.Administrator
+            ],
             offered);
     }
 

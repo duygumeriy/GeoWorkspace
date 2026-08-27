@@ -1,0 +1,85 @@
+.transport-route-page { min-width: 0; }
+
+.transport-route-toolbar,
+.transport-route-workspace,
+.transport-management-map-card { max-width: 1180px; margin-inline: auto; }
+
+.transport-route-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
+.transport-route-toolbar p { margin: 0; color: var(--text-secondary); }
+
+.transport-route-workspace { display: grid; grid-template-columns: minmax(260px, .75fr) minmax(360px, 1.25fr); gap: 1rem; }
+.transport-route-list-card,
+.transport-route-detail-card,
+.transport-management-map-card { min-width: 0; background: var(--surface-soft); border: 1px solid var(--border-soft); border-radius: var(--radius-lg); overflow: hidden; }
+.transport-route-list-card > header { display: flex; align-items: center; justify-content: space-between; padding: 1rem; border-bottom: 1px solid var(--border-soft); }
+.transport-route-list-card h2,
+.transport-route-detail-card h2,
+.transport-management-map-card h3 { margin: 0; }
+.transport-route-list-card > header span,
+.transport-stop-list-heading span { display: grid; place-items: center; min-width: 28px; height: 28px; border-radius: var(--radius-full); background: var(--surface-solid); color: var(--text-secondary); font-size: 12px; font-weight: 800; }
+
+.transport-route-list { display: grid; }
+.transport-route-list-item { display: flex; align-items: center; gap: .75rem; width: 100%; padding: .9rem 1rem; border: 0; border-bottom: 1px solid var(--border-soft); background: transparent; color: var(--text-primary); font: inherit; text-align: left; cursor: pointer; }
+.transport-route-list-item:last-child { border-bottom: 0; }
+.transport-route-list-item:hover,
+.transport-route-list-item.is-selected { background: color-mix(in srgb, var(--primary-light) 11%, transparent); }
+.transport-route-list-item.is-selected { box-shadow: inset 4px 0 var(--primary-light); }
+.transport-route-swatch { flex: none; width: 18px; height: 18px; border: 2px solid var(--surface-solid); border-radius: 50%; box-shadow: 0 0 0 1px var(--border-strong); }
+.transport-route-swatch.is-large { width: 28px; height: 28px; }
+.transport-route-list-identity { display: flex; flex-direction: column; min-width: 0; gap: .2rem; }
+.transport-route-list-identity strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.transport-route-list-identity small { color: var(--text-secondary); }
+
+.transport-route-detail-card { min-height: 330px; padding: 1rem; }
+.transport-route-detail-empty { display: grid; place-items: center; align-content: center; min-height: 290px; text-align: center; color: var(--text-secondary); }
+.transport-route-detail-empty strong { color: var(--text-primary); font-size: var(--font-h2); }
+.transport-route-detail-empty p { margin: .4rem 0 0; }
+.transport-route-detail-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; padding-bottom: 1rem; border-bottom: 1px solid var(--border-soft); }
+.transport-route-detail-header > div:first-child { display: flex; align-items: center; gap: .75rem; min-width: 0; }
+.transport-route-detail-header code { color: var(--text-secondary); }
+.transport-route-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.transport-stop-list-heading { display: flex; align-items: center; justify-content: space-between; margin: 1rem 0 .75rem; }
+.transport-stop-list-heading h3 { margin: 0; font-size: 1rem; }
+.transport-stop-list { display: grid; gap: .5rem; margin: 0; padding: 0; list-style: none; }
+.transport-stop-list li { display: grid; grid-template-columns: auto 40px minmax(0, 1fr); align-items: center; gap: .6rem; min-height: 54px; padding: .55rem .75rem; background: var(--surface-solid); border: 1px solid var(--border-soft); border-radius: var(--radius-sm); }
+.transport-stop-list li.is-readonly { grid-template-columns: 40px minmax(0, 1fr); }
+.transport-stop-list li[draggable="true"] { cursor: grab; }
+.transport-stop-list li.is-dragging { opacity: .45; }
+.transport-stop-drag { display: grid; place-items: center; width: 32px; height: 36px; color: var(--text-tertiary); font-size: 18px; touch-action: none; }
+.transport-stop-order { color: var(--primary-light); font-variant-numeric: tabular-nums; font-weight: 800; }
+.transport-stop-name { display: flex; flex-direction: column; min-width: 0; gap: .15rem; }
+.transport-stop-name strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.transport-stop-name small { color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+.transport-stop-empty { padding: 2rem 1rem; border: 1px dashed var(--border-strong); border-radius: var(--radius-sm); color: var(--text-secondary); text-align: center; }
+.transport-route-readonly { margin: .75rem 0 0; color: var(--text-tertiary); font-size: var(--font-small); }
+
+.transport-management-map-card { margin-top: 1rem; }
+.transport-management-map-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem; }
+.transport-management-map-heading p { margin: .25rem 0 0; color: var(--text-secondary); }
+.transport-management-map-hint { margin: 0; padding: .55rem 1rem; background: color-mix(in srgb, var(--primary-light) 12%, transparent); color: var(--text-primary); font-weight: 700; }
+.transport-management-map { width: 100%; height: clamp(300px, 42vh, 460px); background: var(--bg-secondary); }
+.transport-management-map .transport-route-layer,
+.transport-management-map .transport-stop-layer,
+.transport-management-map .transport-stop-pending-layer { filter: none; }
+
+.transport-route-field { display: flex; flex-direction: column; gap: .4rem; margin-top: 1rem; color: var(--text-secondary); font-size: var(--font-small); font-weight: 700; }
+.transport-route-field input { box-sizing: border-box; width: 100%; min-height: 44px; padding: .65rem .8rem; border: 1px solid var(--border-soft); border-radius: var(--radius-sm); background: var(--surface-soft); color: var(--text-primary); font: inherit; }
+.transport-route-color-inputs { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: .65rem; }
+.transport-route-color-inputs input[type="color"] { padding: .25rem; cursor: pointer; }
+.transport-route-validation,
+.transport-stop-coordinate { color: var(--danger); }
+.transport-stop-coordinate { font-size: var(--font-small); font-variant-numeric: tabular-nums; }
+
+@media (max-width: 820px) {
+  .transport-route-workspace { grid-template-columns: minmax(0, 1fr); }
+  .transport-route-toolbar,
+  .transport-management-map-heading,
+  .transport-route-detail-header { align-items: stretch; flex-direction: column; }
+  .transport-route-toolbar .admin-button,
+  .transport-management-map-heading .admin-button { width: 100%; }
+}
+
+@media (max-width: 520px) {
+  .transport-route-actions { display: grid; grid-template-columns: 1fr 1fr; width: 100%; }
+  .transport-stop-list li { grid-template-columns: auto 32px minmax(0, 1fr); padding-inline: .5rem; }
+}

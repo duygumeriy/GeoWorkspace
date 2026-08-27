@@ -101,6 +101,15 @@ public interface IGeographicAuthorizationService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// <see cref="GetEffectiveAuthorizationAsync"/> ile aynı doğrudan-alan-
+    /// öncelikli çözümün kaynak kimlikleri. Konum analizi idari hedef
+    /// kataloğu dışında bir yetkilendirme kararında kullanılmaz.
+    /// </summary>
+    Task<IReadOnlyList<EffectiveGeographicAreaSource>> GetEffectiveAreaSourcesAsync(
+        int userId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Çağıranın kendi sınırının HARİTA için özeti: kısıtlı mı, sınır nedir,
     /// kaç parçadan oluşuyor.
     /// </summary>

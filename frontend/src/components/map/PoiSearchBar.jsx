@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
-import { Loader2, Search, X } from 'lucide-react'
-import usePoiSearch from '../../hooks/usePoiSearch.js'
+import { BusFront, Loader2, Route, Search, Shapes, X } from 'lucide-react'
+import useGlobalMapSearch from '../../hooks/useGlobalMapSearch.js'
 import PoiCategoryBadge from './PoiCategoryBadge.jsx'
 import './PoiSearchBar.css'
 
@@ -36,7 +36,16 @@ import './PoiSearchBar.css'
  * @param {{ enabled: boolean, onSelect: (result: object) => void,
  *           onClose?: () => void }} props
  */
-export default function PoiSearchBar({ enabled, onSelect, onClose }) {
+export default function PoiSearchBar({
+  enabled,
+  availableTypes = [{ id: 'poi', label: 'POI' }],
+  drawings = [],
+  stops = [],
+  routes = [],
+  onSelect,
+  onClose,
+}) {
+  const [type, setType] = useState(() => availableTypes[0]?.id ?? '')
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
   const [activeIndex, setActiveIndex] = useState(-1)
@@ -47,7 +56,15 @@ export default function PoiSearchBar({ enabled, onSelect, onClose }) {
   const listboxId = useId()
   const optionId = useCallback((index) => `${listboxId}-option-${index}`, [listboxId])
 
-  const { results, loading, error, searched, reset } = usePoiSearch({ enabled, query })
+  const { results, loading, error, searched, reset } = useGlobalMapSearch({
+    enabled,
+    type,
+    query,
+    drawings,
+    stops,
+    routes,
+  })
+  const selectedType = availableTypes.find((item) => item.id === type) ?? availableTypes[0]
 
   /* Açılır açılmaz yazılabilir. Kutuyu açmak için düğmeye basan biri, yazmak
      için ikinci kez tıklamak zorunda kalmamalıdır. Bileşen zaten yalnızca
@@ -70,6 +87,14 @@ export default function PoiSearchBar({ enabled, onSelect, onClose }) {
     setOpen(false)
     setActiveIndex(-1)
   }, [])
+
+  useEffect(() => {
+    if (availableTypes.some((item) => item.id === type)) return
+    setType(availableTypes[0]?.id ?? '')
+    setQuery('')
+    reset()
+    close()
+  }, [availableTypes, type, reset, close])
 
   const clear = useCallback(() => {
     setQuery('')
@@ -144,7 +169,7 @@ export default function PoiSearchBar({ enabled, onSelect, onClose }) {
       results.map((result, index) => {
         return (
           <li
-            key={result.id}
+            key={`${result.searchType}:${result.key ?? result.id}`}
             id={optionId(index)}
             role="option"
             aria-selected={index === activeIndex}
@@ -160,19 +185,26 @@ export default function PoiSearchBar({ enabled, onSelect, onClose }) {
           >
             {/* Rozetin görünümü DEĞİŞMEDİ; yalnızca çizen kod ortaklaştı —
                 yönetim ağacı ve "POI'lerim" artık aynı bileşeni kullanıyor. */}
-            <PoiCategoryBadge
-              iconKey={result.iconKey}
-              colorHex={result.colorHex}
-              className="poi-search-option-icon"
-            />
+            {result.searchType === 'poi' ? (
+              <PoiCategoryBadge iconKey={result.iconKey} colorHex={result.colorHex} className="poi-search-option-icon" />
+            ) : (
+              <span className={`poi-search-option-icon global-search-icon is-${result.searchType}`} aria-hidden="true">
+                {result.searchType === 'drawing' ? <Shapes size={17} /> : result.searchType === 'stop' ? <BusFront size={17} /> : <Route size={17} />}
+              </span>
+            )}
             <span className="poi-search-option-text">
               <strong>{result.name}</strong>
-              <small>{result.categoryName}</small>
+              <small>{
+                result.searchType === 'poi' ? result.categoryName
+                  : result.searchType === 'drawing' ? ({ point: 'Nokta', line: 'Çizgi', polygon: 'Poligon' }[result.type] ?? 'Çizim')
+                    : result.searchType === 'stop' ? result.routeName
+                      : `${result.stopCount ?? stops.filter((stop) => stop.routeId === result.id).length} durak`
+              }</small>
             </span>
           </li>
         )
       }),
-    [results, activeIndex, optionId, choose],
+    [results, activeIndex, optionId, choose, stops],
   )
 
   // Yetki yoksa arama kutusu HİÇ çizilmez ve hiçbir istek açılmaz.
@@ -180,16 +212,31 @@ export default function PoiSearchBar({ enabled, onSelect, onClose }) {
 
   return (
     <div className="poi-search" ref={containerRef}>
-      <div className="poi-search-field">
+      <div className="poi-search-field global-search-field">
         <Search className="poi-search-leading" size={16} strokeWidth={2} aria-hidden="true" />
+
+        <select
+          className="global-search-type"
+          aria-label="Arama türü"
+          value={type}
+          onChange={(event) => {
+            setType(event.target.value)
+            setQuery('')
+            reset()
+            close()
+            inputRef.current?.focus()
+          }}
+        >
+          {availableTypes.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+        </select>
 
         <input
           ref={inputRef}
           type="text"
           className="poi-search-input"
           value={query}
-          placeholder="POI ara…"
-          aria-label="POI ara"
+          placeholder={`${selectedType?.label ?? ''} ara…`}
+          aria-label={`${selectedType?.label ?? ''} ara`}
           autoComplete="off"
           role="combobox"
           aria-expanded={hasPanel}
@@ -236,11 +283,11 @@ export default function PoiSearchBar({ enabled, onSelect, onClose }) {
 
       {hasPanel && (
         <div className="poi-search-panel">
-          <ul id={listboxId} role="listbox" aria-label="POI arama sonuçları" className="poi-search-list">
+          <ul id={listboxId} role="listbox" aria-label={`${selectedType?.label ?? ''} arama sonuçları`} className="poi-search-list">
             {rows}
           </ul>
 
-          {showEmpty && <p className="poi-search-note">POI bulunamadı.</p>}
+          {showEmpty && <p className="poi-search-note">{selectedType?.label ?? 'Kayıt'} bulunamadı.</p>}
           {/* Hata haritayı düşürmez; küçük ve yıkıcı olmayan bir not. */}
           {error && <p className="poi-search-note poi-search-note-error" role="alert">{error}</p>}
         </div>

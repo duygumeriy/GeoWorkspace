@@ -28,6 +28,12 @@ public static class GisRoles
     /// <summary>Sistem yöneticisi; kullanıcı, rol ve yetki yönetimi dahil.</summary>
     public const string Administrator = "Administrator";
 
+    /// <summary>Durak verisini yöneten ulaşım operasyon kullanıcısı.</summary>
+    public const string TransportOperator = "Ulaşım Operatörü";
+
+    /// <summary>Ulaşım ağı ve POI verisini salt okuyan kullanıcı.</summary>
+    public const string TransportUser = "Ulaşım Kullanıcısı";
+
     /// <summary>Seed edilen hedef roller.</summary>
     public static readonly IReadOnlyList<string> All =
     [
@@ -35,6 +41,8 @@ public static class GisRoles
         GisEditor,
         GisAnalyst,
         GisManager,
+        TransportOperator,
+        TransportUser,
         Administrator
     ];
 }

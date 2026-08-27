@@ -2,7 +2,12 @@ import { useState } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider } from './auth/AuthContext'
 import { PermissionProvider } from './auth/PermissionContext.jsx'
-import { ADMIN_ENTRY_PERMISSIONS, PERMISSIONS, POI_SECTION_PERMISSIONS } from './auth/permissionCodes.js'
+import {
+  ADMIN_ENTRY_PERMISSIONS,
+  PERMISSIONS,
+  POI_SECTION_PERMISSIONS,
+  TRANSPORT_ROUTE_SECTION_PERMISSIONS,
+} from './auth/permissionCodes.js'
 import { TransitionProvider } from './transition/TransitionContext.jsx'
 import ProtectedRoute from './components/ProtectedRoute'
 import PermissionRoute, { AdminIndexRedirect } from './components/PermissionRoute.jsx'
@@ -21,6 +26,7 @@ import RolesPage from './pages/admin/RolesPage.jsx'
 import PermissionsPage from './pages/admin/PermissionsPage.jsx'
 import ActivityPage from './pages/admin/ActivityPage.jsx'
 import PoiPage from './pages/admin/PoiPage.jsx'
+import TransportRoutePage from './pages/admin/TransportRoutePage.jsx'
 import AccessDeniedPage from './pages/AccessDeniedPage.jsx'
 
 function App() {
@@ -138,6 +144,14 @@ function App() {
                     element={
                       <PermissionRoute anyOf={POI_SECTION_PERMISSIONS}>
                         <PoiPage />
+                      </PermissionRoute>
+                    }
+                  />
+                  <Route
+                    path="transport"
+                    element={
+                      <PermissionRoute anyOf={TRANSPORT_ROUTE_SECTION_PERMISSIONS}>
+                        <TransportRoutePage />
                       </PermissionRoute>
                     }
                   />

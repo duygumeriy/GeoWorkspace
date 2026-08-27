@@ -150,7 +150,11 @@ public sealed class GeoServerLocationAnalysisImageService : ILocationAnalysisPoi
         /* Raster da bir CEVAPTIR: yetkisiz bir alanın yoğunluk görüntüsüne
            erişebilmek, sayıya erişemeyen birinin aynı bilgiyi resim olarak
            almasına izin vermek olurdu. */
-        var authorized = await _areaGuard.AuthorizeAsync(analysis.Target, cancellationToken);
+        var authorized = await _areaGuard.AuthorizeAsync(
+            analysis.Target,
+            analysis.AdministrativeTargetType,
+            analysis.AdministrativeTargetKey,
+            cancellationToken);
 
         if (!authorized.IsSuccess)
         {

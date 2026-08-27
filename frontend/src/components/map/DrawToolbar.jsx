@@ -65,6 +65,8 @@ export default function DrawToolbar({
   onToggleAnalysis,
   poiActive,
   onTogglePoi,
+  transportStopActive,
+  onToggleTransportStop,
   onOpenStyle,
   canUndo,
   canRedo,
@@ -74,12 +76,21 @@ export default function DrawToolbar({
   collapsed = false,
   onToggleCollapse,
 }) {
-  const { drawTools, canDrawAny, canMeasure, canSelect, canAnalyze, canCreatePoi, canMutateDrawings } = permissions
+  const {
+    drawTools,
+    canDrawAny,
+    canMeasure,
+    canSelect,
+    canAnalyze,
+    canCreatePoi,
+    canCreateTransportStop,
+    canMutateDrawings,
+  } = permissions
 
   const drawTypes = DRAWING_TYPE_LIST.filter((type) => drawTools[type.id])
 
   // İlk grup çizim, ölçüm ve envanter araçlarını taşır; üçü de yoksa grup yok.
-  const hasToolGroup = drawTypes.length > 0 || canMeasure || canAnalyze || canCreatePoi
+  const hasToolGroup = drawTypes.length > 0 || canMeasure || canAnalyze || canCreatePoi || canCreateTransportStop
 
   if (!hasToolGroup && !canSelect && !canMutateDrawings) return null
 
@@ -87,7 +98,15 @@ export default function DrawToolbar({
      haritaya tıkladığında ne olacağını bilmelidir. */
   const activeLabel =
     DRAWING_TYPE_LIST.find((type) => type.id === activeTool)?.label ??
-    (measureMode ? 'Ölçüm' : analysisActive ? ANALYSIS_TOOL_INFO.label : poiActive ? 'POI Ekle' : null)
+    (measureMode
+      ? 'Ölçüm'
+      : analysisActive
+        ? ANALYSIS_TOOL_INFO.label
+        : poiActive
+          ? 'POI Ekle'
+          : transportStopActive
+            ? 'Durak Ekle'
+            : null)
 
   if (collapsed) {
     return (
@@ -180,6 +199,20 @@ export default function DrawToolbar({
         >
           <PinIcon size={18} />
           <span className="draw-toolbar-label">POI Ekle</span>
+        </button>
+        )}
+
+        {canCreateTransportStop && (
+        <button
+          type="button"
+          className={`draw-toolbar-btn ${transportStopActive ? 'is-active' : ''}`}
+          aria-pressed={transportStopActive}
+          aria-label="Durak Ekle aracı"
+          title="Durak Ekle — haritada bir nokta seçin"
+          onClick={onToggleTransportStop}
+        >
+          <PinIcon size={18} />
+          <span className="draw-toolbar-label">Durak Ekle</span>
         </button>
         )}
       </div>

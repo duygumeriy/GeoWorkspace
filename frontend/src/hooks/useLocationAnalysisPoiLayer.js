@@ -101,7 +101,12 @@ export default function useLocationAnalysisPoiLayer(map, {
   const resolutionRef = useRef(undefined)
 
   const analysisKey = analysis
-    ? JSON.stringify([analysis.areaWkts, analysis.criteria])
+    ? JSON.stringify([
+        analysis.areaWkts,
+        analysis.criteria,
+        analysis.administrativeTargetType,
+        analysis.administrativeTargetKey,
+      ])
     : ''
 
   const active = Boolean(map && analysis && permitted && visible)
@@ -187,6 +192,8 @@ export default function useLocationAnalysisPoiLayer(map, {
         const body = await fetchLocationAnalysisPoints({
           areaWkts: analysis.areaWkts,
           criteria: analysis.criteria,
+          administrativeTargetType: analysis.administrativeTargetType,
+          administrativeTargetKey: analysis.administrativeTargetKey,
           signal: controller.signal,
         })
 

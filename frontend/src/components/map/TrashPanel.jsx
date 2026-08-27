@@ -13,7 +13,7 @@ import { formatDateTime } from '../../map/datetime.js'
 import './TrashPanel.css'
 
 /* POI'nin kendi simgesi vardır: listede bir noktadan ayırt edilebilmelidir. */
-const TYPE_ICONS = { point: PointIcon, line: LineIcon, polygon: PolygonIcon, poi: PinIcon }
+const TYPE_ICONS = { point: PointIcon, line: LineIcon, polygon: PolygonIcon, poi: PinIcon, 'transport-stop': PinIcon, 'transport-route': LineIcon }
 
 /** Çizim türleri kanonik tablodan gelir; POI ayrı bir kayıttır. */
 const POI_LABEL = 'POI'
@@ -166,6 +166,8 @@ export default function TrashPanel({
             <ul className="trash-items">
               {visible.map((item) => {
                 const isPoi = item.type === 'poi'
+                const isTransportStop = item.type === 'transport-stop'
+                const isTransportRoute = item.type === 'transport-route'
                 const config = DRAWING_TYPES[item.type]
                 const Icon = TYPE_ICONS[item.type]
                 /* Tek okuma: çizim girişleri `drawing`, POI girişleri `poi`
@@ -173,7 +175,7 @@ export default function TrashPanel({
                 const record = trashRecordOf(item) ?? {}
                 const key = `${item.type}:${record.id}`
                 const isRestoring = restoringKey === key
-                const typeLabel = isPoi ? POI_LABEL : config?.label ?? item.type
+                const typeLabel = isPoi ? POI_LABEL : isTransportStop ? 'Durak' : isTransportRoute ? 'Güzergah' : config?.label ?? item.type
                 const title = record.name || typeLabel
 
                 return (
@@ -184,7 +186,7 @@ export default function TrashPanel({
                         // POI'nin stili yoktur; haritadaki mavisiyle temsil edilir.
                         '--dot': isPoi
                           ? 'var(--poi-color, #2563EB)'
-                          : record.style?.strokeColor ?? 'var(--primary-light)',
+                          : record.routeColor ?? record.colorHex ?? record.style?.strokeColor ?? 'var(--primary-light)',
                       }}
                       aria-hidden="true"
                     />
@@ -205,6 +207,8 @@ export default function TrashPanel({
                           Kategori: {record.categoryPath || record.categoryName}
                         </span>
                       )}
+                      {isTransportStop && <span className="trash-item-meta">Güzergah: {record.routeName || '—'} · Sıra: {record.sequenceOrder}</span>}
+                      {isTransportRoute && <span className="trash-item-meta">Durak: {record.stopCount ?? 0}</span>}
                       {/* Ekleyen YALNIZCA sunucu gönderdiyse (poi.manage)
                           gösterilir; harita sözleşmesi onu taşımaz. */}
                       {isPoi && item.creatorUsername && (

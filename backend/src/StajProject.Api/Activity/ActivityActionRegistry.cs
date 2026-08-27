@@ -43,6 +43,8 @@ public static class ActivityActionRegistry
     private const string Drawing = "drawing";
     private const string Poi = "poi";
     private const string PoiCategory = "poi_category";
+    private const string TransportRoute = "transport_route";
+    private const string TransportStop = "transport_stop";
 
     private static readonly IReadOnlyDictionary<string, Descriptor> Map =
         new Dictionary<string, Descriptor>(StringComparer.Ordinal)
@@ -107,7 +109,19 @@ public static class ActivityActionRegistry
             ["Poi.DeletePoi"] = new(ActivityActionCatalog.PoiDelete, Poi, "id"),
             ["Poi.RestorePoi"] = new(ActivityActionCatalog.PoiRestore, Poi, "id"),
             ["AdminPoi.CreateCategory"] = new(ActivityActionCatalog.PoiCategoryCreate, PoiCategory, null),
-            ["AdminPoi.UpdateCategory"] = new(ActivityActionCatalog.PoiCategoryUpdate, PoiCategory, "id")
+            ["AdminPoi.UpdateCategory"] = new(ActivityActionCatalog.PoiCategoryUpdate, PoiCategory, "id"),
+
+            /* --- Akıllı ulaşım ----------------------------------------------
+               Okuma, arama, detay ve /mine uçları bilinçli olarak listede yoktur. */
+            ["Transport.CreateRoute"] = new(ActivityActionCatalog.TransportRouteCreate, TransportRoute, null),
+            ["Transport.UpdateRoute"] = new(ActivityActionCatalog.TransportRouteUpdate, TransportRoute, "id"),
+            ["Transport.DeleteRoute"] = new(ActivityActionCatalog.TransportRouteDelete, TransportRoute, "id"),
+            ["Transport.RestoreRoute"] = new(ActivityActionCatalog.TransportRouteRestore, TransportRoute, "id"),
+            ["Transport.ReorderStops"] = new(ActivityActionCatalog.TransportRouteReorder, TransportRoute, "routeId"),
+            ["Transport.CreateStop"] = new(ActivityActionCatalog.TransportStopCreate, TransportStop, null),
+            ["Transport.UpdateStop"] = new(ActivityActionCatalog.TransportStopUpdate, TransportStop, "id"),
+            ["Transport.DeleteStop"] = new(ActivityActionCatalog.TransportStopDelete, TransportStop, "id"),
+            ["Transport.RestoreStop"] = new(ActivityActionCatalog.TransportStopRestore, TransportStop, "id")
         };
 
     /// <summary>Kayıt tablosundaki tüm anahtarlar — testlerin okuduğu yüzey.</summary>

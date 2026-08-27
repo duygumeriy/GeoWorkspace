@@ -1,0 +1,96 @@
+import { test, expect } from '@playwright/test'
+import { readFile } from 'node:fs/promises'
+import { buildTrashView, trashRecordOf } from '../../src/map/trashFilters.js'
+import { createTransportLayers, transportFeatures } from '../../src/map/transport.js'
+
+const source = (path) => readFile(new URL(path, import.meta.url), 'utf8')
+const ROUTES = [{ id: 1, name: 'Merkez', colorHex: '#123456', isActive: true }]
+const STOPS = [
+  { id: 1, routeId: 1, routeName: 'Merkez', name: 'Bir', longitude: 32.8, latitude: 39.9, sequenceOrder: 1 },
+  { id: 2, routeId: 1, routeName: 'Merkez', name: 'İki', longitude: 32.9, latitude: 40, sequenceOrder: 2 },
+]
+
+test('transport records use the existing Trash panel and filters', async () => {
+  const [page, trash] = await Promise.all([source('../../src/pages/MapPage.jsx'), source('../../src/components/map/TrashPanel.jsx')])
+  expect(page.match(/<TrashPanel/g)).toHaveLength(1)
+  expect(trash).toContain("item.type === 'transport-stop'")
+  expect(trash).toContain("item.type === 'transport-route'")
+})
+
+test('personal deleted stop source is backend scoped and other users are not filtered in React', async () => {
+  const [hook, api] = await Promise.all([source('../../src/hooks/useTrash.js'), source('../../src/services/transportApi.js')])
+  expect(api).toContain("authFetch('/api/transport/stops/trash')")
+  expect(hook).toContain('fetchDeletedTransportStops()')
+  expect(hook).not.toMatch(/stop\.(userId|ownerId)\s*===/)
+})
+
+test('trash understands deleted stop and route records', () => {
+  const stop = { type: 'transport-stop', stop: { id: 4, name: 'Durak' }, deletedAt: '2026-08-26T10:00:00Z' }
+  const route = { type: 'transport-route', route: { id: 5, name: 'Hat' }, deletedAt: '2026-08-26T11:00:00Z' }
+  expect(trashRecordOf(stop).name).toBe('Durak')
+  expect(buildTrashView([stop, route], { type: 'transport-route' }).items).toEqual([route])
+})
+
+test('stop and route restore call the existing backend endpoints and refresh map/mine', async () => {
+  const [api, hook, page] = await Promise.all([source('../../src/services/transportApi.js'), source('../../src/hooks/useTrash.js'), source('../../src/pages/MapPage.jsx')])
+  expect(api).toContain('`/api/transport/stops/${id}/restore`')
+  expect(api).toContain('`/api/transport/routes/${id}/restore`')
+  expect(hook).toContain('restoreTransportStop(id)')
+  expect(hook).toContain('restoreTransportRoute(id)')
+  expect(page).toContain('onTransportRestored')
+  expect(page).toContain('await myStops.reload()')
+})
+
+test('route restore remains independent from child-stop restore and role names', async () => {
+  const [api, page] = await Promise.all([source('../../src/services/transportApi.js'), source('../../src/pages/MapPage.jsx')])
+  expect(api).not.toContain('restoreTransportRouteStops')
+  expect(page).not.toMatch(/role\s*===\s*["']/)
+})
+
+test('existing Layers panel owns one native Ulaşım section', async () => {
+  const [page, layers] = await Promise.all([source('../../src/pages/MapPage.jsx'), source('../../src/components/map/LayersPanel.jsx')])
+  expect(page.match(/<LayersPanel/g)).toHaveLength(1)
+  expect(layers).toContain('Ulaşım')
+  expect(layers).toContain('Güzergahlar')
+  expect(layers).toContain('Duraklar')
+})
+
+test('Güzergahlar toggle hides and restores route line styles without refetch', () => {
+  let visible = true
+  const { routeLayer, routeSource } = createTransportLayers(() => null, () => null, () => visible)
+  routeSource.addFeatures(transportFeatures(ROUTES, STOPS).routeFeatures)
+  const feature = routeSource.getFeatures()[0]
+  expect(routeLayer.getStyleFunction()(feature, 1)).toBeTruthy()
+  visible = false
+  expect(routeLayer.getStyleFunction()(feature, 1)).toBeUndefined()
+  expect(routeSource.getFeatures()).toHaveLength(1)
+})
+
+test('Duraklar toggle hides permanent markers while a focused stop is temporarily highlighted', () => {
+  let selected = null
+  let visible = false
+  const { stopLayer, stopSource } = createTransportLayers(() => selected, () => null, () => true, () => visible)
+  stopSource.addFeatures(transportFeatures(ROUTES, STOPS).stopFeatures)
+  const [first, second] = stopSource.getFeatures()
+  expect(stopLayer.getStyleFunction()(first, 1)).toBeUndefined()
+  selected = 1
+  expect(stopLayer.getStyleFunction()(first, 1)).toBeTruthy()
+  expect(stopLayer.getStyleFunction()(second, 1)).toBeUndefined()
+  expect(visible).toBe(false)
+})
+
+test('visibility state lives outside refresh and selected-route highlighting respects it', async () => {
+  const [page, hook, map] = await Promise.all([source('../../src/pages/MapPage.jsx'), source('../../src/hooks/useTransportLayer.js'), source('../../src/map/transport.js')])
+  expect(page).toContain('const [transportRoutesVisible, setTransportRoutesVisible] = useState(true)')
+  expect(page).toContain('const [transportStopsVisible, setTransportStopsVisible] = useState(true)')
+  expect(hook).not.toMatch(/setTransport(Routes|Stops)Visible/)
+  expect(map).toContain('if (!stopsVisible() && !selected) return undefined')
+})
+
+test('hidden-stop placement keeps its pending layer separate and leaves POI/Location Analysis untouched', async () => {
+  const [placement, page, layers] = await Promise.all([source('../../src/hooks/useTransportStopPlacement.js'), source('../../src/pages/MapPage.jsx'), source('../../src/components/map/LayersPanel.jsx')])
+  expect(placement).toContain('createTransportPendingLayer')
+  expect(page).toContain('transportStopsVisible')
+  expect(layers).toContain('data-testid="layers-poi-row"')
+  expect(page).toContain('<LocationAnalysisPanel')
+})
