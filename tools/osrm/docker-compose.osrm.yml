@@ -1,0 +1,27 @@
+services:
+  osrm-extract:
+    image: ghcr.io/project-osrm/osrm-backend:v5.27.1
+    command: osrm-extract -p /opt/car.lua /data/${OSRM_DATASET:-turkey-latest}.osm.pbf
+    volumes:
+      - "${OSRM_DATA_DIR:-./data}:/data"
+
+  osrm-partition:
+    image: ghcr.io/project-osrm/osrm-backend:v5.27.1
+    command: osrm-partition /data/${OSRM_DATASET:-turkey-latest}.osrm
+    volumes:
+      - "${OSRM_DATA_DIR:-./data}:/data"
+
+  osrm-customize:
+    image: ghcr.io/project-osrm/osrm-backend:v5.27.1
+    command: osrm-customize /data/${OSRM_DATASET:-turkey-latest}.osrm
+    volumes:
+      - "${OSRM_DATA_DIR:-./data}:/data"
+
+  osrm-routed:
+    image: ghcr.io/project-osrm/osrm-backend:v5.27.1
+    command: osrm-routed --algorithm mld /data/${OSRM_DATASET:-turkey-latest}.osrm
+    volumes:
+      - "${OSRM_DATA_DIR:-./data}:/data:ro"
+    ports:
+      - "${OSRM_HOST_PORT:-5000}:5000"
+    restart: unless-stopped

@@ -2,12 +2,27 @@
 
 .transport-route-toolbar,
 .transport-route-workspace,
-.transport-management-map-card { max-width: 1180px; margin-inline: auto; }
+.transport-management-map-card,
+.transport-management-tabs,
+.admin-stop-management,
+.transport-admin-layout { max-width: 1180px; margin-inline: auto; }
+
+.transport-admin-layout { min-width: 0; }
+.transport-admin-layout.is-routes { display: grid; grid-template-columns: minmax(390px, .9fr) minmax(460px, 1.1fr); align-items: start; gap: 1rem; }
+.transport-admin-content,
+.transport-admin-map-column { min-width: 0; }
+.transport-admin-layout.is-routes .transport-admin-map-column { position: sticky; top: 1rem; align-self: start; }
+.transport-admin-layout.is-routes .transport-management-map-card { margin-top: 0; }
+.transport-admin-layout.is-stops .transport-management-map-card { margin-top: 1rem; }
+
+.transport-management-tabs { display: flex; gap: .4rem; margin-bottom: 1rem; padding: .3rem; border: 1px solid var(--border-soft); border-radius: var(--radius-md); background: var(--surface-soft); }
+.transport-management-tabs button { min-height: 42px; padding: .55rem 1rem; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-secondary); font: inherit; font-weight: 800; cursor: pointer; }
+.transport-management-tabs button[aria-selected="true"] { background: var(--surface-solid); color: var(--text-primary); box-shadow: 0 1px 3px rgba(15, 23, 42, .16); }
 
 .transport-route-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
 .transport-route-toolbar p { margin: 0; color: var(--text-secondary); }
 
-.transport-route-workspace { display: grid; grid-template-columns: minmax(260px, .75fr) minmax(360px, 1.25fr); gap: 1rem; }
+.transport-route-workspace { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; }
 .transport-route-list-card,
 .transport-route-detail-card,
 .transport-management-map-card { min-width: 0; background: var(--surface-soft); border: 1px solid var(--border-soft); border-radius: var(--radius-lg); overflow: hidden; }
@@ -18,17 +33,34 @@
 .transport-route-list-card > header span,
 .transport-stop-list-heading span { display: grid; place-items: center; min-width: 28px; height: 28px; border-radius: var(--radius-full); background: var(--surface-solid); color: var(--text-secondary); font-size: 12px; font-weight: 800; }
 
+.transport-route-filters { display: grid; grid-template-columns: minmax(0, 1fr) minmax(145px, .65fr); align-items: end; gap: .65rem; padding: .8rem 1rem; border-bottom: 1px solid var(--border-soft); }
+.transport-route-filters label { display: grid; gap: .3rem; color: var(--text-secondary); font-size: var(--font-small); font-weight: 700; }
+.transport-route-filters input,
+.transport-route-filters select { box-sizing: border-box; width: 100%; min-height: 40px; padding: .5rem .65rem; border: 1px solid var(--border-soft); border-radius: var(--radius-sm); background: var(--surface-solid); color: var(--text-primary); font: inherit; }
+.transport-route-filters .admin-button { grid-column: 1 / -1; width: max-content; min-height: 38px; padding-block: .45rem; }
 .transport-route-list { display: grid; }
-.transport-route-list-item { display: flex; align-items: center; gap: .75rem; width: 100%; padding: .9rem 1rem; border: 0; border-bottom: 1px solid var(--border-soft); background: transparent; color: var(--text-primary); font: inherit; text-align: left; cursor: pointer; }
+.transport-route-list-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: stretch; width: 100%; border-bottom: 1px solid var(--border-soft); background: transparent; color: var(--text-primary); }
 .transport-route-list-item:last-child { border-bottom: 0; }
 .transport-route-list-item:hover,
+.transport-route-list-item.is-hovered,
 .transport-route-list-item.is-selected { background: color-mix(in srgb, var(--primary-light) 11%, transparent); }
 .transport-route-list-item.is-selected { box-shadow: inset 4px 0 var(--primary-light); }
+.transport-route-list-item.is-hovered:not(.is-selected) { box-shadow: inset 3px 0 color-mix(in srgb, var(--primary-light) 70%, transparent); }
+.transport-route-list-item.is-selected.is-hovered { background: color-mix(in srgb, var(--primary-light) 18%, transparent); }
+.transport-route-list-select { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: .75rem; min-width: 0; padding: .85rem 0 .85rem 1rem; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .transport-route-swatch { flex: none; width: 18px; height: 18px; border: 2px solid var(--surface-solid); border-radius: 50%; box-shadow: 0 0 0 1px var(--border-strong); }
 .transport-route-swatch.is-large { width: 28px; height: 28px; }
 .transport-route-list-identity { display: flex; flex-direction: column; min-width: 0; gap: .2rem; }
 .transport-route-list-identity strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .transport-route-list-identity small { color: var(--text-secondary); }
+.transport-route-list-identity .transport-route-list-metrics { color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+.transport-route-list-status { align-self: center; padding: .2rem .45rem; border-radius: var(--radius-full); background: var(--surface-solid); color: var(--text-secondary); font-size: 11px; font-weight: 800; white-space: nowrap; }
+.transport-route-list-status.is-current { color: #15803d; background: color-mix(in srgb, #16a34a 14%, transparent); }
+.transport-route-list-status.is-stale { color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); }
+.transport-route-visibility { display: grid; place-items: center; align-self: center; width: 40px; height: 40px; margin: .5rem .6rem; padding: 0; border: 1px solid var(--border-soft); border-radius: var(--radius-sm); background: var(--surface-solid); color: var(--text-secondary); cursor: pointer; }
+.transport-route-visibility[aria-pressed="false"] { color: var(--text-tertiary); opacity: .72; }
+.transport-route-list-select:focus-visible,
+.transport-route-visibility:focus-visible { outline: 2px solid var(--primary-light); outline-offset: -2px; }
 
 .transport-route-detail-card { min-height: 330px; padding: 1rem; }
 .transport-route-detail-empty { display: grid; place-items: center; align-content: center; min-height: 290px; text-align: center; color: var(--text-secondary); }
@@ -41,26 +73,94 @@
 .transport-stop-list-heading { display: flex; align-items: center; justify-content: space-between; margin: 1rem 0 .75rem; }
 .transport-stop-list-heading h3 { margin: 0; font-size: 1rem; }
 .transport-stop-list { display: grid; gap: .5rem; margin: 0; padding: 0; list-style: none; }
-.transport-stop-list li { display: grid; grid-template-columns: auto 40px minmax(0, 1fr); align-items: center; gap: .6rem; min-height: 54px; padding: .55rem .75rem; background: var(--surface-solid); border: 1px solid var(--border-soft); border-radius: var(--radius-sm); }
-.transport-stop-list li.is-readonly { grid-template-columns: 40px minmax(0, 1fr); }
+.transport-stop-list li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: .6rem; min-height: 54px; padding: .55rem .75rem; background: var(--surface-solid); border: 1px solid var(--border-soft); border-radius: var(--radius-sm); }
+.transport-stop-list li.is-readonly { grid-template-columns: minmax(0, 1fr); }
+.transport-stop-list li.is-selected { border-color: var(--primary-light); box-shadow: inset 3px 0 var(--primary-light); }
 .transport-stop-list li[draggable="true"] { cursor: grab; }
 .transport-stop-list li.is-dragging { opacity: .45; }
 .transport-stop-drag { display: grid; place-items: center; width: 32px; height: 36px; color: var(--text-tertiary); font-size: 18px; touch-action: none; }
 .transport-stop-order { color: var(--primary-light); font-variant-numeric: tabular-nums; font-weight: 800; }
+.transport-stop-select { display: grid; grid-template-columns: 40px minmax(0, 1fr); align-items: center; gap: .6rem; min-width: 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .transport-stop-name { display: flex; flex-direction: column; min-width: 0; gap: .15rem; }
 .transport-stop-name strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .transport-stop-name small { color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+.transport-stop-order-actions { display: flex; gap: .25rem; }
+.transport-stop-order-actions button { width: 34px; height: 34px; border: 1px solid var(--border-soft); border-radius: var(--radius-sm); background: var(--surface-soft); color: var(--text-primary); font: inherit; font-weight: 900; cursor: pointer; }
+.transport-stop-order-actions button:disabled { opacity: .4; cursor: not-allowed; }
 .transport-stop-empty { padding: 2rem 1rem; border: 1px dashed var(--border-strong); border-radius: var(--radius-sm); color: var(--text-secondary); text-align: center; }
 .transport-route-readonly { margin: .75rem 0 0; color: var(--text-tertiary); font-size: var(--font-small); }
+
+.transport-path-status { margin-top: 1rem; padding: .8rem; border: 1px solid var(--border-soft); border-radius: var(--radius-md); background: var(--surface-solid); }
+.transport-path-status.is-stale { border-color: color-mix(in srgb, var(--danger) 45%, var(--border-soft)); }
+.transport-path-status-heading { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
+.transport-path-status-heading > div { display: flex; flex-direction: column; gap: .15rem; }
+.transport-path-status-heading span { color: var(--text-tertiary); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+.transport-path-status > p { margin: .65rem 0 0; color: var(--text-secondary); font-size: var(--font-small); }
+.transport-path-metadata { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; margin: .75rem 0 0; }
+.transport-path-metadata div { min-width: 0; }
+.transport-path-metadata dt { color: var(--text-tertiary); font-size: 11px; }
+.transport-path-metadata dd { margin: .15rem 0 0; color: var(--text-primary); font-size: var(--font-small); font-weight: 700; overflow-wrap: anywhere; }
+.transport-route-summary { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .5rem; margin: .75rem 0 0; }
+.transport-route-summary div { min-width: 0; padding: .55rem; border: 1px solid var(--border-soft); border-radius: var(--radius-sm); background: var(--surface-soft); }
+.transport-route-summary dt { color: var(--text-tertiary); font-size: 10px; font-weight: 800; letter-spacing: .03em; text-transform: uppercase; }
+.transport-route-summary dd { margin: .25rem 0 0; color: var(--text-primary); font-size: var(--font-small); font-weight: 800; overflow-wrap: anywhere; }
+.transport-route-summary.is-stale dd { color: var(--text-secondary); }
+.transport-path-status .transport-path-stale-metrics { color: var(--danger); }
+.transport-path-status .transport-path-warning,
+.transport-path-status .transport-path-failure { color: var(--danger); }
 
 .transport-management-map-card { margin-top: 1rem; }
 .transport-management-map-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem; }
 .transport-management-map-heading p { margin: .25rem 0 0; color: var(--text-secondary); }
+.transport-management-map-actions,
+.transport-stop-map-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
 .transport-management-map-hint { margin: 0; padding: .55rem 1rem; background: color-mix(in srgb, var(--primary-light) 12%, transparent); color: var(--text-primary); font-weight: 700; }
-.transport-management-map { width: 100%; height: clamp(300px, 42vh, 460px); background: var(--bg-secondary); }
+.transport-management-map { width: 100%; height: clamp(340px, 55vh, 680px); background: var(--bg-secondary); }
 .transport-management-map .transport-route-layer,
 .transport-management-map .transport-stop-layer,
 .transport-management-map .transport-stop-pending-layer { filter: none; }
+
+.transport-stop-map-detail { display: grid; gap: .8rem; padding: 1rem; border-top: 1px solid var(--border-soft); background: var(--surface-solid); }
+.transport-stop-map-detail > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.transport-stop-map-detail > header > div { display: grid; gap: .15rem; }
+.transport-stop-map-detail > header span { color: var(--text-tertiary); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+.transport-stop-map-detail > header button { width: 32px; height: 32px; border: 0; background: transparent; color: var(--text-secondary); font-size: 24px; cursor: pointer; }
+.transport-stop-map-detail dl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .65rem; margin: 0; }
+.transport-stop-map-detail dt { color: var(--text-tertiary); font-size: 11px; }
+.transport-stop-map-detail dd { margin: .15rem 0 0; font-size: var(--font-small); font-weight: 700; overflow-wrap: anywhere; }
+.transport-stop-inline-edit,
+.transport-stop-location-edit { display: grid; gap: .65rem; padding: .75rem; border: 1px solid var(--primary-light); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--primary-light) 8%, transparent); }
+.transport-stop-inline-edit label { display: grid; gap: .35rem; color: var(--text-secondary); font-size: var(--font-small); font-weight: 700; }
+.transport-stop-inline-edit input,
+.transport-stop-inline-edit select { min-height: 42px; padding: .55rem .7rem; border: 1px solid var(--border-soft); border-radius: var(--radius-sm); background: var(--surface-soft); color: var(--text-primary); font: inherit; }
+.transport-stop-inline-edit > div,
+.transport-stop-location-edit > div { display: flex; justify-content: flex-end; gap: .5rem; }
+.transport-stop-location-edit p,
+.transport-stop-delete-confirm { margin: 0; }
+.transport-stop-duplicate-warning { margin: 0; color: #b7791f; font-size: var(--font-small); font-weight: 700; }
+
+.admin-stop-management { overflow: hidden; border: 1px solid var(--border-soft); border-radius: var(--radius-lg); background: var(--surface-soft); }
+.admin-stop-management-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; padding: 1rem; border-bottom: 1px solid var(--border-soft); }
+.admin-stop-management-heading h2 { margin: 0; }
+.admin-stop-management-heading p { margin: .25rem 0 0; color: var(--text-secondary); }
+.admin-stop-management-heading > span { display: grid; place-items: center; min-width: 30px; height: 30px; border-radius: var(--radius-full); background: var(--surface-solid); font-weight: 800; }
+.admin-stop-filters { display: grid; grid-template-columns: minmax(180px, 1.2fr) minmax(160px, .8fr) minmax(130px, .6fr) auto; align-items: end; gap: .75rem; padding: 1rem; border-bottom: 1px solid var(--border-soft); }
+.admin-stop-filters label { display: grid; gap: .35rem; color: var(--text-secondary); font-size: var(--font-small); font-weight: 700; }
+.admin-stop-filters input,
+.admin-stop-filters select { width: 100%; min-height: 42px; padding: .55rem .7rem; border: 1px solid var(--border-soft); border-radius: var(--radius-sm); background: var(--surface-solid); color: var(--text-primary); font: inherit; }
+.admin-stop-table-wrap { min-width: 0; overflow-x: auto; }
+.admin-stop-table { width: 100%; border-collapse: collapse; }
+.admin-stop-table th,
+.admin-stop-table td { padding: .75rem; border-bottom: 1px solid var(--border-soft); text-align: left; vertical-align: middle; }
+.admin-stop-table th { color: var(--text-tertiary); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+.admin-stop-table tbody tr:last-child td { border-bottom: 0; }
+.admin-stop-table td:nth-child(2) { white-space: nowrap; }
+.admin-stop-status { display: inline-flex; padding: .2rem .5rem; border-radius: var(--radius-full); font-size: 11px; font-weight: 800; }
+.admin-stop-status.is-active { background: color-mix(in srgb, #16a34a 14%, transparent); color: #15803d; }
+.admin-stop-status.is-deleted { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
+.admin-stop-coordinate { white-space: nowrap; font-size: var(--font-small); font-variant-numeric: tabular-nums; }
+.admin-stop-row-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: .35rem; }
+.admin-stop-row-actions .admin-button { min-height: 36px; padding: .4rem .6rem; white-space: nowrap; }
 
 .transport-route-field { display: flex; flex-direction: column; gap: .4rem; margin-top: 1rem; color: var(--text-secondary); font-size: var(--font-small); font-weight: 700; }
 .transport-route-field input { box-sizing: border-box; width: 100%; min-height: 44px; padding: .65rem .8rem; border: 1px solid var(--border-soft); border-radius: var(--radius-sm); background: var(--surface-soft); color: var(--text-primary); font: inherit; }
@@ -70,16 +170,47 @@
 .transport-stop-coordinate { color: var(--danger); }
 .transport-stop-coordinate { font-size: var(--font-small); font-variant-numeric: tabular-nums; }
 
+@media (max-width: 1180px) {
+  .transport-admin-layout.is-routes { grid-template-columns: minmax(0, 1fr); }
+  .transport-admin-layout.is-routes .transport-admin-map-column { position: static; }
+  .transport-admin-layout.is-routes .transport-management-map-card { margin-top: 1rem; }
+}
+
 @media (max-width: 820px) {
-  .transport-route-workspace { grid-template-columns: minmax(0, 1fr); }
   .transport-route-toolbar,
   .transport-management-map-heading,
   .transport-route-detail-header { align-items: stretch; flex-direction: column; }
   .transport-route-toolbar .admin-button,
-  .transport-management-map-heading .admin-button { width: 100%; }
+  .transport-management-map-heading .admin-button,
+  .transport-path-status-heading .admin-button { width: 100%; }
+  .transport-path-status-heading { align-items: stretch; flex-direction: column; }
+  .admin-stop-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 520px) {
   .transport-route-actions { display: grid; grid-template-columns: 1fr 1fr; width: 100%; }
-  .transport-stop-list li { grid-template-columns: auto 32px minmax(0, 1fr); padding-inline: .5rem; }
+  .transport-stop-list li { padding-inline: .5rem; }
+  .transport-stop-order-actions { flex-direction: column; }
+  .transport-path-metadata { grid-template-columns: minmax(0, 1fr); }
+  .transport-route-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .transport-stop-map-detail dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .transport-management-tabs { display: grid; grid-template-columns: 1fr 1fr; }
+  .transport-route-filters { grid-template-columns: minmax(0, 1fr); }
+  .transport-route-filters .admin-button { grid-column: auto; width: 100%; }
+  .transport-route-list-select { grid-template-columns: auto minmax(0, 1fr); padding-left: .75rem; }
+  .transport-route-list-status { grid-column: 2; justify-self: start; }
+  .transport-route-visibility { margin-inline: .35rem; }
+  .admin-stop-management-heading { align-items: stretch; flex-direction: column; }
+  .admin-stop-filters { grid-template-columns: minmax(0, 1fr); }
+  .admin-stop-filters .admin-button { width: 100%; }
+  .admin-stop-table-wrap { overflow: visible; }
+  .admin-stop-table,
+  .admin-stop-table tbody,
+  .admin-stop-table tr,
+  .admin-stop-table td { display: block; width: 100%; }
+  .admin-stop-table thead { display: none; }
+  .admin-stop-table tr { box-sizing: border-box; padding: .8rem; border-bottom: 1px solid var(--border-soft); }
+  .admin-stop-table td { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: .6rem; padding: .3rem 0; border: 0; white-space: normal; }
+  .admin-stop-table td::before { content: attr(data-label); color: var(--text-tertiary); font-size: 11px; font-weight: 800; text-transform: uppercase; }
+  .admin-stop-row-actions { justify-content: flex-start; }
 }

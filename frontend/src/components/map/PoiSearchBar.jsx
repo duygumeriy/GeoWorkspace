@@ -5,10 +5,11 @@ import PoiCategoryBadge from './PoiCategoryBadge.jsx'
 import './PoiSearchBar.css'
 
 /**
- * Harita üzerindeki POI arama kutusu.
+ * Harita üzerindeki çok türde global arama kutusu.
  *
- * <b>Görünürlük YETKİDEN türer.</b> Çağıran `poi.view` taşımıyorsa bileşen hiç
- * çizilmez; rol adına bakan hiçbir kural yoktur.
+ * <b>Görünürlük YETKİDEN türer.</b> Çağıran en az bir arama türünü görmeye
+ * yetkili değilse bileşen hiç çizilmez; POI türü ayrıca `poi.view`, çizim türü
+ * `drawings.view`, durak ve güzergah türleri `transport.view` gerektirir.
  *
  * <b>Klavyeyle kullanılabilir.</b> Combobox/listbox semantiği eksiksizdir:
  * ArrowDown/ArrowUp gezinir, Enter seçer, Escape kapatır ve
@@ -207,7 +208,7 @@ export default function PoiSearchBar({
     [results, activeIndex, optionId, choose, stops],
   )
 
-  // Yetki yoksa arama kutusu HİÇ çizilmez ve hiçbir istek açılmaz.
+  // İzinli arama türü yoksa kutu HİÇ çizilmez ve hiçbir istek açılmaz.
   if (!enabled) return null
 
   return (

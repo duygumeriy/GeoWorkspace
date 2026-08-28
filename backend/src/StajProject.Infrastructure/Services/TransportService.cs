@@ -1,9 +1,12 @@
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using NetTopologySuite.Geometries;
+using NetTopologySuite.IO;
 using StajProject.Application.Common;
+using StajProject.Application.Activity;
 using StajProject.Application.DTOs;
 using StajProject.Application.Interfaces;
+using StajProject.Application.Routing;
 using StajProject.Domain.Entities;
 using StajProject.Infrastructure.Persistence;
 
@@ -16,23 +19,34 @@ public sealed class TransportService : ITransportService
     private const string RouteNotFoundMessage = "Ulaşım rotası bulunamadı veya kullanımda değil.";
     private const string StopNotFoundMessage = "Ulaşım durağı bulunamadı veya kullanımda değil.";
     private const string OutsideAreaMessage = "Bu alanda ulaşım durağı yazma yetkiniz bulunmuyor.";
+    private const string PathNotFoundMessage = "Bu güzergah için henüz hesaplanmış bir rota bulunmuyor.";
+    private const string MinimumStopsMessage = "Rota oluşturmak için en az iki aktif durak gereklidir.";
+    private const string RouteCalculationFailedMessage = RouteGenerationMessages.Unknown;
+    private const string TopologyChangedMessage = "Duraklar rota hesaplanırken değişti. Lütfen yeniden deneyin.";
 
     private static readonly Regex ColorHexPattern = new(
         "^#[0-9A-Fa-f]{6}$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly WKTWriter WktWriter = new();
 
     private readonly AppDbContext _dbContext;
     private readonly ICurrentUserService _currentUser;
     private readonly IGeographicAuthorizationService _geographicAuthorization;
+    private readonly IOsrmRoutingService _osrmRouting;
+    private readonly TransportActivityContext? _transportActivity;
 
     public TransportService(
         AppDbContext dbContext,
         ICurrentUserService currentUser,
-        IGeographicAuthorizationService geographicAuthorization)
+        IGeographicAuthorizationService geographicAuthorization,
+        IOsrmRoutingService osrmRouting,
+        TransportActivityContext? transportActivity = null)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
         _geographicAuthorization = geographicAuthorization;
+        _osrmRouting = osrmRouting;
+        _transportActivity = transportActivity;
     }
 
     public async Task<ServiceResult<IReadOnlyList<TransportRouteResponse>>> GetRoutesAsync(
@@ -58,6 +72,55 @@ public sealed class TransportService : ITransportService
             : ServiceResult<TransportRouteResponse>.Success(route);
     }
 
+    public async Task<ServiceResult<TransportRoutePathResponse>> GetRoutePathAsync(
+        int routeId,
+        CancellationToken cancellationToken = default)
+    {
+        if (!await _dbContext.TransportRoutes.AnyAsync(route => route.Id == routeId, cancellationToken))
+        {
+            return ServiceResult<TransportRoutePathResponse>.NotFound(RouteNotFoundMessage);
+        }
+
+        var path = await _dbContext.TransportRoutePaths
+            .AsNoTracking()
+            .FirstOrDefaultAsync(item => item.RouteId == routeId, cancellationToken);
+
+        return path is null
+            ? ServiceResult<TransportRoutePathResponse>.NotFound(PathNotFoundMessage)
+            : ServiceResult<TransportRoutePathResponse>.Success(ToPathResponse(path));
+    }
+
+    public async Task<ServiceResult<IReadOnlyList<TransportRouteMapPathResponse>>> GetRoutePathsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var records = await _dbContext.TransportRoutePaths
+            .AsNoTracking()
+            .OrderBy(path => path.RouteId)
+            .Select(path => new
+            {
+                Path = path,
+                RouteName = path.Route != null ? path.Route.Name : string.Empty,
+                ColorHex = path.Route != null ? path.Route.ColorHex : string.Empty
+            })
+            .ToListAsync(cancellationToken);
+
+        var response = records.Select(record => new TransportRouteMapPathResponse
+        {
+            Id = record.Path.Id,
+            RouteId = record.Path.RouteId,
+            RouteName = record.RouteName,
+            ColorHex = record.ColorHex,
+            GeometryWkt = WktWriter.Write(record.Path.Geometry),
+            DistanceMeters = record.Path.DistanceMeters,
+            DurationSeconds = record.Path.DurationSeconds,
+            GeneratedAt = record.Path.GeneratedAt,
+            IsStale = record.Path.IsStale,
+            LastFailureReason = record.Path.LastFailureReason
+        }).ToList();
+
+        return ServiceResult<IReadOnlyList<TransportRouteMapPathResponse>>.Success(response);
+    }
+
     public async Task<ServiceResult<IReadOnlyList<TransportStopResponse>>> GetRouteStopsAsync(
         int routeId,
         CancellationToken cancellationToken = default)
@@ -72,6 +135,51 @@ public sealed class TransportService : ITransportService
         var stops = await VisibleStopProjection()
             .Where(stop => stop.RouteId == routeId)
             .OrderBy(stop => stop.SequenceOrder)
+            .ThenBy(stop => stop.Id)
+            .ToListAsync(cancellationToken);
+
+        return ServiceResult<IReadOnlyList<TransportStopResponse>>.Success(stops);
+    }
+
+    public async Task<ServiceResult<IReadOnlyList<TransportStopResponse>>> GetStopsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var stops = await VisibleStopProjection()
+            .Where(stop => _dbContext.TransportRoutes.Any(route => route.Id == stop.RouteId))
+            .OrderBy(stop => stop.RouteName)
+            .ThenBy(stop => stop.RouteId)
+            .ThenBy(stop => stop.SequenceOrder)
+            .ThenBy(stop => stop.Id)
+            .ToListAsync(cancellationToken);
+
+        return ServiceResult<IReadOnlyList<TransportStopResponse>>.Success(stops);
+    }
+
+    public async Task<ServiceResult<IReadOnlyList<TransportStopResponse>>> GetDeletedStopsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var stops = await _dbContext.TransportStops
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(stop => stop.IsDeleted && stop.Route != null && stop.Route.IsActive && !stop.Route.IsDeleted)
+            .Select(stop => new TransportStopResponse
+            {
+                Id = stop.Id,
+                RouteId = stop.RouteId,
+                RouteName = stop.Route != null ? stop.Route.Name : string.Empty,
+                RouteColor = stop.Route != null ? stop.Route.ColorHex : string.Empty,
+                Name = stop.Name,
+                Longitude = stop.Coordinate.X,
+                Latitude = stop.Coordinate.Y,
+                SequenceOrder = stop.SequenceOrder,
+                IsActive = stop.IsActive,
+                IsDeleted = true,
+                CreatedDate = stop.CreatedDate,
+                ModifiedDate = stop.ModifiedDate
+            })
+            .OrderBy(stop => stop.RouteName)
+            .ThenBy(stop => stop.RouteId)
+            .ThenByDescending(stop => stop.ModifiedDate)
             .ThenBy(stop => stop.Id)
             .ToListAsync(cancellationToken);
 
@@ -104,6 +212,7 @@ public sealed class TransportService : ITransportService
                 Latitude = stop.Coordinate.Y,
                 SequenceOrder = stop.SequenceOrder,
                 IsActive = stop.IsActive,
+                IsDeleted = false,
                 CreatedDate = stop.CreatedDate,
                 ModifiedDate = stop.ModifiedDate
             })
@@ -162,6 +271,7 @@ public sealed class TransportService : ITransportService
                 Latitude = stop.Coordinate.Y,
                 SequenceOrder = stop.SequenceOrder,
                 IsActive = stop.IsActive,
+                IsDeleted = true,
                 CreatedDate = stop.CreatedDate,
                 ModifiedDate = stop.ModifiedDate
             })
@@ -268,6 +378,30 @@ public sealed class TransportService : ITransportService
         return ServiceResult<TransportRouteResponse>.Success(ToRouteResponse(route, stopCount));
     }
 
+    public async Task<ServiceResult<TransportRoutePathResponse>> GenerateRoutePathAsync(
+        int routeId,
+        CancellationToken cancellationToken = default)
+    {
+        if (_transportActivity is not null) _transportActivity.Outcome = null;
+        var result = await GenerateRoutePathCoreAsync(routeId, requireExistingPath: false, cancellationToken: cancellationToken);
+        var routeName = await _dbContext.TransportRoutes
+            .IgnoreQueryFilters()
+            .Where(route => route.Id == routeId)
+            .Select(route => route.Name)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (_transportActivity is not null)
+        {
+            _transportActivity.Outcome = new TransportActivityOutcome(
+                TransportActivityKind.RouteGeneration,
+                RouteId: routeId,
+                RouteName: routeName,
+                RouteGenerated: result.IsSuccess,
+                DistanceMeters: result.Value?.DistanceMeters,
+                DurationSeconds: result.Value?.DurationSeconds);
+        }
+        return result;
+    }
+
     public async Task<ServiceResult<TransportStopResponse>> CreateStopAsync(
         CreateTransportStopRequest request,
         CancellationToken cancellationToken = default)
@@ -320,6 +454,7 @@ public sealed class TransportService : ITransportService
         };
 
         _dbContext.TransportStops.Add(stop);
+        await MarkRoutePathsStaleAsync([route.Id], cancellationToken);
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         return ServiceResult<TransportStopResponse>.Success(ToStopResponse(stop, route.Name));
@@ -330,6 +465,7 @@ public sealed class TransportService : ITransportService
         UpdateTransportStopRequest request,
         CancellationToken cancellationToken = default)
     {
+        if (_transportActivity is not null) _transportActivity.Outcome = null;
         var stop = await _dbContext.TransportStops.FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
 
         if (stop is null)
@@ -381,11 +517,29 @@ public sealed class TransportService : ITransportService
             if (targetPoint is not null)
             {
                 stop.Coordinate = targetPoint;
+                await MarkRoutePathsStaleAsync([stop.RouteId], cancellationToken);
             }
 
             await _dbContext.SaveChangesAsync(cancellationToken);
-            return ServiceResult<TransportStopResponse>.Success(ToStopResponse(stop, destination.Name));
+            var response = ToStopResponse(stop, destination.Name);
+            if (_transportActivity is not null)
+            {
+                _transportActivity.Outcome = new TransportActivityOutcome(
+                    coordinateChanged ? TransportActivityKind.StopCoordinateMove : TransportActivityKind.StopUpdate,
+                    RouteId: stop.RouteId,
+                    RouteName: destination.Name,
+                    StopId: stop.Id,
+                    StopName: stop.Name,
+                    CoordinateChanged: coordinateChanged);
+            }
+            return ServiceResult<TransportStopResponse>.Success(response);
         }
+
+        var sourceRouteName = await _dbContext.TransportRoutes
+            .IgnoreQueryFilters()
+            .Where(route => route.Id == oldRouteId)
+            .Select(route => route.Name)
+            .FirstOrDefaultAsync(cancellationToken);
 
         await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
 
@@ -404,10 +558,27 @@ public sealed class TransportService : ITransportService
             stop.Coordinate = targetPoint;
         }
 
+        await MarkRoutePathsStaleAsync([oldRouteId, destination.Id], cancellationToken);
+
         await _dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
-        return ServiceResult<TransportStopResponse>.Success(ToStopResponse(stop, destination.Name));
+        var transferred = ToStopResponse(stop, destination.Name);
+        if (_transportActivity is not null)
+        {
+            _transportActivity.Outcome = new TransportActivityOutcome(
+                TransportActivityKind.StopTransfer,
+                RouteId: destination.Id,
+                RouteName: destination.Name,
+                StopId: stop.Id,
+                StopName: stop.Name,
+                SourceRouteId: oldRouteId,
+                SourceRouteName: sourceRouteName,
+                DestinationRouteId: destination.Id,
+                DestinationRouteName: destination.Name,
+                CoordinateChanged: coordinateChanged);
+        }
+        return ServiceResult<TransportStopResponse>.Success(transferred);
     }
 
     public async Task<ServiceResult<int>> DeleteStopAsync(int id, CancellationToken cancellationToken = default)
@@ -422,6 +593,7 @@ public sealed class TransportService : ITransportService
         await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
         stop.IsDeleted = true;
         await CompactRouteAsync(stop.RouteId, stop.Id, cancellationToken);
+        await MarkRoutePathsStaleAsync([stop.RouteId], cancellationToken);
         await _dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
@@ -458,6 +630,7 @@ public sealed class TransportService : ITransportService
 
         stop.IsDeleted = false;
         stop.SequenceOrder = maxOrder + 1;
+        await MarkRoutePathsStaleAsync([stop.RouteId], cancellationToken);
         await _dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
@@ -469,6 +642,7 @@ public sealed class TransportService : ITransportService
         ReorderTransportStopsRequest request,
         CancellationToken cancellationToken = default)
     {
+        if (_transportActivity is not null) _transportActivity.Outcome = null;
         if (request?.StopIds is null)
         {
             return ServiceResult<IReadOnlyList<TransportStopResponse>>.Failure("stopIds alanı zorunludur.");
@@ -506,15 +680,223 @@ public sealed class TransportService : ITransportService
             byId[request.StopIds[index]].SequenceOrder = index + 1;
         }
 
+        var pathExists = await MarkRoutePathsStaleAsync([routeId], cancellationToken);
         await _dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+
+        ServiceResult<TransportRoutePathResponse>? regeneration = null;
+        if (pathExists)
+        {
+            // Sıralama iş verisidir ve yukarıda kalıcılaştırılmıştır. OSRM
+            // başarısızlığı bu değişikliği geri almaz; path stale kalır.
+            regeneration = await GenerateRoutePathCoreAsync(routeId, requireExistingPath: true, cancellationToken: cancellationToken);
+        }
 
         var response = request.StopIds
             .Select(id => ToStopResponse(byId[id], route.Name))
             .ToList();
 
+        if (_transportActivity is not null)
+        {
+            _transportActivity.Outcome = new TransportActivityOutcome(
+                TransportActivityKind.StopReorder,
+                RouteId: routeId,
+                RouteName: route.Name,
+                OrderedStopIds: request.StopIds,
+                RouteGenerated: regeneration?.IsSuccess);
+        }
+
         return ServiceResult<IReadOnlyList<TransportStopResponse>>.Success(response);
     }
+
+    private async Task<ServiceResult<TransportRoutePathResponse>> GenerateRoutePathCoreAsync(
+        int routeId,
+        bool requireExistingPath,
+        CancellationToken cancellationToken)
+    {
+        if (!await _dbContext.TransportRoutes.AnyAsync(route => route.Id == routeId, cancellationToken))
+        {
+            return ServiceResult<TransportRoutePathResponse>.NotFound(RouteNotFoundMessage);
+        }
+
+        var snapshot = await LoadTopologySnapshotAsync(routeId, cancellationToken);
+        var existingPath = await _dbContext.TransportRoutePaths
+            .FirstOrDefaultAsync(path => path.RouteId == routeId, cancellationToken);
+
+        if (requireExistingPath && existingPath is null)
+        {
+            return ServiceResult<TransportRoutePathResponse>.NotFound(PathNotFoundMessage);
+        }
+
+        if (snapshot.Count < 2)
+        {
+            if (existingPath is not null)
+            {
+                await PersistRoutePathFailureAsync(existingPath, MinimumStopsMessage, cancellationToken);
+            }
+
+            return ServiceResult<TransportRoutePathResponse>.Failure(MinimumStopsMessage);
+        }
+
+        if (existingPath is not null)
+        {
+            existingPath.IsStale = true;
+            existingPath.LastFailureReason = null;
+            existingPath.ModifiedDate = DateTime.UtcNow;
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        var routing = await _osrmRouting.RouteAsync(
+            new OsrmRouteRequest(snapshot
+                .Select(stop => new OsrmWaypoint(stop.Longitude, stop.Latitude))
+                .ToList()),
+            cancellationToken);
+
+        if (!routing.IsSuccess)
+        {
+            var safeReason = SafeRoutingFailureReason(routing.ErrorKind, routing.Error);
+            if (existingPath is not null)
+            {
+                await PersistRoutePathFailureAsync(existingPath, safeReason, cancellationToken);
+            }
+
+            return RoutePathFailure(routing.ErrorKind, safeReason);
+        }
+
+        var routeResult = routing.Value!;
+        if (!IsValidRoutingResult(routeResult))
+        {
+            if (existingPath is not null)
+            {
+                await PersistRoutePathFailureAsync(existingPath, RouteCalculationFailedMessage, cancellationToken);
+            }
+
+            return ServiceResult<TransportRoutePathResponse>.Upstream(RouteCalculationFailedMessage);
+        }
+
+        var currentSnapshot = await LoadTopologySnapshotAsync(routeId, cancellationToken);
+        if (!snapshot.SequenceEqual(currentSnapshot))
+        {
+            if (existingPath is not null)
+            {
+                await PersistRoutePathFailureAsync(existingPath, TopologyChangedMessage, cancellationToken);
+            }
+
+            return ServiceResult<TransportRoutePathResponse>.Conflict(TopologyChangedMessage);
+        }
+
+        // İlk çağrı sürerken başka bir üretim path oluşturmuş olabilir. Tekil
+        // RouteId kısıtına çarpmak yerine mevcut satırı güncelleyip Id'yi korur.
+        var path = existingPath ?? await _dbContext.TransportRoutePaths
+            .FirstOrDefaultAsync(item => item.RouteId == routeId, cancellationToken);
+        var now = DateTime.UtcNow;
+
+        if (path is null)
+        {
+            path = new TransportRoutePath
+            {
+                RouteId = routeId
+            };
+            _dbContext.TransportRoutePaths.Add(path);
+        }
+
+        path.Geometry = routeResult.Geometry;
+        path.DistanceMeters = routeResult.DistanceMeters;
+        path.DurationSeconds = routeResult.DurationSeconds;
+        path.Profile = routeResult.Profile;
+        path.GeneratedAt = now;
+        path.IsStale = false;
+        path.LastFailureReason = null;
+        path.ModifiedDate = now;
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return ServiceResult<TransportRoutePathResponse>.Success(ToPathResponse(path));
+    }
+
+    private Task<List<StopTopologySnapshot>> LoadTopologySnapshotAsync(
+        int routeId,
+        CancellationToken cancellationToken) =>
+        _dbContext.TransportStops
+            .AsNoTracking()
+            .Where(stop => stop.RouteId == routeId)
+            .OrderBy(stop => stop.SequenceOrder)
+            .ThenBy(stop => stop.Id)
+            .Select(stop => new StopTopologySnapshot(
+                stop.Id,
+                stop.SequenceOrder,
+                stop.Coordinate.X,
+                stop.Coordinate.Y))
+            .ToListAsync(cancellationToken);
+
+    private async Task<bool> MarkRoutePathsStaleAsync(
+        IReadOnlyCollection<int> routeIds,
+        CancellationToken cancellationToken)
+    {
+        var distinctRouteIds = routeIds.Distinct().ToArray();
+        var paths = await _dbContext.TransportRoutePaths
+            .IgnoreQueryFilters()
+            .Where(path => distinctRouteIds.Contains(path.RouteId))
+            .ToListAsync(cancellationToken);
+
+        var now = DateTime.UtcNow;
+        foreach (var path in paths)
+        {
+            path.IsStale = true;
+            path.LastFailureReason = null;
+            path.ModifiedDate = now;
+        }
+
+        return paths.Count > 0;
+    }
+
+    private async Task PersistRoutePathFailureAsync(
+        TransportRoutePath path,
+        string safeReason,
+        CancellationToken cancellationToken)
+    {
+        path.IsStale = true;
+        path.LastFailureReason = safeReason.Length <= TransportRoutePath.MaxFailureReasonLength
+            ? safeReason
+            : safeReason[..TransportRoutePath.MaxFailureReasonLength];
+        path.ModifiedDate = DateTime.UtcNow;
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private static bool IsValidRoutingResult(OsrmRouteResult result) =>
+        result.Geometry is { SRID: Srid, NumPoints: >= 2 }
+        && result.Geometry.Coordinates.All(coordinate =>
+            double.IsFinite(coordinate.X)
+            && coordinate.X is >= -180 and <= 180
+            && double.IsFinite(coordinate.Y)
+            && coordinate.Y is >= -90 and <= 90)
+        && double.IsFinite(result.DistanceMeters)
+        && result.DistanceMeters >= 0
+        && double.IsFinite(result.DurationSeconds)
+        && result.DurationSeconds >= 0
+        && !string.IsNullOrWhiteSpace(result.Profile)
+        && result.Profile.Length <= TransportRoutePath.MaxProfileLength;
+
+    private static string SafeRoutingFailureReason(ServiceErrorKind errorKind, string? error) => error switch
+    {
+        RouteGenerationMessages.NoRoute => RouteGenerationMessages.NoRoute,
+        RouteGenerationMessages.Timeout => RouteGenerationMessages.Timeout,
+        RouteGenerationMessages.Unavailable => RouteGenerationMessages.Unavailable,
+        RouteGenerationMessages.Unknown => RouteGenerationMessages.Unknown,
+        _ when errorKind == ServiceErrorKind.Timeout => RouteGenerationMessages.Timeout,
+        _ => RouteGenerationMessages.Unknown
+    };
+
+    private static ServiceResult<TransportRoutePathResponse> RoutePathFailure(
+        ServiceErrorKind errorKind,
+        string safeReason) => errorKind switch
+    {
+        ServiceErrorKind.Timeout => ServiceResult<TransportRoutePathResponse>.Timeout(safeReason),
+        ServiceErrorKind.Upstream => ServiceResult<TransportRoutePathResponse>.Upstream(safeReason),
+        ServiceErrorKind.NotFound => ServiceResult<TransportRoutePathResponse>.NotFound(safeReason),
+        ServiceErrorKind.Conflict => ServiceResult<TransportRoutePathResponse>.Conflict(safeReason),
+        ServiceErrorKind.Forbidden => ServiceResult<TransportRoutePathResponse>.Forbidden(safeReason),
+        _ => ServiceResult<TransportRoutePathResponse>.Failure(safeReason)
+    };
 
     private IQueryable<TransportRouteResponse> VisibleRouteProjection() =>
         _dbContext.TransportRoutes
@@ -548,6 +930,7 @@ public sealed class TransportService : ITransportService
                 Latitude = stop.Coordinate.Y,
                 SequenceOrder = stop.SequenceOrder,
                 IsActive = stop.IsActive,
+                IsDeleted = false,
                 CreatedDate = stop.CreatedDate,
                 ModifiedDate = stop.ModifiedDate
             });
@@ -661,6 +1044,19 @@ public sealed class TransportService : ITransportService
         ModifiedDate = route.ModifiedDate
     };
 
+    private static TransportRoutePathResponse ToPathResponse(TransportRoutePath path) => new()
+    {
+        Id = path.Id,
+        RouteId = path.RouteId,
+        GeometryWkt = WktWriter.Write(path.Geometry),
+        DistanceMeters = path.DistanceMeters,
+        DurationSeconds = path.DurationSeconds,
+        Profile = path.Profile,
+        GeneratedAt = path.GeneratedAt,
+        IsStale = path.IsStale,
+        LastFailureReason = path.LastFailureReason
+    };
+
     private static TransportStopResponse ToStopResponse(TransportStop stop, string routeName) => new()
     {
         Id = stop.Id,
@@ -672,7 +1068,14 @@ public sealed class TransportService : ITransportService
         Latitude = stop.Coordinate.Y,
         SequenceOrder = stop.SequenceOrder,
         IsActive = stop.IsActive,
+        IsDeleted = stop.IsDeleted,
         CreatedDate = stop.CreatedDate,
         ModifiedDate = stop.ModifiedDate
     };
+
+    private sealed record StopTopologySnapshot(
+        int Id,
+        int SequenceOrder,
+        double Longitude,
+        double Latitude);
 }

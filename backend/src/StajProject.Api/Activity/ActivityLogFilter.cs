@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.AspNetCore.Mvc.Infrastructure;
 using StajProject.Application.Activity;
 using StajProject.Application.Interfaces;
+using StajProject.Domain.Common;
 
 namespace StajProject.Api.Activity;
 
@@ -50,8 +51,9 @@ public sealed class ActivityLogFilter : IAsyncActionFilter
             return;
         }
 
-        /* Ayrıntılar action ÇALIŞMADAN ÖNCE okunur: bir action model-bind
-           edilmiş argümanı değiştirebilir ve kayıt, gelen isteği anlatmalıdır. */
+        /* Genel ayrıntılar action ÇALIŞMADAN ÖNCE okunur. Transport servisi
+           gerçek iş sonucunu güvenli bağlamla bildirirse aşağıda bu genel
+           özetin yerini sonuç-temelli ayrıntılar alır. */
         var details = ActivityDetails.Build(context.RouteData.Values!, context.ActionArguments!);
 
         var executed = await next();
@@ -71,19 +73,32 @@ public sealed class ActivityLogFilter : IAsyncActionFilter
             return;
         }
 
+        var transportOutcome = context.HttpContext.RequestServices
+            .GetService(typeof(TransportActivityContext)) as TransportActivityContext;
+        var outcome = transportOutcome?.Outcome;
+
         await writer.WriteAsync(
             new ActivityLogEntry(
-                descriptor.Action,
+                ActionOf(descriptor.Action, outcome),
                 descriptor.ResourceType,
-                ResourceId(context, descriptor),
+                outcome?.StopId?.ToString()
+                    ?? outcome?.RouteId?.ToString()
+                    ?? ResourceId(context, descriptor),
                 context.HttpContext.Request.Method,
                 // Query string BİLİNÇLİ olarak dışarıda: sır taşıyabilir.
                 context.HttpContext.Request.Path.Value ?? string.Empty,
                 StatusOf(executed),
-                details,
+                outcome is null ? details : ActivityDetails.Build(outcome),
                 context.HttpContext.Connection.RemoteIpAddress?.ToString()),
             context.HttpContext.RequestAborted);
     }
+
+    private static string ActionOf(string fallback, TransportActivityOutcome? outcome) => outcome?.Kind switch
+    {
+        TransportActivityKind.StopTransfer => ActivityActionCatalog.TransportStopTransfer,
+        TransportActivityKind.StopCoordinateMove => ActivityActionCatalog.TransportStopCoordinateMove,
+        _ => fallback
+    };
 
     /// <summary>Bu action izin listesinde mi.</summary>
     internal static ActivityActionRegistry.Descriptor? Describe(ActionContext context) =>

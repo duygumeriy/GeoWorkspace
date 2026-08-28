@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using StajProject.Application.Common;
+using StajProject.Application.Activity;
 using StajProject.Application.Interfaces;
 using StajProject.Application.Options;
 using StajProject.Api.Authorization;
@@ -19,6 +20,7 @@ using StajProject.Infrastructure.Authentication;
 using StajProject.Infrastructure.Email;
 using StajProject.Infrastructure.GeoServer;
 using StajProject.Infrastructure.Persistence;
+using StajProject.Infrastructure.Routing;
 using StajProject.Infrastructure.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -96,6 +98,15 @@ builder.Services.AddHttpClient<ILocationAnalysisPointsImageService, GeoServerLoc
 
 builder.Services.AddHttpClient<IGeoServerMapPresentationService, GeoServerMapPresentationService>(client =>
     client.Timeout = TimeSpan.FromSeconds(geoServerOptions.PresentationTimeoutSeconds));
+
+/* OSRM yalnızca backend yapılandırmasından çağrılır. Tarayıcı sunucu adresi
+   veya profil gönderemez; typed client bağlantı havuzunu yeniden kullanır. */
+var osrmOptions = builder.Configuration.GetSection(OsrmOptions.SectionName).Get<OsrmOptions>()
+    ?? new OsrmOptions();
+osrmOptions.Validate();
+builder.Services.AddSingleton(osrmOptions);
+builder.Services.AddHttpClient<IOsrmRoutingService, OsrmRoutingService>(client =>
+    client.Timeout = TimeSpan.FromSeconds(osrmOptions.TimeoutSeconds));
 
 /* --- Secret'lar --------------------------------------------------------------
    Jwt:Key ve AdminSeed:Password hiçbir appsettings dosyasında TUTULMAZ.
@@ -188,6 +199,7 @@ builder.Services
 // CreatedBy audit alanının JWT'den okunabilmesi için.
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
+builder.Services.AddScoped<TransportActivityContext>();
 
 // Doğrulama/sıfırlama bağlantılarının işaret edeceği frontend adresi.
 var clientAppOptions = builder.Configuration.GetSection("ClientApp").Get<ClientAppOptions>()

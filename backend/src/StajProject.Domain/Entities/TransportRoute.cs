@@ -17,6 +17,9 @@ public class TransportRoute : IAuditableEntity
 
     public ICollection<TransportStop> Stops { get; set; } = [];
 
+    /// <summary>OSRM tarafından hesaplanan ve rotadan ayrı saklanan güncel yol geometrisi.</summary>
+    public TransportRoutePath? Path { get; set; }
+
     public bool IsActive { get; set; } = true;
 
     public bool IsDeleted { get; set; }

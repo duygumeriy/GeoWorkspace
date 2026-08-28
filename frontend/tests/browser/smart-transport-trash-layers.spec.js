@@ -31,13 +31,24 @@ test('trash understands deleted stop and route records', () => {
   expect(buildTrashView([stop, route], { type: 'transport-route' }).items).toEqual([route])
 })
 
-test('stop and route restore call the existing backend endpoints and refresh map/mine', async () => {
-  const [api, hook, page] = await Promise.all([source('../../src/services/transportApi.js'), source('../../src/hooks/useTrash.js'), source('../../src/pages/MapPage.jsx')])
+test('stop restore uses the shared regeneration workflow while route restore stays independent', async () => {
+  const [api, hook, page, workflow] = await Promise.all([
+    source('../../src/services/transportApi.js'),
+    source('../../src/hooks/useTrash.js'),
+    source('../../src/pages/MapPage.jsx'),
+    source('../../src/services/transportStopWorkflow.js'),
+  ])
   expect(api).toContain('`/api/transport/stops/${id}/restore`')
   expect(api).toContain('`/api/transport/routes/${id}/restore`')
-  expect(hook).toContain('restoreTransportStop(id)')
+  expect(hook).toContain('stopRestoreResult = await restoreStopThenMaybeGenerate({')
+  expect(hook).toContain('restore: () => restoreTransportStop(id)')
+  expect(hook).toContain('generatePath: canUpdateTransportRoute')
+  expect(hook).toContain('reloadTransport,')
   expect(hook).toContain('restoreTransportRoute(id)')
-  expect(page).toContain('onTransportRestored')
+  expect(workflow).toContain('export async function restoreStopThenMaybeGenerate({')
+  expect(page).toContain('reloadTransport: transport.refresh')
+  expect(page).toContain('canUpdateTransportRoute: allowed.canUpdateTransportRoute')
+  expect(page).toContain("type === 'transport-route' || result?.generationAttempted || result?.refreshError")
   expect(page).toContain('await myStops.reload()')
 })
 

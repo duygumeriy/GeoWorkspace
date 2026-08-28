@@ -254,15 +254,17 @@ test('a failed search does not retry automatically', () => {
 
 /* --- Bileşen sözleşmesi ------------------------------------------------------- */
 
-test('the search bar renders nothing without poi.view', () => {
-  /* İki kapı birden: bileşenin kendi koruması DURUYOR, ama Faz 5D'den beri
-     kutu zaten yalnızca yetki VE açıklık birlikte doğruyken monte ediliyor.
-     Yetkisiz bir kullanıcı için ne düğme ne kutu vardır. */
+test('the search bar renders only when at least one searchable type is permitted', () => {
+  /* Global arama POI, çizim ve ulaşımı kapsar. Bileşenin kendi kapısı sürer;
+     çağıran ise izinli tür listesinin boş olmamasını ve açıklığı birlikte arar. */
   assert.match(component, /if \(!enabled\) return null/)
-  assert.match(page, /\{allowed\.canViewPoi && poiSearchOpen && \(/)
+  assert.match(page, /\{globalSearchTypes\.length > 0 && poiSearchOpen && \(/)
 
   const trigger = page.slice(page.indexOf('search={{'), page.indexOf('onGoTurkey='))
-  assert.match(trigger, /permitted: allowed\.canViewPoi/)
+  assert.match(trigger, /permitted: globalSearchTypes\.length > 0/)
+  assert.match(page, /allowed\.canViewPoi \? \[\{ id: 'poi'/)
+  assert.match(page, /allowed\.canViewDrawings \? \[\{ id: 'drawing'/)
+  assert.match(page, /allowed\.canViewTransport/)
 })
 
 test('no role name or username decides visibility', () => {
@@ -293,14 +295,17 @@ test('arrow navigation wraps around the result list', () => {
   assert.match(component, /current <= 0 \? results\.length - 1 : current - 1/)
 })
 
-test('a result row shows the category icon and the category name', () => {
-  /* Simge çözümü ortak rozete taşındı: yönetim ağacı, "POI'lerim" ve arama
-     artık aynı bileşeni kullanıyor. Satırın taşıdığı BİLGİ değişmedi. */
+test('each result type has its own presentation and POI metadata remains POI-specific', () => {
+  assert.match(component, /result\.searchType === 'poi'/)
   assert.match(component, /<PoiCategoryBadge/)
   assert.match(component, /iconKey=\{result\.iconKey\}/)
   assert.match(component, /colorHex=\{result\.colorHex\}/)
   assert.match(component, /\{result\.name\}/)
-  assert.match(component, /\{result\.categoryName\}/)
+  assert.match(component, /result\.searchType === 'poi' \? result\.categoryName/)
+
+  assert.match(component, /result\.searchType === 'drawing' \? <Shapes/)
+  assert.match(component, /result\.searchType === 'stop' \? <BusFront/)
+  assert.match(component, /<Route size=\{17\}/)
 
   // Görünüm sözleşmesi aynı sınıftan gelmeye devam ediyor.
   assert.match(component, /className="poi-search-option-icon"/)
@@ -315,9 +320,10 @@ test('the clear button resets the query and the results', () => {
 })
 
 test('the empty and error states are distinct and non-destructive', () => {
-  assert.match(component, /POI bulunamadı\./)
+  assert.match(component, /selectedType\?\.label \?\? 'Kayıt'\} bulunamadı\./)
   assert.match(component, /poi-search-note-error/)
   assert.match(component, /role="alert"/)
+  assert.ok(!/setPoiLayerVisible/.test(component))
 })
 
 /* --- Harita entegrasyonu ------------------------------------------------------ */

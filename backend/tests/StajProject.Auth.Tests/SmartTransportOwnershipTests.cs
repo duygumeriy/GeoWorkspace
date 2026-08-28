@@ -84,6 +84,36 @@ public class SmartTransportOwnershipTests
     }
 
     [Fact]
+    public async Task Central_stop_read_returns_all_active_stops_in_one_set()
+    {
+        using var fixture = Fixture.Create(101);
+        var firstRoute = await fixture.RouteAsync("A");
+        var secondRoute = await fixture.RouteAsync("B");
+        var own = await fixture.AddStopAsync(firstRoute.Id, 101, "Benim");
+        var foreign = await fixture.AddStopAsync(secondRoute.Id, 202, "Ortak");
+        await fixture.AddStopAsync(firstRoute.Id, 101, "Silinmiş", 2, true);
+
+        var result = await fixture.Service.GetStopsAsync();
+
+        Assert.Equal([own.Id, foreign.Id], result.Value!.Select(stop => stop.Id).OrderBy(id => id));
+        Assert.All(result.Value!, stop => Assert.False(stop.IsDeleted));
+    }
+
+    [Fact]
+    public async Task Central_deleted_stop_read_is_not_limited_to_the_current_owner()
+    {
+        using var fixture = Fixture.Create(101);
+        var route = await fixture.RouteAsync();
+        var own = await fixture.AddStopAsync(route.Id, 101, "Benim", 1, true);
+        var foreign = await fixture.AddStopAsync(route.Id, 202, "Ortak", 2, true);
+
+        var result = await fixture.Service.GetDeletedStopsAsync();
+
+        Assert.Equal([own.Id, foreign.Id], result.Value!.Select(stop => stop.Id).OrderBy(id => id));
+        Assert.All(result.Value!, stop => Assert.True(stop.IsDeleted));
+    }
+
+    [Fact]
     public async Task Ownership_does_not_break_route_association()
     {
         using var fixture = Fixture.Create(101);
@@ -190,7 +220,7 @@ public class SmartTransportOwnershipTests
         {
             Db = db;
             Geography = geography;
-            Service = new TransportService(db, currentUser, geography);
+            Service = new TransportService(db, currentUser, geography, Substitute.For<IOsrmRoutingService>());
         }
 
         public AppDbContext Db { get; }

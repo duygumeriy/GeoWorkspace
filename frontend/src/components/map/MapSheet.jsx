@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useId, useRef } from 'react'
 import IconButton from '../ui/IconButton.jsx'
 import { CloseIcon } from '../ui/icons/index.js'
 import './MapSheet.css'
@@ -24,6 +24,7 @@ export default function MapSheet({
   tone = 'default',
 }) {
   const panelRef = useRef(null)
+  const generatedTitleId = useId()
 
   // Escape closes the panel wherever focus currently is.
   useEffect(() => {
@@ -41,7 +42,7 @@ export default function MapSheet({
 
   if (!open) return null
 
-  const titleId = labelledById ?? `map-sheet-${title}`
+  const titleId = labelledById ?? generatedTitleId
 
   return (
     <section

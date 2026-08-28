@@ -5,18 +5,35 @@ import './Transport.css'
 
 const MAX_NAME_LENGTH = 200
 
-export default function TransportStopForm({ open, point, routes, saving, error, onSave, onCancel }) {
+export default function TransportStopForm({
+  open,
+  point,
+  routes,
+  saving,
+  error,
+  canGenerateRoutePath,
+  onSave,
+  onCancel,
+}) {
   const [name, setName] = useState('')
   const [routeId, setRouteId] = useState(() => routes[0]?.id ?? '')
+  const [generatePath, setGeneratePath] = useState(false)
   if (!open || !point) return null
 
   const selectedRouteId = Number(routeId)
+  const selectedRoute = routes.find((route) => route.id === selectedRouteId)
+  const canGenerateSelectedRoute = canGenerateRoutePath && (selectedRoute?.stopCount ?? 0) + 1 >= 2
   const canSubmit = name.trim().length > 0 && routes.some((route) => route.id === selectedRouteId) && !saving
 
   const submit = (event) => {
     event.preventDefault()
     if (!canSubmit) return
-    onSave({ name: name.trim(), routeId: selectedRouteId, ...point })
+    onSave({
+      name: name.trim(),
+      routeId: selectedRouteId,
+      generatePath: generatePath && canGenerateSelectedRoute,
+      ...point,
+    })
   }
 
   return (
@@ -34,15 +51,33 @@ export default function TransportStopForm({ open, point, routes, saving, error, 
           />
         </label>
 
-        <label className="transport-field">
-          <span>Güzergah</span>
-          <select value={routeId} onChange={(event) => setRouteId(event.target.value)} disabled={saving || routes.length === 0}>
-            {routes.length === 0 && <option value="">Etkin güzergah bulunmuyor</option>}
-            {routes.map((route) => (
-              <option key={route.id} value={route.id}>{route.name}</option>
-            ))}
-          </select>
-        </label>
+        <fieldset className="transport-route-picker" disabled={saving || routes.length === 0}>
+          <legend>Güzergah</legend>
+          {routes.length === 0 && <p>Etkin güzergah bulunmuyor</p>}
+          {routes.map((route) => (
+            <label key={route.id} className={`transport-route-option ${route.id === selectedRouteId ? 'is-selected' : ''}`}>
+              <input type="radio" name="transport-route" value={route.id} checked={route.id === selectedRouteId} onChange={(event) => { setRouteId(event.target.value); setGeneratePath(false) }} />
+              <span className="transport-route-option-swatch" style={{ backgroundColor: route.colorHex }} aria-label={`Renk ${route.colorHex}`} />
+              <span className="transport-route-option-name">{route.name}</span>
+              <small>{route.stopCount ?? 0} durak</small>
+            </label>
+          ))}
+        </fieldset>
+
+        {canGenerateRoutePath && selectedRoute && (
+          <div className="transport-fast-route-option">
+            <label>
+              <input
+                type="checkbox"
+                checked={generatePath}
+                onChange={(event) => setGeneratePath(event.target.checked)}
+                disabled={saving || !canGenerateSelectedRoute}
+              />
+              <span>Durağı ekle ve rotayı hesapla</span>
+            </label>
+            {!canGenerateSelectedRoute && <small>Rota hesaplamak için ekleme sonrasında en az 2 durak olmalıdır.</small>}
+          </div>
+        )}
 
         <div className="transport-field transport-field--readonly">
           <span>Konum</span>

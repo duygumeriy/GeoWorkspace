@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { fetchAdminActivity, readApiError } from '../../services/api.js'
 import AdminPageHeader from '../../components/admin/AdminPageHeader.jsx'
 import { formatDateTime } from '../../map/datetime.js'
+import { transportActivityContext } from '../../map/transportActivityPresentation.js'
 import './ActivityPage.css'
 
 const PAGE_SIZE = 25
@@ -143,32 +144,36 @@ export default function ActivityPage() {
             </div>
           ) : (
             <ul className="admin-activity-rows">
-              {items.map((item) => (
-                <li key={item.id} className="admin-activity-row" data-action={item.action}>
-                  <span className="admin-user-date" data-label="Tarih">{formatDateTime(item.occurredAt)}</span>
-                  <span data-label="Kullanıcı">
-                    {/* Ad işlem ANINDAKİ hâliyle saklanır: kullanıcı sonradan
-                        silinse bile satır okunabilir kalır. */}
-                    {item.actorUsername || '—'}
-                  </span>
-                  <span data-label="İşlem">
-                    <strong>{item.actionName}</strong>
-                    <small className="admin-activity-code">{item.action}</small>
-                  </span>
-                  <span data-label="Kaynak">
-                    {item.resourceType
-                      ? `${RESOURCE_LABELS[item.resourceType] ?? item.resourceType}${item.resourceId ? ` #${item.resourceId}` : ''}`
-                      : '—'}
-                  </span>
-                  <span data-label="Sonuç">
-                    {/* Sonuç renge DEĞİL metne dayanır; renk yalnızca ona
-                        eşlik eder. */}
-                    <span className={`admin-badge ${item.isSuccess ? 'success' : 'danger'}`}>
-                      {item.isSuccess ? 'Başarılı' : `Başarısız · ${item.statusCode}`}
+              {items.map((item) => {
+                const transportContext = transportActivityContext(item.details)
+                return (
+                  <li key={item.id} className="admin-activity-row" data-action={item.action}>
+                    <span className="admin-user-date" data-label="Tarih">{formatDateTime(item.occurredAt)}</span>
+                    <span data-label="Kullanıcı">
+                      {/* Ad işlem ANINDAKİ hâliyle saklanır: kullanıcı sonradan
+                          silinse bile satır okunabilir kalır. */}
+                      {item.actorUsername || '—'}
                     </span>
-                  </span>
-                </li>
-              ))}
+                    <span data-label="İşlem">
+                      <strong>{item.actionName}</strong>
+                      <small className="admin-activity-code">{item.action}</small>
+                      {transportContext && <small className="admin-transport-activity-context">{transportContext}</small>}
+                    </span>
+                    <span data-label="Kaynak">
+                      {item.resourceType
+                        ? `${RESOURCE_LABELS[item.resourceType] ?? item.resourceType}${item.resourceId ? ` #${item.resourceId}` : ''}`
+                        : '—'}
+                    </span>
+                    <span data-label="Sonuç">
+                      {/* Sonuç renge DEĞİL metne dayanır; renk yalnızca ona
+                          eşlik eder. */}
+                      <span className={`admin-badge ${item.isSuccess ? 'success' : 'danger'}`}>
+                        {item.isSuccess ? 'Başarılı' : `Başarısız · ${item.statusCode}`}
+                      </span>
+                    </span>
+                  </li>
+                )
+              })}
             </ul>
           )}
         </div>

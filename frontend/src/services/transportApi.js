@@ -10,6 +10,26 @@ export function fetchTransportRouteStops(routeId) {
   return authFetch(`/api/transport/routes/${routeId}/stops`)
 }
 
+export function fetchTransportStops() {
+  return authFetch('/api/transport/stops')
+}
+
+export function fetchDeletedManagedTransportStops() {
+  return authFetch('/api/transport/stops/deleted')
+}
+
+export function fetchTransportRoutePath(routeId) {
+  return authFetch(`/api/transport/routes/${routeId}/path`)
+}
+
+export function fetchTransportRoutePaths() {
+  return authFetch('/api/transport/routes/paths')
+}
+
+export function generateTransportRoutePath(routeId) {
+  return authFetch(`/api/transport/routes/${routeId}/path/generate`, { method: 'POST' })
+}
+
 export function fetchOwnTransportStops() {
   return authFetch('/api/transport/stops/mine')
 }

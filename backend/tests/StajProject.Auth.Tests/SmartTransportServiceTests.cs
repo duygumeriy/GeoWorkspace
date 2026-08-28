@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using NetTopologySuite.Geometries;
 using NSubstitute;
 using StajProject.Application.Common;
+using StajProject.Application.Activity;
 using StajProject.Application.DTOs;
 using StajProject.Application.Geographic;
 using StajProject.Application.Interfaces;
@@ -111,6 +112,9 @@ public class SmartTransportServiceTests
         Assert.Equal("Yeni Ad", stored.Name);
         Assert.Equal(31, stored.Coordinate.X);
         Assert.Equal(41, stored.Coordinate.Y);
+        Assert.Equal(TransportActivityKind.StopCoordinateMove, fixture.Activity.Outcome?.Kind);
+        Assert.Equal(stop.Id, fixture.Activity.Outcome?.StopId);
+        Assert.True(fixture.Activity.Outcome?.CoordinateChanged is true);
     }
 
     [Fact]
@@ -139,6 +143,10 @@ public class SmartTransportServiceTests
         var transferred = await fixture.Db.TransportStops.SingleAsync(item => item.Id == moving.Id);
         Assert.Equal(destination.Id, transferred.RouteId);
         Assert.Equal(5, transferred.SequenceOrder);
+        Assert.Equal(TransportActivityKind.StopTransfer, fixture.Activity.Outcome?.Kind);
+        Assert.Equal(oldRoute.Id, fixture.Activity.Outcome?.SourceRouteId);
+        Assert.Equal(destination.Id, fixture.Activity.Outcome?.DestinationRouteId);
+        Assert.True(fixture.Activity.Outcome?.CoordinateChanged is false);
     }
 
     [Fact]
@@ -363,12 +371,14 @@ public class SmartTransportServiceTests
             Db = db;
             CurrentUser = currentUser;
             Geography = geography;
-            Service = new TransportService(db, currentUser, geography);
+            Activity = new TransportActivityContext();
+            Service = new TransportService(db, currentUser, geography, Substitute.For<IOsrmRoutingService>(), Activity);
         }
 
         public AppDbContext Db { get; }
         public ICurrentUserService CurrentUser { get; }
         public IGeographicAuthorizationService Geography { get; }
+        public TransportActivityContext Activity { get; }
         public TransportService Service { get; }
 
         public static Fixture Create()

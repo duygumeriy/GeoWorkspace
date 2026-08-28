@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
 import { buildMyStopView, MY_STOP_SORT_OPTIONS } from '../../src/map/myStopsFilters.js'
 import { createTransportLayers, transportFeatures } from '../../src/map/transport.js'
+import { persistStopThenMaybeGenerate } from '../../src/services/transportStopWorkflow.js'
 
 const source = (path) => readFile(new URL(path, import.meta.url), 'utf8')
 const STOPS = [
@@ -55,24 +56,95 @@ test('relocation owns one preview layer and cleans its exact map listener', asyn
 })
 
 test('save uses the existing PUT contract and failure retires relocation preview', async () => {
-  const [page, api] = await Promise.all([
+  const [page, api, workflow] = await Promise.all([
     source('../../src/pages/MapPage.jsx'),
     source('../../src/services/transportApi.js'),
+    source('../../src/services/transportStopWorkflow.js'),
   ])
-  expect(api).toContain("method: 'PUT'")
-  expect(api).toContain('JSON.stringify({ name, routeId, longitude, latitude })')
-  expect(page).toContain('await updateTransportStop(target.id, payload)')
-  expect(page).toContain('cancelTransportStopRelocation()')
-  expect(page).toContain("readApiError(response, 'Durak güncellenemedi.')")
-  expect(page).toContain('await transport.refresh()')
-  expect(page).toContain('await myStops.reload()')
+  const apiStart = api.indexOf('export function updateTransportStop')
+  expect(apiStart).toBeGreaterThanOrEqual(0)
+  const updateContract = api.slice(apiStart, api.indexOf('\n}', apiStart) + 2)
+  expect(updateContract).toContain('authFetch(`/api/transport/stops/${id}`')
+  expect(updateContract).toContain("method: 'PUT'")
+  expect(updateContract).toContain('JSON.stringify({ name, routeId, longitude, latitude })')
+
+  const saveStart = page.indexOf('const saveTransportStopEdit')
+  const saveFlow = page.slice(saveStart, page.indexOf('const requestTransportStopDelete', saveStart))
+  expect(saveStart).toBeGreaterThanOrEqual(0)
+  expect(saveFlow).toContain('const result = await persistStopThenMaybeGenerate({')
+  expect(saveFlow).toContain('save: () => updateTransportStop(target.id, payload)')
+  expect(saveFlow).toContain('routeId: payload.routeId')
+  expect(saveFlow).toContain('generatePath,')
+  expect(saveFlow).toContain('sourceRouteId: target.routeId')
+  expect(saveFlow).toContain('generateTransferredRoutes: allowed.canUpdateTransportRoute')
+  expect(saveFlow).toContain('reloadTransport: transport.refresh')
+  expect(saveFlow).toContain("saveFailureMessage: 'Durak güncellenemedi.'")
+  expect(saveFlow).toContain('if (!result.canonicalRefreshed || result.generationAttempted || result.refreshError)')
+  expect(saveFlow).toContain('result.affectedRouteOutcomes.filter((outcome) => outcome.attempted && !outcome.generated)')
+  expect(saveFlow).toContain('`${outcome.routeName}: ${outcome.error}`')
+  expect(saveFlow).toContain('Durak taşındı ancak bazı güzergâh rotaları yeniden hesaplanamadı.')
+  expect(saveFlow).toContain('Durak taşındı, etkilenen güzergâh rotaları yeniden hesaplandı.')
+  expect(saveFlow).toContain('Durak başka güzergaha taşındı.')
+
+  const workflowCall = saveFlow.indexOf('await persistStopThenMaybeGenerate({')
+  const transportRefresh = saveFlow.indexOf('await transport.refresh()')
+  const ownStopsRefresh = saveFlow.indexOf('await myStops.reload()')
+  const catchStart = saveFlow.indexOf('} catch (error) {')
+  const catchFlow = saveFlow.slice(catchStart, saveFlow.indexOf('} finally {', catchStart))
+  expect(transportRefresh).toBeGreaterThan(workflowCall)
+  expect(ownStopsRefresh).toBeGreaterThan(transportRefresh)
+  expect(catchFlow).toContain('cancelTransportStopRelocation()')
+  expect(catchFlow).toContain('setTransportStopEditVersion((value) => value + 1)')
+  expect(catchFlow).not.toContain('transport.refresh()')
+
+  expect(workflow).toContain('if (!response.ok) {')
+  expect(workflow).toContain('throw new Error(await readApiError(response, saveFailureMessage))')
+  const transferDecision = workflow.slice(
+    workflow.indexOf('const canonicalSourceRouteId'),
+    workflow.indexOf('if (!generatePath)', workflow.indexOf('const canonicalSourceRouteId')),
+  )
+  expect(transferDecision).toContain('canonicalSourceRouteId !== destinationRouteId')
+  expect(transferDecision).toContain('snapshot = await reloadTransport?.()')
+  expect(transferDecision).toContain('routeIds: [canonicalSourceRouteId, destinationRouteId]')
+  expect(transferDecision).toContain('permitted: generateTransferredRoutes')
+  expect(workflow).toContain('const uniqueRouteIds = [...new Set(')
+  let generations = 0
+  let saveError = null
+  try {
+    await persistStopThenMaybeGenerate({
+      save: async () => new Response(JSON.stringify({ message: 'Durak reddedildi.' }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+      routeId: 7,
+      generatePath: true,
+      generate: async () => {
+        generations += 1
+        return new Response(JSON.stringify({ routeId: 7 }), { status: 200 })
+      },
+      saveFailureMessage: 'Durak güncellenemedi.',
+    })
+  } catch (error) {
+    saveError = error
+  }
+  expect(saveError?.message).toBe('Durak reddedildi.')
+  expect(generations).toBe(0)
 })
 
-test('delete uses confirmation and leaves sequence compaction to the backend', async () => {
-  const page = await source('../../src/pages/MapPage.jsx')
+test('delete uses the shared regeneration workflow and leaves sequence compaction to the backend', async () => {
+  const [page, adminMap] = await Promise.all([
+    source('../../src/pages/MapPage.jsx'),
+    source('../../src/components/admin/TransportManagementMap.jsx'),
+  ])
   expect(page).toContain('pendingTransportStopDelete')
   expect(page).toContain('onConfirm={confirmTransportStopDelete}')
-  expect(page).toContain('await deleteTransportStop(stop.id)')
+  expect(page).toContain('await deleteStopThenMaybeGenerate({')
+  expect(page).toContain('remove: () => deleteTransportStop(stop.id)')
+  expect(page).toContain('generatePath: allowed.canUpdateTransportRoute')
+  expect(page).toContain('reloadTransport: transport.refresh')
+  expect(adminMap).toContain('remove: () => deleteTransportStop(selectedStop.id)')
+  expect(adminMap).toContain('generatePath: canUpdateRoute')
+  expect(adminMap).toContain('reloadTransport: refreshTransport')
   const start = page.indexOf('const confirmTransportStopDelete')
   const deleteFlow = page.slice(start, page.indexOf('useEffect(() =>', start))
   expect(deleteFlow).not.toContain('sequenceOrder')

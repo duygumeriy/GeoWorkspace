@@ -101,6 +101,7 @@ import useTransportStopPlacement from '../hooks/useTransportStopPlacement.js'
 import useTransportStopInteraction from '../hooks/useTransportStopInteraction.js'
 import useTransportStopRelocation from '../hooks/useTransportStopRelocation.js'
 import { createTransportStop, deleteTransportStop, updateTransportStop } from '../services/transportApi.js'
+import { deleteStopThenMaybeGenerate, persistStopThenMaybeGenerate } from '../services/transportStopWorkflow.js'
 import { DRAWING_TYPES, DRAWING_TYPE_LIST, colorPatchFor, normalizeTags } from '../map/drawingTypes.js'
 import { trashRecordOf } from '../map/trashFilters.js'
 import {
@@ -632,6 +633,7 @@ export default function MapPage() {
   const [pendingTransportStopDelete, setPendingTransportStopDelete] = useState(null)
   const [transportRoutesVisible, setTransportRoutesVisible] = useState(true)
   const [transportStopsVisible, setTransportStopsVisible] = useState(true)
+  const [hiddenTransportRouteIds, setHiddenTransportRouteIds] = useState(() => new Set())
   const transportStopSaveInFlight = useRef(false)
 
   const transport = useTransportLayer(mapInstance, {
@@ -640,8 +642,31 @@ export default function MapPage() {
     selectedRouteId: selectedTransportRouteId,
     routesVisible: transportRoutesVisible,
     stopsVisible: transportStopsVisible,
+    hiddenRouteIds: hiddenTransportRouteIds,
     showToast,
   })
+
+  const transportRouteOptions = useMemo(() => transport.activeRoutes.map((route) => ({
+    ...route,
+    stopCount: transport.stops.filter((stop) => stop.routeId === route.id && stop.isActive !== false).length,
+  })), [transport.activeRoutes, transport.stops])
+
+  const toggleTransportRoute = useCallback((routeId) => {
+    setHiddenTransportRouteIds((current) => {
+      const next = new Set(current)
+      if (next.has(routeId)) next.delete(routeId)
+      else next.add(routeId)
+      return next
+    })
+  }, [])
+
+  useEffect(() => {
+    const activeIds = new Set(transport.routes.map((route) => route.id))
+    setHiddenTransportRouteIds((current) => {
+      const next = new Set([...current].filter((routeId) => activeIds.has(routeId)))
+      return next.size === current.size ? current : next
+    })
+  }, [transport.routes])
 
   const myStops = useMyStops({
     active: mapContext.isActive(MAP_CONTEXTS.myStops),
@@ -689,22 +714,28 @@ export default function MapPage() {
     mapContext.close(MAP_CONTEXTS.transportStopCreate)
   }, [mapContext])
 
-  const saveTransportStop = useCallback(async (payload) => {
+  const saveTransportStop = useCallback(async ({ generatePath, ...payload }) => {
     if (transportStopSaveInFlight.current) return
     transportStopSaveInFlight.current = true
     setTransportStopSaving(true)
     setTransportStopError('')
     try {
-      const response = await createTransportStop(payload)
-      if (!response.ok) {
-        const message = await readApiError(response, 'Durak eklenemedi.')
-        if (response.status === 403) showToast('error', message)
-        throw new Error(message)
-      }
+      const result = await persistStopThenMaybeGenerate({
+        save: () => createTransportStop(payload),
+        routeId: payload.routeId,
+        generatePath,
+        saveFailureMessage: 'Durak eklenemedi.',
+      })
       await transport.refresh()
       await myStops.reload()
       closeTransportStopForm()
-      showToast('success', 'Durak başarıyla eklendi.')
+      if (result.generationError) {
+        showToast('error', `Durak eklendi ancak rota yeniden hesaplanamadı. ${result.generationError}`)
+      } else if (result.routeGenerated) {
+        showToast('success', 'Durak eklendi, rota hesaplandı ve harita güncellendi.')
+      } else {
+        showToast('success', 'Durak başarıyla eklendi.')
+      }
     } catch (error) {
       setTransportStopError(error.message || 'Durak eklenemedi.')
     } finally {
@@ -762,23 +793,50 @@ export default function MapPage() {
     mapContext.close(MAP_CONTEXTS.transportStopEdit)
   }, [mapContext])
 
-  const saveTransportStopEdit = useCallback(async (payload) => {
+  const saveTransportStopEdit = useCallback(async ({ generatePath, ...payload }) => {
     const target = transportStopEditing
     if (!target?.id || transportStopSaveInFlight.current) return
     transportStopSaveInFlight.current = true
     setTransportStopSaving(true)
     setTransportStopError('')
     try {
-      const response = await updateTransportStop(target.id, payload)
-      if (!response.ok) throw new Error(await readApiError(response, 'Durak güncellenemedi.'))
-      const updated = await response.json()
+      const result = await persistStopThenMaybeGenerate({
+        save: () => updateTransportStop(target.id, payload),
+        routeId: payload.routeId,
+        generatePath,
+        sourceRouteId: target.routeId,
+        generateTransferredRoutes: allowed.canUpdateTransportRoute,
+        reloadTransport: transport.refresh,
+        saveFailureMessage: 'Durak güncellenemedi.',
+      })
+      const updated = result.stop
       cancelTransportStopRelocation()
-      await transport.refresh()
+      if (!result.canonicalRefreshed || result.generationAttempted || result.refreshError) {
+        await transport.refresh()
+      }
       await myStops.reload()
       setSelectedTransportStop({ ...updated, colorHex: updated.colorHex || updated.routeColor })
       setTransportStopEditing(null)
       mapContext.activate(MAP_CONTEXTS.transportStopInfo)
-      showToast('success', 'Durak başarıyla güncellendi.')
+      if (result.transferred && result.refreshError) {
+        showToast('error', result.refreshError)
+      } else if (result.transferred) {
+        const failures = result.affectedRouteOutcomes.filter((outcome) => outcome.attempted && !outcome.generated)
+        if (failures.length > 0) {
+          const details = failures.map((outcome) => `${outcome.routeName}: ${outcome.error}`).join(' ')
+          showToast('error', `Durak taşındı ancak bazı güzergâh rotaları yeniden hesaplanamadı. ${details}`)
+        } else if (result.generationAttempted) {
+          showToast('success', 'Durak taşındı, etkilenen güzergâh rotaları yeniden hesaplandı.')
+        } else {
+          showToast('success', 'Durak başka güzergaha taşındı.')
+        }
+      } else if (result.generationError) {
+        showToast('error', `Durak güncellendi ancak rota yeniden hesaplanamadı. ${result.generationError}`)
+      } else if (result.routeGenerated) {
+        showToast('success', 'Durak güncellendi, rota hesaplandı ve harita yenilendi.')
+      } else {
+        showToast('success', 'Durak başarıyla güncellendi.')
+      }
     } catch (error) {
       cancelTransportStopRelocation()
       setTransportStopEditVersion((value) => value + 1)
@@ -788,7 +846,7 @@ export default function MapPage() {
       transportStopSaveInFlight.current = false
       setTransportStopSaving(false)
     }
-  }, [transportStopEditing, cancelTransportStopRelocation, transport, myStops, mapContext, showToast])
+  }, [transportStopEditing, cancelTransportStopRelocation, transport, myStops, mapContext, showToast, allowed.canUpdateTransportRoute])
 
   const requestTransportStopDelete = useCallback((stop) => {
     if (!stop?.id || !allowed.canDeleteTransportStop || transportStopBusyId != null) return
@@ -801,23 +859,35 @@ export default function MapPage() {
     if (!stop?.id || transportStopBusyId != null) return
     setTransportStopBusyId(stop.id)
     try {
-      const response = await deleteTransportStop(stop.id)
-      if (!response.ok) throw new Error(await readApiError(response, 'Durak silinemedi.'))
+      const result = await deleteStopThenMaybeGenerate({
+        remove: () => deleteTransportStop(stop.id),
+        routeId: stop.routeId,
+        generatePath: allowed.canUpdateTransportRoute,
+        reloadTransport: transport.refresh,
+      })
       myStops.remove(stop.id)
       if (selectedTransportStop?.id === stop.id) {
         setSelectedTransportStop(null)
         mapContext.close(MAP_CONTEXTS.transportStopInfo)
         mapContext.close(MAP_CONTEXTS.transportStopEdit)
       }
-      await transport.refresh()
+      if (result.generationAttempted) await transport.refresh()
       await myStops.reload()
-      showToast('success', 'Durak çöp kutusuna taşındı.')
+      if (result.refreshError) {
+        showToast('error', result.refreshError)
+      } else if (result.generationError) {
+        showToast('error', `Durak silindi ancak rota yeniden hesaplanamadı. ${result.generationError}`)
+      } else if (result.routeGenerated) {
+        showToast('success', 'Durak silindi, rota yeniden hesaplandı ve harita güncellendi.')
+      } else {
+        showToast('success', 'Durak çöp kutusuna taşındı.')
+      }
     } catch (error) {
       showToast('error', error?.message || 'Durak silinemedi.')
     } finally {
       setTransportStopBusyId(null)
     }
-  }, [pendingTransportStopDelete, transportStopBusyId, myStops, selectedTransportStop, mapContext, transport, showToast])
+  }, [pendingTransportStopDelete, transportStopBusyId, myStops, selectedTransportStop, mapContext, transport, showToast, allowed.canUpdateTransportRoute])
 
   useEffect(() => {
     if (allowed.canViewTransport) return
@@ -1713,6 +1783,8 @@ export default function MapPage() {
     includePois: allowed.canRestorePoi,
     includeTransportStops: allowed.canViewTransport && allowed.canRestoreTransportStop,
     includeTransportRoutes: allowed.canViewTransport && allowed.canRestoreTransportRoute,
+    reloadTransport: transport.refresh,
+    canUpdateTransportRoute: allowed.canUpdateTransportRoute,
     onPoiRestored: (restored) => {
       /* Geri yüklenen kayıt sunucudan kanonik hâliyle döner ve doğrudan
          haritaya konur; ikinci bir GET gereksizdir.
@@ -1724,8 +1796,10 @@ export default function MapPage() {
       if (restored) addPoiToLayer(restored)
       invalidatePoiPresentation()
     },
-    onTransportRestored: async () => {
-      await transport.refresh()
+    onTransportRestored: async (_restored, type, result) => {
+      if (type === 'transport-route' || result?.generationAttempted || result?.refreshError) {
+        await transport.refresh()
+      }
       await myStops.reload()
     },
   })
@@ -2781,13 +2855,12 @@ export default function MapPage() {
 
                 {/* Yığının en altındaki dördüncü denetim. Yalnızca bir
                     ANAHTARDIR: kutu kendi onaylanmış üst-orta konumunda açılır.
-                    Görünürlüğü YETKİDEN türer — `poi.view` yoksa ne düğme ne
-                    kutu vardır ve hiçbir istek açılmaz. */}
+                    Görünürlüğü izinli global arama türlerinden türer. */}
               </QuickActions>
 
-              {/* Arama kutusu yetkiden VE açıklıktan türer: `poi.view` yoksa
-                  ya da kutu kapalıysa hiç çizilmez ve hiçbir arama isteği
-                  açılmaz. Rol adına bakan kural yoktur.
+              {/* Arama kutusu yetkiden VE açıklıktan türer: izinli POI, çizim
+                  veya ulaşım türü yoksa ya da kutu kapalıysa hiç çizilmez ve
+                  hiçbir arama işi açılmaz. Rol adına bakan kural yoktur.
 
                   Koşullu monte etmek bilinçlidir: kapanış, bileşenin
                   SÖKÜLMESİDİR ve uçan isteğin iptali, açılır listenin
@@ -3046,8 +3119,16 @@ export default function MapPage() {
                   stopsVisible: transportStopsVisible,
                   routeCount: transport.routes.length,
                   stopCount: transport.stops.length,
+                  routes: transport.routes.map((route) => ({
+                    id: route.id,
+                    name: route.name,
+                    colorHex: route.colorHex,
+                    visible: !hiddenTransportRouteIds.has(route.id),
+                    isStale: transport.paths.find((path) => path.routeId === route.id)?.isStale === true,
+                  })),
                 }}
                 onToggleTransportRoutes={() => setTransportRoutesVisible((value) => !value)}
+                onToggleTransportRoute={toggleTransportRoute}
                 onToggleTransportStops={() => setTransportStopsVisible((value) => !value)}
                 /* Salt görselleştirme: katman kapatılabilir ama silinemez ve
                    başka bir kullanıcının alanını göstermez. */
@@ -3192,9 +3273,10 @@ export default function MapPage() {
                   && mapContext.isActive(MAP_CONTEXTS.transportStopCreate)
                 }
                 point={transportPlacement.pending}
-                routes={transport.activeRoutes}
+                routes={transportRouteOptions}
                 saving={transportStopSaving}
                 error={transportStopError}
+                canGenerateRoutePath={allowed.canUpdateTransportRoute}
                 onSave={saveTransportStop}
                 onCancel={closeTransportStopForm}
               />
@@ -3203,11 +3285,12 @@ export default function MapPage() {
                 key={transportStopEditing ? `transport-stop-edit-${transportStopEditing.id}-${transportStopEditVersion}` : 'transport-stop-edit'}
                 open={mapContext.isActive(MAP_CONTEXTS.transportStopEdit) && Boolean(transportStopEditing)}
                 stop={transportStopEditing}
-                routes={transport.activeRoutes}
+                routes={transportRouteOptions}
                 pendingPoint={transportRelocation.pending}
                 moving={workspaceMode.isRelocatingTransportStop}
                 saving={transportStopSaving}
                 error={transportStopError}
+                canGenerateRoutePath={allowed.canUpdateTransportRoute}
                 onStartMove={workspaceMode.startTransportStopRelocation}
                 onCancelMove={cancelTransportStopRelocation}
                 onSave={saveTransportStopEdit}

@@ -12,6 +12,7 @@ export default function TransportStopEditForm({
   moving,
   saving,
   error,
+  canGenerateRoutePath,
   onStartMove,
   onCancelMove,
   onSave,
@@ -21,6 +22,7 @@ export default function TransportStopEditForm({
   const [routeId, setRouteId] = useState(stop?.routeId != null ? String(stop.routeId) : '')
   const [longitude, setLongitude] = useState(stop?.longitude != null ? String(stop.longitude) : '')
   const [latitude, setLatitude] = useState(stop?.latitude != null ? String(stop.latitude) : '')
+  const [generatePath, setGeneratePath] = useState(false)
 
   useEffect(() => {
     if (!pendingPoint) return
@@ -44,6 +46,12 @@ export default function TransportStopEditForm({
   const longitudeValid = longitude.trim() !== '' && Number.isFinite(parsedLongitude) && parsedLongitude >= -180 && parsedLongitude <= 180
   const latitudeValid = latitude.trim() !== '' && Number.isFinite(parsedLatitude) && parsedLatitude >= -90 && parsedLatitude <= 90
   const routeValid = routes.some((route) => route.id === selectedRouteId)
+  const selectedRoute = routes.find((route) => route.id === selectedRouteId)
+  const coordinateChanged = parsedLongitude !== Number(stop.longitude) || parsedLatitude !== Number(stop.latitude)
+  const canGenerateSelectedRoute = canGenerateRoutePath
+    && selectedRouteId === stop.routeId
+    && coordinateChanged
+    && (selectedRoute?.stopCount ?? 0) >= 2
   const canSubmit = name.trim().length > 0 && routeValid && longitudeValid && latitudeValid && !saving
 
   const cancelMove = () => {
@@ -60,6 +68,7 @@ export default function TransportStopEditForm({
       routeId: selectedRouteId,
       longitude: parsedLongitude,
       latitude: parsedLatitude,
+      generatePath: generatePath && canGenerateSelectedRoute,
     })
   }
 
@@ -102,6 +111,12 @@ export default function TransportStopEditForm({
 
         {!longitudeValid && <p className="transport-validation" role="alert">Longitude -180 ile 180 arasında olmalıdır.</p>}
         {!latitudeValid && <p className="transport-validation" role="alert">Latitude -90 ile 90 arasında olmalıdır.</p>}
+        {canGenerateRoutePath && coordinateChanged && selectedRouteId === stop.routeId && (
+          <div className="transport-fast-route-option">
+            <label><input type="checkbox" checked={generatePath} onChange={(event) => setGeneratePath(event.target.checked)} disabled={saving || !canGenerateSelectedRoute} /> Konumu kaydet ve rotayı güncelle</label>
+            {!canGenerateSelectedRoute && <small>Rota hesaplamak için en az 2 etkin durak olmalıdır.</small>}
+          </div>
+        )}
         {error && <p className="transport-form-error" role="alert">{error}</p>}
 
         <div className="transport-form-actions">

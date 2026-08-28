@@ -26,8 +26,8 @@ export default function QuickActions({
   onFocusAll,
   /**
    * `{ permitted, open, onToggle, buttonRef }` — yoksa düğme hiç çizilmez.
-   * `permitted` çağırandan gelir (`poi.view`); burada rol adına bakan bir kural
-   * yoktur.
+   * `permitted`, çağıranın arayabildiği POI/çizim/ulaşım türlerinden en az
+   * birinin bulunmasından gelir; burada rol adına bakan bir kural yoktur.
    */
   search = null,
   children,
@@ -54,8 +54,8 @@ export default function QuickActions({
              seçicisinin `is-open` durumu zaten bu yığının "etkin" dilidir. */
           className={`quick-action poi-search-trigger ${search.open ? 'is-open' : ''}`}
           ref={search.buttonRef}
-          aria-label="POI Ara"
-          title="POI Ara"
+          aria-label="Haritada Ara"
+          title="Haritada Ara"
           aria-pressed={Boolean(search.open)}
           onClick={search.onToggle}
         >

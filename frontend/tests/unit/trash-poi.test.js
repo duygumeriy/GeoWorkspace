@@ -5,6 +5,7 @@ import {
   buildTrashView,
   trashRecordOf,
 } from '../../src/map/trashFilters.js'
+import { TYPE_FILTERS } from '../../src/map/drawingFilters.js'
 
 /* Çöp kutusu tek listedir: çizim girişleri `drawing`, POI girişleri `poi`
    taşır ve ikisi de aynı şekle sahiptir. */
@@ -41,11 +42,14 @@ test('search reads the record name whichever kind it is', () => {
   assert.equal(buildTrashView(ITEMS, { search: 'KALESI' }).items.length, 1)
 })
 
-test('POI is a fourth chip, not a drawing type', () => {
-  assert.deepEqual(
-    TRASH_TYPE_FILTERS.map((filter) => filter.id),
-    ['all', 'point', 'line', 'polygon', 'poi'],
-  )
+test('POI remains its own trash type alongside legitimate transport types', () => {
+  const trashTypes = TRASH_TYPE_FILTERS.map((filter) => filter.id)
+  const drawingTypes = TYPE_FILTERS.map((filter) => filter.id)
+
+  assert.equal(trashTypes.filter((id) => id === 'poi').length, 1)
+  assert.equal(drawingTypes.includes('poi'), false)
+  assert.equal(trashTypes.includes('transport-stop'), true)
+  assert.equal(trashTypes.includes('transport-route'), true)
 })
 
 test('ordering by deletion time treats both kinds alike', () => {

@@ -55,9 +55,9 @@ test('the trigger uses lucide-react, not a new icon library', () => {
 })
 
 test('the trigger reports its state to assistive technology', () => {
-  assert.match(quick, /aria-label="POI Ara"/)
+  assert.match(quick, /aria-label="Haritada Ara"/)
   assert.match(quick, /aria-pressed=\{Boolean\(search\.open\)\}/)
-  assert.match(quick, /title="POI Ara"/)
+  assert.match(quick, /title="Haritada Ara"/)
 })
 
 /* --- Açıklık ------------------------------------------------------------------- */
@@ -74,7 +74,7 @@ test('the toggle is a single owner, and clicking twice returns to closed', () =>
 })
 
 test('closed means NOT MOUNTED, so no request can exist while it is closed', () => {
-  assert.match(page, /\{allowed\.canViewPoi && poiSearchOpen && \(/)
+  assert.match(page, /\{globalSearchTypes\.length > 0 && poiSearchOpen && \(/)
 
   /* Kanca yalnızca monte olduğunda istek açar ve sökülürken uçanı iptal eder;
      kapalıyken çalışacak hiçbir kod yoktur. */
@@ -165,13 +165,17 @@ test('result navigation and selection still work', () => {
 
 /* --- Yetki ve katman ----------------------------------------------------------- */
 
-test('the trigger derives from poi.view alone', () => {
+test('the trigger derives from at least one permitted searchable type', () => {
   const trigger = between(page, 'search={{', 'onGoTurkey=')
+  const types = between(page, 'const globalSearchTypes', 'useEffect(() => {')
 
-  assert.match(trigger, /permitted: allowed\.canViewPoi/)
+  assert.match(trigger, /permitted: globalSearchTypes\.length > 0/)
+  assert.match(types, /allowed\.canViewPoi/)
+  assert.match(types, /allowed\.canViewDrawings/)
+  assert.match(types, /allowed\.canViewTransport/)
   assert.match(quick, /\{search\?\.permitted && \(/)
 
-  for (const source of [quick, trigger]) {
+  for (const source of [quick, trigger, types]) {
     assert.ok(!/Administrator|GIS Manager|'Viewer'|isAdmin|username/.test(source))
   }
 })
@@ -184,7 +188,7 @@ test('a hidden POI layer does NOT hide the search trigger', () => {
 })
 
 test('selecting a result never re-enables the hidden POI layer', () => {
-  const handler = between(page, 'const focusSearchResult', '[mapView, mapContext, findPoiOnLayer')
+  const handler = between(page, 'const focusSearchResult', 'const togglePoiLayer')
 
   assert.match(handler, /if \(!poiLayerVisible\) return/)
   assert.ok(!/setPoiLayerVisible/.test(handler))

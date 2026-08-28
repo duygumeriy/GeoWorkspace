@@ -50,6 +50,14 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
+.admin-transport-activity-context {
+  display: block;
+  margin-top: 0.3rem;
+  color: var(--text-secondary);
+  font-size: var(--font-small);
+  line-height: 1.4;
+}
+
 .admin-activity-pager {
   display: flex;
   flex-wrap: wrap;

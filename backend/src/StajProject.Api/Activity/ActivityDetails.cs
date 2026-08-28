@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using StajProject.Application.Activity;
 
 namespace StajProject.Api.Activity;
 
@@ -11,12 +12,13 @@ namespace StajProject.Api.Activity;
 /// <remarks>
 /// <para>
 /// <b>Buradaki kural bir söz değil, YAPISAL bir kısıttır:</b> istek
-/// gövdesinden hiçbir METİN ayrıntılara giremez. Gövdeden yalnızca
+/// gövdesinden hiçbir serbest METİN ayrıntılara giremez. Gövdeden yalnızca
 /// <c>enum</c> tipli alanlar okunur — <c>string</c>, <c>byte[]</c> ve benzeri
 /// serbest içerikli tipler tip düzeyinde elenir. Parolanın, token'ın, kurtarma
 /// kodunun ya da bir poligonun tüm WKT'sinin buraya sızabileceği bir yol
 /// yoktur; "şu alanı hariç tut" listesi tutulmadığı için yeni eklenen bir
-/// gövde alanı da bu kısıttan kaçamaz.
+/// gövde alanı da bu kısıttan kaçamaz. Transport sonuç özeti ayrı overload
+/// üzerinden yalnızca servis tarafından doğrulanmış iş bağlamını kabul eder.
 /// </para>
 /// <para>
 /// <b>Rota değerleri güvenlidir</b> ama yine de biçim denetiminden geçirilir:
@@ -69,6 +71,46 @@ public static class ActivityDetails
         }
 
         return details.Count == 0 ? null : JsonSerializer.Serialize(details, Json);
+    }
+
+    public static string Build(TransportActivityOutcome outcome)
+    {
+        var details = new SortedDictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["kind"] = outcome.Kind.ToString()
+        };
+
+        Add(details, "routeId", outcome.RouteId);
+        Add(details, "routeName", SafeName(outcome.RouteName));
+        Add(details, "stopId", outcome.StopId);
+        Add(details, "stopName", SafeName(outcome.StopName));
+        Add(details, "sourceRouteId", outcome.SourceRouteId);
+        Add(details, "sourceRouteName", SafeName(outcome.SourceRouteName));
+        Add(details, "destinationRouteId", outcome.DestinationRouteId);
+        Add(details, "destinationRouteName", SafeName(outcome.DestinationRouteName));
+        Add(details, "routeGenerated", outcome.RouteGenerated);
+        Add(details, "distanceMeters", outcome.DistanceMeters);
+        Add(details, "durationSeconds", outcome.DurationSeconds);
+        if (outcome.CoordinateChanged) details["coordinateChanged"] = true;
+        if (outcome.OrderedStopIds is { } ordered)
+        {
+            details["stopCount"] = ordered.Count;
+            details["orderedStopIds"] = ordered.Take(50).ToArray();
+        }
+
+        return JsonSerializer.Serialize(details, Json);
+    }
+
+    private static void Add(IDictionary<string, object?> details, string key, object? value)
+    {
+        if (value is not null) details[key] = value;
+    }
+
+    private static string? SafeName(string? value)
+    {
+        var trimmed = value?.Trim();
+        if (string.IsNullOrEmpty(trimmed)) return null;
+        return trimmed.Length <= 120 ? trimmed : trimmed[..120];
     }
 
     /// <summary>

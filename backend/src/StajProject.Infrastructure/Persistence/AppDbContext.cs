@@ -53,6 +53,8 @@ public class AppDbContext : IdentityDbContext<User, IdentityRole<int>, int>
 
     public DbSet<TransportStop> TransportStops => Set<TransportStop>();
 
+    public DbSet<TransportRoutePath> TransportRoutePaths => Set<TransportRoutePath>();
+
     /* --- Dinamik yetkilendirme ---------------------------------------------
        Yetki kataloğu ve grant tabloları. Identity'nin rol/kullanıcı tabloları
        ile aynı context'te durur: bir rolün yetkilendirilmesi ile o rolün

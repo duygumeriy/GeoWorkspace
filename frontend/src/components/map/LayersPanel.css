@@ -14,6 +14,15 @@
   gap: 0.45rem;
 }
 
+.layers-route-children { display: grid; gap: .3rem; margin: .4rem 0 .2rem; padding: 0 0 0 1rem; list-style: none; }
+.layers-route-child { display: flex; align-items: center; gap: .55rem; width: 100%; min-height: 40px; padding: .4rem .55rem; border: 1px solid transparent; border-radius: var(--radius-sm); background: transparent; color: var(--text-tertiary); font: inherit; text-align: left; cursor: pointer; }
+.layers-route-child:hover { border-color: var(--border-soft); background: var(--surface-soft); }
+.layers-route-child.is-on { color: var(--text-primary); }
+.layers-route-color { width: 10px; height: 10px; border-radius: 50%; flex: none; box-shadow: 0 0 0 1px var(--border-strong); }
+.layers-route-child:not(.is-on) .layers-route-color { opacity: .35; }
+.layers-route-name { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-small); }
+.layers-route-status { flex: none; color: var(--danger); font-size: 10px; }
+
 .layers-row {
   width: 100%;
   display: flex;

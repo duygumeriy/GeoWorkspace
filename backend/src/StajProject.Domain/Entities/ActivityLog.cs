@@ -80,8 +80,9 @@ public class ActivityLog
     public DateTime OccurredAt { get; set; }
 
     /// <summary>
-    /// İşleme dair ek bağlam (JSON). Yalnızca rota değerleri ve enum tipli
-    /// alanlar girer; istek gövdesinden hiçbir METİN buraya ulaşmaz.
+    /// İşleme dair ek bağlam (JSON). Genel kayıtlarda yalnızca rota değerleri
+    /// ve enum alanları; transport kayıtlarında ise servisin doğruladığı ad,
+    /// kimlik ve sonuç özeti girer. İstek gövdesinden serbest METİN okunmaz.
     /// </summary>
     public string? Details { get; set; }
 

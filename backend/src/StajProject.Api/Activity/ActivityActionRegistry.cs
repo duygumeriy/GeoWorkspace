@@ -118,6 +118,7 @@ public static class ActivityActionRegistry
             ["Transport.DeleteRoute"] = new(ActivityActionCatalog.TransportRouteDelete, TransportRoute, "id"),
             ["Transport.RestoreRoute"] = new(ActivityActionCatalog.TransportRouteRestore, TransportRoute, "id"),
             ["Transport.ReorderStops"] = new(ActivityActionCatalog.TransportRouteReorder, TransportRoute, "routeId"),
+            ["Transport.GenerateRoutePath"] = new(ActivityActionCatalog.TransportRouteGenerate, TransportRoute, "routeId"),
             ["Transport.CreateStop"] = new(ActivityActionCatalog.TransportStopCreate, TransportStop, null),
             ["Transport.UpdateStop"] = new(ActivityActionCatalog.TransportStopUpdate, TransportStop, "id"),
             ["Transport.DeleteStop"] = new(ActivityActionCatalog.TransportStopDelete, TransportStop, "id"),

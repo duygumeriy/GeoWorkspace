@@ -62,12 +62,37 @@ test('selection focuses the geographic coordinate and reuses the existing popup'
 test('selected stop highlight replaces the previous selection in the same layer', () => {
   let selected = 11
   const { stopLayer } = createTransportLayers(() => selected)
-  const features = transportFeatures([{ id: 1, name: 'Hat', colorHex: '#123456' }], [OWN, { ...OWN, id: 14 }]).stopFeatures
+  const features = transportFeatures([{ id: 1, name: 'Hat', colorHex: '#123456' }], [OWN, { ...OWN, id: 14, sequenceOrder: 2 }]).stopFeatures
   const style = stopLayer.getStyleFunction()
-  expect(style(features[0], 1)[0].getImage().getRadius()).toBe(11)
+
+  const stopStyleState = (feature) => {
+    const styles = style(feature, 1)
+    const base = styles.filter((item) => item.getText()?.getText() === String(feature.get('sequenceOrder')))
+    const halos = styles.filter((item) => item.getImage() && !item.getText())
+    return { base, halos }
+  }
+
+  expect(features.map((feature) => feature.get('terminal'))).toEqual(['start', 'end'])
+  let first = stopStyleState(features[0])
+  let second = stopStyleState(features[1])
+  expect(first.base).toHaveLength(1)
+  expect(second.base).toHaveLength(1)
+  expect(first.base[0].getImage()).toBeTruthy()
+  expect(second.base[0].getImage()).toBeTruthy()
+  expect(first.halos).toHaveLength(1)
+  expect(second.halos).toHaveLength(0)
+  expect(first.halos[0].getImage().getRadius()).toBeGreaterThan(first.base[0].getImage().getRadius())
+
   selected = 14
-  expect(style(features[0], 1)[0].getImage().getRadius()).toBe(9)
-  expect(style(features[1], 1)[0].getImage().getRadius()).toBe(11)
+  first = stopStyleState(features[0])
+  second = stopStyleState(features[1])
+  expect(first.base).toHaveLength(1)
+  expect(second.base).toHaveLength(1)
+  expect(first.base[0].getImage()).toBeTruthy()
+  expect(second.base[0].getImage()).toBeTruthy()
+  expect(first.halos).toHaveLength(0)
+  expect(second.halos).toHaveLength(1)
+  expect(second.halos[0].getImage().getRadius()).toBeGreaterThan(second.base[0].getImage().getRadius())
 })
 
 test('delete removes mine, refreshes transport, and leaves POI/Drawing/Location Analysis implementations isolated', async () => {

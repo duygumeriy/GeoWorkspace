@@ -65,10 +65,15 @@ test('the row appears only for a caller holding poi.view, and by permission alon
   }
 })
 
-test('without poi.view nothing POI-related is even constructed', () => {
-  // Faz 4 davranışı korunur: yetki yoksa raster kurulmaz, uç çağrılmaz.
-  assert.match(page, /permitted: allowed\.canViewPoi && poiLayerVisible/)
-  assert.match(page, /permitted: allowed\.canViewPoi,/)
+test('without poi.view no POI data or presentation request is authorized', () => {
+  /* Vektör katman nesnesinin haritaya bir kez bağlanması bir yetki kararı
+     değildir; veri yükleme ve raster kurulumu `permitted` kapılarındadır. */
+  const vector = between(page, 'const poi = usePoiLayer', 'const {')
+  const raster = between(page, 'usePoiPresentationLayer(mapInstance, {', '})')
+
+  assert.match(vector, /permitted: allowed\.canViewPoi/)
+  assert.match(raster, /permitted: allowed\.canViewPoi && normalPoiLayerVisible/)
+  assert.match(hook, /if \(!permitted\) return/)
 })
 
 /* --- Varsayılan ---------------------------------------------------------------- */
@@ -84,16 +89,18 @@ test('the POI layer starts visible', () => {
 test('turning it off hides the real layers, not just their style', () => {
   /* Saydam bir stil POI'yi görünmez ama TIKLANABİLİR bırakırdı. */
   assert.match(hook, /layerRef\.current\?\.setVisible\(visible\)/)
-  assert.match(page, /visible: poiLayerVisible/)
+  assert.match(page, /const normalPoiLayerVisible = poiLayerVisible && !locationAnalysisResultActive/)
+  assert.match(page, /visible: normalPoiLayerVisible/)
 
   // WMS rasteri de aynı anahtardan geçer.
-  assert.match(page, /permitted: allowed\.canViewPoi && poiLayerVisible/)
+  assert.match(page, /permitted: allowed\.canViewPoi && normalPoiLayerVisible/)
 })
 
 test('turning it off stops POI hit detection', () => {
-  const gate = between(page, 'const poiClickEnabled', '/**')
+  const gate = between(page, 'const poiClickEnabled', 'const handlePoiSelected')
 
-  assert.match(gate, /poiLayerVisible/)
+  assert.match(gate, /allowed\.canViewPoi/)
+  assert.match(gate, /normalPoiLayerVisible/)
 })
 
 test('no presentation request is issued while the layer is hidden', () => {
@@ -179,7 +186,7 @@ test('the POI switch touches nothing else on the map', () => {
 
 test('search never re-enables a layer the user hid', () => {
   /* Görünürlük açık bir tercihtir; arama onu sessizce geri almaz. */
-  const handler = between(page, 'const focusSearchResult', '[mapView, mapContext, findPoiOnLayer')
+  const handler = between(page, 'const focusSearchResult', 'const togglePoiLayer')
 
   assert.match(handler, /if \(!poiLayerVisible\) return/)
   assert.ok(!/setPoiLayerVisible/.test(handler))

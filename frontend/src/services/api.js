@@ -1,6 +1,6 @@
 import { DRAWING_TYPES, drawingItemPath } from '../map/drawingTypes.js'
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5154'
+const API_BASE_URL = import.meta.env?.VITE_API_BASE_URL ?? 'http://localhost:5154'
 
 let unauthorizedHandler = null
 let connectionHandler = null

@@ -76,6 +76,15 @@ appsettings.*.Local.json
 # Development e-mail sink: contains confirmation and password-reset TOKENS.
 dev-emails/
 
+# Local OSRM configuration, map extracts, and generated multi-gigabyte routing artifacts.
+tools/osrm/.env
+tools/osrm/**/*.osm.pbf
+tools/osrm/**/*.osrm
+tools/osrm/**/*.osrm.*
+!tools/osrm/docker-compose.osrm.yml
+tools/osrm/data/*
+!tools/osrm/data/.gitignore
+
 # --- Project-local references and report outputs (not application source) ---
 # Kept on disk, excluded from source control.
 StajProject-UI-References/

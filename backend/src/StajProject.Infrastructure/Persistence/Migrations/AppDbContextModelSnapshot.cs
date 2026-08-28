@@ -963,6 +963,70 @@ namespace StajProject.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("StajProject.Domain.Entities.TransportRoutePath", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<double>("DistanceMeters")
+                        .HasColumnType("double precision")
+                        .HasColumnName("distance_meters");
+
+                    b.Property<double>("DurationSeconds")
+                        .HasColumnType("double precision")
+                        .HasColumnName("duration_seconds");
+
+                    b.Property<DateTime>("GeneratedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("generated_at");
+
+                    b.Property<LineString>("Geometry")
+                        .IsRequired()
+                        .HasColumnType("geometry(LineString,4326)")
+                        .HasColumnName("geometry");
+
+                    b.Property<bool>("IsStale")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_stale");
+
+                    b.Property<string>("LastFailureReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("last_failure_reason");
+
+                    b.Property<DateTime>("ModifiedDate")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("modified_date");
+
+                    b.Property<string>("Profile")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("profile");
+
+                    b.Property<int>("RouteId")
+                        .HasColumnType("integer")
+                        .HasColumnName("route_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RouteId")
+                        .IsUnique();
+
+                    b.ToTable("transport_route_path", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_transport_route_path_distance_nonnegative", "distance_meters >= 0");
+
+                            t.HasCheckConstraint("ck_transport_route_path_duration_nonnegative", "duration_seconds >= 0");
+                        });
+                });
+
             modelBuilder.Entity("StajProject.Domain.Entities.TransportStop", b =>
                 {
                     b.Property<int>("Id")
@@ -1369,6 +1433,17 @@ namespace StajProject.Infrastructure.Persistence.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("StajProject.Domain.Entities.TransportRoutePath", b =>
+                {
+                    b.HasOne("StajProject.Domain.Entities.TransportRoute", "Route")
+                        .WithOne("Path")
+                        .HasForeignKey("StajProject.Domain.Entities.TransportRoutePath", "RouteId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Route");
+                });
+
             modelBuilder.Entity("StajProject.Domain.Entities.User", b =>
                 {
                     b.HasOne("StajProject.Domain.Entities.User", null)
@@ -1408,6 +1483,8 @@ namespace StajProject.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("StajProject.Domain.Entities.TransportRoute", b =>
                 {
+                    b.Navigation("Path");
+
                     b.Navigation("Stops");
                 });
 #pragma warning restore 612, 618

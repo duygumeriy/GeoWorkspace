@@ -32,10 +32,35 @@ public sealed class TransportController : ApiControllerBase
     public Task<ActionResult<TransportRouteResponse>> GetRoute(int id, CancellationToken cancellationToken) =>
         Guard(nameof(GetRoute), async () => Respond(await _transport.GetRouteAsync(id, cancellationToken)));
 
+    [HttpGet("routes/paths")]
+    [RequirePermission(PermissionCodes.TransportView)]
+    public Task<ActionResult<IReadOnlyList<TransportRouteMapPathResponse>>> GetRoutePaths(CancellationToken cancellationToken) =>
+        Guard(nameof(GetRoutePaths), async () => Respond(await _transport.GetRoutePathsAsync(cancellationToken)));
+
+    [HttpGet("routes/{routeId:int}/path")]
+    [RequirePermission(PermissionCodes.TransportView)]
+    public Task<ActionResult<TransportRoutePathResponse>> GetRoutePath(int routeId, CancellationToken cancellationToken) =>
+        Guard(nameof(GetRoutePath), async () => Respond(await _transport.GetRoutePathAsync(routeId, cancellationToken)));
+
+    [HttpPost("routes/{routeId:int}/path/generate")]
+    [RequirePermission(PermissionCodes.TransportRouteUpdate)]
+    public Task<ActionResult<TransportRoutePathResponse>> GenerateRoutePath(int routeId, CancellationToken cancellationToken) =>
+        Guard(nameof(GenerateRoutePath), async () => Respond(await _transport.GenerateRoutePathAsync(routeId, cancellationToken)));
+
     [HttpGet("routes/{id:int}/stops")]
     [RequirePermission(PermissionCodes.TransportView)]
     public Task<ActionResult<IReadOnlyList<TransportStopResponse>>> GetRouteStops(int id, CancellationToken cancellationToken) =>
         Guard(nameof(GetRouteStops), async () => Respond(await _transport.GetRouteStopsAsync(id, cancellationToken)));
+
+    [HttpGet("stops")]
+    [RequirePermission(PermissionCodes.TransportView)]
+    public Task<ActionResult<IReadOnlyList<TransportStopResponse>>> GetStops(CancellationToken cancellationToken) =>
+        Guard(nameof(GetStops), async () => Respond(await _transport.GetStopsAsync(cancellationToken)));
+
+    [HttpGet("stops/deleted")]
+    [RequirePermission(PermissionCodes.TransportStopRestore)]
+    public Task<ActionResult<IReadOnlyList<TransportStopResponse>>> GetDeletedStops(CancellationToken cancellationToken) =>
+        Guard(nameof(GetDeletedStops), async () => Respond(await _transport.GetDeletedStopsAsync(cancellationToken)));
 
     [HttpGet("stops/mine")]
     [RequirePermission(PermissionCodes.TransportView)]
@@ -133,6 +158,8 @@ public sealed class TransportController : ApiControllerBase
             ServiceErrorKind.NotFound => StatusCodes.Status404NotFound,
             ServiceErrorKind.Forbidden => StatusCodes.Status403Forbidden,
             ServiceErrorKind.Conflict => StatusCodes.Status409Conflict,
+            ServiceErrorKind.Upstream => StatusCodes.Status502BadGateway,
+            ServiceErrorKind.Timeout => StatusCodes.Status504GatewayTimeout,
             _ => StatusCodes.Status400BadRequest
         };
 

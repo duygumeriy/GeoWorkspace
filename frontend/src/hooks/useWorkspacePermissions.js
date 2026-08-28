@@ -110,6 +110,7 @@ export default function useWorkspacePermissions(workspaceMode) {
   const canDeleteTransportStop = can(PERMISSIONS.TRANSPORT_STOP_DELETE)
   const canRestoreTransportStop = can(PERMISSIONS.TRANSPORT_STOP_RESTORE)
   const canRestoreTransportRoute = can(PERMISSIONS.TRANSPORT_ROUTE_RESTORE)
+  const canUpdateTransportRoute = can(PERMISSIONS.TRANSPORT_ROUTE_UPDATE)
 
   /* Düzenleme/silme YETENEĞİ ile bir KAYITTA yetki farklı sorulardır.
      Buradaki değerler yalnızca ilkini yanıtlar — "bu kişi hiç POI
@@ -278,6 +279,7 @@ export default function useWorkspacePermissions(workspaceMode) {
     canDeleteTransportStop,
     canRestoreTransportStop,
     canRestoreTransportRoute,
+    canUpdateTransportRoute,
     selectDrawTool: guardedSelectDrawTool,
     setDrawTool: guardedSetDrawTool,
     selectMeasureTool: guardedSelectMeasureTool,

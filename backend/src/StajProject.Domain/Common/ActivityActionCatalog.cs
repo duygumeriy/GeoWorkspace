@@ -77,10 +77,13 @@ public static class ActivityActionCatalog
     public const string TransportRouteDelete = "transport.route.delete";
     public const string TransportRouteRestore = "transport.route.restore";
     public const string TransportRouteReorder = "transport.route.reorder";
+    public const string TransportRouteGenerate = "transport.route.generate";
     public const string TransportStopCreate = "transport.stop.create";
     public const string TransportStopUpdate = "transport.stop.update";
     public const string TransportStopDelete = "transport.stop.delete";
     public const string TransportStopRestore = "transport.stop.restore";
+    public const string TransportStopTransfer = "transport.stop.transfer";
+    public const string TransportStopCoordinateMove = "transport.stop.coordinate_move";
 
     /// <summary>Kanonik katalog.</summary>
     public static readonly IReadOnlyList<Definition> All =
@@ -123,10 +126,13 @@ public static class ActivityActionCatalog
         new(TransportRouteDelete, "Güzergah silindi"),
         new(TransportRouteRestore, "Güzergah geri yüklendi"),
         new(TransportRouteReorder, "Durak sırası güncellendi"),
+        new(TransportRouteGenerate, "Güzergah rota hesaplama işlemi"),
         new(TransportStopCreate, "Durak oluşturuldu"),
         new(TransportStopUpdate, "Durak güncellendi"),
         new(TransportStopDelete, "Durak silindi"),
-        new(TransportStopRestore, "Durak geri yüklendi")
+        new(TransportStopRestore, "Durak geri yüklendi"),
+        new(TransportStopTransfer, "Durak başka güzergaha taşındı"),
+        new(TransportStopCoordinateMove, "Durak konumu güncellendi")
     ];
 
     private static readonly IReadOnlyDictionary<string, string> Names =

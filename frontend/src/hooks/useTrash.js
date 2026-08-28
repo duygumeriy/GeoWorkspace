@@ -12,6 +12,7 @@ import {
   restoreTransportRoute,
   restoreTransportStop,
 } from '../services/transportApi.js'
+import { restoreStopThenMaybeGenerate } from '../services/transportStopWorkflow.js'
 
 /**
  * Owns the "Çöp Kutusu" data: the caller's soft-deleted records — drawings AND
@@ -98,6 +99,8 @@ export default function useTrash({
   /** Geri yüklenen POI'yi haritaya geri koyar. */
   onPoiRestored = null,
   onTransportRestored = null,
+  reloadTransport = null,
+  canUpdateTransportRoute = false,
 }) {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(false)
@@ -200,19 +203,32 @@ export default function useTrash({
            taşır. */
         const isTransportStop = type === 'transport-stop'
         const isTransportRoute = type === 'transport-route'
-        const res = isPoi
-          ? await restorePoi(id)
-          : isTransportStop
-            ? await restoreTransportStop(id)
+        let stopRestoreResult = null
+        const res = isTransportStop
+          ? null
+          : isPoi
+            ? await restorePoi(id)
             : isTransportRoute
               ? await restoreTransportRoute(id)
               : await restoreDrawings([{ type, id }])
-        if (!res.ok) throw new Error(await readApiError(res, 'Kayıt geri yüklenemedi'))
+        if (isTransportStop) {
+          stopRestoreResult = await restoreStopThenMaybeGenerate({
+            restore: () => restoreTransportStop(id),
+            generatePath: canUpdateTransportRoute,
+            reloadTransport,
+          })
+        } else if (!res.ok) {
+          throw new Error(await readApiError(res, 'Kayıt geri yüklenemedi'))
+        }
 
         /* POI geri yükleme kaydın kanonik hâlini döndürür ve o hâl doğrudan
            haritaya konur; ikinci bir GET, az önce okunanı yeniden indirmek
            olurdu. */
-        const restored = isPoi || isTransportStop || isTransportRoute ? await res.json() : null
+        const restored = isTransportStop
+          ? stopRestoreResult.stop
+          : isPoi || isTransportRoute
+            ? await res.json()
+            : null
 
         setItems((current) =>
           current.filter((entry) => !(entry.type === type && (entry.drawing ?? entry.poi ?? entry.stop ?? entry.route)?.id === id)),
@@ -220,10 +236,18 @@ export default function useTrash({
 
         // Haritanın öbür yarısı: kaydın oradan da geri gelmesi gerekir.
         if (isPoi) await onPoiRestored?.(restored)
-        else if (isTransportStop || isTransportRoute) await onTransportRestored?.(restored, type)
+        else if (isTransportStop || isTransportRoute) await onTransportRestored?.(restored, type, stopRestoreResult)
         else await onRestored?.()
 
-        showToast('success', isPoi ? 'POI geri yüklendi.' : isTransportStop ? 'Durak geri yüklendi.' : isTransportRoute ? 'Güzergah geri yüklendi.' : 'Çizim geri yüklendi.')
+        if (stopRestoreResult?.refreshError) {
+          showToast('error', stopRestoreResult.refreshError)
+        } else if (stopRestoreResult?.generationError) {
+          showToast('error', `Durak geri yüklendi ancak rota yeniden hesaplanamadı. ${stopRestoreResult.generationError}`)
+        } else if (stopRestoreResult?.routeGenerated) {
+          showToast('success', 'Durak geri yüklendi, rota yeniden hesaplandı ve harita güncellendi.')
+        } else {
+          showToast('success', isPoi ? 'POI geri yüklendi.' : isTransportStop ? 'Durak geri yüklendi.' : isTransportRoute ? 'Güzergah geri yüklendi.' : 'Çizim geri yüklendi.')
+        }
         return true
       } catch (restoreError) {
         showToast('error', restoreError?.message || 'Kayıt geri yüklenemedi.')
@@ -232,7 +256,7 @@ export default function useTrash({
         setRestoringKey(null)
       }
     },
-    [onRestored, onPoiRestored, onTransportRestored, showToast],
+    [onRestored, onPoiRestored, onTransportRestored, reloadTransport, canUpdateTransportRoute, showToast],
   )
 
   return { items, loading, error, restoringKey, reload: load, restore }

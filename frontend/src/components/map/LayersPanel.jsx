@@ -42,6 +42,7 @@ export default function LayersPanel({
   onTogglePoi,
   transport = null,
   onToggleTransportRoutes,
+  onToggleTransportRoute,
   onToggleTransportStops,
   scope = null,
   onToggleScope,
@@ -128,6 +129,26 @@ export default function LayersPanel({
               <span className="layers-row-state">{isOn ? 'AÇIK' : 'KAPALI'}</span>
               <span className="layers-switch" aria-hidden="true"><span className="layers-switch-knob" /></span>
             </button>
+            {id === 'routes' && transport.routes?.length > 0 && (
+              <ul className="layers-route-children" aria-label="Güzergah görünürlüğü">
+                {transport.routes.map((route) => (
+                  <li key={route.id}>
+                    <button
+                      type="button"
+                      className={`layers-route-child ${route.visible ? 'is-on' : ''}`}
+                      aria-pressed={route.visible}
+                      aria-label={`${route.name} güzergahını ${route.visible ? 'gizle' : 'göster'}`}
+                      onClick={() => onToggleTransportRoute?.(route.id)}
+                    >
+                      <span className="layers-route-color" style={{ backgroundColor: route.colorHex }} aria-hidden="true" />
+                      <span className="layers-route-name">{route.name}</span>
+                      {route.isStale && <span className="layers-route-status">Güncel değil</span>}
+                      <span className="layers-row-state">{route.visible ? 'AÇIK' : 'KAPALI'}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </li>)}
         </ul>
       </>}

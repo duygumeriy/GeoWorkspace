@@ -22,9 +22,11 @@ using StajProject.Api.Authorization;
 using StajProject.Api.Controllers;
 using StajProject.Api.Services;
 using StajProject.Application.Common;
+using StajProject.Application.Activity;
 using StajProject.Application.DTOs;
 using StajProject.Application.Interfaces;
 using StajProject.Application.Options;
+using StajProject.Application.Routing;
 using StajProject.Domain.Common;
 using StajProject.Domain.Entities;
 using StajProject.Infrastructure.Authentication;
@@ -105,6 +107,7 @@ public class ActivityHistoryTests
     [InlineData("DeleteRoute", ActivityActionCatalog.TransportRouteDelete, "transport_route", "id")]
     [InlineData("RestoreRoute", ActivityActionCatalog.TransportRouteRestore, "transport_route", "id")]
     [InlineData("ReorderStops", ActivityActionCatalog.TransportRouteReorder, "transport_route", "routeId")]
+    [InlineData("GenerateRoutePath", ActivityActionCatalog.TransportRouteGenerate, "transport_route", "routeId")]
     [InlineData("CreateStop", ActivityActionCatalog.TransportStopCreate, "transport_stop", null)]
     [InlineData("UpdateStop", ActivityActionCatalog.TransportStopUpdate, "transport_stop", "id")]
     [InlineData("DeleteStop", ActivityActionCatalog.TransportStopDelete, "transport_stop", "id")]
@@ -127,6 +130,8 @@ public class ActivityHistoryTests
     [InlineData("GetRoutes")]
     [InlineData("GetRoute")]
     [InlineData("GetRouteStops")]
+    [InlineData("GetStops")]
+    [InlineData("GetDeletedStops")]
     [InlineData("GetOwnStops")]
     [InlineData("GetRouteTrash")]
     [InlineData("GetStopTrash")]
@@ -248,9 +253,11 @@ public class ActivityHistoryTests
         await client.PutAsJsonAsync("/api/transport/routes/12", new UpdateTransportRouteRequest { Name = "Hat 2", ColorHex = "#6D4AFF" });
         await client.DeleteAsync("/api/transport/routes/12");
         await client.PostAsync("/api/transport/routes/12/restore", null);
+        await client.PostAsync("/api/transport/routes/12/path/generate", null);
         await client.PutAsJsonAsync("/api/transport/routes/12/stops/order", new ReorderTransportStopsRequest { StopIds = [37] });
         await client.PostAsJsonAsync("/api/transport/stops", new CreateTransportStopRequest { Name = "Durak", RouteId = 12, Longitude = 32.85, Latitude = 39.93 });
         await client.PutAsJsonAsync("/api/transport/stops/37", new UpdateTransportStopRequest { Name = "Durak 2", RouteId = 12, Longitude = 32.86, Latitude = 39.94 });
+        await client.PutAsJsonAsync("/api/transport/stops/38", new UpdateTransportStopRequest { Name = "Aktarma", RouteId = 13, Longitude = 32.85, Latitude = 39.93 });
         await client.DeleteAsync("/api/transport/stops/37");
         await client.PostAsync("/api/transport/stops/37/restore", null);
 
@@ -260,16 +267,26 @@ public class ActivityHistoryTests
             ActivityActionCatalog.TransportRouteUpdate,
             ActivityActionCatalog.TransportRouteDelete,
             ActivityActionCatalog.TransportRouteRestore,
+            ActivityActionCatalog.TransportRouteGenerate,
             ActivityActionCatalog.TransportRouteReorder,
             ActivityActionCatalog.TransportStopCreate,
-            ActivityActionCatalog.TransportStopUpdate,
+            ActivityActionCatalog.TransportStopCoordinateMove,
+            ActivityActionCatalog.TransportStopTransfer,
             ActivityActionCatalog.TransportStopDelete,
             ActivityActionCatalog.TransportStopRestore
         ], logs.Select(log => log.Action));
         Assert.All(logs, log => Assert.Equal(actor.Id, log.ActorUserId));
         Assert.All(logs, log => Assert.InRange(log.StatusCode, 200, 299));
         Assert.Equal("12", logs.Single(log => log.Action == ActivityActionCatalog.TransportRouteReorder).ResourceId);
-        Assert.Equal("37", logs.Single(log => log.Action == ActivityActionCatalog.TransportStopUpdate).ResourceId);
+        Assert.Equal("37", logs.Single(log => log.Action == ActivityActionCatalog.TransportStopCoordinateMove).ResourceId);
+        Assert.Equal("38", logs.Single(log => log.Action == ActivityActionCatalog.TransportStopTransfer).ResourceId);
+        Assert.Contains("orderedStopIds", logs.Single(log => log.Action == ActivityActionCatalog.TransportRouteReorder).Details);
+        Assert.Contains("distanceMeters", logs.Single(log => log.Action == ActivityActionCatalog.TransportRouteGenerate).Details);
+        var transferDetails = logs.Single(log => log.Action == ActivityActionCatalog.TransportStopTransfer).Details ?? string.Empty;
+        Assert.Contains("sourceRouteId", transferDetails);
+        Assert.Contains("destinationRouteId", transferDetails);
+        Assert.DoesNotContain("longitude", transferDetails, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("latitude", transferDetails, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -285,6 +302,22 @@ public class ActivityHistoryTests
         await client.GetAsync("/api/transport/stops/mine");
 
         Assert.Empty(await host.LogsAsync());
+    }
+
+    [Fact]
+    public async Task Failed_route_generation_is_recorded_as_failure_without_a_misleading_success_outcome()
+    {
+        await using var host = await StartAsync();
+        var actor = await host.CreateActorAsync("route-generator", [PermissionCodes.TransportRouteUpdate]);
+
+        var response = await host.Client(actor).PostAsync("/api/transport/routes/999/path/generate", null);
+
+        Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
+        var entry = Assert.Single(await host.LogsAsync());
+        Assert.Equal(ActivityActionCatalog.TransportRouteGenerate, entry.Action);
+        Assert.Equal(502, entry.StatusCode);
+        Assert.Contains("\"routeGenerated\":false", entry.Details);
+        Assert.DoesNotContain("localhost", entry.Details ?? string.Empty);
     }
 
     [Fact]
@@ -561,13 +594,15 @@ public class ActivityHistoryTests
                 services.AddSingleton(new ClientAppOptions { BaseUrl = "https://client.example.invalid" });
                 services.AddSingleton(Substitute.For<IEmailSender>());
                 services.AddScoped<ICurrentUserService, CurrentUserService>();
+                services.AddScoped<TransportActivityContext>();
 
                 services.AddScoped<IEffectivePermissionService, EffectivePermissionService>();
                 services.AddScoped<IGeographicAuthorizationService, GeographicAuthorizationService>();
                 services.AddScoped<IRoleManagementService, RoleManagementService>();
                 services.AddScoped<IUserManagementService, UserManagementService>();
                 services.AddScoped<IUserPermissionManagementService, UserPermissionManagementService>();
-                services.AddSingleton(TransportServiceStub());
+                services.AddScoped<ITransportService>(provider =>
+                    TransportServiceStub(provider.GetRequiredService<TransportActivityContext>()));
 
                 // Sınanan mekanizmanın kendisi: yazıcı, sorgu ve iki kayıt yolu.
                 services.AddScoped<IActivityLogWriter, ActivityLogWriter>();
@@ -619,7 +654,7 @@ public class ActivityHistoryTests
         ClockSkew = TimeSpan.Zero
     };
 
-    private static ITransportService TransportServiceStub()
+    private static ITransportService TransportServiceStub(TransportActivityContext activity)
     {
         var service = Substitute.For<ITransportService>();
         var route = new TransportRouteResponse { Id = 12, Name = "Merkez Hattı", ColorHex = "#6D4AFF", IsActive = true };
@@ -627,6 +662,8 @@ public class ActivityHistoryTests
         service.GetRoutesAsync(Arg.Any<CancellationToken>()).Returns(ServiceResult<IReadOnlyList<TransportRouteResponse>>.Success([route]));
         service.GetRouteAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(ServiceResult<TransportRouteResponse>.Success(route));
         service.GetRouteStopsAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(ServiceResult<IReadOnlyList<TransportStopResponse>>.Success([stop]));
+        service.GetStopsAsync(Arg.Any<CancellationToken>()).Returns(ServiceResult<IReadOnlyList<TransportStopResponse>>.Success([stop]));
+        service.GetDeletedStopsAsync(Arg.Any<CancellationToken>()).Returns(ServiceResult<IReadOnlyList<TransportStopResponse>>.Success([]));
         service.GetOwnStopsAsync(Arg.Any<CancellationToken>()).Returns(ServiceResult<IReadOnlyList<TransportStopResponse>>.Success([stop]));
         service.GetRouteTrashAsync(Arg.Any<CancellationToken>()).Returns(ServiceResult<IReadOnlyList<TransportRouteResponse>>.Success([]));
         service.GetStopTrashAsync(Arg.Any<CancellationToken>()).Returns(ServiceResult<IReadOnlyList<TransportStopResponse>>.Success([]));
@@ -635,10 +672,68 @@ public class ActivityHistoryTests
         service.DeleteRouteAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(ServiceResult<int>.Success(route.Id));
         service.RestoreRouteAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(ServiceResult<TransportRouteResponse>.Success(route));
         service.CreateStopAsync(Arg.Any<CreateTransportStopRequest>(), Arg.Any<CancellationToken>()).Returns(ServiceResult<TransportStopResponse>.Success(stop));
-        service.UpdateStopAsync(Arg.Any<int>(), Arg.Any<UpdateTransportStopRequest>(), Arg.Any<CancellationToken>()).Returns(ServiceResult<TransportStopResponse>.Success(stop));
+        service.UpdateStopAsync(Arg.Any<int>(), Arg.Any<UpdateTransportStopRequest>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var id = call.ArgAt<int>(0);
+                var request = call.ArgAt<UpdateTransportStopRequest>(1);
+                var transferred = request.RouteId != stop.RouteId;
+                var moved = request.Longitude != stop.Longitude || request.Latitude != stop.Latitude;
+                activity.Outcome = new TransportActivityOutcome(
+                    transferred ? TransportActivityKind.StopTransfer : moved ? TransportActivityKind.StopCoordinateMove : TransportActivityKind.StopUpdate,
+                    RouteId: request.RouteId,
+                    RouteName: transferred ? "Sahil Hattı" : route.Name,
+                    StopId: id,
+                    StopName: request.Name,
+                    SourceRouteId: transferred ? stop.RouteId : null,
+                    SourceRouteName: transferred ? route.Name : null,
+                    DestinationRouteId: transferred ? request.RouteId : null,
+                    DestinationRouteName: transferred ? "Sahil Hattı" : null,
+                    CoordinateChanged: moved);
+                return ServiceResult<TransportStopResponse>.Success(stop);
+            });
         service.DeleteStopAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(ServiceResult<int>.Success(stop.Id));
         service.RestoreStopAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(ServiceResult<TransportStopResponse>.Success(stop));
-        service.ReorderStopsAsync(Arg.Any<int>(), Arg.Any<ReorderTransportStopsRequest>(), Arg.Any<CancellationToken>()).Returns(ServiceResult<IReadOnlyList<TransportStopResponse>>.Success([stop]));
+        service.ReorderStopsAsync(Arg.Any<int>(), Arg.Any<ReorderTransportStopsRequest>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var routeId = call.ArgAt<int>(0);
+                var request = call.ArgAt<ReorderTransportStopsRequest>(1);
+                activity.Outcome = new TransportActivityOutcome(
+                    TransportActivityKind.StopReorder,
+                    RouteId: routeId,
+                    RouteName: route.Name,
+                    OrderedStopIds: request.StopIds,
+                    RouteGenerated: true);
+                return ServiceResult<IReadOnlyList<TransportStopResponse>>.Success([stop]);
+            });
+        service.GenerateRoutePathAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var routeId = call.ArgAt<int>(0);
+                var succeeded = routeId != 999;
+                activity.Outcome = new TransportActivityOutcome(
+                    TransportActivityKind.RouteGeneration,
+                    RouteId: routeId,
+                    RouteName: route.Name,
+                    RouteGenerated: succeeded,
+                    DistanceMeters: succeeded ? 1250 : null,
+                    DurationSeconds: succeeded ? 180 : null);
+                if (!succeeded)
+                {
+                    return ServiceResult<TransportRoutePathResponse>.Upstream(RouteGenerationMessages.Unknown);
+                }
+                return ServiceResult<TransportRoutePathResponse>.Success(new TransportRoutePathResponse
+                {
+                    Id = 1,
+                    RouteId = routeId,
+                    GeometryWkt = "LINESTRING (32 39, 33 40)",
+                    DistanceMeters = 1250,
+                    DurationSeconds = 180,
+                    Profile = "driving",
+                    GeneratedAt = DateTime.UtcNow
+                });
+            });
         return service;
     }
 
