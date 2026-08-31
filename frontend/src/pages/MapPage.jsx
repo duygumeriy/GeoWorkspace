@@ -55,6 +55,7 @@ import {
   MeasurementReadout,
   SavingIndicator,
 } from '../components/map/MapOverlays.jsx'
+import JourneyPlannerPanel from '../components/map/JourneyPlannerPanel.jsx'
 import useMediaQuery from '../hooks/useMediaQuery.js'
 import useToasts from '../hooks/useToasts.js'
 import useDrawingWorkspace from '../hooks/useDrawingWorkspace.js'
@@ -97,6 +98,7 @@ import usePoiPresentationLayer from '../hooks/usePoiPresentationLayer.js'
 import PoiSearchBar from '../components/map/PoiSearchBar.jsx'
 import usePoiPlacement from '../hooks/usePoiPlacement.js'
 import usePoiInteraction from '../hooks/usePoiInteraction.js'
+import usePoiSearch from '../hooks/usePoiSearch.js'
 import usePoiEditDraft from '../hooks/usePoiEditDraft.js'
 import useTransportLayer from '../hooks/useTransportLayer.js'
 import useTransportSimulation from '../hooks/useTransportSimulation.js'
@@ -105,6 +107,9 @@ import { transportSimulationControls } from '../map/transportSimulationState.js'
 import { transportVehiclePopupModel, transportVehiclePresentation } from '../map/transportVehicle.js'
 import useTransportStopPlacement from '../hooks/useTransportStopPlacement.js'
 import useTransportStopInteraction from '../hooks/useTransportStopInteraction.js'
+import useJourneyPlanner from '../hooks/useJourneyPlanner.js'
+import useJourneyPreviewLayer from '../hooks/useJourneyPreviewLayer.js'
+import useJourneyWaypointPicking from '../hooks/useJourneyWaypointPicking.js'
 import useTransportStopRelocation from '../hooks/useTransportStopRelocation.js'
 import { createTransportStop, deleteTransportStop, updateTransportStop } from '../services/transportApi.js'
 import { deleteStopThenMaybeGenerate, persistStopThenMaybeGenerate } from '../services/transportStopWorkflow.js'
@@ -622,7 +627,6 @@ export default function MapPage() {
     [mapContext],
   )
 
-  usePoiInteraction(mapInstance, { enabled: poiClickEnabled, onSelect: handlePoiSelected })
 
   /* --- Akıllı ulaşım -------------------------------------------------------
      Güzergah çizgileri ve duraklar POI kaynağına KATILMAZ. Kanca iki ayrı
@@ -782,8 +786,64 @@ export default function MapPage() {
     [transportRoutesVisible, hiddenTransportRouteIds],
   )
 
+  /* --- Yolculuk planlayıcısı (Faz 5C) ---------------------------------------
+     Durum ve istek yaşam döngüsü `useJourneyPlanner`'dadır; burada yalnızca
+     mevcut parçalar bağlanır. Önizleme CANLI SİMÜLASYON DEĞİLDİR: SignalR
+     kancasına, takip kamerasına ya da araç durumuna hiçbir biçimde
+     dokunmaz ve kendi katmanında yaşar. */
+  const journey = useJourneyPlanner({ permitted: allowed.canViewTransport })
+
+  useJourneyPreviewLayer(mapInstance, {
+    geometryWkt: journey.preview?.geometryWkt ?? null,
+    previewToken: journey.previewToken,
+    // Sol panel haritanın solunu kapatır; kamera dolgusu bunu hesaba katar.
+    panelWidth: journey.state.panel === 'open' ? 340 : 0,
+    compact: !hasFinePointer,
+  })
+
+  const assignActiveJourneyWaypoint = useCallback((reference) => {
+    journey.assignWaypoint(journey.state.activeSlotKey, reference)
+  }, [journey])
+
+  /* Nokta seçicinin POI araması MEVCUT sunucu taraflı arama yolunu kullanır:
+     dropdown uğruna tüm POI envanterini indirmek güvenli bir yol değildir ve
+     ikinci bir POI ucu AÇILMAZ. */
+  const [journeyPickerQuery, setJourneyPickerQuery] = useState('')
+
+  const journeyPoiSearch = usePoiSearch({
+    enabled: allowed.canViewPoi && journey.isPicking,
+    query: journeyPickerQuery,
+  })
+
+  const journeyPickerSearch = useMemo(() => ({
+    query: journeyPickerQuery,
+    onQueryChange: setJourneyPickerQuery,
+    results: journeyPoiSearch.results,
+    loading: journeyPoiSearch.loading,
+  }), [journeyPickerQuery, journeyPoiSearch.results, journeyPoiSearch.loading])
+
+  /* Harita seçimi yalnızca bir yuva silahlıyken devrededir; o sırada normal
+     ulaşım/POI tıklaması kapatılır (aşağıda), böylece öncelik kayıt sırasına
+     değil AÇIK bir moda bağlı kalır ve mod bittiğinde her şey aynen geri
+     döner. */
+  useJourneyWaypointPicking(mapInstance, {
+    active: journey.isPicking,
+    allowPoi: allowed.canViewPoi,
+    isStopSelectable: isTransportRouteSelectable,
+    onPick: assignActiveJourneyWaypoint,
+  })
+
+  /* POI tıklaması da yolculuk seçimi sırasında çekilir. Çağrı bilinçli olarak
+     BURADADIR: koşulu `journey.isPicking`e bağlayabilmek için planlayıcıdan
+     sonra gelmesi gerekir. Koşulun kendisi (`poiClickEnabled`) değişmedi. */
+  usePoiInteraction(mapInstance, {
+    enabled: poiClickEnabled && !journey.isPicking,
+    onSelect: handlePoiSelected,
+  })
+
   useTransportStopInteraction(mapInstance, {
-    enabled: allowed.canViewTransport && workspaceMode.isSelecting,
+    // Yolculuk seçimi silahlıyken normal durak/güzergah tıklaması çekilir.
+    enabled: allowed.canViewTransport && workspaceMode.isSelecting && !journey.isPicking,
     hoverEnabled: hasFinePointer,
     onSelect: handleTransportStopSelected,
     onSelectRoute: handleTransportRouteSelected,
@@ -3008,6 +3068,39 @@ export default function MapPage() {
                    öğrenilmesi beklenmez. */
                 scopeRestricted={analysisCatalog.isRestricted}
               />
+
+              {/* Yolculuk planlayıcısı YALNIZCA `transport.view` ile sunulur:
+                  yetkisi olmayana, backend'in 403 döndüreceği bir akış
+                  gösterilmez. Rol adı, kullanıcı adı ya da yönetici bayrağı
+                  hiçbir biçimde okunmaz. */}
+              {allowed.canViewTransport && (
+                <JourneyPlannerPanel
+                  state={journey.state}
+                  routes={transport.activeRoutes}
+                  stops={transport.stops}
+                  preview={journey.preview}
+                  loading={journey.loading}
+                  error={journey.error || journey.validationError}
+                  canRequest={journey.canRequest}
+                  canUsePois={allowed.canViewPoi}
+                  poiSearch={journeyPickerSearch}
+                  onModeChange={journey.setMode}
+                  onProfileChange={journey.setProfile}
+                  onRouteChange={journey.setRoute}
+                  onSegmentStopChange={journey.setSegmentStop}
+                  onSwapSegmentStops={journey.swapSegmentStops}
+                  onAddWaypoint={journey.addWaypoint}
+                  onRemoveWaypoint={journey.removeWaypoint}
+                  onMoveWaypoint={journey.moveWaypoint}
+                  onAssignWaypoint={journey.assignWaypoint}
+                  onArmSlot={journey.armSlot}
+                  onRequestPreview={journey.requestPreview}
+                  onClear={journey.clear}
+                  onCollapse={journey.collapsePanel}
+                  onClose={journey.closePanel}
+                  onOpen={journey.openPanel}
+                />
+              )}
 
               {/* One readout for both analysis entry points: the temporary tool
                   and the run that follows a saved polygon. */}

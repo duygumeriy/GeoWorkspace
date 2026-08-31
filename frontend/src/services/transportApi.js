@@ -113,3 +113,31 @@ export function startTransportSimulation(routeId) {
 export function fetchTransportSimulation(routeId) {
   return authFetch(`/api/transport/simulations/routes/${routeId}`)
 }
+
+/* --- Yolculuk planlama (Faz 5B önizleme ucu) ----------------------------------
+   Ayrı bir API katmanı ya da ikinci bir token deposu AÇILMAZ: aynı authFetch,
+   aynı Authorization başlığı, aynı 401/403 davranışı ve aynı hata okuma
+   geçerlidir.
+
+   İSTEK YALNIZCA SEÇİM TAŞIR. Geometri, koordinat, PlanId ya da herhangi bir
+   yönlendirme verisi gönderilmez; sunucu geçiş noktalarını kendi verisinden
+   çözer ve güzergahı kendisi hesaplar. Tarayıcı OSRM'e hiçbir biçimde
+   bağlanmaz — bu uç, yönlendirme motorunun bilindiği TEK sınırdır. */
+
+/**
+ * Bir yolculuk planını doğrular ve gerçek güzergah önizlemesini döndürür.
+ *
+ * Yetki: `transport.view`; istek POI referansı taşıyorsa sunucu ayrıca
+ * `poi.view` arar. Uç hiçbir şey YAZMAZ ve simülasyon başlatmaz.
+ *
+ * `signal` çağıran tarafından daima verilir: eski bir planın geç gelen
+ * cevabı, yenisinin sonucunu EZMEMELİDİR.
+ */
+export function previewJourney(request, { signal } = {}) {
+  return authFetch('/api/transport/journeys/preview', {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(request),
+    signal,
+  })
+}

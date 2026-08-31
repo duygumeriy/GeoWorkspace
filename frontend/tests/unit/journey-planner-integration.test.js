@@ -1,0 +1,244 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+import { readFileSync } from 'node:fs'
+
+const read = (relative) => readFileSync(new URL(relative, import.meta.url), 'utf8')
+
+/** Yorumlar ayıklanır: bir kavramı ANLATMAK onu uygulamak değildir. */
+const stripComments = (source) =>
+  source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/.*$/gm, '$1')
+
+const PLANNER_HOOK = read('../../src/hooks/useJourneyPlanner.js')
+const PANEL = read('../../src/components/map/JourneyPlannerPanel.jsx')
+const MAP_PAGE = read('../../src/pages/MapPage.jsx')
+const TRANSPORT_API = read('../../src/services/transportApi.js')
+const PREVIEW_HOOK = read('../../src/hooks/useJourneyPreviewLayer.js')
+const PICK_HOOK = read('../../src/hooks/useJourneyWaypointPicking.js')
+
+const JOURNEY_SOURCES = [
+  ['useJourneyPlanner.js', PLANNER_HOOK],
+  ['JourneyPlannerPanel.jsx', PANEL],
+  ['useJourneyPreviewLayer.js', PREVIEW_HOOK],
+  ['useJourneyWaypointPicking.js', PICK_HOOK],
+  ['journeyPlanning.js', read('../../src/map/journeyPlanning.js')],
+  ['journeyPresentation.js', read('../../src/map/journeyPresentation.js')],
+  ['journeyManeuvers.js', read('../../src/map/journeyManeuvers.js')],
+  ['journeyPreviewLayer.js', read('../../src/map/journeyPreviewLayer.js')],
+  ['journeyInteraction.js', read('../../src/map/journeyInteraction.js')],
+]
+
+/**
+ * GERÇEK yetkilendirme kestirmelerinin desenleri.
+ *
+ * Aranan şey `role` KELİMESİ değil, yetkiyi etkin yetki kodu yerine kimlikten
+ * türetme ŞEKLİDİR: kimlik nesnesinden rol okumak, rol listesinde arama
+ * yapmak, bir rol ADIYLA karşılaştırmak, yönetici bayrağı ya da kullanıcı adı
+ * kullanmak.
+ *
+ * Yolculuk planlayıcısının kendi alan kavramı olan geçiş noktası rolü
+ * (`origin` / `via` / `destination`) bilinçli olarak DIŞARIDADIR: ürün
+ * anlamını taşıyan bir alanı, kaba bir metin eşleşmesi uğruna yeniden
+ * adlandırmak kodu bozar ve testin koruduğu şeyi korumaz.
+ */
+const AUTH_SHORTCUT_PATTERNS = [
+  // currentUser.role, user.roles, auth?.role, session.role …
+  /\b(currentUser|user|auth|session|account|identity|principal|claims|me)\s*\??\.\s*roles?\b/i,
+  // roles.includes('...'), roles.some(...), roles.indexOf(...)
+  /\broles\s*\??\.\s*(includes|some|indexOf|find)\s*\(/i,
+  // role === 'Admin' gibi rol ADIYLA karşılaştırma
+  /\brole\w*\s*[=!]==?\s*['"`]\s*(admin|administrator|operator|viewer|editor|superuser)/i,
+  // Yönetici bayrağı ve kullanıcı adıyla yetkilendirme
+  /\bis_?admin\b/i,
+  /\busername\s*[=!]==?/i,
+]
+
+/* --- İstek yaşam döngüsü ----------------------------------------------------- */
+
+test('a stale preview response can never overwrite a newer request', () => {
+  /* İKİ koruma birden gereklidir: AbortController uçan isteği iptal eder,
+     sayaç ise iptalden ÖNCE yola çıkmış bir cevabın geç gelip sonucu geri
+     sarmasını engeller. */
+  assert.ok(PLANNER_HOOK.includes('AbortController'))
+  assert.ok(PLANNER_HOOK.includes('requestIdRef'))
+
+  // Her okuma noktasında sürüm kontrolü yapılır.
+  const guards = PLANNER_HOOK.match(/requestId !== requestIdRef\.current/g) ?? []
+  assert.ok(guards.length >= 3, `beklenen en az 3 sürüm kontrolü, bulunan ${guards.length}`)
+
+  // İptal bir hata değil, yaşam döngüsüdür.
+  assert.ok(PLANNER_HOOK.includes("caught?.name === 'AbortError'"))
+})
+
+test('preview is an explicit action and is never fired from keystrokes', () => {
+  // Faz 5C bilinçle "Rotayı Hesapla" düğmesine bağlıdır.
+  assert.ok(PANEL.includes('Rotayı Hesapla'))
+  assert.ok(PANEL.includes('onRequestPreview'))
+
+  /* `requestPreview` bir efektten otomatik ÇAĞRILMAZ: yönlendirme motoru her
+     seçim değişikliğinde dövülmemelidir. */
+  assert.ok(!/useEffect\([^)]*requestPreview/s.test(PLANNER_HOOK))
+})
+
+test('changing the selection invalidates the stale preview geometry', () => {
+  assert.ok(PLANNER_HOOK.includes('requestSignature'))
+  assert.ok(PLANNER_HOOK.includes('lastAppliedSignature'))
+})
+
+/* --- API sınırı -------------------------------------------------------------- */
+
+test('the preview call reuses the existing auth pipeline and endpoint base', () => {
+  assert.ok(TRANSPORT_API.includes("authFetch('/api/transport/journeys/preview'"))
+  assert.ok(TRANSPORT_API.includes("method: 'POST'"))
+  assert.ok(TRANSPORT_API.includes('signal'))
+
+  // İkinci bir token deposu ya da taban adres AÇILMAZ.
+  for (const [name, source] of JOURNEY_SOURCES) {
+    const code = stripComments(source)
+    assert.ok(!code.includes('sessionStorage'), `${name} kendi token'ını okuyor`)
+    assert.ok(!code.includes('localStorage'), `${name} kendi token'ını okuyor`)
+    // `authFetch(` büyük F taşır; bu desen yalnızca çıplak fetch'i yakalar.
+    assert.ok(!/\bfetch\(/.test(code), `${name} authFetch dışına çıkıyor`)
+  }
+})
+
+test('the browser never contacts a routing engine directly', () => {
+  for (const [name, source] of JOURNEY_SOURCES.concat([['MapPage.jsx', MAP_PAGE]])) {
+    const code = stripComments(source).toLowerCase()
+    for (const forbidden of ['osrm', 'route/v1', 'localhost:5000', ':5001']) {
+      assert.ok(!code.includes(forbidden), `${name} yönlendirme motoruna doğrudan gidiyor (${forbidden})`)
+    }
+  }
+})
+
+/* --- Yetki ------------------------------------------------------------------- */
+
+test('the planner is offered only through the effective permission model', () => {
+  // Panel `transport.view` olmadan hiç render edilmez.
+  assert.match(MAP_PAGE, /allowed\.canViewTransport && \(\s*<JourneyPlannerPanel/)
+  // POI seçenekleri ayrı bir yetkiye bağlıdır.
+  assert.ok(MAP_PAGE.includes('canUsePois={allowed.canViewPoi}'))
+
+  for (const [name, source] of JOURNEY_SOURCES) {
+    const code = stripComments(source)
+    for (const shortcut of ['isAdmin', 'Administrator', 'Operator', 'roleName']) {
+      assert.ok(!code.includes(shortcut), `${name} rol/kimlik kestirmesi içeriyor (${shortcut})`)
+    }
+    for (const pattern of AUTH_SHORTCUT_PATTERNS) {
+      assert.ok(!pattern.test(code), `${name} rol/kimlik kestirmesi içeriyor (${pattern})`)
+    }
+  }
+})
+
+/* --- Mevcut mimariyle bir arada --------------------------------------------- */
+
+test('the journey preview never becomes a second map or a second simulation hook', () => {
+  for (const [name, source] of JOURNEY_SOURCES) {
+    const code = stripComments(source)
+    /* İkinci bir OpenLayers haritası kurulmaz. Düz bir JS `new Map()`
+       (arama tablosu) bu iddianın konusu değildir; aranan şey ol/Map. */
+    assert.ok(!/from 'ol\/Map/.test(code), `${name} ikinci bir OpenLayers haritası kuruyor`)
+    assert.ok(!/signalr|HubConnection/i.test(code), `${name} SignalR'a dokunuyor`)
+    assert.ok(!code.includes('useTransportSimulation'), `${name} canlı simülasyon kancasına bağlanıyor`)
+  }
+})
+
+test('the live simulation wiring in MapPage is untouched by the planner', () => {
+  // Faz 1-4 kontrolleri yerinde durur.
+  assert.ok(MAP_PAGE.includes('useTransportSimulation({'))
+  assert.ok(MAP_PAGE.includes('useTransportVehicleLayer(mapInstance, {'))
+  assert.ok(MAP_PAGE.includes('transportSimulationControls({'))
+
+  // Önizleme kancası onlardan AYRI çağrılır.
+  assert.ok(MAP_PAGE.includes('useJourneyPreviewLayer(mapInstance, {'))
+  assert.ok(!MAP_PAGE.includes('journey.preview?.simulationId'))
+})
+
+test('no live-journey action is wired to fake behaviour yet', () => {
+  // Faz 5D'ye ait düğmeler bu fazda YOKTUR — yarım çalışan bir düğme sunulmaz.
+  for (const label of ['Simülasyonu Başlat', 'Yolculuğu Başlat', 'Canlı Navigasyon', 'Navigasyonu Başlat']) {
+    assert.ok(!PANEL.includes(label), `panelde erken faz düğmesi var: ${label}`)
+  }
+  // Mevcut simülasyon denetimleri ayrı bileşende yaşamaya devam eder.
+  assert.ok(MAP_PAGE.includes('TransportTrackingControls'))
+})
+
+test('the plan id is treated as correlation data, never as an execution token', () => {
+  // Panel plan kimliğini bir yetki gibi kullanmaz ve geri göndermez.
+  assert.ok(!PANEL.includes('planId'))
+  assert.ok(!PLANNER_HOOK.includes('planId'))
+})
+
+/* --- Harita etkileşimi ------------------------------------------------------- */
+
+test('normal map interactions resume when planner picking is not armed', () => {
+  // Silahlıyken normal durak/güzergah ve POI tıklaması çekilir…
+  assert.ok(MAP_PAGE.includes('workspaceMode.isSelecting && !journey.isPicking'))
+  assert.ok(MAP_PAGE.includes('poiClickEnabled && !journey.isPicking'))
+
+  // …ve `isPicking` yalnızca serbest kipte, panel açıkken ve bir yuva seçiliyken doğrudur.
+  assert.ok(PLANNER_HOOK.includes('state.mode === JOURNEY_MODES.WAYPOINTS'))
+  assert.ok(PLANNER_HOOK.includes('state.panel === PANEL_STATES.OPEN'))
+  assert.ok(PLANNER_HOOK.includes('state.activeSlotKey != null'))
+})
+
+test('the existing transport click chain is left exactly as it was', () => {
+  const interaction = read('../../src/map/transportInteraction.js')
+  // Faz 5C mevcut öncelik zincirine DOKUNMAZ; kendi çözümleyicisini ekler.
+  assert.ok(!interaction.includes('journey'))
+  assert.ok(!interaction.includes('Journey'))
+})
+
+/* --- Profil arayüzü ---------------------------------------------------------- */
+
+test('the panel offers exactly three profiles with non-transit semantics', () => {
+  assert.ok(PANEL.includes('JOURNEY_PROFILES.map'))
+  // İkonlar araç / yaya / bisiklet; otobüs ya da transit ikonu yoktur.
+  assert.ok(PANEL.includes('car: Car'))
+  assert.ok(PANEL.includes('pedestrian: Footprints'))
+  assert.ok(PANEL.includes('bicycle: Bike'))
+  assert.ok(!PANEL.includes('BusFront'))
+  assert.ok(!PANEL.includes('TramFront'))
+  assert.ok(!PANEL.includes('TrainFront'))
+})
+
+test('no client side duration estimate or speed multiplier exists', () => {
+  for (const [name, source] of JOURNEY_SOURCES) {
+    const code = stripComments(source)
+    for (const forbidden of ['multiplier', 'Multiplier', 'speedKph', 'WALKING_SPEED', 'CYCLING_SPEED', 'estimateDuration']) {
+      assert.ok(!code.includes(forbidden), `${name} istemci tarafı tahmin içeriyor (${forbidden})`)
+    }
+  }
+
+  // Süre ve mesafe YALNIZCA sunucu alanlarından biçimlendirilir.
+  const presentation = read('../../src/map/journeyPresentation.js')
+  assert.ok(presentation.includes('summary.distanceMeters'))
+  assert.ok(presentation.includes('summary.durationSeconds'))
+})
+
+test('an unavailable profile keeps the user choice rather than switching to driving', () => {
+  /* Sunucu 400 ile "bu profil kullanılamıyor" der; planlayıcı profili
+     DEĞİŞTİRMEZ — kullanıcı sebebi anlayabilmelidir. */
+  assert.ok(!PLANNER_HOOK.includes("setProfile('driving')"))
+  assert.ok(!PLANNER_HOOK.includes('DEFAULT_JOURNEY_PROFILE'))
+})
+
+/* --- Panel yerleşimi --------------------------------------------------------- */
+
+test('the panel renders three distinct states including a reopen affordance', () => {
+  assert.ok(PANEL.includes('PANEL_STATES.CLOSED'))
+  assert.ok(PANEL.includes('journey-reopen'))
+  assert.ok(PANEL.includes('journey-collapsed-summary'))
+
+  const css = read('../../src/components/map/JourneyPlanner.css')
+  // Katlanmış panel ekranda KALIR.
+  assert.ok(css.includes('.journey-panel.is-collapsed'))
+  // Ve dar ekranda mevcut responsive dil kullanılır; ikinci bir mobil çatı yok.
+  assert.ok(css.includes('@media (max-width: 720px)'))
+})
+
+test('the panel is a component rather than business logic inside MapPage', () => {
+  // MapPage yalnızca bağlar: kip/profil/doğrulama kuralları orada YAŞAMAZ.
+  assert.ok(!MAP_PAGE.includes('buildJourneyPreviewRequest'))
+  assert.ok(!MAP_PAGE.includes('journeyPlannerReducer'))
+  assert.ok(!MAP_PAGE.includes('maneuverInstruction'))
+})
