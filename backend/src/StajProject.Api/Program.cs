@@ -9,8 +9,11 @@ using StajProject.Application.Common;
 using StajProject.Application.Activity;
 using StajProject.Application.Interfaces;
 using StajProject.Application.Options;
+using StajProject.Application.Simulation;
 using StajProject.Api.Authorization;
 using StajProject.Api.Services;
+using StajProject.Api.Hubs;
+using StajProject.Api.Simulation;
 using StajProject.Domain.Common;
 using StajProject.Domain.Entities;
 using Microsoft.AspNetCore.Authorization.Policy;
@@ -22,6 +25,7 @@ using StajProject.Infrastructure.GeoServer;
 using StajProject.Infrastructure.Persistence;
 using StajProject.Infrastructure.Routing;
 using StajProject.Infrastructure.Services;
+using StajProject.Infrastructure.Simulation;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -32,6 +36,10 @@ var builder = WebApplication.CreateBuilder(args);
    kaydedeceğini bir İZİN LİSTESİNDEN okur (ActivityActionRegistry); listede
    olmayan hiçbir uç — oturum açma, parola sıfırlama, 2FA dâhil — kaydedilemez. */
 builder.Services.AddControllers(options => options.Filters.Add<ActivityLogFilter>());
+
+/* Canlı ulaşım simülasyonu kanalı. Yalnızca taşımayı sağlar; yetki kararı
+   hub içinde mevcut etkin yetki motoruna sorulur. */
+builder.Services.AddSignalR();
 
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
@@ -292,6 +300,40 @@ builder.Services.AddScoped<IPoiCategoryService, PoiCategoryService>();
    IGeographicAuthorizationService üzerinden uygular; okumalara alan filtresi eklemez. */
 builder.Services.AddScoped<ITransportService, TransportService>();
 
+/* Ulaşım simülasyonu. Aktif çalıştırmalar SÜREÇ İÇİ bir durumdur ve istek
+   ömrünü aşar; depo bu yüzden singleton'dır — scoped olsaydı her istek boş bir
+   dünya görür, "rota başına tek simülasyon" kuralı hiçbir zaman tetiklenmezdi.
+   Depoya yalnızca değişmez veri girer: takip edilen bir EF varlığı burada
+   kapanmış bir istek kapsamını süresiz canlı tutardı.
+
+   Servisin kendisi AppDbContext'e bağlı olduğu için scoped'dır ve durumu
+   kendisi TUTMAZ; kalıcı güzergahı okur, durumu depoya yazar. OSRM'e hiç
+   dokunmaz — yol üretimi ITransportService'in işidir ve orada kalır. */
+builder.Services.AddSingleton<ITransportSimulationStateStore, InMemoryTransportSimulationStateStore>();
+builder.Services.AddScoped<ITransportSimulationService, TransportSimulationService>();
+
+/* Runner ayarları OSRM ile aynı kalıptadır: yapılandırmadan okunur, başlangıçta
+   DOĞRULANIR (fail-fast) ve singleton olarak paylaşılır. Hız çarpanı bir SUNUCU
+   ayarıdır; tarayıcıdan gelmez ve arayüzde seçici yoktur. */
+var transportSimulationOptions = builder.Configuration
+    .GetSection(TransportSimulationOptions.SectionName)
+    .Get<TransportSimulationOptions>() ?? new TransportSimulationOptions();
+transportSimulationOptions.Validate();
+builder.Services.AddSingleton(transportSimulationOptions);
+
+/* Yayın portunun SignalR uygulaması Api'dedir; runner (Infrastructure) yalnızca
+   Application'daki arayüzü tanır. IHubContext singleton'dır, adaptör de öyle. */
+builder.Services.AddSingleton<ITransportSimulationBroadcaster, SignalRTransportSimulationBroadcaster>();
+
+/* Runner singleton'dır: aktif durum gibi o da istek ömrünü aşar ve hiçbir
+   DbContext tutmaz. Aynı örnek İKİ rolü üstlenir — arka plan ilerletici ve
+   güzergah geçersizleştiğinde çağrılan iptal portu; "durdur + yayınla"
+   mantığının iki kopyası olmasın diye tek sahiptir. */
+builder.Services.AddSingleton<TransportSimulationRunner>();
+builder.Services.AddSingleton<ITransportSimulationCanceller>(
+    provider => provider.GetRequiredService<TransportSimulationRunner>());
+builder.Services.AddHostedService<TransportSimulationBackgroundService>();
+
 /* POI sahiplik/yetki kararının TEK yeri. Çizim tarafındaki
    IDrawingAuthorizationService ile aynı gerekçe: servis katmanı kuralı
    kopyalamaz, sorar. Farkı, kararın rol adına değil etkin yetki KODLARINA
@@ -331,6 +373,29 @@ builder.Services
             ValidateIssuerSigningKey = true,
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.Key)),
             ClockSkew = TimeSpan.Zero
+        };
+
+        /* WebSocket el sıkışması Authorization BAŞLIĞI taşıyamaz; SignalR
+           istemcisi token'ı sorgu dizesinde gönderir. Bu okuma YALNIZCA hub
+           yoluyla sınırlıdır — REST uçları için sorgu dizesinden token kabul
+           etmek, token'ın sunucu loglarına ve tarayıcı geçmişine sızması
+           demekti. Doğrulama kuralları aynı kalır; değişen tek şey token'ın
+           NEREDEN okunduğudur. */
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                var accessToken = context.Request.Query["access_token"];
+
+                if (!string.IsNullOrEmpty(accessToken)
+                    && context.HttpContext.Request.Path.StartsWithSegments(
+                        TransportSimulationHubContract.Path, StringComparison.Ordinal))
+                {
+                    context.Token = accessToken;
+                }
+
+                return Task.CompletedTask;
+            }
         };
     });
 
@@ -464,5 +529,9 @@ app.UseAuthorization();
 app.UseRateLimiter();
 
 app.MapControllers();
+
+/* Hub, controller'larla aynı kimlik doğrulama/yetkilendirme hattının
+   ARKASINDADIR: MapHub yalnızca yolu bağlar, kararı hub'ın kendisi verir. */
+app.MapHub<TransportSimulationHub>(TransportSimulationHubContract.Path);
 
 app.Run();

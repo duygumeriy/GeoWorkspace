@@ -112,6 +112,15 @@ public static class RolePermissionDefaults
 
     private static readonly string[] TransportUserPermissions =
     [
+        /* Rolün tanımı "ulaşım ağı ve POI verisini SALT OKUYAN kullanıcı"dır ve
+           bu verilerin görüldüğü tek yüzey haritadır: `map.view` olmadan rolün
+           taşıdığı iki yetkinin de karşılığı yoktur — kullanıcı hiçbir şey
+           göremez. Profil, diğer okuyucu profillerin (bkz. ViewerPermissions)
+           map.view ile başlaması kuralını izler.
+
+           Bu bir YÖNETİM yetkisi değildir: harita yalnızca görüntülenir,
+           güzergah/durak yazma yetkileri hâlâ DIŞARIDADIR. */
+        PermissionCodes.MapView,
         PermissionCodes.TransportView,
         PermissionCodes.PoiView
     ];
@@ -122,7 +131,13 @@ public static class RolePermissionDefaults
         PermissionCodes.TransportStopCreate,
         PermissionCodes.TransportStopUpdate,
         PermissionCodes.TransportStopDelete,
-        PermissionCodes.TransportStopRestore
+        PermissionCodes.TransportStopRestore,
+
+        /* Simülasyonu BAŞLATMAK operatörün işidir: hattın canlı işletilmesi,
+           duraklarının bakımıyla aynı görev profiline aittir. Rota
+           yetkileri hâlâ DIŞARIDADIR — operatör hattı çalıştırır, güzergahı
+           yeniden tanımlamaz. Ulaşım Kullanıcısı ise yalnızca izler. */
+        PermissionCodes.TransportSimulationStart
     ];
 
     /// <summary>

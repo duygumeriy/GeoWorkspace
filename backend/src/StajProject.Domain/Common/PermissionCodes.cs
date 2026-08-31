@@ -167,6 +167,15 @@ public static class PermissionCodes
     public const string TransportRouteRestore = "transport.route.restore";
     public const string TransportRouteReorder = "transport.route.reorder";
 
+    /* Simülasyon başlatmak, rota verisini DEĞİŞTİRMEZ: bu yüzden
+       `transport.route.update` üzerine yüklenmez, ayrı bir kod olur. Ayrım
+       operasyoneldir — bir kullanıcı hattı canlı işletebilirken güzergahın
+       kendisini yeniden hesaplayamayabilir; tersi de mümkündür.
+
+       Görüntüleme yetkisi de İMA ETMEZ: haritada aracın nerede olduğunu
+       görmek `transport.view` ile olur, hattı çalıştırmak bu kodla. */
+    public const string TransportSimulationStart = "transport.simulation.start";
+
     /// <summary>EF <c>HasMaxLength</c> ile aynı sınır.</summary>
     public const int MaxLength = 128;
 }

@@ -112,6 +112,11 @@ export const PERMISSIONS = Object.freeze({
   TRANSPORT_ROUTE_DELETE: 'transport.route.delete',
   TRANSPORT_ROUTE_RESTORE: 'transport.route.restore',
   TRANSPORT_ROUTE_REORDER: 'transport.route.reorder',
+
+  /* Simülasyon başlatmak ayrı bir yetenektir: ne görüntüleme ne de rota
+     düzenleme onu ima eder. Arayüz yalnızca ETKİN kodu okur — rol adı,
+     "Operatör" etiketi ya da isAdmin hiçbir yerde denetlenmez. */
+  TRANSPORT_SIMULATION_START: 'transport.simulation.start',
 })
 
 /**

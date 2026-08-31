@@ -20,7 +20,8 @@ public class SmartTransportFoundationTests
         PermissionCodes.TransportRouteUpdate,
         PermissionCodes.TransportRouteDelete,
         PermissionCodes.TransportRouteRestore,
-        PermissionCodes.TransportRouteReorder
+        PermissionCodes.TransportRouteReorder,
+        PermissionCodes.TransportSimulationStart
     ];
 
     private static readonly string[] StopPermissions =
@@ -75,7 +76,8 @@ public class SmartTransportFoundationTests
                 "transport.route.update",
                 "transport.route.delete",
                 "transport.route.restore",
-                "transport.route.reorder"
+                "transport.route.reorder",
+                "transport.simulation.start"
             ],
             TransportPermissions);
 
@@ -100,12 +102,73 @@ public class SmartTransportFoundationTests
     }
 
     [Fact]
+    public void Transport_roles_can_open_the_map_they_are_meant_to_read()
+    {
+        /* Rolün tanımı "ulaşım ağı ve POI verisini salt okuyan kullanıcı"dır ve
+           o veri yalnızca haritada görünür: map.view olmadan rolün taşıdığı iki
+           yetkinin de karşılığı olmazdı. Diğer okuyucu profillerin tabanı da
+           map.view'dir. */
+        Assert.Contains(PermissionCodes.MapView, RolePermissionDefaults.For(GisRoles.TransportUser));
+        Assert.Contains(PermissionCodes.MapView, RolePermissionDefaults.For(GisRoles.Viewer));
+
+        // Operatör profili kullanıcı profilinin üzerine kurulduğu için devralır.
+        Assert.Contains(PermissionCodes.MapView, RolePermissionDefaults.For(GisRoles.TransportOperator));
+
+        /* Harita GÖRÜNTÜLEME bir yönetim yetkisi değildir: yazma yetkileri
+           hâlâ dışarıdadır ve yeni hiçbir yetki eşlik etmez. */
+        var user = RolePermissionDefaults.For(GisRoles.TransportUser);
+        Assert.Equal(
+            new[] { PermissionCodes.MapView, PermissionCodes.PoiView, PermissionCodes.TransportView }
+                .OrderBy(code => code, StringComparer.Ordinal),
+            user.OrderBy(code => code, StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public void An_already_provisioned_transport_role_receives_map_view_through_the_expansion()
+    {
+        /* Matris YALNIZCA hiç yetkisi olmayan rollere uygulanır; mevcut
+           kurulumlarda bu roller çoktan provision edilmiştir ve düzeltme onlara
+           başka türlü hiç ulaşmazdı. Genişleme mekanizması tam da bunun için
+           vardır (bkz. RolePermissionExpansions). */
+        foreach (var role in (string[])[GisRoles.TransportUser, GisRoles.TransportOperator])
+        {
+            var expansion = RolePermissionExpansions.All
+                .Where(item => item.RoleName == role)
+                .SelectMany(item => item.PermissionCodes)
+                .ToArray();
+
+            Assert.Contains(PermissionCodes.MapView, expansion);
+
+            // Yan etki olarak HİÇBİR yönetim yetkisi dağıtılmaz.
+            Assert.DoesNotContain(expansion, code => RoutePermissions.Contains(code, StringComparer.Ordinal));
+            Assert.DoesNotContain(expansion, code => PoiWritePermissions.Contains(code, StringComparer.Ordinal));
+            Assert.DoesNotContain(expansion, code => DrawingWritePermissions.Contains(code, StringComparer.Ordinal));
+        }
+
+        // Ulaşım kullanıcısı yalnızca haritayı açar; simülasyon başlatamaz.
+        Assert.DoesNotContain(
+            PermissionCodes.TransportSimulationStart,
+            RolePermissionExpansions.All
+                .Where(item => item.RoleName == GisRoles.TransportUser)
+                .SelectMany(item => item.PermissionCodes));
+
+        // Genişlemeler yalnızca kanonik rollere dokunur.
+        Assert.All(
+            RolePermissionExpansions.All,
+            expansion => Assert.Contains(expansion.RoleName, RoleCatalog.Canonical));
+    }
+
+    [Fact]
     public void Transport_operator_default_grants_allow_only_stop_management()
     {
         var grants = RolePermissionDefaults.For(GisRoles.TransportOperator);
 
         Assert.Contains(PermissionCodes.TransportView, grants);
         Assert.All(StopPermissions, permission => Assert.Contains(permission, grants));
+
+        /* Simülasyonu BAŞLATMAK operatörün işidir; hattın güzergahını yeniden
+           tanımlamak değil. Rota yetkileri hâlâ dışarıdadır. */
+        Assert.Contains(PermissionCodes.TransportSimulationStart, grants);
         Assert.DoesNotContain(grants, code => RoutePermissions.Contains(code, StringComparer.Ordinal));
         Assert.Contains(PermissionCodes.PoiView, grants);
         Assert.DoesNotContain(grants, code => PoiWritePermissions.Contains(code, StringComparer.Ordinal));

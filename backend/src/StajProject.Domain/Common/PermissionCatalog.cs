@@ -325,7 +325,12 @@ public static class PermissionCatalog
         new(PermissionCodes.TransportRouteReorder,
             "Ulaşım Rotası Duraklarını Sıralama",
             "Bir rotadaki durakların sırasını değiştirebilir.",
-            PermissionCategories.Transport, 1390)
+            PermissionCategories.Transport, 1390),
+
+        new(PermissionCodes.TransportSimulationStart,
+            "Ulaşım Simülasyonu Başlatma",
+            "Hesaplanmış bir güzergah üzerinde araç simülasyonu başlatabilir.",
+            PermissionCategories.Transport, 1400)
     ];
 
     /// <summary>Katalogdaki tüm kodlar.</summary>

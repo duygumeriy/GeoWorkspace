@@ -11,6 +11,8 @@ import { duplicateStopNameWarning } from '../../map/adminTransportStops.js'
 import useTransportLayer from '../../hooks/useTransportLayer.js'
 import useTransportStopPlacement from '../../hooks/useTransportStopPlacement.js'
 import useTransportStopRelocation from '../../hooks/useTransportStopRelocation.js'
+import useTransportVehicleLayer from '../../hooks/useTransportVehicleLayer.js'
+import TransportVehiclePopup from '../map/TransportVehiclePopup.jsx'
 import {
   TRANSPORT_ROUTE_KIND,
   TRANSPORT_ROUTE_PATH_KIND,
@@ -19,6 +21,11 @@ import {
   TRANSPORT_STOP_KIND,
   TRANSPORT_STOP_LAYER_CLASSNAME,
 } from '../../map/transport.js'
+import {
+  TRANSPORT_VEHICLE_KIND,
+  TRANSPORT_VEHICLE_LAYER_CLASSNAME,
+  transportVehiclePopupModel,
+} from '../../map/transportVehicle.js'
 import { TURKEY_CENTER_LON_LAT, TURKEY_ZOOM } from '../../map/turkey.js'
 
 export default function TransportManagementMap({
@@ -28,6 +35,7 @@ export default function TransportManagementMap({
   selectedRouteStops,
   hiddenRouteIds,
   hoveredRouteId,
+  vehicle = null,
   canView,
   canCreateStop,
   canUpdateStop,
@@ -57,6 +65,9 @@ export default function TransportManagementMap({
   const [locationEditing, setLocationEditing] = useState(false)
   const [regenerateAfterMove, setRegenerateAfterMove] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
+  /* Balon, AÇILDIĞI çalıştırmaya bağlıdır: yeni bir simulationId geldiğinde
+     (aynı rotada yeniden başlatma) eski balon kendiliğinden kapanır. */
+  const [vehiclePopupSimulationId, setVehiclePopupSimulationId] = useState(null)
   const focusedRouteRef = useRef(null)
   const focusedStopRef = useRef(null)
   const handledEditRequestRef = useRef(0)
@@ -95,6 +106,14 @@ export default function TransportManagementMap({
     focusStop,
     applyStopOrder,
   } = transport
+
+  /* Araç MEVCUT haritaya eklenen tek bir katmandır; ikinci bir harita ya da
+     paralel bir ulaşım katman sistemi yoktur. Konum/ilerleme sunucudan gelir. */
+  useTransportVehicleLayer(map, { presentation: vehicle })
+
+  const vehiclePopup = vehicle && vehiclePopupSimulationId === vehicle.simulationId
+    ? transportVehiclePopupModel(vehicle)
+    : null
 
   const selectedStop = transportStops.find((stop) => stop.id === selectedStopId) ?? null
   const canGenerateAfterCreate = Boolean(canUpdateRoute && selectedRoute && (selectedRoute.stopCount ?? 0) + 1 >= 2)
@@ -192,6 +211,13 @@ export default function TransportManagementMap({
     )
     const handleClick = (event) => {
       if (placing || locationEditing) return
+      /* Araç en üstteki katmandır ve ilk sorulan odur; bulunamazsa mevcut
+         durak/rota davranışı AYNEN devam eder. */
+      const vehicleFeature = featureAt(event.pixel, TRANSPORT_VEHICLE_LAYER_CLASSNAME, [TRANSPORT_VEHICLE_KIND])
+      if (vehicleFeature) {
+        setVehiclePopupSimulationId(vehicleFeature.get('simulationId'))
+        return
+      }
       const stopFeature = featureAt(event.pixel, TRANSPORT_STOP_LAYER_CLASSNAME, [TRANSPORT_STOP_KIND])
       if (stopFeature) {
         const stop = stopFeature.get('transportStop')
@@ -445,6 +471,12 @@ export default function TransportManagementMap({
           )}
         </aside>
       )}
+
+      <TransportVehiclePopup
+        map={map}
+        vehicle={vehiclePopup}
+        onClose={() => setVehiclePopupSimulationId(null)}
+      />
 
       {formOpen && pending && (
         <div className="admin-dialog-backdrop" role="presentation">

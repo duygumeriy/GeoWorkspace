@@ -6,6 +6,7 @@ import AdminPageHeader from '../../components/admin/AdminPageHeader.jsx'
 import AdminTransportStopManagement from '../../components/admin/AdminTransportStopManagement.jsx'
 import TransportRouteDialog from '../../components/admin/TransportRouteDialog.jsx'
 import TransportManagementMap from '../../components/admin/TransportManagementMap.jsx'
+import TransportTrackingControls from '../../components/map/TransportTrackingControls.jsx'
 import { readApiError } from '../../services/api.js'
 import {
   createTransportRoute,
@@ -21,6 +22,9 @@ import {
   updateTransportRoute,
 } from '../../services/transportApi.js'
 import { restoreStopThenMaybeGenerate } from '../../services/transportStopWorkflow.js'
+import useTransportSimulation from '../../hooks/useTransportSimulation.js'
+import { transportSimulationControls } from '../../map/transportSimulationState.js'
+import { transportVehiclePresentation } from '../../map/transportVehicle.js'
 import { moveStopInRoute } from '../../map/adminTransportStops.js'
 import {
   ADMIN_ROUTE_DEFAULT_FILTERS,
@@ -51,6 +55,9 @@ export default function TransportRoutePage() {
   const canUpdateStop = can(PERMISSIONS.TRANSPORT_STOP_UPDATE)
   const canDeleteStop = can(PERMISSIONS.TRANSPORT_STOP_DELETE)
   const canRestoreStop = can(PERMISSIONS.TRANSPORT_STOP_RESTORE)
+  /* Diğer denetimlerle aynı kalıp: yalnızca ETKİN yetki kodu okunur.
+     Görünürlük deneyimdir; yetkilendirme backend'dedir. */
+  const canStartSimulation = can(PERMISSIONS.TRANSPORT_SIMULATION_START)
   const canManageRoutes = canCreate || canUpdate || canDelete || canReorder
 
   const [managementView, setManagementView] = useState(() => canManageRoutes ? 'routes' : 'stops')
@@ -83,6 +90,9 @@ export default function TransportRoutePage() {
   const [routeFilters, setRouteFilters] = useState(ADMIN_ROUTE_DEFAULT_FILTERS)
   const [hiddenRouteIds, setHiddenRouteIds] = useState(() => new Set())
   const [hoveredRouteId, setHoveredRouteId] = useState(null)
+  /* Bu oturumda BAŞLATILAN çalıştırmanın kimliği: aracın ilk (%0) konumunun
+     seçili rotada gösterilebilmesi için. Takip başlatmaz. */
+  const [startedSimulationId, setStartedSimulationId] = useState(null)
   const mutationInFlight = useRef(false)
   const stopRequestId = useRef(0)
   const pathRequestId = useRef(0)
@@ -91,6 +101,42 @@ export default function TransportRoutePage() {
     () => routes.find((route) => route.id === selectedId) ?? null,
     [routes, selectedId],
   )
+
+  /* Seçili güzergahın simülasyon durumu. Kanca açılışta REST ile okur —
+     güzergah bu tarayıcı hiç bağlanmadan önce de çalışıyor olabilir — ve
+     canlı yayını yalnızca kullanıcı AÇIKÇA "Takip Et" dediğinde dinler. */
+  const simulation = useTransportSimulation({ routeId: selectedId, canView })
+
+  /* Haritadaki aracın sahibi: canlı takip edilen rota, o yoksa kullanıcının az
+     önce BAŞLATTIĞI ve pasif olarak izlenen çalıştırma. İkincisi de CANLI
+     akar — ama kamerayı ele geçirmez; görünümü hareket ettiren tek şey
+     kullanıcının açık "Takip Et" eylemidir. */
+  const vehicle = useMemo(() => transportVehiclePresentation({
+    simulation: simulation.followedSimulation ?? simulation.observedSimulation ?? simulation.simulation,
+    followingRouteId: simulation.followingRouteId,
+    observedRouteId: simulation.observedRouteId,
+    selectedRouteId: selectedId,
+    startedSimulationId,
+    routes,
+  }), [
+    simulation.followedSimulation,
+    simulation.observedSimulation,
+    simulation.simulation,
+    simulation.followingRouteId,
+    simulation.observedRouteId,
+    selectedId,
+    startedSimulationId,
+    routes,
+  ])
+
+  const simulationControls = transportSimulationControls({
+    routeId: selectedId,
+    simulation: simulation.simulation,
+    followingRouteId: simulation.followingRouteId,
+    canStart: canStartSimulation,
+    starting: simulation.starting,
+    following: simulation.following,
+  })
   const visibleRoutes = useMemo(
     () => buildAdminRouteView(routes, routePaths ?? [], routeFilters),
     [routes, routePaths, routeFilters],
@@ -577,6 +623,22 @@ export default function TransportRoutePage() {
                 {pathError && <p className="transport-path-failure" role="alert">{pathError}</p>}
               </section>
 
+              {/* Denetimler ana harita ile PAYLAŞILAN bileşendir; iki ekranın
+                  görünürlük kuralı tek yerde durur. */}
+              <TransportTrackingControls
+                controls={simulationControls}
+                statusLoading={simulation.statusLoading}
+                starting={simulation.starting}
+                error={simulation.error}
+                onStart={async () => {
+                  const snapshot = await simulation.start(selectedRoute.id)
+                  // Takip AÇILMAZ; yalnızca ilk konum haritada belirir.
+                  if (snapshot) setStartedSimulationId(snapshot.simulationId)
+                }}
+                onFollow={() => simulation.follow(selectedRoute.id)}
+                onUnfollow={() => simulation.unfollow()}
+              />
+
               <div className="transport-stop-list-heading"><h3>Sıralı Duraklar</h3><span>{stops.length}</span></div>
               {stopsError && <div className="admin-error" role="alert"><span>{stopsError}</span><button type="button" onClick={() => loadStops(selectedId)}>Tekrar dene</button></div>}
               {stopsLoading && <div className="admin-skeleton" aria-label="Duraklar yükleniyor" />}
@@ -644,6 +706,7 @@ export default function TransportRoutePage() {
         selectedRouteStops={stops}
         hiddenRouteIds={hiddenRouteIds}
         hoveredRouteId={hoveredRouteId}
+        vehicle={vehicle}
         canView={canView}
         canCreateStop={canCreateStop}
         canUpdateStop={canUpdateStop}

@@ -188,6 +188,50 @@ public static class RolePermissionExpansions
     ];
 
     /// <summary>
+    /// Ulaşım simülasyonu kataloğu genişlemesi (Simülasyon Faz 1).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Kod kataloğa SONRADAN eklendiği için matris tek başına yetmez: mevcut
+    /// kurulumlarda Administrator ve Ulaşım Operatörü çoktan provision
+    /// edilmiştir ve <see cref="RolePermissionDefaults"/> onlara bir daha hiç
+    /// uygulanmaz. Genişleme olmadan özellik, üzerinde çalıştığı kurulumlarda
+    /// hiç kimseye açılmazdı.
+    /// </para>
+    /// <para>
+    /// Dağılım matrisle birebir aynıdır. Ulaşım Kullanıcısı ve özel roller
+    /// bilinçli olarak DIŞARIDADIR: <c>transport.view</c> taşımak simülasyon
+    /// başlatabilmek DEMEK DEĞİLDİR — izlemek ile işletmek ayrı yeteneklerdir
+    /// ve gerekiyorsa yetki Rol Yetki Düzenleyicisi'nden AÇIKÇA verilir.
+    /// </para>
+    /// </remarks>
+    private static readonly string[] TransportSimulationPermissions =
+    [
+        PermissionCodes.TransportSimulationStart
+    ];
+
+    /// <summary>
+    /// Ulaşım rollerinin harita erişimi.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>map.view</c> kataloğa sonradan eklenmedi; eksik olan, ulaşım
+    /// rollerinin BAŞLANGIÇ profilindeydi. Mevcut kurulumlarda bu iki rol
+    /// çoktan provision edilmiş olduğu için matrisin düzeltilmesi onlara
+    /// ULAŞMAZ — genişleme tam olarak bu boşluk için vardır.
+    /// </para>
+    /// <para>
+    /// Yalnızca ulaşım rolleri sayılır ve verilen tek şey GÖRÜNTÜLEMEDİR:
+    /// haritayı açmak, ulaşım ağını ve POI'leri okuyabilmenin ön koşuludur.
+    /// Hiçbir yönetim ya da yazma yetkisi eşlik etmez.
+    /// </para>
+    /// </remarks>
+    private static readonly string[] TransportMapAccessPermissions =
+    [
+        PermissionCodes.MapView
+    ];
+
+    /// <summary>
     /// Uygulanacak genişlemeler. Rol adları yalnızca <b>başlangıç verisi</b>
     /// üretmek için kullanılır; çalışma zamanı yetkilendirmesi hâlâ tamamen
     /// etkin yetki KODLARI üzerinden yürür.
@@ -196,7 +240,10 @@ public static class RolePermissionExpansions
     [
         new(GisRoles.Administrator,
             [.. GeographyPermissions, .. AuditPermissions, .. HeatmapPermissions, .. PoiManagePermissions,
-             .. LocationAnalysisPermissions, .. TransportPermissions]),
+             .. LocationAnalysisPermissions, .. TransportPermissions, .. TransportSimulationPermissions]),
+        new(GisRoles.TransportOperator,
+            [.. TransportSimulationPermissions, .. TransportMapAccessPermissions]),
+        new(GisRoles.TransportUser, [.. TransportMapAccessPermissions]),
         new(GisRoles.GisManager,
             [.. HeatmapPermissions, .. PoiManagePermissions, .. LocationAnalysisPermissions]),
         new(GisRoles.GisAnalyst,

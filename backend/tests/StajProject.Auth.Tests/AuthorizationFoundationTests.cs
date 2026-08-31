@@ -92,7 +92,12 @@ public class AuthorizationFoundationTests
             "transport.route.update",
             "transport.route.delete",
             "transport.route.restore",
-            "transport.route.reorder"
+            "transport.route.reorder",
+
+            /* Simülasyon başlatmak ayrı bir kanonik yetenektir: ne
+               transport.view (izlemek) ne de transport.route.update
+               (güzergahı yeniden hesaplamak) onu ima eder. */
+            "transport.simulation.start"
         ];
 
         /* Beklenen liste kasıtlı olarak literal yazılır: katalog sabitlerinden

@@ -97,3 +97,19 @@ export function restoreTransportStop(id) {
 export function restoreTransportRoute(id) {
   return authFetch(`/api/transport/routes/${id}/restore`, { method: 'POST' })
 }
+
+/* --- Simülasyon ---------------------------------------------------------------
+   Ayrı bir API katmanı AÇILMAZ: aynı authFetch, aynı hata okuma ve aynı 401/403
+   davranışı geçerlidir. Canlı yayın SignalR üzerinden gelir; buradaki iki uç
+   "şu an ne oluyor" sorusunun REST karşılığıdır ve sayfa açılışında (rota
+   zaten çalışıyor olabilir) tek doğru kaynaktır. */
+
+/** Seçili güzergah için simülasyon başlatır. Yetki: `transport.simulation.start`. */
+export function startTransportSimulation(routeId) {
+  return authFetch(`/api/transport/simulations/routes/${routeId}/start`, { method: 'POST' })
+}
+
+/** Güzergahın çalışan simülasyonunun sunucu otoriteli anlık görüntüsü (yoksa 404). */
+export function fetchTransportSimulation(routeId) {
+  return authFetch(`/api/transport/simulations/routes/${routeId}`)
+}

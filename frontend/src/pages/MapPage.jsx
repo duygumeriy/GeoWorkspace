@@ -47,6 +47,8 @@ import PoiInfoSheet from '../components/map/PoiInfoSheet.jsx'
 import TransportStopForm from '../components/map/TransportStopForm.jsx'
 import TransportStopEditForm from '../components/map/TransportStopEditForm.jsx'
 import TransportStopPopup from '../components/map/TransportStopPopup.jsx'
+import TransportVehiclePopup from '../components/map/TransportVehiclePopup.jsx'
+import TransportTrackingControls from '../components/map/TransportTrackingControls.jsx'
 import {
   DrawingHint,
   HoverTooltip,
@@ -97,6 +99,10 @@ import usePoiPlacement from '../hooks/usePoiPlacement.js'
 import usePoiInteraction from '../hooks/usePoiInteraction.js'
 import usePoiEditDraft from '../hooks/usePoiEditDraft.js'
 import useTransportLayer from '../hooks/useTransportLayer.js'
+import useTransportSimulation from '../hooks/useTransportSimulation.js'
+import useTransportVehicleLayer from '../hooks/useTransportVehicleLayer.js'
+import { transportSimulationControls } from '../map/transportSimulationState.js'
+import { transportVehiclePopupModel, transportVehiclePresentation } from '../map/transportVehicle.js'
 import useTransportStopPlacement from '../hooks/useTransportStopPlacement.js'
 import useTransportStopInteraction from '../hooks/useTransportStopInteraction.js'
 import useTransportStopRelocation from '../hooks/useTransportStopRelocation.js'
@@ -651,6 +657,67 @@ export default function MapPage() {
     stopCount: transport.stops.filter((stop) => stop.routeId === route.id && stop.isActive !== false).length,
   })), [transport.activeRoutes, transport.stops])
 
+  /* --- Canlı takip (Faz 3/4 mimarisi AYNEN yeniden kullanılır) ---------------
+     Ana harita, `transport.view` yetkisiyle ulaşılabilen tek yüzeydir; yönetim
+     yetkileri gerektiren güzergah yönetimi ekranına girmeden de çalışan bir
+     hattı izleyebilmek buradan mümkün olur. İkinci bir SignalR istemcisi,
+     ikinci bir araç uygulaması ya da ikinci bir harita KURULMAZ. */
+  const [startedSimulationId, setStartedSimulationId] = useState(null)
+  const [vehiclePopupSimulationId, setVehiclePopupSimulationId] = useState(null)
+
+  const simulation = useTransportSimulation({
+    routeId: selectedTransportRouteId,
+    canView: allowed.canViewTransport,
+  })
+
+  const simulationControls = useMemo(() => transportSimulationControls({
+    routeId: selectedTransportRouteId,
+    simulation: simulation.simulation,
+    followingRouteId: simulation.followingRouteId,
+    // Başlatma AYRI bir yetkidir; yalnızca izleyen kullanıcı bu düğmeyi görmez.
+    canStart: can(PERMISSIONS.TRANSPORT_SIMULATION_START),
+    starting: simulation.starting,
+    following: simulation.following,
+  }), [
+    selectedTransportRouteId,
+    simulation.simulation,
+    simulation.followingRouteId,
+    simulation.starting,
+    simulation.following,
+    can,
+  ])
+
+  const transportVehicle = useMemo(() => transportVehiclePresentation({
+    simulation: simulation.followedSimulation ?? simulation.observedSimulation ?? simulation.simulation,
+    followingRouteId: simulation.followingRouteId,
+    observedRouteId: simulation.observedRouteId,
+    selectedRouteId: selectedTransportRouteId,
+    startedSimulationId,
+    routes: transport.activeRoutes,
+  }), [
+    simulation.followedSimulation,
+    simulation.observedSimulation,
+    simulation.simulation,
+    simulation.followingRouteId,
+    simulation.observedRouteId,
+    selectedTransportRouteId,
+    startedSimulationId,
+    transport.activeRoutes,
+  ])
+
+  const openVehiclePopup = useCallback((vehicle) => {
+    setVehiclePopupSimulationId(vehicle?.simulationId ?? null)
+  }, [])
+
+  useTransportVehicleLayer(mapInstance, {
+    presentation: transportVehicle,
+    onVehicleClick: openVehiclePopup,
+  })
+
+  const vehiclePopup = transportVehicle && vehiclePopupSimulationId === transportVehicle.simulationId
+    ? transportVehiclePopupModel(transportVehicle)
+    : null
+
   const toggleTransportRoute = useCallback((routeId) => {
     setHiddenTransportRouteIds((current) => {
       const next = new Set(current)
@@ -697,10 +764,30 @@ export default function MapPage() {
     mapContext.activate(MAP_CONTEXTS.transportStopInfo)
   }, [mapContext])
 
+  /* Haritadaki güzergah çizgisine doğrudan tıklamak, MEVCUT seçim durumunu
+     kullanır: ikinci bir "seçili rota" kavramı doğmaz ve takip kartı bu sayede
+     olduğu gibi açılır. Kamera oynatılmaz — kullanıcı zaten baktığı yere
+     tıklamıştır. */
+  const handleTransportRouteSelected = useCallback((routeId) => {
+    const next = Number(routeId)
+    if (!Number.isFinite(next)) return
+    setSelectedTransportRouteId(next)
+    setSelectedTransportStop(null)
+    mapContext.close(MAP_CONTEXTS.transportStopInfo)
+  }, [mapContext])
+
+  /* Gizlenen güzergah tıklanamaz: kullanıcı onu bilerek kapatmıştır. */
+  const isTransportRouteSelectable = useCallback(
+    (routeId) => transportRoutesVisible && !hiddenTransportRouteIds.has(Number(routeId)),
+    [transportRoutesVisible, hiddenTransportRouteIds],
+  )
+
   useTransportStopInteraction(mapInstance, {
     enabled: allowed.canViewTransport && workspaceMode.isSelecting,
     hoverEnabled: hasFinePointer,
     onSelect: handleTransportStopSelected,
+    onSelectRoute: handleTransportRouteSelected,
+    isRouteVisible: isTransportRouteSelectable,
   })
 
   const retireTransportStopCreate = useCallback(() => {
@@ -3175,6 +3262,30 @@ export default function MapPage() {
                 canDelete={allowed.canDeleteTransportStop}
                 busy={transportStopBusyId === selectedTransportStop?.id}
               />
+
+              <TransportVehiclePopup
+                map={mapInstance}
+                vehicle={vehiclePopup}
+                onClose={() => setVehiclePopupSimulationId(null)}
+              />
+
+              {allowed.canViewTransport && selectedTransportRouteId != null && (
+                <TransportTrackingControls
+                  className="transport-tracking-card"
+                  primaryButtonClassName="transport-popup-action"
+                  secondaryButtonClassName="transport-popup-action"
+                  controls={simulationControls}
+                  statusLoading={simulation.statusLoading}
+                  starting={simulation.starting}
+                  error={simulation.error}
+                  onStart={async () => {
+                    const snapshot = await simulation.start(selectedTransportRouteId)
+                    if (snapshot) setStartedSimulationId(snapshot.simulationId)
+                  }}
+                  onFollow={() => simulation.follow(selectedTransportRouteId)}
+                  onUnfollow={() => simulation.unfollow()}
+                />
+              )}
 
               <LocationAnalysisPanel
                 open={locationAnalysisOpen}

@@ -2,6 +2,26 @@ import { DRAWING_TYPES, drawingItemPath } from '../map/drawingTypes.js'
 
 const API_BASE_URL = import.meta.env?.VITE_API_BASE_URL ?? 'http://localhost:5154'
 
+/**
+ * Backend'in kökü. Dışa açılır çünkü fetch DIŞINDA da aynı adrese bağlanan
+ * taşımalar var (SignalR hub'ı gibi) ve ikinci bir taban adres tanımlamak,
+ * ortam değiştiğinde sessizce ayrışan iki yapılandırma demekti.
+ */
+export function apiBaseUrl() {
+  return API_BASE_URL
+}
+
+/**
+ * Oturum token'ının TEK okuma yolu.
+ *
+ * `authFetch` de, SignalR'ın `accessTokenFactory`'si de buradan okur: ikinci
+ * bir depolama ya da ikinci bir anahtar adı, çıkışta biri temizlenip diğeri
+ * kalabilirdi.
+ */
+export function getAccessToken() {
+  return sessionStorage.getItem('token')
+}
+
 let unauthorizedHandler = null
 let connectionHandler = null
 let forbiddenHandler = null
@@ -171,7 +191,7 @@ export async function readAccountError(res, fallback) {
 
 /** Fetch wrapper for protected endpoints: attaches the token and triggers auto-logout on 401. */
 export async function authFetch(path, options = {}) {
-  const token = sessionStorage.getItem('token')
+  const token = getAccessToken()
   const headers = { ...(options.headers || {}) }
   if (token) headers.Authorization = `Bearer ${token}`
 

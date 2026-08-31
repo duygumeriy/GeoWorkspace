@@ -7,6 +7,7 @@ using StajProject.Application.Activity;
 using StajProject.Application.DTOs;
 using StajProject.Application.Interfaces;
 using StajProject.Application.Routing;
+using StajProject.Application.Simulation;
 using StajProject.Domain.Entities;
 using StajProject.Infrastructure.Persistence;
 
@@ -35,18 +36,27 @@ public sealed class TransportService : ITransportService
     private readonly IOsrmRoutingService _osrmRouting;
     private readonly TransportActivityContext? _transportActivity;
 
+    /* Simülasyon tarafı OPSİYONEL bir bağımlılıktır: ulaşım CRUD'u, canlı
+       simülasyon hiç kayıtlı olmasa da (ve mevcut testlerde olduğu gibi)
+       eksiksiz çalışmalıdır. Servis yalnızca "bu rotanın otoriter güzergahı
+       artık geçerli değil" olgusunu BİLDİRİR; durdurma ve yayın kararının
+       sahibi simülasyon tarafıdır. */
+    private readonly ITransportSimulationCanceller? _simulationCanceller;
+
     public TransportService(
         AppDbContext dbContext,
         ICurrentUserService currentUser,
         IGeographicAuthorizationService geographicAuthorization,
         IOsrmRoutingService osrmRouting,
-        TransportActivityContext? transportActivity = null)
+        TransportActivityContext? transportActivity = null,
+        ITransportSimulationCanceller? simulationCanceller = null)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
         _geographicAuthorization = geographicAuthorization;
         _osrmRouting = osrmRouting;
         _transportActivity = transportActivity;
+        _simulationCanceller = simulationCanceller;
     }
 
     public async Task<ServiceResult<IReadOnlyList<TransportRouteResponse>>> GetRoutesAsync(
@@ -744,6 +754,11 @@ public sealed class TransportService : ITransportService
             existingPath.LastFailureReason = null;
             existingPath.ModifiedDate = DateTime.UtcNow;
             await _dbContext.SaveChangesAsync(cancellationToken);
+
+            /* Yeniden üretim, çalışan bir simülasyonun altındaki geometriyi
+               DEĞİŞTİRİR. Bayatlatma anında iptal edilir; üretimin sonucunu
+               beklemek, aracı eski güzergahta saniyelerce yürütmek demekti. */
+            await CancelSimulationsAsync([existingPath.RouteId], cancellationToken);
         }
 
         var routing = await _osrmRouting.RouteAsync(
@@ -846,6 +861,8 @@ public sealed class TransportService : ITransportService
             path.ModifiedDate = now;
         }
 
+        await CancelSimulationsAsync(paths.Select(path => path.RouteId), cancellationToken);
+
         return paths.Count > 0;
     }
 
@@ -860,6 +877,41 @@ public sealed class TransportService : ITransportService
             : safeReason[..TransportRoutePath.MaxFailureReasonLength];
         path.ModifiedDate = DateTime.UtcNow;
         await _dbContext.SaveChangesAsync(cancellationToken);
+        await CancelSimulationsAsync([path.RouteId], cancellationToken);
+    }
+
+    /// <summary>
+    /// Otoriter güzergahın artık geçerli olmadığını simülasyon tarafına bildirir.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Tek bildirim noktası.</b> Çağrılar yalnızca yolun BAYATLADIĞI ya da
+    /// DEĞİŞTİĞİ üç yerden gelir: topoloji değişiminde toplu bayatlatma
+    /// (<see cref="MarkRoutePathsStaleAsync"/>), üretim hatasının kalıcılaştığı
+    /// yer (<see cref="PersistRoutePathFailureAsync"/>) ve yeniden üretimin
+    /// mevcut yolu geçersiz kıldığı an. Controller'lara ya da tek tek CRUD
+    /// metotlarına iptal kodu YAYILMAZ; bu üç yer, yolun bugün mutasyona
+    /// uğradığı yerlerin tamamıdır.
+    /// </para>
+    /// <para>
+    /// <b>Yön fail-safe'tir.</b> Bildirim, kaydın kalıcılaşmasından hemen önce
+    /// ya da sonra yapılabilir; yarıştaki tek olası hata FAZLADAN bir iptaldir
+    /// (yeniden başlatmayla düzelir). Geçersiz geometride devam eden bir araç
+    /// ise haritada yanlış bir gerçeklik üretirdi.
+    /// </para>
+    /// </remarks>
+    private Task CancelSimulationsAsync(IEnumerable<int> routeIds, CancellationToken cancellationToken)
+    {
+        if (_simulationCanceller is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        var affected = routeIds.Distinct().ToArray();
+
+        return affected.Length == 0
+            ? Task.CompletedTask
+            : _simulationCanceller.CancelForRoutesAsync(affected, cancellationToken);
     }
 
     private static bool IsValidRoutingResult(OsrmRouteResult result) =>
