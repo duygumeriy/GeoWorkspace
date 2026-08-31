@@ -8,6 +8,7 @@ using Microsoft.OpenApi.Models;
 using StajProject.Application.Common;
 using StajProject.Application.Activity;
 using StajProject.Application.Interfaces;
+using StajProject.Application.Journeys;
 using StajProject.Application.Options;
 using StajProject.Application.Simulation;
 using StajProject.Api.Authorization;
@@ -115,6 +116,50 @@ osrmOptions.Validate();
 builder.Services.AddSingleton(osrmOptions);
 builder.Services.AddHttpClient<IOsrmRoutingService, OsrmRoutingService>(client =>
     client.Timeout = TimeSpan.FromSeconds(osrmOptions.TimeoutSeconds));
+
+/* Yolculuk planlamasının profil farkındalıklı yönlendirmesi.
+
+   Mevcut IOsrmRoutingService'e DOKUNULMAZ: o port Akıllı Ulaşım'ın kalıcı
+   güzergah üretimine hizmet eder ve manevra adımı taşımaz. Yolculuk
+   planlaması adım ister ve profil başına AYRI bir uca gider, bu yüzden kendi
+   adaptörünü kullanır.
+
+   Sürüş, ek yapılandırma İSTEMEDEN mevcut Osrm bölümünü kullanır; yürüyüş ve
+   bisiklet yalnızca kendi uçları tanımlıysa yönlendirilebilir sayılır.
+   Bölümler yoksa uygulama sorunsuz başlar ve o profiller "kullanılamıyor"
+   olarak bildirilir — isteğe bağlı servisler başlangıç için ZORUNLU DEĞİLDİR.
+
+   Neden ayrı uç şart: yerel OSRM car.lua ile derlenir ve osrm-routed adresteki
+   profil segmentini yok sayar; aynı sunucuya "walking" demek sürüş sonucunu
+   yürüyüş diye etiketlemek olurdu. Validate bunu yapılandırma düzeyinde de
+   reddeder. */
+var journeyRoutingOptions = builder.Configuration
+    .GetSection(JourneyRoutingOptions.SectionName)
+    .Get<JourneyRoutingOptions>() ?? new JourneyRoutingOptions();
+journeyRoutingOptions.Validate(osrmOptions.BaseUrl);
+builder.Services.AddSingleton(journeyRoutingOptions);
+
+builder.Services.AddHttpClient(
+    OsrmJourneyRoutingService.HttpClientNameOf(JourneyTravelProfile.Driving),
+    client => client.Timeout = TimeSpan.FromSeconds(osrmOptions.TimeoutSeconds));
+
+foreach (var (profile, endpoint) in new[]
+         {
+             (JourneyTravelProfile.Walking, journeyRoutingOptions.Walking),
+             (JourneyTravelProfile.Cycling, journeyRoutingOptions.Cycling)
+         })
+{
+    if (endpoint is null)
+    {
+        continue;
+    }
+
+    builder.Services.AddHttpClient(
+        OsrmJourneyRoutingService.HttpClientNameOf(profile),
+        client => client.Timeout = TimeSpan.FromSeconds(endpoint.TimeoutSeconds));
+}
+
+builder.Services.AddSingleton<IJourneyRoutingService, OsrmJourneyRoutingService>();
 
 /* --- Secret'lar --------------------------------------------------------------
    Jwt:Key ve AdminSeed:Password hiçbir appsettings dosyasında TUTULMAZ.

@@ -106,6 +106,36 @@ Osrm__BaseUrl=http://localhost:5001 dotnet run --project backend/src/StajProject
 No custom environment parsing is used. The OSRM URL and profile remain
 server-side configuration and are never supplied by the browser.
 
+## 6. Optional: walking and cycling routing
+
+Journey planning treats walking and cycling as genuinely routed **only** when a
+separate routing server is configured for them. This is not a policy choice —
+`osrm-extract` above compiles the dataset with `car.lua`, and `osrm-routed`
+**ignores the profile segment in the request URL**. Asking the driving server
+for `/route/v1/walking/...` returns a driving result, so serving walking from it
+would mislabel driving geometry.
+
+Without these sections the API starts normally and reports walking and cycling
+as unavailable. Driving is unaffected and needs no new configuration.
+
+To enable them, prepare a second dataset with OSRM's bundled `foot.lua` (or
+`bicycle.lua`) into a separate directory and run a second `osrm-routed` on
+another host port, then point the backend at it:
+
+```dotenv
+JourneyRouting__Walking__BaseUrl=http://localhost:5001
+JourneyRouting__Walking__Profile=walking
+JourneyRouting__Walking__TimeoutSeconds=30
+```
+
+`JourneyRouting:Cycling` takes the same three keys. The backend refuses to start
+if a walking or cycling `BaseUrl` equals `Osrm:BaseUrl`, or if walking and
+cycling share one address — that configuration could only produce driving
+results wearing another profile's name.
+
+The existing driving compose file is unchanged; add a second server alongside it
+rather than rebuilding this one.
+
 ## Stop or remove the container
 
 ```bash

@@ -60,20 +60,20 @@ public enum JourneyTravelProfile
     Cycling
 }
 
-/// <summary>Talep edilen profilin bu kurulumda ne kadar dürüstçe karşılanabildiği.</summary>
+/// <summary>Talep edilen profilin bu kurulumda gerçekten karşılanıp karşılanamadığı.</summary>
+/// <remarks>
+/// Bilinçli olarak İKİ durum vardır. Faz 5A'daki "yaklaşık" durumu KALDIRILDI:
+/// bir profil ya kendi motoruyla gerçekten yönlendirilir ya da kullanılamaz.
+/// Üçüncü bir durum bırakmak, sürüş sonucunu yürüyüş/bisiklet diye etiketlemenin
+/// kapısını açık tutardı.
+/// </remarks>
 public enum JourneyProfileSupport
 {
-    /// <summary>Yapılandırılmış yönlendirme motoru bu profili birebir üretir.</summary>
+    /// <summary>Bu profil için yapılandırılmış gerçek bir motor güzergahı üretti.</summary>
     Routed,
 
-    /// <summary>
-    /// Sözleşme kabul edilir ama motor bu profili TAŞIMAZ; plan sunucunun
-    /// yapılandırılmış profili üzerinden kurulur ve sonuç bunu açıkça bildirir.
-    /// </summary>
-    Approximated,
-
-    /// <summary>Bu kurulumda hiçbir dürüst karşılığı yok; istek reddedilir.</summary>
-    Unsupported
+    /// <summary>Bu profil için yapılandırılmış bir motor yok; istek reddedilir.</summary>
+    Unavailable
 }
 
 /// <summary>Normalleştirilmiş bir geçiş noktasının plandaki rolü.</summary>
@@ -155,12 +155,11 @@ public static class JourneyContractNames
         _ => Cycling
     };
 
-    public static string Of(JourneyProfileSupport support) => support switch
-    {
-        JourneyProfileSupport.Routed => "routed",
-        JourneyProfileSupport.Approximated => "approximated",
-        _ => "unsupported"
-    };
+    public static string Of(JourneyGeometrySource source) =>
+        source == JourneyGeometrySource.PersistedRoutePath ? "persistedRoutePath" : "liveRouting";
+
+    public static string Of(JourneyProfileSupport support) =>
+        support == JourneyProfileSupport.Routed ? "routed" : "unavailable";
 
     public static string Of(JourneyWaypointRole role) => role switch
     {

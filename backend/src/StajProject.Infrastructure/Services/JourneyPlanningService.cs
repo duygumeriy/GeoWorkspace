@@ -1,11 +1,10 @@
-using System.Globalization;
 using Microsoft.EntityFrameworkCore;
+using NetTopologySuite.Geometries;
+using NetTopologySuite.IO;
 using StajProject.Application.Common;
 using StajProject.Application.DTOs;
 using StajProject.Application.Interfaces;
 using StajProject.Application.Journeys;
-using StajProject.Application.Options;
-using StajProject.Application.Simulation;
 using StajProject.Domain.Common;
 using StajProject.Infrastructure.Persistence;
 
@@ -30,9 +29,16 @@ namespace StajProject.Infrastructure.Services;
 /// başına geçerli görünmemelidir.
 /// </para>
 /// <para>
-/// <b>Yönlendirme motoru çağrılmaz.</b> Bu faz iskeleti üretir; mesafeler
-/// mevcut <see cref="TransportGeodesy"/> ile kuş uçuşu hesaplanır ve özet
-/// bunu <c>IsRouted = false</c> ile bildirir.
+/// <b>Geometri GERÇEKTİR.</b> Kuş uçuşu ölçü artık hiçbir yerde
+/// gösterilmez: sonuç ya rotanın kalıcı güzergahından ya da
+/// <see cref="IJourneyRoutingService"/> üzerinden canlı hesaplanmış bir
+/// güzergahtan gelir; ikisi de yol ağı üzerinde ölçülmüştür ve hangisi
+/// olduğu <c>GeometrySource</c> ile bildirilir.
+/// </para>
+/// <para>
+/// <b>Salt okunurluk canlı hesapta da korunur.</b> Canlı güzergah yalnızca
+/// yanıtta yaşar; <c>TransportRoutePath</c>'e yazılmaz, bayat bir kayıt
+/// tazelenmez.
 /// </para>
 /// </remarks>
 public sealed class JourneyPlanningService : IJourneyPlanningService
@@ -41,6 +47,9 @@ public sealed class JourneyPlanningService : IJourneyPlanningService
     internal const int MaxWaypoints = 25;
 
     private const int MinWaypoints = 2;
+
+    /// <summary>Bir çizgi için anlamlı en az köşe sayısı.</summary>
+    private const int MinimumGeometryPoints = 2;
 
     private const string UnknownUserMessage = "Yolculuk planlamak için kimlik doğrulaması gerekiyor.";
     private const string EmptyRequestMessage = "Planlama isteği boş olamaz.";
@@ -88,25 +97,45 @@ public sealed class JourneyPlanningService : IJourneyPlanningService
 
     private const string ReverseDirectionAssumption =
         "Bölüm, hattın kalıcı durak sırasına göre TERS yönde planlandı; duraklar seçime uygun biçimde sıralandı.";
-    private const string PreviewAssumption =
-        "Bu bir ÖNİZLEMEDİR: yol ağı üzerinde hesaplanmış bir güzergah henüz üretilmedi. "
-        + "Bildirilen mesafeler noktalar arası kuş uçuşu değerlerdir.";
+
+    private const string PersistedPathAssumption =
+        "Güzergah, rotanın kayıtlı ve güncel yolundan olduğu gibi alındı; yeniden hesaplanmadı.";
+
+    private const string MissingPathAssumption =
+        "Rotanın kayıtlı bir güzergahı bulunmadığı için bu önizleme geçici olarak hesaplandı ve hiçbir yere kaydedilmedi.";
+
+    private const string StalePathAssumption =
+        "Rotanın kayıtlı güzergahı güncel olmadığı için bu önizleme geçici olarak hesaplandı ve hiçbir yere kaydedilmedi.";
+
+    private const string ProfileMismatchAssumption =
+        "Rotanın kayıtlı güzergahı farklı bir seyahat profiliyle üretildiği için bu önizleme "
+        + "talep edilen profille geçici olarak hesaplandı ve hiçbir yere kaydedilmedi.";
+
+    private const string SegmentLiveRoutingAssumption =
+        "Bölüm, kayıtlı güzergahtan kesilerek değil, seçilen duraklar için baştan hesaplandı; "
+        + "kayıtlı geometri hangi köşesinin hangi durağa karşılık geldiğini saklamadığından "
+        + "kesme işlemi güvenle kanıtlanamaz.";
+
+    private const string NoStepsAssumption =
+        "Bu güzergah için adım adım yol tarifi bulunmuyor.";
+
+    private static readonly WKTWriter WktWriter = new();
 
     private readonly AppDbContext _dbContext;
     private readonly ICurrentUserService _currentUser;
     private readonly IEffectivePermissionService _permissions;
-    private readonly OsrmOptions _osrmOptions;
+    private readonly IJourneyRoutingService _routing;
 
     public JourneyPlanningService(
         AppDbContext dbContext,
         ICurrentUserService currentUser,
         IEffectivePermissionService permissions,
-        OsrmOptions osrmOptions)
+        IJourneyRoutingService routing)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
         _permissions = permissions;
-        _osrmOptions = osrmOptions;
+        _routing = routing;
     }
 
     public async Task<ServiceResult<JourneyPlanPreviewResponse>> PreviewAsync(
@@ -139,17 +168,16 @@ public sealed class JourneyPlanningService : IJourneyPlanningService
             return ServiceResult<JourneyPlanPreviewResponse>.Failure(InvalidProfileMessage);
         }
 
-        var profile = JourneyProfilePolicy.Decide(requestedProfile, _osrmOptions.Profile);
-        if (profile.Support == JourneyProfileSupport.Unsupported)
+        /* Profil kararı YAPILANDIRMAYA değil, gerçek yönlendirilebilirliğe
+           bakar. Yürüyüş/bisiklet için ayrı bir motor yoksa istek burada
+           durur; sürüşe düşülüp sonuç o profil adıyla etiketlenmez. */
+        var profile = JourneyProfilePolicy.Decide(requestedProfile, _routing.IsProfileRoutable(requestedProfile));
+        if (profile.Support == JourneyProfileSupport.Unavailable)
         {
             return ServiceResult<JourneyPlanPreviewResponse>.Failure(profile.Note!);
         }
 
-        var assumptions = new List<string> { PreviewAssumption };
-        if (profile.Note is not null)
-        {
-            assumptions.Add(profile.Note);
-        }
+        var assumptions = new List<string>();
 
         var resolved = mode switch
         {
@@ -163,8 +191,128 @@ public sealed class JourneyPlanningService : IJourneyPlanningService
             return Propagate<JourneyPlanPreviewResponse, ResolvedJourney>(resolved);
         }
 
+        var journey = resolved.Value!;
+
+        var geometry = mode == JourneyMode.RouteFull
+            ? await ResolveRouteFullGeometryAsync(journey, requestedProfile, assumptions, cancellationToken)
+            : await RouteLiveAsync(journey, requestedProfile, assumptions, cancellationToken);
+
+        if (!geometry.IsSuccess)
+        {
+            return Propagate<JourneyPlanPreviewResponse, ResolvedGeometry>(geometry);
+        }
+
         return ServiceResult<JourneyPlanPreviewResponse>.Success(
-            BuildPreview(mode, profile, resolved.Value!, assumptions));
+            BuildPreview(mode, profile, journey, geometry.Value!, assumptions));
+    }
+
+    /* --- Geometri üretimi --------------------------------------------------------- */
+
+    /// <summary>
+    /// Rotanın TAMAMI için geometri: mümkünse kalıcı güzergahı aynen kullanır.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Aynı yolu yeniden üretmek için motora GİDİLMEZ.</b> Kalıcı güzergah
+    /// güncel ve talep edilen profille üretilmişse otoriter kayıt odur;
+    /// yeniden hesaplamak hem gereksiz bir çağrı olur hem de simülasyonun
+    /// işleteceği geometriyle önizlemenin ayrışmasına kapı aralardı.
+    /// </para>
+    /// <para>
+    /// <b>Profil uyuşmazlığı yeniden kullanımı ENGELLER.</b> Kalıcı yol sürüş
+    /// profiliyle üretilmiştir; yürüyüş talebine onu döndürmek, sürüş
+    /// geometrisini yürüyüş diye etiketlemek olurdu.
+    /// </para>
+    /// <para>
+    /// <b>Bayat/eksik yol istekleri öldürmez.</b> Bu uç SALT OKUNURDUR:
+    /// güzergah yeniden hesaplanıp KAYDEDİLMEZ, ama önizleme için canlı bir
+    /// geçici güzergah hesaplanabilir. Sonuç bunu <c>liveRouting</c> olarak
+    /// bildirir ki kullanıcı otoriter yolu gördüğünü sanmasın.
+    /// </para>
+    /// </remarks>
+    private async Task<ServiceResult<ResolvedGeometry>> ResolveRouteFullGeometryAsync(
+        ResolvedJourney journey,
+        JourneyTravelProfile profile,
+        List<string> assumptions,
+        CancellationToken cancellationToken)
+    {
+        var path = await _dbContext.TransportRoutePaths
+            .AsNoTracking()
+            .Where(item => item.RouteId == journey.Route!.Id)
+            .Select(item => new
+            {
+                item.Geometry,
+                item.DistanceMeters,
+                item.DurationSeconds,
+                item.Profile,
+                item.IsStale
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var requestedProfileName = JourneyContractNames.Of(profile);
+
+        if (path is not null
+            && !path.IsStale
+            && path.Geometry.NumPoints >= MinimumGeometryPoints
+            && string.Equals(path.Profile, requestedProfileName, StringComparison.OrdinalIgnoreCase))
+        {
+            assumptions.Add(PersistedPathAssumption);
+            return ServiceResult<ResolvedGeometry>.Success(new ResolvedGeometry(
+                path.Geometry,
+                path.DistanceMeters,
+                path.DurationSeconds,
+                path.Profile,
+                JourneyGeometrySource.PersistedRoutePath,
+                Steps: []));
+        }
+
+        assumptions.Add(path is null
+            ? MissingPathAssumption
+            : path.IsStale
+                ? StalePathAssumption
+                : ProfileMismatchAssumption);
+
+        return await RouteLiveAsync(journey, profile, assumptions, cancellationToken);
+    }
+
+    /// <summary>
+    /// Normalleştirilmiş noktaları talep edilen profille CANLI yönlendirir.
+    /// </summary>
+    /// <remarks>
+    /// Koordinatlar yalnızca sunucuda çözülmüş kayıtlardan gelir; istemciden
+    /// gelen hiçbir geometri bu çağrıya giremez.
+    /// </remarks>
+    private async Task<ServiceResult<ResolvedGeometry>> RouteLiveAsync(
+        ResolvedJourney journey,
+        JourneyTravelProfile profile,
+        List<string> assumptions,
+        CancellationToken cancellationToken)
+    {
+        var coordinates = journey.Waypoints
+            .Select(waypoint => new JourneyCoordinate(waypoint.Point.Longitude, waypoint.Point.Latitude))
+            .ToArray();
+
+        var routed = await _routing.RouteAsync(new JourneyRouteRequest(profile, coordinates), cancellationToken);
+
+        if (!routed.IsSuccess)
+        {
+            return Propagate<ResolvedGeometry, JourneyRouteResult>(routed);
+        }
+
+        var result = routed.Value!;
+
+        if (result.Steps.Count == 0)
+        {
+            assumptions.Add(NoStepsAssumption);
+        }
+
+        return ServiceResult<ResolvedGeometry>.Success(new ResolvedGeometry(
+            result.Geometry,
+            result.DistanceMeters,
+            result.DurationSeconds,
+            result.EngineProfile,
+            JourneyGeometrySource.LiveRouting,
+            result.Steps));
     }
 
     /* --- Kip çözümleyicileri ----------------------------------------------------- */
@@ -254,6 +402,16 @@ public sealed class JourneyPlanningService : IJourneyPlanningService
         {
             assumptions.Add(ReverseDirectionAssumption);
         }
+
+        /* Bölüm, kalıcı güzergahtan KESİLMEZ. TransportRoutePath yalnızca tek
+           bir LineString saklar; hangi köşesinin hangi durağa karşılık geldiği
+           (OSRM'nin leg sınırları) hiçbir yerde tutulmaz. En yakın köşeyi
+           bulup oradan kesmek, kavşak ve geri dönüşlerde sessizce YANLIŞ bir
+           bölüm üretebilirdi — yanlış bir bölümü sessizce döndürmektense,
+           seçilen duraklar için baştan hesaplanır. Böylece sonuç tam olarak
+           seçilen duraklarda başlar ve biter, ilgisiz kısımlar hiç girmez ve
+           ters seçim istenen yönde hesaplanır. */
+        assumptions.Add(SegmentLiveRoutingAssumption);
 
         return ServiceResult<ResolvedJourney>.Success(
             new ResolvedJourney(route.Value, [.. slice.Select(ToWaypoint)]));
@@ -451,6 +609,7 @@ public sealed class JourneyPlanningService : IJourneyPlanningService
         JourneyMode mode,
         JourneyProfileDecision profile,
         ResolvedJourney journey,
+        ResolvedGeometry geometry,
         IReadOnlyList<string> assumptions)
     {
         var waypoints = new List<JourneyWaypointResponse>(journey.Waypoints.Count);
@@ -477,51 +636,49 @@ public sealed class JourneyPlanningService : IJourneyPlanningService
             });
         }
 
-        var steps = new List<JourneyNavigationStepResponse>(Math.Max(0, waypoints.Count - 1));
-        var total = 0d;
-        for (var index = 1; index < waypoints.Count; index++)
-        {
-            var from = waypoints[index - 1];
-            var to = waypoints[index];
-            var distance = TransportGeodesy.DistanceMeters(
-                from.Longitude, from.Latitude, to.Longitude, to.Latitude);
-            total += distance;
-
-            steps.Add(new JourneyNavigationStepResponse
+        var steps = geometry.Steps
+            .Select(step => new JourneyNavigationStepResponse
             {
-                StepIndex = index - 1,
-                FromWaypointPosition = from.Position,
-                ToWaypointPosition = to.Position,
-                FromName = from.Name,
-                ToName = to.Name,
-                StraightLineDistanceMeters = distance,
-                Instruction = string.Format(
-                    CultureInfo.InvariantCulture,
-                    "{0} → {1}",
-                    from.Name,
-                    to.Name)
-            });
-        }
+                Sequence = step.Sequence,
+                ManeuverType = step.ManeuverType,
+                ManeuverModifier = step.ManeuverModifier,
+                Name = step.Name,
+                DistanceMeters = step.DistanceMeters,
+                DurationSeconds = step.DurationSeconds,
+                ManeuverLongitude = step.ManeuverLocation.Longitude,
+                ManeuverLatitude = step.ManeuverLocation.Latitude,
+                DisplayText = step.DisplayText
+            })
+            .ToArray();
 
         return new JourneyPlanPreviewResponse
         {
+            /* Yalnızca İLİŞKİLENDİRME kimliği: saklanmaz, imzalanmaz ve bir
+               yetki belirteci değildir. Sonraki fazlar istemciden gelen bir
+               plan kimliğine güvenerek simülasyon başlatmamalıdır. */
             PlanId = Guid.NewGuid(),
             CreatedAt = DateTime.UtcNow,
+
+            // Projenin kanonik API geometri biçimi: WKT.
+            GeometryWkt = WktWriter.Write(geometry.Geometry),
             Summary = new JourneyPlanSummaryResponse
             {
                 Mode = JourneyContractNames.Of(mode),
                 RequestedProfile = JourneyContractNames.Of(profile.Requested),
-                EffectiveProfile = profile.EffectiveEngineProfile,
+
+                /* Gerçekten üreten motorun profili. Talep edilenden sessizce
+                   sapılmaz; yeniden kullanılan kalıcı yolda o kaydın profilidir. */
+                EffectiveProfile = geometry.EngineProfile,
                 ProfileSupport = JourneyContractNames.Of(profile.Support),
+                GeometrySource = JourneyContractNames.Of(geometry.Source),
                 RouteId = journey.Route?.Id,
                 RouteName = journey.Route?.Name,
                 WaypointCount = waypoints.Count,
-                StepCount = steps.Count,
-                StraightLineDistanceMeters = total,
+                StepCount = steps.Length,
 
-                /* Bu fazda hiçbir yol geometrisi üretilmez; alan bunu itiraf
-                   etmek için vardır ve sabit false yazılır. */
-                IsRouted = false,
+                // Yol ağı üzerinde ÖLÇÜLMÜŞ değerler; kuş uçuşu ölçü artık yok.
+                DistanceMeters = geometry.DistanceMeters,
+                DurationSeconds = geometry.DurationSeconds,
                 Assumptions = [.. assumptions]
             },
             Waypoints = waypoints,
@@ -533,8 +690,15 @@ public sealed class JourneyPlanningService : IJourneyPlanningService
     /// Farklı jenerik gövdeler arasında hata sözleşmesini KORUYARAK aktarır.
     /// </summary>
     /// <remarks>
-    /// Kip çözümleyicileri kendi iç tipleriyle çalışır; hatayı dış gövdeye
-    /// taşırken <c>Failure</c> kullanmak, bir 404'ü sessizce 400'e çevirirdi.
+    /// <para>
+    /// Kip çözümleyicileri ve geometri aşaması kendi iç tipleriyle çalışır;
+    /// hatayı dış gövdeye taşırken <c>Failure</c> kullanmak, bir 404'ü ya da
+    /// yönlendirme motorundan gelen bir 502/504'ü sessizce 400'e çevirirdi.
+    /// </para>
+    /// <para>
+    /// Mesaj OLDUĞU GİBİ taşınır: kaynak sonuç zaten yalnızca güvenli
+    /// sözleşme metinleri taşır, burada yeniden yazılmaz ya da zenginleştirilmez.
+    /// </para>
     /// </remarks>
     private static ServiceResult<TTarget> Propagate<TTarget, TSource>(ServiceResult<TSource> failure) =>
         failure.ErrorKind switch
@@ -574,4 +738,13 @@ public sealed class JourneyPlanningService : IJourneyPlanningService
     private sealed record ResolvedWaypoint(JourneyWaypointSource Source, ResolvedPoint Point);
 
     private sealed record ResolvedJourney(ResolvedRoute? Route, IReadOnlyList<ResolvedWaypoint> Waypoints);
+
+    /// <summary>Planın nihai geometrisi ve ölçümleri, kaynağıyla birlikte.</summary>
+    private sealed record ResolvedGeometry(
+        LineString Geometry,
+        double DistanceMeters,
+        double DurationSeconds,
+        string EngineProfile,
+        JourneyGeometrySource Source,
+        IReadOnlyList<JourneyRouteStep> Steps);
 }

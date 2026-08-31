@@ -166,25 +166,16 @@ public sealed class JourneyPlanningFoundationTests
         Assert.All(plan.Waypoints, waypoint => Assert.Equal(JourneyContractNames.TransportStop, waypoint.Source));
         Assert.All(plan.Waypoints, waypoint => Assert.Equal(route.Id, waypoint.RouteId));
 
-        Assert.Equal(2, plan.Steps.Count);
-        Assert.Equal([0, 1], plan.Steps.Select(step => step.StepIndex));
-        Assert.Equal("A", plan.Steps[0].FromName);
-        Assert.Equal("C", plan.Steps[1].ToName);
-        Assert.All(plan.Steps, step => Assert.True(step.StraightLineDistanceMeters > 0));
-
         Assert.Equal(JourneyContractNames.RouteFull, plan.Summary.Mode);
         Assert.Equal(route.Id, plan.Summary.RouteId);
         Assert.Equal(route.Name, plan.Summary.RouteName);
         Assert.Equal(3, plan.Summary.WaypointCount);
-        Assert.Equal(2, plan.Summary.StepCount);
-        Assert.Equal(
-            plan.Steps.Sum(step => step.StraightLineDistanceMeters),
-            plan.Summary.StraightLineDistanceMeters,
-            precision: 6);
 
-        // Bu faz güzergah ÜRETMEZ ve bunu itiraf eder.
-        Assert.False(plan.Summary.IsRouted);
-        Assert.NotEmpty(plan.Summary.Assumptions);
+        /* Bu testin konusu SIRALAMADIR; ölçüm ve geometri iddiaları Faz 5B
+           yönlendirme testlerindedir. Yine de sonucun gerçekten yönlendirilmiş
+           olduğu burada da doğrulanır. */
+        Assert.Equal("routed", plan.Summary.ProfileSupport);
+        Assert.NotEmpty(plan.GeometryWkt);
         Assert.NotEqual(Guid.Empty, plan.PlanId);
     }
 
@@ -251,7 +242,6 @@ public sealed class JourneyPlanningFoundationTests
 
         // Aradaki duraklar DÜŞÜRÜLMEZ: bölüm hattın gerçek dizisidir.
         Assert.Equal(["B", "C", "D"], result.Value!.Waypoints.Select(waypoint => waypoint.Name));
-        Assert.Equal(2, result.Value.Summary.StepCount);
         Assert.Equal(route.Id, result.Value.Summary.RouteId);
     }
 
@@ -733,26 +723,6 @@ public sealed class JourneyPlanningFoundationTests
     /* --- Profil politikası -------------------------------------------------------- */
 
     [Fact]
-    public void Only_driving_is_truly_routed_on_a_driving_only_engine()
-    {
-        var driving = JourneyProfilePolicy.Decide(JourneyTravelProfile.Driving, "driving");
-
-        Assert.Equal(JourneyProfileSupport.Routed, driving.Support);
-        Assert.Equal("driving", driving.EffectiveEngineProfile);
-        Assert.Null(driving.Note);
-
-        // Yaya ve bisiklet motorda YOKTUR: yaklaşım kabul edilir ama gizlenmez.
-        foreach (var requested in (JourneyTravelProfile[])[JourneyTravelProfile.Walking, JourneyTravelProfile.Cycling])
-        {
-            var decision = JourneyProfilePolicy.Decide(requested, "driving");
-
-            Assert.Equal(JourneyProfileSupport.Approximated, decision.Support);
-            Assert.Equal("driving", decision.EffectiveEngineProfile);
-            Assert.False(string.IsNullOrWhiteSpace(decision.Note));
-        }
-    }
-
-    [Fact]
     public void The_canonical_profile_set_is_exactly_driving_walking_and_cycling()
     {
         /* Küme SABİTTİR. Toplu taşıma kapsam dışıdır: GTFS/transit grafiği ve
@@ -781,9 +751,10 @@ public sealed class JourneyPlanningFoundationTests
     [Fact]
     public async Task A_bus_profile_is_rejected_as_an_unknown_profile()
     {
-        /* Otobüs artık sözleşmenin parçası DEĞİLDİR ve özel bir hata yolu da
-           yoktur: mevcut güvenli doğrulama modelinden, "car" ya da "rocket"
-           ile aynı kapıdan döner. */
+        /* Otobüs sözleşmenin parçası DEĞİLDİR ve özel bir hata yolu da yoktur:
+           mevcut güvenli doğrulama modelinden, "car" ya da "rocket" ile aynı
+           kapıdan döner. Faz 5B yönlendirme katmanı bunu değiştirmez —
+           istek profil çözümünde durur, motora hiç ulaşmaz. */
         await using var fixture = Fixture.Create();
         var route = await fixture.AddRouteAsync();
         await fixture.AddStopAsync(route, "A", 30, 40, sequence: 1);
@@ -796,28 +767,47 @@ public sealed class JourneyPlanningFoundationTests
 
         Assert.False(result.IsSuccess);
         Assert.Equal(ServiceErrorKind.Validation, result.ErrorKind);
-
-        // Reddedilen profil sonuç gövdesinde HİÇ görünmez; kısmi bir plan üretilmez.
         Assert.Null(result.Value);
+
+        // Yönlendirme motoruna HİÇ gidilmedi.
+        Assert.Equal(0, fixture.Router.CallCount);
     }
 
     [Fact]
-    public void A_profile_the_engine_cannot_serve_at_all_is_refused_rather_than_faked()
+    public void A_profile_is_routed_only_when_its_own_engine_is_configured()
     {
-        /* Yapılandırma ileride başka bir motor profiline geçerse politika
-           sessizce "yaklaşım" iddia etmez. */
+        /* Faz 5B'nin çekirdek kuralı: karar yapılandırılmış motor profiline
+           göre değil, o profilin GERÇEKTEN yönlendirilebilir olmasına göre
+           verilir. "Yaklaşık" diye üçüncü bir durum artık YOKTUR. */
+        var routed = JourneyProfilePolicy.Decide(JourneyTravelProfile.Walking, isRoutable: true);
+        Assert.Equal(JourneyProfileSupport.Routed, routed.Support);
+        Assert.Null(routed.Note);
+
+        var unavailable = JourneyProfilePolicy.Decide(JourneyTravelProfile.Walking, isRoutable: false);
+        Assert.Equal(JourneyProfileSupport.Unavailable, unavailable.Support);
+        Assert.False(string.IsNullOrWhiteSpace(unavailable.Note));
+
+        // Gerekçe, sürüşe düşmenin bir seçenek OLMADIĞINI söyler.
+        Assert.Contains("yürüyüş gibi gösterilmez", unavailable.Note!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_support_contract_has_exactly_two_honest_states()
+    {
+        /* "Approximated" KALDIRILDI. Üçüncü bir durum bırakmak, sürüş
+           sonucunu yürüyüş/bisiklet diye etiketlemenin kapısını açık
+           tutardı. */
         Assert.Equal(
-            JourneyProfileSupport.Unsupported,
-            JourneyProfilePolicy.Decide(JourneyTravelProfile.Walking, "bike").Support);
+            [JourneyProfileSupport.Routed, JourneyProfileSupport.Unavailable],
+            Enum.GetValues<JourneyProfileSupport>());
 
         Assert.Equal(
-            JourneyProfileSupport.Unsupported,
-            JourneyProfilePolicy.Decide(JourneyTravelProfile.Cycling, "bike").Support);
+            ["routed", "unavailable"],
+            Enum.GetValues<JourneyProfileSupport>().Select(value => JourneyContractNames.Of(value)));
 
-        // Motor gerçekten yürüyüş profiliyse yürüyüş birebir üretilir.
-        Assert.Equal(
-            JourneyProfileSupport.Routed,
-            JourneyProfilePolicy.Decide(JourneyTravelProfile.Walking, "walking").Support);
+        Assert.DoesNotContain(
+            Enum.GetNames<JourneyProfileSupport>(),
+            name => name.Contains("Approx", StringComparison.OrdinalIgnoreCase));
     }
 
     /* --- Mevcut mimariye dokunulmadığının kanıtı --------------------------------- */
@@ -865,9 +855,10 @@ public sealed class JourneyPlanningFoundationTests
     {
         public const int UserId = 42;
 
-        private Fixture(AppDbContext db, int? userId, bool canViewPois)
+        private Fixture(AppDbContext db, int? userId, bool canViewPois, FakeJourneyRouter router)
         {
             Db = db;
+            Router = router;
 
             var currentUser = Substitute.For<ICurrentUserService>();
             currentUser.UserId.Returns(userId);
@@ -878,24 +869,25 @@ public sealed class JourneyPlanningFoundationTests
                 .HasPermissionAsync(Arg.Any<int>(), PermissionCodes.PoiView, Arg.Any<CancellationToken>())
                 .Returns(canViewPois);
 
-            Service = new JourneyPlanningService(
-                db,
-                currentUser,
-                permissions,
-                new OsrmOptions { Profile = JourneyProfilePolicy.DrivingEngineProfile });
+            Service = new JourneyPlanningService(db, currentUser, permissions, router);
         }
 
         public AppDbContext Db { get; }
 
+        public FakeJourneyRouter Router { get; }
+
         public JourneyPlanningService Service { get; }
 
-        public static Fixture Create(int? userId = UserId, bool canViewPois = true)
+        public static Fixture Create(
+            int? userId = UserId,
+            bool canViewPois = true,
+            FakeJourneyRouter? router = null)
         {
             var options = new DbContextOptionsBuilder<AppDbContext>()
                 .UseInMemoryDatabase($"journey-planning-{Guid.NewGuid():N}")
                 .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning))
                 .Options;
-            return new Fixture(new AppDbContext(options), userId, canViewPois);
+            return new Fixture(new AppDbContext(options), userId, canViewPois, router ?? new FakeJourneyRouter());
         }
 
         public async Task<TransportRoute> AddRouteAsync(
@@ -963,17 +955,22 @@ public sealed class JourneyPlanningFoundationTests
             return poi;
         }
 
-        public async Task<TransportRoutePath> AddPathAsync(TransportRoute route)
+        public async Task<TransportRoutePath> AddPathAsync(
+            TransportRoute route,
+            bool stale = false,
+            string profile = "driving",
+            LineString? geometry = null)
         {
             var path = new TransportRoutePath
             {
                 RouteId = route.Id,
-                Geometry = new LineString([new Coordinate(30, 40), new Coordinate(31, 41)]) { SRID = 4326 },
+                Geometry = geometry
+                    ?? new LineString([new Coordinate(30, 40), new Coordinate(31, 41)]) { SRID = 4326 },
                 DistanceMeters = 500,
                 DurationSeconds = 50,
-                Profile = "driving",
+                Profile = profile,
                 GeneratedAt = DateTime.UtcNow,
-                IsStale = false
+                IsStale = stale
             };
             Db.TransportRoutePaths.Add(path);
             await Db.SaveChangesAsync();

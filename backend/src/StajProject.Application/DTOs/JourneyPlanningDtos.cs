@@ -92,32 +92,51 @@ public sealed class JourneyWaypointResponse
 }
 
 /// <summary>
-/// İki ardışık geçiş noktası arasındaki adım.
+/// Tek bir seyir manevrası.
 /// </summary>
 /// <remarks>
-/// <b>Bu adım henüz bir MANEVRA değildir.</b> Bu fazda yönlendirme motoru hiç
-/// çağrılmaz; adım, plan iskeletinin noktadan noktaya kırılımıdır. Mesafe alanı
-/// bu yüzden <see cref="StraightLineDistanceMeters"/> olarak adlandırılmıştır —
-/// "dönüş talimatı" ya da "yol mesafesi" gibi okunabilecek bir ad, sonraki
-/// fazda gelecek gerçek OSRM adımlarıyla karıştırılırdı.
+/// <para>
+/// Faz 5A'da bu tip iki geçiş noktası arasındaki KUŞ UÇUŞU bacağı taşıyordu.
+/// Artık gerçek bir manevradır: değerler yönlendirme motorundan gelir ve
+/// düz çizgi ölçüsü sonuçta HİÇ yer almaz.
+/// </para>
+/// <para>
+/// Alanlar sağlayıcıdan bağımsızdır; ham motor yanıtı, alan adları veya iç
+/// yapısı bu sözleşmenin parçası değildir.
+/// </para>
 /// </remarks>
 public sealed class JourneyNavigationStepResponse
 {
-    public int StepIndex { get; set; }
+    /// <summary>Sıfır tabanlı, plan boyunca artan sıra.</summary>
+    public int Sequence { get; set; }
 
-    public int FromWaypointPosition { get; set; }
+    /// <summary>Kararlı manevra türü (ör. <c>turn</c>, <c>depart</c>, <c>arrive</c>).</summary>
+    public string ManeuverType { get; set; } = string.Empty;
 
-    public int ToWaypointPosition { get; set; }
+    /// <summary>Manevra yönü (ör. <c>left</c>, <c>slight right</c>); yoksa <c>null</c>.</summary>
+    public string? ManeuverModifier { get; set; }
 
-    public string FromName { get; set; } = string.Empty;
+    /// <summary>Yol/sokak adı; motor vermiyorsa <c>null</c>.</summary>
+    public string? Name { get; set; }
 
-    public string ToName { get; set; } = string.Empty;
+    public double DistanceMeters { get; set; }
 
-    /// <summary>Büyük çember (kuş uçuşu) mesafe; yol mesafesi DEĞİLDİR.</summary>
-    public double StraightLineDistanceMeters { get; set; }
+    public double DurationSeconds { get; set; }
 
-    /// <summary>İnsan tarafından okunabilir, iç ayrıntı içermeyen adım metni.</summary>
-    public string Instruction { get; set; } = string.Empty;
+    public double ManeuverLongitude { get; set; }
+
+    public double ManeuverLatitude { get; set; }
+
+    /// <summary>
+    /// Motorun verdiği hazır talimat metni; YOKSA <c>null</c> kalır.
+    /// </summary>
+    /// <remarks>
+    /// OSRM çekirdeği insan okunabilir talimat üretmez. Metin UYDURULMAZ ve bu
+    /// fazda gömülü bir çeviri katmanı da eklenmez; arayüz gerektiğinde
+    /// <see cref="ManeuverType"/> ve <see cref="ManeuverModifier"/> üzerinden
+    /// kendi metnini üretir.
+    /// </remarks>
+    public string? DisplayText { get; set; }
 }
 
 /// <summary>Planın tek bakışta okunabilir özeti.</summary>
@@ -128,11 +147,18 @@ public sealed class JourneyPlanSummaryResponse
     /// <summary>İstemcinin talep ettiği profil.</summary>
     public string RequestedProfile { get; set; } = string.Empty;
 
-    /// <summary>Planın gerçekte üzerine kurulduğu motor profili.</summary>
+    /// <summary>
+    /// Güzergahı gerçekte ÜRETEN motor profili. Talep edilenden farklı bir
+    /// değere sessizce düşülmez; kalıcı güzergah yeniden kullanıldığında o
+    /// kaydın kendi profilidir.
+    /// </summary>
     public string EffectiveProfile { get; set; } = string.Empty;
 
-    /// <summary><c>routed</c>, <c>approximated</c> veya <c>unsupported</c>.</summary>
+    /// <summary><c>routed</c> veya <c>unavailable</c>.</summary>
     public string ProfileSupport { get; set; } = string.Empty;
+
+    /// <summary><c>persistedRoutePath</c> veya <c>liveRouting</c>.</summary>
+    public string GeometrySource { get; set; } = string.Empty;
 
     /// <summary>Yalnızca rota tabanlı kiplerde dolu.</summary>
     public int? RouteId { get; set; }
@@ -143,18 +169,15 @@ public sealed class JourneyPlanSummaryResponse
 
     public int StepCount { get; set; }
 
-    /// <summary>Adımların kuş uçuşu mesafeleri toplamı; yol mesafesi DEĞİLDİR.</summary>
-    public double StraightLineDistanceMeters { get; set; }
+    /// <summary>Yol ağı üzerinde ölçülmüş toplam mesafe.</summary>
+    public double DistanceMeters { get; set; }
+
+    /// <summary>Yol ağı üzerinde ölçülmüş toplam süre.</summary>
+    public double DurationSeconds { get; set; }
 
     /// <summary>
-    /// Plan gerçek bir yol geometrisi üzerinde hesaplandı mı? Bu fazda daima
-    /// <c>false</c>'tur ve alan tam olarak bunu itiraf etmek için vardır.
-    /// </summary>
-    public bool IsRouted { get; set; }
-
-    /// <summary>
-    /// Sonucun hangi varsayımlarla üretildiği (profil politikası, yön
-    /// normalleştirmesi). Boş liste "varsayım yok" demektir.
+    /// Sonucun hangi varsayımlarla üretildiği (geometri kaynağı, adım
+    /// erişilebilirliği, yön normalleştirmesi). Boş liste "varsayım yok" demektir.
     /// </summary>
     public IReadOnlyList<string> Assumptions { get; set; } = [];
 }
@@ -163,10 +186,13 @@ public sealed class JourneyPlanSummaryResponse
 /// Planlama önizlemesinin tam yanıtı.
 /// </summary>
 /// <remarks>
-/// <see cref="PlanId"/> bir OTURUM kimliği değildir: bu fazda hiçbir yerde
-/// saklanmaz, yalnızca istemcinin bir önizlemeyi kendi arayüzünde
-/// tanımlayabilmesi ve sonraki fazda canlı bir oturumun bu plana
-/// bağlanabilmesi için üretilir.
+/// <para>
+/// <see cref="PlanId"/> yalnızca İLİŞKİLENDİRME içindir: hiçbir yerde
+/// saklanmaz, imzalanmaz ve bir YETKİ BELİRTECİ DEĞİLDİR. Sonraki fazlar bir
+/// simülasyonu, istemciden gelen bir plan kimliğine ya da geometriye
+/// GÜVENEREK başlatmamalıdır; sunucu her zaman kendi verisinden yeniden
+/// çözmelidir.
+/// </para>
 /// </remarks>
 public sealed class JourneyPlanPreviewResponse
 {
@@ -174,9 +200,20 @@ public sealed class JourneyPlanPreviewResponse
 
     public DateTime CreatedAt { get; set; }
 
+    /// <summary>
+    /// Güzergah geometrisi; projenin kanonik API biçimi olan WKT
+    /// <c>LINESTRING</c> (SRID 4326, <c>boylam enlem</c>).
+    /// </summary>
+    public string GeometryWkt { get; set; } = string.Empty;
+
     public JourneyPlanSummaryResponse Summary { get; set; } = new();
 
     public IReadOnlyList<JourneyWaypointResponse> Waypoints { get; set; } = [];
 
+    /// <summary>
+    /// Seyir manevraları. Kalıcı güzergah yeniden kullanıldığında BOŞ olur:
+    /// o kayıt adım verisi taşımaz ve yalnızca adım üretmek için motora
+    /// yeniden gidilmez.
+    /// </summary>
     public IReadOnlyList<JourneyNavigationStepResponse> Steps { get; set; } = [];
 }
