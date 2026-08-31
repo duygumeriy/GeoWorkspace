@@ -1,13 +1,50 @@
-# Local OSRM development server
+# Local OSRM development servers
 
-The backend uses OSRM's Route service to turn explicitly ordered transport
-stops into a road-following `LineString`. OSRM is a development dependency only:
-the API can start without Docker or a running OSRM container, and the browser
+The backend uses OSRM's Route service to turn ordered stops and journey
+waypoints into a road-following `LineString`. OSRM is a development dependency
+only: the API starts without Docker or any running container, and the browser
 never calls OSRM directly.
 
 The compose setup uses the MLD pipeline and the pinned image
 `ghcr.io/project-osrm/osrm-backend:v5.27.1`. It has portable defaults and can be
 customized through a local `tools/osrm/.env` file.
+
+## Why three servers
+
+The product supports exactly three travel profiles — **driving**, **walking**
+and **cycling**. Each needs its own server:
+
+**OSRM bakes the travel profile into the dataset during `osrm-extract`.** By the
+time `osrm-routed` is serving requests the profile is already fixed, and the
+profile segment in the request URL (`/route/v1/walking/...`) is **ignored**. So a
+car-preprocessed server answers a walking request with driving geometry — same
+roads, same turn restrictions, same speeds.
+
+That is why the backend treats walking and cycling as genuinely unavailable
+unless a *separately preprocessed* server is configured for them. It will not
+serve driving geometry under another profile's name, and it will not fake a
+duration with a multiplier: a different profile changes the **route**, not just
+the speed.
+
+| Profile | Lua profile | Data directory | Default port | Compose service |
+|---|---|---|---|---|
+| driving | `car.lua` | `./data` | `OSRM_HOST_PORT` — **5001** here (compose default 5000) | `osrm-routed` |
+| walking | `foot.lua` | `./data/walking` | 5002 | `osrm-walking` |
+| cycling | `bicycle.lua` | `./data/cycling` | 5003 | `osrm-cycling` |
+
+The driving port is intentionally **not fixed** — it has always been driven by
+`OSRM_HOST_PORT`, and this project's local setup uses 5001 (both `.env.example`
+and the tracked development backend config agree on that value). The
+optional profiles default to 5002/5003 so they stay clear of driving under
+either value. Compose does not reject duplicate published ports when resolving
+configuration; only the container start fails, so the defaults must be
+collision-free by construction.
+
+All three read the **same source `.osm.pbf`**; only the generated `.osrm*`
+artifacts differ. The driving service keeps its original name, port and data
+directory, so an already-prepared driving dataset needs no re-extraction and
+Smart Transport route generation is unaffected. Walking and cycling are purely
+additive and entirely optional.
 
 ## 1. Obtain an OpenStreetMap PBF
 
@@ -35,22 +72,48 @@ The available values are:
 ```dotenv
 OSRM_DATA_DIR=./data
 OSRM_DATASET=turkey-latest
-OSRM_HOST_PORT=5000
+OSRM_HOST_PORT=5001
+OSRM_WALKING_HOST_PORT=5002
+OSRM_CYCLING_HOST_PORT=5003
+OSRM_WALKING_DATA_DIR=./data/walking
+OSRM_CYCLING_DATA_DIR=./data/cycling
 ```
 
-- `OSRM_DATA_DIR` is the directory containing the PBF and generated OSRM files.
-  A relative path is resolved from `tools/osrm/` when the documented commands
-  are run there.
-- `OSRM_DATASET` is the basename only, without `.osm.pbf` or `.osrm`.
-- `OSRM_HOST_PORT` is the host port; OSRM continues to listen on port `5000`
-  inside the container.
+- `OSRM_DATA_DIR` holds the source PBF and the generated **driving** files. A
+  relative path is resolved from `tools/osrm/`.
+- `OSRM_DATASET` is the basename only, without `.osm.pbf` or `.osrm`. All three
+  profiles share this one source extract.
+- `OSRM_*_HOST_PORT` are host ports; every container still listens on `5000`
+  internally. Keep all three distinct — a collision is only discovered when the
+  second container fails to start.
+- `OSRM_WALKING_DATA_DIR` / `OSRM_CYCLING_DATA_DIR` **must not** equal
+  `OSRM_DATA_DIR`. `osrm-extract` writes beside its input, so pointing a walking
+  run at the driving directory would overwrite the driving dataset in place. The
+  preparation script refuses to do this.
 
 The `.env` file is ignored by Git. `.env.example` is the tracked, machine-neutral
 template. The defaults also work without creating `.env`.
 
-## 3. Prepare the MLD routing data
+## 3. Prepare the routing data
 
-From `tools/osrm/`, run these commands in order:
+Preparation is per profile and is the slow part: it needs plenty of Docker
+memory and disk, and takes a while on a country-sized extract.
+
+From `tools/osrm/`:
+
+```bash
+./prepare-osrm.sh driving     # car.lua      -> ./data
+./prepare-osrm.sh walking     # foot.lua     -> ./data/walking
+./prepare-osrm.sh cycling     # bicycle.lua  -> ./data/cycling
+```
+
+`./prepare-osrm.sh all` does all three back to back. Re-running is safe — each
+step overwrites its own artifacts — and the script refuses to write a profile's
+output over the shared driving directory.
+
+Each run performs the project's existing three-step MLD pipeline with that
+profile's Lua file: `osrm-extract`, then `osrm-partition`, then `osrm-customize`.
+The equivalent compose calls (driving shown) are still available directly:
 
 ```bash
 docker compose -f docker-compose.osrm.yml run --rm osrm-extract
@@ -58,91 +121,98 @@ docker compose -f docker-compose.osrm.yml run --rm osrm-partition
 docker compose -f docker-compose.osrm.yml run --rm osrm-customize
 ```
 
-`osrm-extract` uses OSRM's bundled `car.lua`. `osrm-partition` and
-`osrm-customize` then produce the MLD artifacts consumed by `osrm-routed`.
-Preparation can take time and requires sufficient Docker memory and disk.
+Walking and cycling use the same services with a `-walking` / `-cycling` suffix.
 
-If the PBF changes, rerun all three commands so the generated files match it.
+If the PBF changes, rerun preparation for **every** profile you use, so all
+datasets match the same source.
 
-## 4. Start and verify OSRM
-
-```bash
-docker compose -f docker-compose.osrm.yml up -d osrm-routed
-```
-
-With the default host port, verify the Route service with a Samsun-area request:
+## 4. Start and verify the servers
 
 ```bash
-curl 'http://localhost:5000/route/v1/driving/36.3300,41.2867;36.3360,41.2790?overview=full&geometries=geojson&steps=false'
+docker compose -f docker-compose.osrm.yml up -d osrm-routed osrm-walking osrm-cycling
 ```
 
-A healthy response has `"code":"Ok"` and at least one route. Route coordinates
-are always `longitude,latitude`.
+Start only the profiles you actually prepared — the backend copes with the
+others being absent (see step 5).
 
-## 5. Configure the backend URL
+Verify each with a Samsun-area request. The profile segment in the URL is
+cosmetic; what answers is the dataset behind that **port**:
 
-Tracked backend configuration defaults to:
+```bash
+curl 'http://localhost:5001/route/v1/driving/36.3300,41.2867;36.3360,41.2790?overview=full&geometries=geojson'
+curl 'http://localhost:5002/route/v1/walking/36.3300,41.2867;36.3360,41.2790?overview=full&geometries=geojson'
+curl 'http://localhost:5003/route/v1/cycling/36.3300,41.2867;36.3360,41.2790?overview=full&geometries=geojson'
+```
+
+A healthy response has `"code":"Ok"` and at least one route. Coordinates are
+always `longitude,latitude`.
+
+A useful sanity check that the datasets really differ: the same pair of points
+should generally return different `distance` / `duration` values across the
+three ports. Identical figures on every port usually means two servers are
+reading the same preprocessed dataset.
+
+## 5. Backend configuration
+
+Driving uses the existing `Osrm` section — the same one Smart Transport route
+generation uses:
 
 ```text
-Osrm:BaseUrl=http://localhost:5000
+Osrm:BaseUrl=http://localhost:5001
 Osrm:Profile=driving
 Osrm:TimeoutSeconds=30
 ```
 
-If the default host port is already occupied, set a different local port in
-`tools/osrm/.env`, for example:
+These tracked development values already match the ports this project's compose
+setup publishes, so `dotnet run` needs no extra environment setup.
 
-```dotenv
-OSRM_HOST_PORT=5001
+Walking and cycling use `JourneyRouting`, already present in
+`appsettings.Development.json`:
+
+```text
+JourneyRouting:Walking:BaseUrl=http://localhost:5002
+JourneyRouting:Walking:Profile=walking
+JourneyRouting:Cycling:BaseUrl=http://localhost:5003
+JourneyRouting:Cycling:Profile=cycling
 ```
 
-Then override the backend through standard ASP.NET Core configuration when
-starting it:
+**Both sections are optional and independent of container health:**
+
+| Situation | Behaviour |
+|---|---|
+| endpoint configured, server running | genuine routing for that profile |
+| endpoint configured, server stopped | request fails with a safe "routing unavailable" error |
+| section removed entirely | profile reported as unavailable; it cannot be selected |
+
+The API therefore starts fine with no containers running at all. Nothing falls
+back to driving in any of these cases.
+
+If you run an engine on a different port, override it through standard
+ASP.NET Core configuration — no custom parsing, and no tracked file needs
+editing. This is optional customisation, not a required step:
 
 ```bash
-Osrm__BaseUrl=http://localhost:5001 dotnet run --project backend/src/StajProject.Api
+Osrm__BaseUrl=http://localhost:6001 \
+JourneyRouting__Walking__BaseUrl=http://localhost:6002 \
+  dotnet run --project backend/src/StajProject.Api
 ```
 
-No custom environment parsing is used. The OSRM URL and profile remain
-server-side configuration and are never supplied by the browser.
+Production ships no `Osrm` section at all, so there the address always comes
+from configuration supplied at deployment.
 
-## 6. Optional: walking and cycling routing
+The backend **refuses to start** if a walking or cycling `BaseUrl` equals
+`Osrm:BaseUrl`, or if walking and cycling share one address. Either would mean a
+single preprocessed dataset serving two profile names — exactly the mislabelling
+this setup exists to prevent. These URLs and ports live only in configuration;
+they never appear in application code and are never supplied by the browser.
 
-Journey planning treats walking and cycling as genuinely routed **only** when a
-separate routing server is configured for them. This is not a policy choice —
-`osrm-extract` above compiles the dataset with `car.lua`, and `osrm-routed`
-**ignores the profile segment in the request URL**. Asking the driving server
-for `/route/v1/walking/...` returns a driving result, so serving walking from it
-would mislabel driving geometry.
-
-Without these sections the API starts normally and reports walking and cycling
-as unavailable. Driving is unaffected and needs no new configuration.
-
-To enable them, prepare a second dataset with OSRM's bundled `foot.lua` (or
-`bicycle.lua`) into a separate directory and run a second `osrm-routed` on
-another host port, then point the backend at it:
-
-```dotenv
-JourneyRouting__Walking__BaseUrl=http://localhost:5001
-JourneyRouting__Walking__Profile=walking
-JourneyRouting__Walking__TimeoutSeconds=30
-```
-
-`JourneyRouting:Cycling` takes the same three keys. The backend refuses to start
-if a walking or cycling `BaseUrl` equals `Osrm:BaseUrl`, or if walking and
-cycling share one address — that configuration could only produce driving
-results wearing another profile's name.
-
-The existing driving compose file is unchanged; add a second server alongside it
-rather than rebuilding this one.
-
-## Stop or remove the container
+## Stop or remove the containers
 
 ```bash
-docker compose -f docker-compose.osrm.yml stop osrm-routed
+docker compose -f docker-compose.osrm.yml stop osrm-routed osrm-walking osrm-cycling
 docker compose -f docker-compose.osrm.yml down
 ```
 
-`down` removes the container and network, but not bind-mounted files in
-`OSRM_DATA_DIR`. Remove those local artifacts manually only when intentionally
-rebuilding the dataset.
+`down` removes the containers and network, but not bind-mounted files in
+`OSRM_DATA_DIR` or the per-profile directories. Remove those local artifacts
+manually only when intentionally rebuilding a dataset.
