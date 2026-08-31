@@ -312,6 +312,17 @@ builder.Services.AddScoped<ITransportService, TransportService>();
 builder.Services.AddSingleton<ITransportSimulationStateStore, InMemoryTransportSimulationStateStore>();
 builder.Services.AddScoped<ITransportSimulationService, TransportSimulationService>();
 
+/* Genel yolculuk planlaması. AYRI bir servistir: hiçbir şey yazmaz, hiçbir
+   çalıştırma başlatmaz ve girdisi bir hat olmak ZORUNDA değildir — farklı
+   hatlardaki duraklar ve POI'ler aynı planda buluşabilir. Bu yüzden ne
+   ITransportService'in (kalıcı CRUD) ne de ITransportSimulationService'in
+   (çalışma zamanı durumu) sorumluluğuna eklenir.
+
+   AppDbContext'e bağlı olduğu için scoped'dır. Yapılandırılmış OSRM profilini
+   yalnızca OKUR (profil politikası kararı için); yönlendirme motoruna bu fazda
+   hiç istek göndermez. */
+builder.Services.AddScoped<IJourneyPlanningService, JourneyPlanningService>();
+
 /* Runner ayarları OSRM ile aynı kalıptadır: yapılandırmadan okunur, başlangıçta
    DOĞRULANIR (fail-fast) ve singleton olarak paylaşılır. Hız çarpanı bir SUNUCU
    ayarıdır; tarayıcıdan gelmez ve arayüzde seçici yoktur. */
