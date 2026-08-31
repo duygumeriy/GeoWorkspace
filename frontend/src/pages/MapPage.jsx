@@ -110,6 +110,8 @@ import useTransportStopInteraction from '../hooks/useTransportStopInteraction.js
 import useJourneyPlanner from '../hooks/useJourneyPlanner.js'
 import useJourneyPreviewLayer from '../hooks/useJourneyPreviewLayer.js'
 import useJourneyWaypointPicking from '../hooks/useJourneyWaypointPicking.js'
+import useJourneySimulation from '../hooks/useJourneySimulation.js'
+import useJourneyVehicleLayer from '../hooks/useJourneyVehicleLayer.js'
 import useTransportStopRelocation from '../hooks/useTransportStopRelocation.js'
 import { createTransportStop, deleteTransportStop, updateTransportStop } from '../services/transportApi.js'
 import { deleteStopThenMaybeGenerate, persistStopThenMaybeGenerate } from '../services/transportStopWorkflow.js'
@@ -793,14 +795,6 @@ export default function MapPage() {
      dokunmaz ve kendi katmanında yaşar. */
   const journey = useJourneyPlanner({ permitted: allowed.canViewTransport })
 
-  useJourneyPreviewLayer(mapInstance, {
-    geometryWkt: journey.preview?.geometryWkt ?? null,
-    previewToken: journey.previewToken,
-    // Sol panel haritanın solunu kapatır; kamera dolgusu bunu hesaba katar.
-    panelWidth: journey.state.panel === 'open' ? 340 : 0,
-    compact: !hasFinePointer,
-  })
-
   const assignActiveJourneyWaypoint = useCallback((reference) => {
     journey.assignWaypoint(journey.state.activeSlotKey, reference)
   }, [journey])
@@ -821,6 +815,61 @@ export default function MapPage() {
     results: journeyPoiSearch.results,
     loading: journeyPoiSearch.loading,
   }), [journeyPickerQuery, journeyPoiSearch.results, journeyPoiSearch.loading])
+
+  /* --- Kişisel yolculuk simülasyonu (Faz 5D) ---------------------------------
+     Paylaşılan hat simülasyonundan TAMAMEN ayrıdır: kendi hub'ı, kendi
+     kancası, kendi katmanı ve kendi takip durumu vardır. `simulation`
+     (Faz 1-4) ve `simulation.followingRouteId` bu koddan HİÇ etkilenmez —
+     bir yolculuk başlatmak/durdurmak bir hat grubuna katılmaz. */
+  const journeySimulation = useJourneySimulation({ permitted: allowed.canViewTransport })
+
+  const journeyVehicle = useMemo(() => {
+    const snapshot = journeySimulation.snapshot
+    if (!snapshot || !journeySimulation.simulation) return null
+    return {
+      simulationId: snapshot.simulationId,
+      // İşaretçi TALEP EDİLEN profile göre görünür (araç / yaya / bisiklet).
+      profileId: journeySimulation.simulation.requestedProfile,
+      longitude: snapshot.longitude,
+      latitude: snapshot.latitude,
+    }
+  }, [journeySimulation.simulation, journeySimulation.snapshot])
+
+  useJourneyVehicleLayer(mapInstance, {
+    presentation: journeyVehicle,
+    following: journeySimulation.following,
+  })
+
+  /* Başlatma niyeti PLANLAYICININ mevcut seçiminden türetilir; önizlemenin
+     planId'si, geometrisi ya da ölçümleri GÖNDERİLMEZ. */
+  const startJourney = useCallback(async () => {
+    const intent = journey.buildIntent()
+    if (!intent) return
+    const started = await journeySimulation.start(intent)
+
+    // Başarılı başlatmada panel kendiliğinden AÇILIR.
+    if (started) journey.openPanel()
+  }, [journey, journeySimulation])
+
+  const toggleJourneyFollow = useCallback(() => {
+    journeySimulation.setFollowing((current) => !current)
+  }, [journeySimulation])
+
+  /* Canlı yolculuk varken haritadaki güzergah, sunucunun OTORİTER yanıtıdır;
+     eski önizleme geometrisi kullanılmaz. */
+  const journeyGeometryWkt =
+    journeySimulation.simulation?.geometryWkt ?? journey.preview?.geometryWkt ?? null
+
+  /* Çağrı BURADADIR: gösterilecek geometri canlı simülasyona da bağlı olduğu
+     için planlayıcıdan SONRA gelmesi gerekir. Katman ve uyum davranışı
+     Faz 5C'deki gibidir. */
+  useJourneyPreviewLayer(mapInstance, {
+    geometryWkt: journeyGeometryWkt,
+    previewToken: journey.previewToken,
+    // Sol panel haritanın solunu kapatır; kamera dolgusu bunu hesaba katar.
+    panelWidth: journey.state.panel === 'open' ? 340 : 0,
+    compact: !hasFinePointer,
+  })
 
   /* Harita seçimi yalnızca bir yuva silahlıyken devrededir; o sırada normal
      ulaşım/POI tıklaması kapatılır (aşağıda), böylece öncelik kayıt sırasına
@@ -3099,6 +3148,16 @@ export default function MapPage() {
                   onCollapse={journey.collapsePanel}
                   onClose={journey.closePanel}
                   onOpen={journey.openPanel}
+                  live={{
+                    simulation: journeySimulation.simulation,
+                    snapshot: journeySimulation.snapshot,
+                    starting: journeySimulation.starting,
+                    error: journeySimulation.error,
+                    following: journeySimulation.following,
+                  }}
+                  onStartSimulation={startJourney}
+                  onStopSimulation={journeySimulation.stop}
+                  onToggleFollow={toggleJourneyFollow}
                 />
               )}
 

@@ -143,9 +143,22 @@ export default function useJourneyPlanner({ permitted = false } = {}) {
     closePanel: () => dispatch({ type: 'setPanel', panel: PANEL_STATES.CLOSED }),
   }), [])
 
+  /**
+   * Sunucuya gönderilecek KANONİK yolculuk niyeti.
+   *
+   * Simülasyon başlatma bunu kullanır: önizlemenin planId'si, geometrisi ya da
+   * ölçümleri gönderilmez — sunucu yolculuğu kendi verisinden yeniden planlar.
+   * Seçim geçersizse <code>null</code> döner ve hiçbir istek yola çıkmaz.
+   */
+  const buildIntent = useCallback(
+    () => (validation.ok ? validation.request : null),
+    [validation],
+  )
+
   return {
     state,
     ...actions,
+    buildIntent,
     preview,
     previewToken,
     loading,

@@ -358,3 +358,72 @@
 
   .journey-reopen { top: auto; bottom: 0.5rem; left: 0.5rem; }
 }
+
+/* --- Canlı navigasyon (Faz 5D) -----------------------------------------------
+   Canlı mod planlayıcı formunun YERİNE geçer: bir simülasyon çalışırken
+   panelde gösterilen güzergah sunucunun otoriter yanıtıdır. Aynı mor aksan
+   kullanılır — panel, haritadaki işaretçi ve önizleme çizgisi tek bir şey gibi
+   okunur. */
+
+.journey-live-metrics {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.journey-live-metrics strong {
+  font-size: 1.35rem;
+  color: var(--journey-accent);
+}
+
+.journey-live-metrics span {
+  font-size: var(--font-small);
+  color: var(--text-secondary);
+}
+
+.journey-live-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--surface-soft);
+  overflow: hidden;
+}
+
+.journey-live-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--journey-accent);
+  /* Konum sunucudan saniyede bir gelir; geçiş ilerlemeyi akıcı gösterir ama
+     hiçbir değeri istemcide TAHMİN ETMEZ. */
+  transition: width 900ms linear;
+}
+
+.journey-start {
+  margin-top: 0.4rem;
+  width: 100%;
+}
+
+.journey-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  flex: 1;
+  padding: 0.45rem 0.6rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--danger, #ef4444);
+  background: none;
+  color: var(--danger, #ef4444);
+  font-size: var(--font-small);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Anlık manevra vurgulanır; diğerleri okunur kalır. */
+.journey-step.is-current {
+  background: color-mix(in srgb, var(--journey-accent) 16%, transparent);
+  border-left: 3px solid var(--journey-accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .journey-live-bar > span { transition: none; }
+}

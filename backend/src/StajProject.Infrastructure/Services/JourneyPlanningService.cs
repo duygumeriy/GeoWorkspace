@@ -138,7 +138,22 @@ public sealed class JourneyPlanningService : IJourneyPlanningService
         _routing = routing;
     }
 
+    /// <summary>
+    /// Sunum sözleşmesi: <see cref="PlanAsync"/>'in sonucunu API biçimine
+    /// indirger. Planlama kuralı burada TEKRARLANMAZ.
+    /// </summary>
     public async Task<ServiceResult<JourneyPlanPreviewResponse>> PreviewAsync(
+        JourneyPlanRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var plan = await PlanAsync(request, cancellationToken);
+
+        return plan.IsSuccess
+            ? ServiceResult<JourneyPlanPreviewResponse>.Success(ToPreviewResponse(plan.Value!))
+            : Propagate<JourneyPlanPreviewResponse, JourneyPlanResult>(plan);
+    }
+
+    public async Task<ServiceResult<JourneyPlanResult>> PlanAsync(
         JourneyPlanRequest request,
         CancellationToken cancellationToken = default)
     {
@@ -147,17 +162,17 @@ public sealed class JourneyPlanningService : IJourneyPlanningService
            gerektirmesidir; kimliksiz bir istek o soruyu hiç soramaz. */
         if (_currentUser.UserId is not { } userId)
         {
-            return ServiceResult<JourneyPlanPreviewResponse>.Forbidden(UnknownUserMessage);
+            return ServiceResult<JourneyPlanResult>.Forbidden(UnknownUserMessage);
         }
 
         if (request is null)
         {
-            return ServiceResult<JourneyPlanPreviewResponse>.Failure(EmptyRequestMessage);
+            return ServiceResult<JourneyPlanResult>.Failure(EmptyRequestMessage);
         }
 
         if (!JourneyContractNames.TryParseMode(request.Mode, out var mode))
         {
-            return ServiceResult<JourneyPlanPreviewResponse>.Failure(InvalidModeMessage);
+            return ServiceResult<JourneyPlanResult>.Failure(InvalidModeMessage);
         }
 
         // Profil isteğe bağlıdır; verilmezse karayolu varsayılır (motorun profili).
@@ -165,7 +180,7 @@ public sealed class JourneyPlanningService : IJourneyPlanningService
         if (!string.IsNullOrWhiteSpace(request.Profile)
             && !JourneyContractNames.TryParseProfile(request.Profile, out requestedProfile))
         {
-            return ServiceResult<JourneyPlanPreviewResponse>.Failure(InvalidProfileMessage);
+            return ServiceResult<JourneyPlanResult>.Failure(InvalidProfileMessage);
         }
 
         /* Profil kararı YAPILANDIRMAYA değil, gerçek yönlendirilebilirliğe
@@ -174,7 +189,7 @@ public sealed class JourneyPlanningService : IJourneyPlanningService
         var profile = JourneyProfilePolicy.Decide(requestedProfile, _routing.IsProfileRoutable(requestedProfile));
         if (profile.Support == JourneyProfileSupport.Unavailable)
         {
-            return ServiceResult<JourneyPlanPreviewResponse>.Failure(profile.Note!);
+            return ServiceResult<JourneyPlanResult>.Failure(profile.Note!);
         }
 
         var assumptions = new List<string>();
@@ -188,7 +203,7 @@ public sealed class JourneyPlanningService : IJourneyPlanningService
 
         if (!resolved.IsSuccess)
         {
-            return Propagate<JourneyPlanPreviewResponse, ResolvedJourney>(resolved);
+            return Propagate<JourneyPlanResult, ResolvedJourney>(resolved);
         }
 
         var journey = resolved.Value!;
@@ -199,11 +214,11 @@ public sealed class JourneyPlanningService : IJourneyPlanningService
 
         if (!geometry.IsSuccess)
         {
-            return Propagate<JourneyPlanPreviewResponse, ResolvedGeometry>(geometry);
+            return Propagate<JourneyPlanResult, ResolvedGeometry>(geometry);
         }
 
-        return ServiceResult<JourneyPlanPreviewResponse>.Success(
-            BuildPreview(mode, profile, journey, geometry.Value!, assumptions));
+        return ServiceResult<JourneyPlanResult>.Success(
+            BuildPlan(mode, profile, journey, geometry.Value!, assumptions));
     }
 
     /* --- Geometri üretimi --------------------------------------------------------- */
@@ -605,14 +620,18 @@ public sealed class JourneyPlanningService : IJourneyPlanningService
 
     /* --- Yanıt kurulumu ---------------------------------------------------------- */
 
-    private static JourneyPlanPreviewResponse BuildPreview(
+    /// <summary>
+    /// Çözülmüş yolculuğu ve geometriyi sunucu içi plan sonucuna toplar.
+    /// </summary>
+    private static JourneyPlanResult BuildPlan(
         JourneyMode mode,
         JourneyProfileDecision profile,
         ResolvedJourney journey,
         ResolvedGeometry geometry,
         IReadOnlyList<string> assumptions)
     {
-        var waypoints = new List<JourneyWaypointResponse>(journey.Waypoints.Count);
+        var waypoints = new List<JourneyPlannedWaypoint>(journey.Waypoints.Count);
+
         for (var index = 0; index < journey.Waypoints.Count; index++)
         {
             var waypoint = journey.Waypoints[index];
@@ -622,69 +641,100 @@ public sealed class JourneyPlanningService : IJourneyPlanningService
                     ? JourneyWaypointRole.Destination
                     : JourneyWaypointRole.Via;
 
-            waypoints.Add(new JourneyWaypointResponse
-            {
-                Position = index,
-                Source = JourneyContractNames.Of(waypoint.Source),
-                ReferenceId = waypoint.Point.Id,
-                Name = waypoint.Point.Name,
-                Longitude = waypoint.Point.Longitude,
-                Latitude = waypoint.Point.Latitude,
-                RouteId = waypoint.Point.RouteId,
-                SequenceOrder = waypoint.Point.SequenceOrder,
-                Role = JourneyContractNames.Of(role)
-            });
+            waypoints.Add(new JourneyPlannedWaypoint(
+                index,
+                waypoint.Source,
+                waypoint.Point.Id,
+                waypoint.Point.Name,
+                waypoint.Point.Longitude,
+                waypoint.Point.Latitude,
+                waypoint.Point.RouteId,
+                waypoint.Point.SequenceOrder,
+                role));
         }
 
-        var steps = geometry.Steps
-            .Select(step => new JourneyNavigationStepResponse
-            {
-                Sequence = step.Sequence,
-                ManeuverType = step.ManeuverType,
-                ManeuverModifier = step.ManeuverModifier,
-                Name = step.Name,
-                DistanceMeters = step.DistanceMeters,
-                DurationSeconds = step.DurationSeconds,
-                ManeuverLongitude = step.ManeuverLocation.Longitude,
-                ManeuverLatitude = step.ManeuverLocation.Latitude,
-                DisplayText = step.DisplayText
-            })
-            .ToArray();
+        return new JourneyPlanResult(
+            mode,
+            profile.Requested,
 
-        return new JourneyPlanPreviewResponse
+            /* Gerçekten ÜRETEN motorun profili. Talep edilenden sessizce
+               sapılmaz; yeniden kullanılan kalıcı yolda o kaydın profilidir. */
+            geometry.EngineProfile,
+            profile.Support,
+            geometry.Source,
+            geometry.Geometry,
+            geometry.DistanceMeters,
+            geometry.DurationSeconds,
+            journey.Route?.Id,
+            journey.Route?.Name,
+            waypoints,
+            geometry.Steps,
+            [.. assumptions]);
+    }
+
+    /// <summary>
+    /// Plan sonucunun API sunumu. Burada YALNIZCA biçim değişir; hiçbir karar
+    /// yeniden verilmez.
+    /// </summary>
+    private static JourneyPlanPreviewResponse ToPreviewResponse(JourneyPlanResult plan) =>
+        new()
         {
             /* Yalnızca İLİŞKİLENDİRME kimliği: saklanmaz, imzalanmaz ve bir
-               yetki belirteci değildir. Sonraki fazlar istemciden gelen bir
-               plan kimliğine güvenerek simülasyon başlatmamalıdır. */
+               yetki belirteci değildir. Simülasyon başlatma bu kimliği KABUL
+               ETMEZ; sunucu yolculuğu kendi verisinden yeniden kurar. */
             PlanId = Guid.NewGuid(),
             CreatedAt = DateTime.UtcNow,
 
             // Projenin kanonik API geometri biçimi: WKT.
-            GeometryWkt = WktWriter.Write(geometry.Geometry),
+            GeometryWkt = WktWriter.Write(plan.Geometry),
             Summary = new JourneyPlanSummaryResponse
             {
-                Mode = JourneyContractNames.Of(mode),
-                RequestedProfile = JourneyContractNames.Of(profile.Requested),
-
-                /* Gerçekten üreten motorun profili. Talep edilenden sessizce
-                   sapılmaz; yeniden kullanılan kalıcı yolda o kaydın profilidir. */
-                EffectiveProfile = geometry.EngineProfile,
-                ProfileSupport = JourneyContractNames.Of(profile.Support),
-                GeometrySource = JourneyContractNames.Of(geometry.Source),
-                RouteId = journey.Route?.Id,
-                RouteName = journey.Route?.Name,
-                WaypointCount = waypoints.Count,
-                StepCount = steps.Length,
+                Mode = JourneyContractNames.Of(plan.Mode),
+                RequestedProfile = JourneyContractNames.Of(plan.RequestedProfile),
+                EffectiveProfile = plan.EffectiveProfile,
+                ProfileSupport = JourneyContractNames.Of(plan.ProfileSupport),
+                GeometrySource = JourneyContractNames.Of(plan.GeometrySource),
+                RouteId = plan.RouteId,
+                RouteName = plan.RouteName,
+                WaypointCount = plan.Waypoints.Count,
+                StepCount = plan.Steps.Count,
 
                 // Yol ağı üzerinde ÖLÇÜLMÜŞ değerler; kuş uçuşu ölçü artık yok.
-                DistanceMeters = geometry.DistanceMeters,
-                DurationSeconds = geometry.DurationSeconds,
-                Assumptions = [.. assumptions]
+                DistanceMeters = plan.DistanceMeters,
+                DurationSeconds = plan.DurationSeconds,
+                Assumptions = plan.Assumptions
             },
-            Waypoints = waypoints,
-            Steps = steps
+            Waypoints = [.. plan.Waypoints.Select(ToWaypointResponse)],
+            Steps = [.. plan.Steps.Select(ToStepResponse)]
         };
-    }
+
+    internal static JourneyWaypointResponse ToWaypointResponse(JourneyPlannedWaypoint waypoint) =>
+        new()
+        {
+            Position = waypoint.Position,
+            Source = JourneyContractNames.Of(waypoint.Source),
+            ReferenceId = waypoint.ReferenceId,
+            Name = waypoint.Name,
+            Longitude = waypoint.Longitude,
+            Latitude = waypoint.Latitude,
+            RouteId = waypoint.RouteId,
+            SequenceOrder = waypoint.SequenceOrder,
+            Role = JourneyContractNames.Of(waypoint.Role)
+        };
+
+    internal static JourneyNavigationStepResponse ToStepResponse(JourneyRouteStep step) =>
+        new()
+        {
+            Sequence = step.Sequence,
+            ManeuverType = step.ManeuverType,
+            ManeuverModifier = step.ManeuverModifier,
+            Name = step.Name,
+            DistanceMeters = step.DistanceMeters,
+            DurationSeconds = step.DurationSeconds,
+            ManeuverLongitude = step.ManeuverLocation.Longitude,
+            ManeuverLatitude = step.ManeuverLocation.Latitude,
+            DisplayText = step.DisplayText
+        };
 
     /// <summary>
     /// Farklı jenerik gövdeler arasında hata sözleşmesini KORUYARAK aktarır.

@@ -1,5 +1,6 @@
 using StajProject.Application.Common;
 using StajProject.Application.DTOs;
+using StajProject.Application.Journeys;
 
 namespace StajProject.Application.Interfaces;
 
@@ -49,6 +50,29 @@ public interface IJourneyPlanningService
     /// </para>
     /// </remarks>
     Task<ServiceResult<JourneyPlanPreviewResponse>> PreviewAsync(
+        JourneyPlanRequest request,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// <see cref="PreviewAsync"/> ile AYNI planlamayı yapar, ama sonucu sunum
+    /// biçimine indirmeden döndürür.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Neden var.</b> Simülasyon başlatma güven sınırının İÇİNDE gerçek
+    /// geometriye ve manevralara ihtiyaç duyar. Önizleme ucunu HTTP üzerinden
+    /// çağırmak (loopback), WKT'yi yazıp geri okumak ya da algoritmayı ikinci
+    /// kez yazmak; sırasıyla gereksiz bir ağ turu, kayıplı bir dönüşüm ve
+    /// zamanla ayrışacak iki plan demekti.
+    /// </para>
+    /// <para>
+    /// <b>Aynı kurallar geçerlidir</b> — doğrulama, referans çözümü, silinmiş/
+    /// pasif kayıt reddi, POI yetkisi ve profil uygunluğu. Bu metot bir
+    /// kestirme DEĞİLDİR; <see cref="PreviewAsync"/> zaten bunun üzerine
+    /// kuruludur.
+    /// </para>
+    /// </remarks>
+    Task<ServiceResult<JourneyPlanResult>> PlanAsync(
         JourneyPlanRequest request,
         CancellationToken cancellationToken = default);
 }

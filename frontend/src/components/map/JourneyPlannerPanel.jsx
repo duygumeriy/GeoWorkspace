@@ -1,6 +1,9 @@
 import { useMemo } from 'react'
 import {
   ArrowDownUp,
+  Crosshair,
+  Play,
+  Square,
   Bike,
   ChevronDown,
   ChevronUp,
@@ -22,8 +25,10 @@ import {
   WAYPOINT_SOURCES,
   waypointRoleAt,
 } from '../../map/journeyPlanning.js'
-import { journeyPreviewSummary } from '../../map/journeyPresentation.js'
+import { journeyPreviewSummary, journeyProfileLabel as journeyProfileLabelOf } from '../../map/journeyPresentation.js'
 import { journeyStepList } from '../../map/journeyManeuvers.js'
+import { journeyLiveModel } from '../../map/journeySimulationState.js'
+import { formatRouteDistance, formatRouteDuration } from '../../map/transportPathPresentation.js'
 
 const PROFILE_ICONS = { car: Car, pedestrian: Footprints, bicycle: Bike }
 
@@ -78,9 +83,26 @@ export default function JourneyPlannerPanel({
   onCollapse,
   onClose,
   onOpen,
+  live = null,
+  onStartSimulation,
+  onStopSimulation,
+  onToggleFollow,
 }) {
   const summary = useMemo(() => journeyPreviewSummary(preview), [preview])
-  const steps = useMemo(() => journeyStepList(preview?.steps), [preview])
+
+  /* CANLI mod, önizleme modunun YERİNE geçer: bir simülasyon çalışırken
+     panelde gösterilen güzergah sunucunun otoriter yanıtıdır, eski önizleme
+     değil. */
+  const liveModel = useMemo(
+    () => journeyLiveModel({ simulation: live?.simulation, snapshot: live?.snapshot }),
+    [live?.simulation, live?.snapshot],
+  )
+  const isLive = liveModel != null
+
+  const steps = useMemo(
+    () => journeyStepList(isLive ? live?.simulation?.steps : preview?.steps),
+    [isLive, live?.simulation?.steps, preview?.steps],
+  )
   const routeStops = useMemo(
     () => stops.filter((stop) => stop.routeId === state.routeId)
       .slice()
@@ -140,7 +162,15 @@ export default function JourneyPlannerPanel({
       {/* KATLANMIŞ: panel kaybolmaz, yeniden açmaya yetecek kadarını gösterir. */}
       {collapsed && (
         <button type="button" className="journey-collapsed-summary" onClick={onOpen}>
-          {summary ? (
+          {isLive ? (
+            <>
+              <strong>%{Math.round(liveModel.progressPercent)} tamamlandı</strong>
+              <span>
+                {formatRouteDistance(liveModel.remainingDistanceMeters)} kaldı ·{' '}
+                {formatRouteDuration(liveModel.totalDurationSeconds)}
+              </span>
+            </>
+          ) : summary ? (
             <>
               <strong>{summary.destinationName}</strong>
               <span>{summary.duration} · {summary.distance}</span>
@@ -151,7 +181,74 @@ export default function JourneyPlannerPanel({
         </button>
       )}
 
-      {!collapsed && (
+      {!collapsed && isLive && (
+        <div className="journey-body">
+          <div className="journey-live-metrics">
+            <strong>%{Math.round(liveModel.progressPercent)}</strong>
+            <span>{formatRouteDistance(liveModel.remainingDistanceMeters)} kaldı</span>
+          </div>
+
+          <div className="journey-live-bar" role="progressbar" aria-valuenow={Math.round(liveModel.progressPercent)}
+               aria-valuemin={0} aria-valuemax={100}>
+            <span style={{ width: `${liveModel.progressPercent}%` }} />
+          </div>
+
+          <p className="journey-summary-meta">
+            {journeyProfileLabelOf(liveModel.profileId)}
+            {' · '}
+            {formatRouteDistance(liveModel.totalDistanceMeters)}
+            {' · '}
+            {formatRouteDuration(liveModel.totalDurationSeconds)}
+          </p>
+
+          {liveModel.isTerminal && (
+            <p className="journey-note">
+              {liveModel.status === 'Completed' ? 'Yolculuk tamamlandı.' : 'Yolculuk durduruldu.'}
+            </p>
+          )}
+
+          <div className="journey-actions">
+            <button type="button" className="journey-secondary" onClick={onToggleFollow}>
+              <Crosshair size={14} aria-hidden="true" />
+              {live?.following ? 'Takibi Bırak' : 'Takip Et'}
+            </button>
+            {!liveModel.isTerminal && (
+              <button type="button" className="journey-danger" onClick={onStopSimulation}>
+                <Square size={14} aria-hidden="true" />
+                Simülasyonu Durdur
+              </button>
+            )}
+          </div>
+
+          {/* Manevra YOKSA hata gibi sunulmaz: kalıcı güzergahı yeniden
+              kullanan tam-hat yolculuğunda adım verisi bulunmaz. */}
+          {steps.length === 0 && (
+            <p className="journey-note">Bu yolculuk için adım adım yol tarifi bulunmuyor.</p>
+          )}
+
+          {steps.length > 0 && (
+            <ol className="journey-steps">
+              {steps.map((step) => (
+                <li
+                  key={step.key}
+                  className={`journey-step dir-${step.direction} ${
+                    step.sequence === liveModel.currentStepSequence ? 'is-current' : ''
+                  }`.trim()}
+                  aria-current={step.sequence === liveModel.currentStepSequence ? 'step' : undefined}
+                >
+                  <div className="journey-step-text">
+                    <strong>{step.instruction}</strong>
+                    {step.name && <span>{step.name}</span>}
+                  </div>
+                  <span className="journey-step-metric">{formatStepMetric(step)}</span>
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
+      )}
+
+      {!collapsed && !isLive && (
         <div className="journey-body">
           <div className="journey-tabs" role="tablist" aria-label="Planlama türü">
             {MODE_TABS.map((tab) => (
@@ -333,6 +430,7 @@ export default function JourneyPlannerPanel({
           </div>
 
           {error && <p className="journey-error" role="alert">{error}</p>}
+          {live?.error && <p className="journey-error" role="alert">{live.error}</p>}
 
           {summary && (
             <div className="journey-summary">
@@ -350,6 +448,21 @@ export default function JourneyPlannerPanel({
                 {summary.routeName ? ` · ${summary.routeName}` : ''}
                 {summary.viaCount > 0 ? ` · ${summary.viaCount} ara nokta` : ''}
               </p>
+
+              {/* Başlatma YALNIZCA güncel bir önizlemeden sonra sunulur ve
+                  önizlemenin kendisini GÖNDERMEZ: sunucu yolculuğu niyetten
+                  yeniden planlar. */}
+              <button
+                type="button"
+                className="journey-primary journey-start"
+                disabled={!canRequest || live?.starting}
+                onClick={onStartSimulation}
+              >
+                {live?.starting
+                  ? <Loader2 size={15} className="journey-spin" aria-hidden="true" />
+                  : <Play size={15} aria-hidden="true" />}
+                {live?.starting ? 'Başlatılıyor…' : 'Simülasyonu Başlat'}
+              </button>
             </div>
           )}
 

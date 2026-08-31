@@ -1,0 +1,225 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { readApiError } from '../services/api.js'
+import {
+  fetchCurrentJourneySimulation,
+  startJourneySimulation,
+  stopJourneySimulation,
+} from '../services/transportApi.js'
+import { createJourneySimulationConnection } from '../services/journeySimulationHub.js'
+import { applyJourneySnapshot, isTerminalJourneyStatus } from '../map/journeySimulationState.js'
+import { journeyErrorMessage } from '../map/journeyPresentation.js'
+
+export const JOURNEY_UPDATED_EVENT = 'JourneySimulationUpdated'
+export const JOIN_SIMULATION_METHOD = 'JoinSimulation'
+export const LEAVE_SIMULATION_METHOD = 'LeaveSimulation'
+
+/**
+ * Kişisel yolculuk simülasyonunun canlı durumu.
+ *
+ * <b><code>useTransportSimulation</code> ile BİRLEŞTİRİLMEZ.</b> O kanca
+ * paylaşılan bir hattın çalıştırmasını izler, rota gruplarına katılır ve
+ * <code>followingRouteId</code> ile kamera sahipliği paylaşır. Buradaki ürün
+ * kişiseldir, hatta bağlı değildir ve kendi hub'ına gider; ikisini tek kancada
+ * toplamak, bir yolculuğun kazara bir hat grubuna katılmasına ya da iki
+ * kamera sahipliğinin çakışmasına kapı aralardı.
+ *
+ * <b>Tek bağlantı, tek dinleyici.</b> Bağlantı ilk ihtiyaçta kurulur, olay
+ * dinleyicisi ömür boyu BİR kez kaydedilir. Her katılımda yeniden kaydetmek,
+ * aynı olayın iki kez işlenmesi demekti.
+ *
+ * <b>Sunucu otoriterdir.</b> LocalStorage'a hiçbir oturum durumu YAZILMAZ;
+ * yenileme sonrası kurtarma "mevcut" ucundan gelir.
+ */
+export default function useJourneySimulation({ permitted = false } = {}) {
+  const [simulation, setSimulation] = useState(null)
+  const [snapshot, setSnapshot] = useState(null)
+  const [starting, setStarting] = useState(false)
+  const [error, setError] = useState('')
+  const [following, setFollowing] = useState(true)
+
+  const connectionRef = useRef(null)
+  const startPromiseRef = useRef(null)
+  const joinedRef = useRef(null)
+  const disposedRef = useRef(false)
+
+  /* Dinleyici her zaman EN GÜNCEL anlık görüntüyü görmelidir; state closure'ı
+     yakalasaydı ilk render'ın değeriyle karşılaştırma yapardı. */
+  const snapshotRef = useRef(null)
+  snapshotRef.current = snapshot
+
+  const applyUpdate = useCallback((incoming) => {
+    /* `stop()` asenkrondur: sökülmeyle durmanın tamamlanması arasında yolda
+       kalmış bir olay hâlâ tetiklenebilir. Sökülmüş bir bağlantıdan gelen
+       güncelleme duruma YAZILMAZ. */
+    if (disposedRef.current) return
+    setSnapshot((current) => applyJourneySnapshot(current, incoming))
+  }, [])
+
+  const ensureConnection = useCallback(async () => {
+    if (disposedRef.current) return null
+    if (connectionRef.current) {
+      await startPromiseRef.current
+      return connectionRef.current
+    }
+
+    const connection = createJourneySimulationConnection()
+    connectionRef.current = connection
+
+    // Ömür boyu TEK kayıt: aynı olayın iki kez işlenmesi engellenir.
+    connection.on(JOURNEY_UPDATED_EVENT, applyUpdate)
+
+    /* Yeniden bağlanma sunucu tarafında grup üyeliğini KAYBETTİRİR; sahip
+       olunan çalıştırmaya yeniden katılmak zorunludur, yoksa araç sessizce
+       donardı. */
+    connection.onreconnected(async () => {
+      const active = joinedRef.current
+      if (!active) return
+      try {
+        const latest = await connection.invoke(JOIN_SIMULATION_METHOD, active)
+        if (latest) applyUpdate(latest)
+      } catch {
+        // Sahiplik düşmüş ya da çalıştırma bitmiş olabilir; sessizce bırakılır.
+      }
+    })
+
+    startPromiseRef.current = connection.start()
+    await startPromiseRef.current
+    return connection
+  }, [applyUpdate])
+
+  const join = useCallback(async (simulationId) => {
+    if (!simulationId) return
+    try {
+      const connection = await ensureConnection()
+      if (!connection || disposedRef.current) return
+      joinedRef.current = simulationId
+      const latest = await connection.invoke(JOIN_SIMULATION_METHOD, simulationId)
+      if (latest) applyUpdate(latest)
+    } catch {
+      /* Canlı kanal kurulamazsa simülasyon SUNUCUDA devam eder; kullanıcıya
+         gösterilen son anlık görüntü başlatma yanıtındakidir. */
+    }
+  }, [ensureConnection, applyUpdate])
+
+  const leave = useCallback(async () => {
+    const active = joinedRef.current
+    joinedRef.current = null
+    if (!active || !connectionRef.current) return
+    try {
+      await connectionRef.current.invoke(LEAVE_SIMULATION_METHOD, active)
+    } catch {
+      // Bağlantı zaten kopmuş olabilir; ayrılmak bir yan etki üretmez.
+    }
+  }, [])
+
+  useEffect(() => () => {
+    disposedRef.current = true
+    joinedRef.current = null
+    connectionRef.current?.stop?.().catch(() => {})
+    connectionRef.current = null
+  }, [])
+
+  /* Yenileme/yeniden bağlanma kurtarması: otorite SUNUCUDUR. Yetki yoksa hiç
+     sorulmaz — garanti 403 alacak bir isteği döngüye sokmanın anlamı yok. */
+  useEffect(() => {
+    if (!permitted) return undefined
+
+    let cancelled = false
+    const controller = new AbortController()
+
+    ;(async () => {
+      try {
+        const response = await fetchCurrentJourneySimulation({ signal: controller.signal })
+        if (cancelled || !response.ok) return
+        const body = await response.json()
+        if (cancelled) return
+        setSimulation(body)
+        setSnapshot(body.snapshot ?? null)
+        await join(body.simulationId)
+      } catch {
+        // Aktif çalıştırma yok ya da istek iptal edildi; ikisi de normaldir.
+      }
+    })()
+
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
+  }, [permitted, join])
+
+  const start = useCallback(async (intent) => {
+    if (!permitted || !intent) return null
+
+    setStarting(true)
+    setError('')
+
+    try {
+      const response = await startJourneySimulation(intent)
+
+      if (!response.ok) {
+        setError(journeyErrorMessage(response.status, await readApiError(response, '')))
+        return null
+      }
+
+      const body = await response.json()
+
+      /* Sunucu yanıtı YENİ gerçektir: geometri ve ölçümler önizlemedekinden
+         farklı olabilir ve farklı olması yeniden doğrulamanın beklenen
+         sonucudur. Eski önizleme burada bırakılır. */
+      setSimulation(body)
+      setSnapshot(body.snapshot ?? null)
+      setFollowing(true)
+      await join(body.simulationId)
+      return body
+    } catch {
+      setError(journeyErrorMessage(0, ''))
+      return null
+    } finally {
+      setStarting(false)
+    }
+  }, [permitted, join])
+
+  const stop = useCallback(async () => {
+    const active = simulation?.simulationId
+    if (!active) return
+
+    try {
+      const response = await stopJourneySimulation(active)
+      if (response.ok) {
+        const body = await response.json()
+        // Terminal olay her zaman kabul edilir; kilit buradan sonra devreye girer.
+        applyUpdate(body)
+      }
+    } catch {
+      // Ağ hatası: sunucu durumu otoriterdir, bir sonraki okuma düzeltir.
+    } finally {
+      await leave()
+    }
+  }, [simulation, applyUpdate, leave])
+
+  /** Paneli/haritayı temizler; simülasyonu DURDURMAZ. */
+  const dismiss = useCallback(async () => {
+    await leave()
+    setSimulation(null)
+    setSnapshot(null)
+    setError('')
+  }, [leave])
+
+  // Yolculuk bittiğinde grup üyeliği bırakılır; zombi abonelik kalmaz.
+  useEffect(() => {
+    if (snapshot && isTerminalJourneyStatus(snapshot.status)) leave()
+  }, [snapshot, leave])
+
+  return {
+    simulation,
+    snapshot,
+    starting,
+    error,
+    isActive: simulation != null && !isTerminalJourneyStatus(snapshot?.status),
+    following,
+    setFollowing,
+    start,
+    stop,
+    dismiss,
+  }
+}

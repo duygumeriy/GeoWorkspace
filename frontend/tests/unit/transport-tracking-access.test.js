@@ -171,19 +171,73 @@ test('the map reuses the existing SignalR lifecycle rather than a second client'
   }
 })
 
-test('there is exactly one SignalR client factory in the whole frontend', () => {
-  const sources = readdirSync(new URL('../../src/services/', import.meta.url))
-    .filter((file) => file.endsWith('.js'))
-    .map((file) => read(`../../src/services/${file}`))
+test('there are exactly two SignalR products and neither duplicates the other', () => {
+  /* Faz 4'te tek bir canlı ürün vardı ve "tek fabrika" iddiası onu korurdu.
+     Faz 5D İKİNCİ ve bilinçli olarak AYRI bir ürün ekledi: paylaşılan hat
+     simülasyonu ile kişisel yolculuk simülasyonu farklı yetkilendirme ve
+     grup anlamlarına sahiptir — hat yayınını transport.view taşıyan herkes
+     izler, kişisel yolculuğu YALNIZCA sahibi. İkisini tek bağlantıya
+     zorlamak bu ayrımı silerdi.
 
+     Bu yüzden iddia "tek fabrika"dan "ürün başına TEK fabrika ve sıfır
+     kopya"ya döner; korunan şey aynıdır: kimse ikinci bir bağlantı
+     uygulaması yazamaz. */
+  const files = readdirSync(new URL('../../src/services/', import.meta.url))
+    .filter((file) => file.endsWith('.js'))
+    .map((file) => [file, read(`../../src/services/${file}`)])
+
+  const withSignalR = files.filter(([, source]) => source.includes("from '@microsoft/signalr'"))
+
+  // Tam olarak iki ürün; üçüncü bir bağlantı dosyası fark edilmeden eklenemez.
+  assert.deepEqual(
+    withSignalR.map(([file]) => file).sort(),
+    ['journeySimulationHub.js', 'transportSimulationHub.js'],
+  )
+
+  // SABİT HAT: tek istemci fabrikası, tek bağlantı fabrikası.
   assert.equal(
-    sources.filter((source) => source.includes('export function createTransportSimulationClient')).length,
+    files.filter(([, source]) => source.includes('export function createTransportSimulationClient')).length,
     1,
   )
   assert.equal(
-    sources.filter((source) => source.includes("from '@microsoft/signalr'")).length,
+    files.filter(([, source]) => source.includes('export function createTransportSimulationConnection')).length,
     1,
   )
+
+  // YOLCULUK: tek bağlantı fabrikası.
+  assert.equal(
+    files.filter(([, source]) => source.includes('export function createJourneySimulationConnection')).length,
+    1,
+  )
+})
+
+test('the two live products keep separate hubs, events and group methods', () => {
+  const transportHub = read('../../src/services/transportSimulationHub.js')
+  const transportClient = read('../../src/services/transportSimulationClient.js')
+  const journeyHub = read('../../src/services/journeySimulationHub.js')
+  const journeyHook = read('../../src/hooks/useJourneySimulation.js')
+
+  // Ayrı hub yolları.
+  assert.ok(transportHub.includes("'/hubs/transport-simulation'"))
+  assert.ok(journeyHub.includes("'/hubs/journey-simulation'"))
+  assert.ok(!journeyHub.includes('transport-simulation'))
+
+  // Ayrı olaylar.
+  assert.ok(transportClient.includes("SIMULATION_UPDATED_EVENT = 'SimulationUpdated'"))
+  assert.ok(journeyHook.includes("JOURNEY_UPDATED_EVENT = 'JourneySimulationUpdated'"))
+
+  /* Ayrı grup metotları: kişisel bir yolculuk, paylaşılan bir hat grubuna
+     KATILAMAZ. */
+  assert.ok(transportClient.includes("JOIN_ROUTE_METHOD = 'JoinRoute'"))
+  assert.ok(transportClient.includes("LEAVE_ROUTE_METHOD = 'LeaveRoute'"))
+  assert.ok(journeyHook.includes("JOIN_SIMULATION_METHOD = 'JoinSimulation'"))
+  assert.ok(journeyHook.includes("LEAVE_SIMULATION_METHOD = 'LeaveSimulation'"))
+  assert.ok(!journeyHook.includes('JoinRoute'))
+  assert.ok(!journeyHook.includes('LeaveRoute'))
+
+  // Ve yolculuk ürünü sabit hat istemcisinin YERİNE geçmez.
+  assert.ok(!journeyHook.includes('createTransportSimulationClient'))
+  assert.ok(!journeyHub.includes('createTransportSimulationConnection'))
 })
 
 test('the map reuses the Phase 4 vehicle layer, presentation and popup', () => {

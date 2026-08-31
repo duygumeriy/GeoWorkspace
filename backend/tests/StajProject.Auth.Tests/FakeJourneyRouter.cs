@@ -34,8 +34,27 @@ public sealed class FakeJourneyRouter : IJourneyRoutingService
         _responder = responder ?? DefaultResponder;
     }
 
+    /// <summary>Varsayılan yanıtın bildirdiği GERÇEK seyahat süresi.</summary>
+    /// <remarks>
+    /// Oynatma çarpanı testlerinin bu değere göre hesap yapabilmesi için
+    /// sabittir; çarpan bu süreyi asla değiştirmemelidir.
+    /// </remarks>
+    public const double DefaultDurationSeconds = 100;
+
+    public const double DefaultDistanceMeters = 460;
+
     /// <summary>Motora yapılan her çağrının isteği, çağrı sırasıyla.</summary>
     public List<JourneyRouteRequest> Calls { get; } = [];
+
+    /// <summary>
+    /// Verilirse varsayılan geometri yerine BU döndürülür.
+    /// </summary>
+    /// <remarks>
+    /// "Başlatma yeniden planlar" ve "hareket yol geometrisini izler"
+    /// iddiaları, motorun önizlemedekinden farklı bir yol üretebildiği bir
+    /// senaryo olmadan kanıtlanamaz.
+    /// </remarks>
+    public LineString? NextGeometry { get; set; }
 
     public int CallCount => Calls.Count;
 
@@ -59,7 +78,14 @@ public sealed class FakeJourneyRouter : IJourneyRoutingService
                 "Talep edilen seyahat profili için yapılandırılmış bir yönlendirme servisi bulunmuyor."));
         }
 
-        return Task.FromResult(_responder(request));
+        return Task.FromResult(NextGeometry is null
+            ? _responder(request)
+            : ServiceResult<JourneyRouteResult>.Success(new JourneyRouteResult(
+                NextGeometry,
+                DefaultDistanceMeters,
+                DefaultDurationSeconds,
+                JourneyContractNames.Of(request.Profile),
+                Steps: [])));
     }
 
     /// <summary>Motorun her zaman başarısız olduğu adaptör.</summary>
@@ -115,8 +141,8 @@ public sealed class FakeJourneyRouter : IJourneyRoutingService
 
         return ServiceResult<JourneyRouteResult>.Success(new JourneyRouteResult(
             geometry,
-            DistanceMeters: 460,
-            DurationSeconds: 100,
+            DistanceMeters: DefaultDistanceMeters,
+            DurationSeconds: DefaultDurationSeconds,
             EngineProfile: JourneyContractNames.Of(request.Profile),
             Steps: steps));
     }

@@ -368,6 +368,40 @@ builder.Services.AddScoped<ITransportSimulationService, TransportSimulationServi
    hiç istek göndermez. */
 builder.Services.AddScoped<IJourneyPlanningService, JourneyPlanningService>();
 
+/* --- Kişisel yolculuk simülasyonu (Faz 5D) ----------------------------------
+   Mevcut PAYLAŞILAN hat simülasyonu aynen yerinde kalır; bu ürün ONUN YERİNE
+   GEÇMEZ, yanına eklenir. İkisinin yetkilendirme anlamı farklıdır: hat
+   simülasyonu transport.simulation.start ile başlar ve transport.view taşıyan
+   herkes izler; kişisel yolculuk transport.view ile başlar ve YALNIZCA sahibi
+   görür.
+
+   Aktif durum SÜREÇ İÇİ ve istek ömrünü aşar, bu yüzden depo singleton'dır ve
+   yalnızca değişmez veri alır. Anahtarı KULLANICIDIR (rota değil): iki kişi
+   aynı A → B yolculuğunu bağımsız oynatabilmelidir.
+
+   Servisin kendisi scoped'dır: planlama servisine ve doğrulanmış kimliğe
+   bağlıdır. Başlatmada planlamayı SÜREÇ İÇİNDE yeniden çalıştırır — kendi
+   API'sine HTTP ile dönmez ve algoritmayı ikinci kez yazmaz. */
+builder.Services.AddSingleton<IJourneySimulationStateStore, InMemoryJourneySimulationStateStore>();
+builder.Services.AddScoped<IJourneySimulationService, JourneySimulationService>();
+
+var journeySimulationOptions = builder.Configuration
+    .GetSection(JourneySimulationOptions.SectionName)
+    .Get<JourneySimulationOptions>() ?? new JourneySimulationOptions();
+journeySimulationOptions.Validate();
+builder.Services.AddSingleton(journeySimulationOptions);
+
+/* Yayın portunun SignalR uygulaması Api'dedir; runner (Infrastructure) yalnızca
+   Application'daki arayüzü tanır. Ayrı bir port olması, hat yayınının kişisel
+   yolculuk gruplarına sızmasını yapısal olarak engeller. */
+builder.Services.AddSingleton<IJourneySimulationBroadcaster, SignalRJourneySimulationBroadcaster>();
+
+/* Runner singleton'dır: aktif durum gibi o da istek ömrünü aşar ve hiçbir
+   DbContext tutmaz. Hareket, mevcut ve kanıtlanmış TransportSimulationTrack
+   ilkeli üzerinden otoriter yol geometrisinde hesaplanır. */
+builder.Services.AddSingleton<JourneySimulationRunner>();
+builder.Services.AddHostedService<JourneySimulationBackgroundService>();
+
 /* Runner ayarları OSRM ile aynı kalıptadır: yapılandırmadan okunur, başlangıçta
    DOĞRULANIR (fail-fast) ve singleton olarak paylaşılır. Hız çarpanı bir SUNUCU
    ayarıdır; tarayıcıdan gelmez ve arayüzde seçici yoktur. */
@@ -443,9 +477,15 @@ builder.Services
             {
                 var accessToken = context.Request.Query["access_token"];
 
+                /* İki hub yolu da aynı kuralı paylaşır: WebSocket el sıkışması
+                   Authorization başlığı taşıyamaz, bu yüzden token YALNIZCA
+                   hub yollarında sorgu dizesinden okunur. Yeni bir kural
+                   yazılmaz; liste genişletilir. */
+                var path = context.HttpContext.Request.Path;
+
                 if (!string.IsNullOrEmpty(accessToken)
-                    && context.HttpContext.Request.Path.StartsWithSegments(
-                        TransportSimulationHubContract.Path, StringComparison.Ordinal))
+                    && (path.StartsWithSegments(TransportSimulationHubContract.Path, StringComparison.Ordinal)
+                        || path.StartsWithSegments(JourneySimulationHubContract.Path, StringComparison.Ordinal)))
                 {
                     context.Token = accessToken;
                 }
@@ -589,5 +629,10 @@ app.MapControllers();
 /* Hub, controller'larla aynı kimlik doğrulama/yetkilendirme hattının
    ARKASINDADIR: MapHub yalnızca yolu bağlar, kararı hub'ın kendisi verir. */
 app.MapHub<TransportSimulationHub>(TransportSimulationHubContract.Path);
+
+/* Kişisel yolculuk kanalı AYRI bir yoldadır ve ayrı bir hub'a bağlanır: hat
+   yayınıyla aynı gruplara girmemesi, bir yolculuğun kazara paylaşılan bir hat
+   grubuna katılmasını yapısal olarak imkânsız kılar. */
+app.MapHub<JourneySimulationHub>(JourneySimulationHubContract.Path);
 
 app.Run();

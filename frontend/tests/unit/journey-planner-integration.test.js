@@ -153,19 +153,57 @@ test('the live simulation wiring in MapPage is untouched by the planner', () => 
   assert.ok(!MAP_PAGE.includes('journey.preview?.simulationId'))
 })
 
-test('no live-journey action is wired to fake behaviour yet', () => {
-  // Faz 5D'ye ait düğmeler bu fazda YOKTUR — yarım çalışan bir düğme sunulmaz.
-  for (const label of ['Simülasyonu Başlat', 'Yolculuğu Başlat', 'Canlı Navigasyon', 'Navigasyonu Başlat']) {
-    assert.ok(!PANEL.includes(label), `panelde erken faz düğmesi var: ${label}`)
-  }
-  // Mevcut simülasyon denetimleri ayrı bileşende yaşamaya devam eder.
+test('the live-journey action is real server work, never fake local behaviour', () => {
+  /* Faz 5C'de bu düğme YOKTU ve bu bilinçliydi. Faz 5D onu GERÇEK bir
+     sunucu akışına bağladı; dolayısıyla iddia "düğme olmasın"dan "düğme
+     sahte olmasın"a döner. Kapsam değişti, güvenlik gereği değişmedi. */
+  assert.ok(PANEL.includes('Simülasyonu Başlat'))
+  assert.ok(PANEL.includes('onStartSimulation'))
+
+  // Düğme gerçek uca gider; yerel bir animasyon ya da taklit durum değildir.
+  assert.ok(MAP_PAGE.includes('journeySimulation.start(intent)'))
+  assert.ok(TRANSPORT_API.includes("authFetch('/api/transport/journeys/simulations'"))
+  assert.ok(TRANSPORT_API.includes("method: 'POST'"))
+
+  // Gönderilen şey YALNIZCA kanonik yolculuk niyetidir.
+  assert.ok(MAP_PAGE.includes('const intent = journey.buildIntent()'))
+  assert.ok(TRANSPORT_API.includes('body: JSON.stringify(intent)'))
+
+  // Ve sunucu yanıtı yeni güzergah gerçeği olarak KABUL EDİLİR.
+  assert.ok(MAP_PAGE.includes('journeySimulation.simulation?.geometryWkt ?? journey.preview?.geometryWkt'))
+
+  // Mevcut paylaşılan hat denetimleri ayrı bileşende yaşamaya devam eder.
   assert.ok(MAP_PAGE.includes('TransportTrackingControls'))
 })
 
-test('the plan id is treated as correlation data, never as an execution token', () => {
-  // Panel plan kimliğini bir yetki gibi kullanmaz ve geri göndermez.
-  assert.ok(!PANEL.includes('planId'))
-  assert.ok(!PLANNER_HOOK.includes('planId'))
+test('the plan id is correlation data and never reaches the start request', () => {
+  /* Yasaklanan şey KELİME değil, YETKİ kullanımıdır. Önizleme yanıtının
+     içinde bir planId bulunması ve dosyaların bunu "gönderilmez" diye
+     belgelemesi güvenlidir; tehlikeli olan onu isteğe koymaktır. Bu yüzden
+     iddia, isteğin KURULDUĞU sınıra bakar. */
+  const planner = stripComments(PLANNER_HOOK)
+  const panel = stripComments(PANEL)
+  const mapPage = stripComments(MAP_PAGE)
+  const api = stripComments(TRANSPORT_API)
+  const liveHook = stripComments(read('../../src/hooks/useJourneySimulation.js'))
+
+  // Hiçbir ÇALIŞAN kod planId'ye dokunmaz (yorumlar belgelemek için serbesttir).
+  for (const [name, code] of [
+    ['useJourneyPlanner.js', planner],
+    ['JourneyPlannerPanel.jsx', panel],
+    ['MapPage.jsx', mapPage],
+    ['transportApi.js', api],
+    ['useJourneySimulation.js', liveHook],
+  ]) {
+    assert.ok(!code.includes('planId'), `${name} çalışan kodda planId kullanıyor`)
+  }
+
+  /* Niyet YALNIZCA doğrulanmış seçimden kurulur: `buildIntent` doğrulama
+     sonucunu döndürür ve önizleme yanıtına hiç bakmaz. */
+  assert.ok(planner.includes('validation.ok ? validation.request : null'))
+
+  // Ve gövde niyetin KENDİSİDİR; zenginleştirilmez.
+  assert.ok(api.includes('body: JSON.stringify(intent)'))
 })
 
 /* --- Harita etkileşimi ------------------------------------------------------- */

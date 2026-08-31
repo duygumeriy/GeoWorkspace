@@ -141,3 +141,39 @@ export function previewJourney(request, { signal } = {}) {
     signal,
   })
 }
+
+/* --- Kişisel yolculuk simülasyonu (Faz 5D) ------------------------------------
+   GÜVEN SINIRI: gövde YALNIZCA yolculuk niyetidir — önizlemenin planId'si,
+   geometrisi, mesafesi, süresi ya da manevraları GÖNDERİLMEZ. Sunucu yolculuğu
+   kendi verisinden yeniden planlar; önizleme tavsiye niteliğinde arayüz
+   verisidir ve hiçbir yetki taşımaz.
+
+   Aynı authFetch, aynı Authorization başlığı, aynı 401/403 davranışı. */
+
+/**
+ * Yolculuk niyetinden sunucuya ait bir simülasyon başlatır.
+ *
+ * Dönen yanıt istemcinin YENİ gerçeğidir: geometri ve ölçümler önizlemedekinden
+ * farklı olabilir ve farklı olması beklenen bir sonuçtur.
+ */
+export function startJourneySimulation(intent, { signal } = {}) {
+  return authFetch('/api/transport/journeys/simulations', {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(intent),
+    signal,
+  })
+}
+
+/** Çağıranın KENDİ aktif yolculuğu (yoksa 404). Yenileme sonrası kurtarma yolu. */
+export function fetchCurrentJourneySimulation({ signal } = {}) {
+  return authFetch('/api/transport/journeys/simulations/current', { signal })
+}
+
+/** Çağıranın kendi çalıştırmasını durdurur. */
+export function stopJourneySimulation(simulationId, { signal } = {}) {
+  return authFetch(`/api/transport/journeys/simulations/${simulationId}/stop`, {
+    method: 'POST',
+    signal,
+  })
+}
