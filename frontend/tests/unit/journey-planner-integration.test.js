@@ -169,8 +169,20 @@ test('the live-journey action is real server work, never fake local behaviour', 
   assert.ok(MAP_PAGE.includes('const intent = journey.buildIntent()'))
   assert.ok(TRANSPORT_API.includes('body: JSON.stringify(intent)'))
 
-  // Ve sunucu yanıtı yeni güzergah gerçeği olarak KABUL EDİLİR.
-  assert.ok(MAP_PAGE.includes('journeySimulation.simulation?.geometryWkt ?? journey.preview?.geometryWkt'))
+  /* Ve sunucu yanıtı yeni güzergah gerçeği olarak KABUL EDİLİR.
+
+     Sahiplik kuralı Faz 5E-B'de saf modüle taşındı; sıralamanın KENDİSİ orada
+     çalıştırılarak ölçülür (`journey-terminal-lifecycle.test.js`). Burada
+     yalnızca entegrasyon sınırı denetlenir: sayfa kuralı çağırıyor, doğru iki
+     girdiyi veriyor, sonucu mevcut önizleme katmanına aktarıyor ve ikinci bir
+     sıralama kopyası tutmuyor. */
+  assert.match(MAP_PAGE, /import \{ journeyDisplayGeometryWkt \} from '\.\.\/map\/journeySimulationState\.js'/)
+  assert.match(
+    MAP_PAGE,
+    /const journeyGeometryWkt = journeyDisplayGeometryWkt\(\{\s*simulation: journeySimulation\.simulation,\s*previewGeometryWkt: journey\.preview\?\.geometryWkt \?\? null,\s*\}\)/,
+  )
+  assert.match(MAP_PAGE, /useJourneyPreviewLayer\(mapInstance, \{\s*geometryWkt: journeyGeometryWkt,/)
+  assert.ok(!MAP_PAGE.includes('journeySimulation.simulation?.geometryWkt ?? journey.preview?.geometryWkt'))
 
   // Mevcut paylaşılan hat denetimleri ayrı bileşende yaşamaya devam eder.
   assert.ok(MAP_PAGE.includes('TransportTrackingControls'))

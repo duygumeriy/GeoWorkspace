@@ -1,7 +1,9 @@
 import { useMemo } from 'react'
 import {
   ArrowDownUp,
+  ArrowLeft,
   Crosshair,
+  RotateCcw,
   Play,
   Square,
   Bike,
@@ -27,7 +29,12 @@ import {
 } from '../../map/journeyPlanning.js'
 import { journeyPreviewSummary, journeyProfileLabel as journeyProfileLabelOf } from '../../map/journeyPresentation.js'
 import { journeyStepList } from '../../map/journeyManeuvers.js'
-import { journeyLiveModel } from '../../map/journeySimulationState.js'
+import {
+  JOURNEY_PHASES,
+  JOURNEY_SIMULATION_STATUS,
+  journeyLiveModel,
+  journeyPhase,
+} from '../../map/journeySimulationState.js'
 import { formatRouteDistance, formatRouteDuration } from '../../map/transportPathPresentation.js'
 
 const PROFILE_ICONS = { car: Car, pedestrian: Footprints, bicycle: Bike }
@@ -39,6 +46,18 @@ const MODE_TABS = [
 ]
 
 const ROLE_LABELS = { origin: 'Başlangıç', via: 'Ara nokta', destination: 'Varış' }
+
+/**
+ * Terminal başlıkları — durum SUNUCUDAN gelir, tarayıcıda türetilmez.
+ *
+ * Bilinmeyen bir terminal durum çökertmez: sözleşme iki değerle sınırlı olsa
+ * da arayüz savunmacı davranır ve nötr bir başlık gösterir.
+ */
+const TERMINAL_TITLES = {
+  [JOURNEY_SIMULATION_STATUS.COMPLETED]: 'Yolculuk tamamlandı',
+  [JOURNEY_SIMULATION_STATUS.CANCELLED]: 'Yolculuk durduruldu',
+  default: 'Yolculuk sona erdi',
+}
 
 function formatStepMetric(step) {
   if (!Number.isFinite(step.distanceMeters)) return ''
@@ -87,6 +106,8 @@ export default function JourneyPlannerPanel({
   onStartSimulation,
   onStopSimulation,
   onToggleFollow,
+  onReturnToPlanning,
+  onNewJourney,
 }) {
   const summary = useMemo(() => journeyPreviewSummary(preview), [preview])
 
@@ -97,7 +118,19 @@ export default function JourneyPlannerPanel({
     () => journeyLiveModel({ simulation: live?.simulation, snapshot: live?.snapshot }),
     [live?.simulation, live?.snapshot],
   )
-  const isLive = liveModel != null
+
+  /* ÜÇ evre, İKİ ayrı soru. "Benimsenmiş bir çalıştırma var mı" ile "hâlâ
+     hareket ediyor mu" aynı şey değildir: biten yolculuğun SONUCU durur, ama
+     ilerleme, durdurma ve takip anlamını yitirir. */
+  const phase = journeyPhase({ simulation: live?.simulation, snapshot: live?.snapshot })
+
+  /* Sunum modeli YOKSA çizilecek bir sonuç da yoktur: anlık görüntü henüz
+     gelmemiş bir çalıştırmada panel planlama formunda kalır — Faz 5D'deki
+     davranışın aynısı. Evrenin kendisi (kanca düzeyinde) yine ACTIVE'dir;
+     burada sorulan soru "ne çizilecek". */
+  const isActive = liveModel != null && phase === JOURNEY_PHASES.ACTIVE
+  const isTerminal = liveModel != null && phase === JOURNEY_PHASES.TERMINAL
+  const isLive = isActive || isTerminal
 
   const steps = useMemo(
     () => journeyStepList(isLive ? live?.simulation?.steps : preview?.steps),
@@ -162,7 +195,17 @@ export default function JourneyPlannerPanel({
       {/* KATLANMIŞ: panel kaybolmaz, yeniden açmaya yetecek kadarını gösterir. */}
       {collapsed && (
         <button type="button" className="journey-collapsed-summary" onClick={onOpen}>
-          {isLive ? (
+          {isTerminal ? (
+            /* Katlanmış terminal: sonuç GİZLENİR ama kaybolmaz — panel
+               açıldığında hâlâ oradadır, yalnızca kullanıcı bırakınca gider. */
+            <>
+              <strong>{TERMINAL_TITLES[liveModel.status] ?? TERMINAL_TITLES.default}</strong>
+              <span>
+                {formatRouteDistance(liveModel.totalDistanceMeters)} ·{' '}
+                {formatRouteDuration(liveModel.totalDurationSeconds)}
+              </span>
+            </>
+          ) : isActive ? (
             <>
               <strong>%{Math.round(liveModel.progressPercent)} tamamlandı</strong>
               <span>
@@ -183,15 +226,29 @@ export default function JourneyPlannerPanel({
 
       {!collapsed && isLive && (
         <div className="journey-body">
-          <div className="journey-live-metrics">
-            <strong>%{Math.round(liveModel.progressPercent)}</strong>
-            <span>{formatRouteDistance(liveModel.remainingDistanceMeters)} kaldı</span>
-          </div>
+          {isActive && (
+            <>
+              <div className="journey-live-metrics">
+                <strong>%{Math.round(liveModel.progressPercent)}</strong>
+                <span>{formatRouteDistance(liveModel.remainingDistanceMeters)} kaldı</span>
+              </div>
 
-          <div className="journey-live-bar" role="progressbar" aria-valuenow={Math.round(liveModel.progressPercent)}
-               aria-valuemin={0} aria-valuemax={100}>
-            <span style={{ width: `${liveModel.progressPercent}%` }} />
-          </div>
+              <div className="journey-live-bar" role="progressbar" aria-valuenow={Math.round(liveModel.progressPercent)}
+                   aria-valuemin={0} aria-valuemax={100}>
+                <span style={{ width: `${liveModel.progressPercent}%` }} />
+              </div>
+            </>
+          )}
+
+          {/* TERMİNAL: hareket bitti, SONUÇ durur. İlerleme çubuğu ve kalan
+              mesafe yerine sunucunun son ölçümleri gösterilir; hiçbir değer
+              tarayıcıda yeniden hesaplanmaz. */}
+          {isTerminal && (
+            <div className="journey-terminal">
+              <strong>{TERMINAL_TITLES[liveModel.status] ?? TERMINAL_TITLES.default}</strong>
+              <span>%{Math.round(liveModel.progressPercent)} tamamlandı</span>
+            </div>
+          )}
 
           <p className="journey-summary-meta">
             {journeyProfileLabelOf(liveModel.profileId)}
@@ -201,24 +258,35 @@ export default function JourneyPlannerPanel({
             {formatRouteDuration(liveModel.totalDurationSeconds)}
           </p>
 
-          {liveModel.isTerminal && (
-            <p className="journey-note">
-              {liveModel.status === 'Completed' ? 'Yolculuk tamamlandı.' : 'Yolculuk durduruldu.'}
-            </p>
-          )}
-
-          <div className="journey-actions">
-            <button type="button" className="journey-secondary" onClick={onToggleFollow}>
-              <Crosshair size={14} aria-hidden="true" />
-              {live?.following ? 'Takibi Bırak' : 'Takip Et'}
-            </button>
-            {!liveModel.isTerminal && (
+          {/* Takip ve durdurma YALNIZCA hareket varken sunulur: biten bir
+              yolculuğu takip etmek ya da durdurmak diye bir şey yoktur. */}
+          {isActive && (
+            <div className="journey-actions">
+              <button type="button" className="journey-secondary" onClick={onToggleFollow}>
+                <Crosshair size={14} aria-hidden="true" />
+                {live?.following ? 'Takibi Bırak' : 'Takip Et'}
+              </button>
               <button type="button" className="journey-danger" onClick={onStopSimulation}>
                 <Square size={14} aria-hidden="true" />
                 Simülasyonu Durdur
               </button>
-            )}
-          </div>
+            </div>
+          )}
+
+          {/* Terminal çıkışı: sonucu bırakmak KULLANICININ kararıdır ve onay
+              sorulmaz — ortada kaybolacak bir iş yoktur. */}
+          {isTerminal && (
+            <div className="journey-actions">
+              <button type="button" className="journey-primary" onClick={onNewJourney}>
+                <RotateCcw size={14} aria-hidden="true" />
+                Yeni Yolculuk
+              </button>
+              <button type="button" className="journey-secondary" onClick={onReturnToPlanning}>
+                <ArrowLeft size={14} aria-hidden="true" />
+                Planlamaya Dön
+              </button>
+            </div>
+          )}
 
           {/* Manevra YOKSA hata gibi sunulmaz: kalıcı güzergahı yeniden
               kullanan tam-hat yolculuğunda adım verisi bulunmaz. */}

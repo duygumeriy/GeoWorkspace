@@ -105,6 +105,7 @@ import useTransportSimulation from '../hooks/useTransportSimulation.js'
 import useTransportVehicleLayer from '../hooks/useTransportVehicleLayer.js'
 import { transportSimulationControls } from '../map/transportSimulationState.js'
 import { transportVehiclePopupModel, transportVehiclePresentation } from '../map/transportVehicle.js'
+import { journeyDisplayGeometryWkt } from '../map/journeySimulationState.js'
 import useTransportStopPlacement from '../hooks/useTransportStopPlacement.js'
 import useTransportStopInteraction from '../hooks/useTransportStopInteraction.js'
 import useJourneyPlanner from '../hooks/useJourneyPlanner.js'
@@ -891,10 +892,33 @@ export default function MapPage() {
     journeySimulation.setFollowing((current) => !current)
   }, [journeySimulation])
 
-  /* Canlı yolculuk varken haritadaki güzergah, sunucunun OTORİTER yanıtıdır;
-     eski önizleme geometrisi kullanılmaz. */
-  const journeyGeometryWkt =
-    journeySimulation.simulation?.geometryWkt ?? journey.preview?.geometryWkt ?? null
+  /* --- Terminal sonuçtan çıkış (Faz 5E-B) ------------------------------------
+     Biten bir yolculuğun sonucu, kullanıcı BIRAKANA kadar durur. İki çıkış da
+     aynı yaşam döngüsü işlemini (`dismiss`) kullanır — ikinci bir "canlı
+     yolculuğu sıfırla" mekanizması açılmaz — ve ikisi de sunucuya durdurma
+     isteği GÖNDERMEZ: terminal bir çalıştırma zaten terminaldir. */
+
+  /** Sonucu bırakır, planlayıcı seçimlerini OLDUĞU GİBİ bırakır. */
+  const returnToJourneyPlanning = useCallback(async () => {
+    await journeySimulation.dismiss()
+    // Panel zaten açıktır; kapalıyken bırakılırsa da planlayıcı geri gelir.
+    journey.openPanel()
+  }, [journeySimulation, journey])
+
+  /** Sonucu bırakır ve MEVCUT temizleme davranışıyla sıfırdan planlamaya döner. */
+  const startNewJourney = useCallback(async () => {
+    await journeySimulation.dismiss()
+    journey.clear()
+    journey.openPanel()
+  }, [journeySimulation, journey])
+
+  /* Haritadaki yolculuk çizgisinin sahibi: benimsenmiş çalıştırma varken
+     sunucunun OTORİTER yanıtı, bırakıldığında yeniden önizleme. Kural saf
+     modüldedir; geometri hiçbir yere KOPYALANMAZ. */
+  const journeyGeometryWkt = journeyDisplayGeometryWkt({
+    simulation: journeySimulation.simulation,
+    previewGeometryWkt: journey.preview?.geometryWkt ?? null,
+  })
 
   /* Çağrı BURADADIR: gösterilecek geometri canlı simülasyona da bağlı olduğu
      için planlayıcıdan SONRA gelmesi gerekir. Katman ve uyum davranışı
@@ -3275,6 +3299,10 @@ export default function MapPage() {
                   onStartSimulation={startJourney}
                   onStopSimulation={journeySimulation.stop}
                   onToggleFollow={toggleJourneyFollow}
+                  /* Terminal çıkışları: ikisi de YALNIZCA sunucu sonucunu
+                     bırakır; paneli kapatmak ya da durdurmak değildir. */
+                  onReturnToPlanning={returnToJourneyPlanning}
+                  onNewJourney={startNewJourney}
                 />
               )}
 

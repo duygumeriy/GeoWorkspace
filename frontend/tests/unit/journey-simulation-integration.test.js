@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
+import {
+  JOURNEY_MODES,
+  WAYPOINT_SOURCES,
+  buildJourneyPreviewRequest,
+} from '../../src/map/journeyPlanning.js'
 
 const read = (relative) => readFileSync(new URL(relative, import.meta.url), 'utf8')
 
@@ -39,19 +44,126 @@ test('the start request carries the journey intent and nothing else', () => {
   assert.ok(TRANSPORT_API.includes('body: JSON.stringify(intent)'))
 })
 
-test('no preview authority is ever sent to the start endpoint', () => {
-  const code = stripComments(SIM_HOOK) + stripComments(MAP_PAGE) + stripComments(TRANSPORT_API)
+/**
+ * Yasak alanlar İSTEK SINIRINDA aranır, kaynak dosyalarda değil.
+ *
+ * Sunum tarafının önizleme geometrisini okuması meşrudur (harita çizgisinin
+ * sahibi kuralı); ölçülen şey sunucuya NE GÖNDERİLDİĞİDİR.
+ */
+const FORBIDDEN_REQUEST_FIELDS = [
+  'planId',
+  'previewGeometry',
+  'previewGeometryWkt',
+  'geometry',
+  'geometryWkt',
+  'coordinates',
+  'longitude',
+  'latitude',
+  'distanceMeters',
+  'durationSeconds',
+  'steps',
+  'summary',
+]
 
-  /* Önizlemenin planId'si, geometrisi ya da ölçümleri başlatma yoluna HİÇ
-     girmez: sunucu yolculuğu niyetten yeniden planlar. */
-  for (const forbidden of ['planId', 'previewGeometry', 'preview.geometryWkt,']) {
-    assert.ok(!code.includes(forbidden), `başlatma yoluna ${forbidden} sızıyor`)
+/** Gövdedeki TÜM anahtarlar, iç içe nesneler dâhil. */
+function deepKeys(value, found = new Set()) {
+  if (Array.isArray(value)) {
+    for (const item of value) deepKeys(item, found)
+    return found
+  }
+  if (value && typeof value === 'object') {
+    for (const [key, nested] of Object.entries(value)) {
+      found.add(key)
+      deepKeys(nested, found)
+    }
+  }
+  return found
+}
+
+test('no preview authority is ever sent to the start endpoint', () => {
+  /* Gövdenin KENDİSİ çalıştırılarak üretilir: başlatma isteği, önizlemeyle
+     AYNI kanonik niyet eşleyicisinden çıkar (`buildIntent` = doğrulanmış
+     istek). Böylece iddia bir metin taraması değil, gerçek yük üzerindedir. */
+  const intents = [
+    buildJourneyPreviewRequest({
+      mode: JOURNEY_MODES.ROUTE_FULL,
+      profile: 'driving',
+      routeId: 7,
+      waypoints: [],
+    }),
+    buildJourneyPreviewRequest({
+      mode: JOURNEY_MODES.ROUTE_SEGMENT,
+      profile: 'walking',
+      routeId: 7,
+      fromStopId: 71,
+      toStopId: 72,
+      waypoints: [],
+    }),
+    buildJourneyPreviewRequest({
+      mode: JOURNEY_MODES.WAYPOINTS,
+      profile: 'cycling',
+      routeId: null,
+      waypoints: [
+        { key: 'wp-1', reference: { source: WAYPOINT_SOURCES.STOP, id: 71, label: 'Batı', routeName: 'A' } },
+        { key: 'wp-2', reference: { source: WAYPOINT_SOURCES.POI, id: 12, label: 'Kütüphane', routeName: '' } },
+      ],
+    }),
+  ]
+
+  const expectedKeys = [
+    ['mode', 'profile', 'routeId'],
+    ['mode', 'profile', 'routeId', 'fromStopId', 'toStopId'],
+    ['mode', 'profile', 'waypoints'],
+  ]
+
+  intents.forEach((validation, index) => {
+    assert.ok(validation.ok, `niyet ${index} kurulamadı`)
+    const body = JSON.parse(JSON.stringify(validation.request))
+
+    // Gövde YALNIZCA kanonik niyettir.
+    assert.deepEqual(Object.keys(body).sort(), [...expectedKeys[index]].sort())
+
+    for (const forbidden of FORBIDDEN_REQUEST_FIELDS) {
+      assert.ok(!deepKeys(body).has(forbidden), `başlatma yoluna ${forbidden} sızıyor`)
+    }
+  })
+
+  /* Geçiş noktaları da yalnızca KAYNAK + KİMLİKTİR: koordinat, etiket ya da
+     ölçüm taşımaz — konumu sunucu çözer. */
+  const waypoints = intents[2].request.waypoints
+  for (const waypoint of waypoints) {
+    assert.deepEqual(Object.keys(waypoint).sort(), ['referenceId', 'source'])
   }
 
-  // Başlatma çağrısının çevresinde geometri/ölçüm ataması yoktur.
-  const startCall = stripComments(SIM_HOOK).slice(stripComments(SIM_HOOK).indexOf('startJourneySimulation'))
-  for (const forbidden of ['geometryWkt:', 'distanceMeters:', 'durationSeconds:', 'longitude:', 'latitude:']) {
-    assert.ok(!startCall.includes(forbidden), `başlatma isteği ${forbidden} taşıyor`)
+  /* İstek sınırının kendisi: gövde niyetin TA KENDİSİDİR, zenginleştirilmez.
+     Bu iddia, birisi ileride yüke geometri eklerse KIRILIR. */
+  const startRequest = stripComments(TRANSPORT_API).slice(
+    stripComments(TRANSPORT_API).indexOf('export function startJourneySimulation'),
+    stripComments(TRANSPORT_API).indexOf('export function fetchCurrentJourneySimulation'),
+  )
+  assert.match(startRequest, /body: JSON\.stringify\(intent\),/)
+  for (const forbidden of FORBIDDEN_REQUEST_FIELDS) {
+    assert.ok(!startRequest.includes(forbidden), `başlatma isteği ${forbidden} taşıyor`)
+  }
+
+  // Ve niyet, kanca ile sayfa arasında DEĞİŞTİRİLMEDEN geçer.
+  const startCallback = stripComments(SIM_HOOK).slice(
+    stripComments(SIM_HOOK).indexOf('const start = useCallback('),
+    stripComments(SIM_HOOK).indexOf('const stop = useCallback('),
+  )
+  assert.match(startCallback, /await startJourneySimulation\(intent\)/)
+  for (const forbidden of FORBIDDEN_REQUEST_FIELDS) {
+    assert.ok(!startCallback.includes(`${forbidden}:`), `başlatma çağrısı ${forbidden} ekliyor`)
+  }
+
+  const startHandler = stripComments(MAP_PAGE).slice(
+    stripComments(MAP_PAGE).indexOf('const startJourney = useCallback('),
+    stripComments(MAP_PAGE).indexOf('const toggleJourneyFollow'),
+  )
+  assert.match(startHandler, /const intent = journey\.buildIntent\(\)/)
+  assert.match(startHandler, /await journeySimulation\.start\(intent\)/)
+  for (const forbidden of FORBIDDEN_REQUEST_FIELDS) {
+    assert.ok(!startHandler.includes(forbidden), `başlatma eylemi ${forbidden} taşıyor`)
   }
 })
 
@@ -86,7 +198,20 @@ test('no simulation authority is kept in browser storage', () => {
 test('the start response replaces the preview as route truth', () => {
   // Yanıt doğrudan duruma yazılır ve harita ondan çizer.
   assert.ok(SIM_HOOK.includes('setSimulation(body)'))
-  assert.ok(MAP_PAGE.includes('journeySimulation.simulation?.geometryWkt ?? journey.preview?.geometryWkt'))
+
+  /* Sıralama kuralı Faz 5E-B'de saf modüle taşındı ve orada ÇALIŞTIRILARAK
+     ölçülür (`journey-terminal-lifecycle.test.js`). Burada denetlenen tek şey
+     ENTEGRASYON SINIRIDIR: sayfa kuralı çağırıyor, doğru iki girdiyi veriyor
+     ve ikinci bir sıralama kopyası tutmuyor. */
+  assert.match(MAP_PAGE, /import \{ journeyDisplayGeometryWkt \} from '\.\.\/map\/journeySimulationState\.js'/)
+  assert.match(
+    MAP_PAGE,
+    /journeyDisplayGeometryWkt\(\{\s*simulation: journeySimulation\.simulation,\s*previewGeometryWkt: journey\.preview\?\.geometryWkt \?\? null,\s*\}\)/,
+  )
+  assert.ok(!MAP_PAGE.includes('journeySimulation.simulation?.geometryWkt ?? journey.preview?.geometryWkt'))
+
+  // Ve haritaya giden değer o kuralın sonucudur.
+  assert.match(MAP_PAGE, /geometryWkt: journeyGeometryWkt,/)
 
   // Panel canlı modda önizleme adımlarını DEĞİL, sunucu adımlarını gösterir.
   assert.ok(PANEL.includes('isLive ? live?.simulation?.steps : preview?.steps'))
@@ -125,12 +250,20 @@ test('a refresh recovers the active journey from the server, not from the browse
 
 test('recovered geometry replaces any absent or stale preview truth', () => {
   /* Yenilemeden sonra önizleme durumu YOKTUR (Faz 5C durumu bellekte
-     yaşıyordu); harita kurtarılan otoriter geometriyi çizmelidir. */
-  assert.ok(MAP_PAGE.includes('journeySimulation.simulation?.geometryWkt ?? journey.preview?.geometryWkt'))
+     yaşıyordu); harita kurtarılan otoriter geometriyi çizmelidir.
 
-  // Sıra bilinçlidir: canlı çalıştırma önizlemenin ÖNÜNDE gelir.
-  const line = MAP_PAGE.split('\n').find((row) => row.includes('journeySimulation.simulation?.geometryWkt'))
-  assert.ok(line.indexOf('journeySimulation.simulation') < line.indexOf('journey.preview'))
+     Kural Faz 5E-B'de saf modüle taşındı: sıra orada ÇALIŞTIRILARAK ölçülür
+     (`journey-terminal-lifecycle.test.js`), burada yalnızca sayfanın o kuralı
+     kullandığı — ve ikinci bir sıralama kopyası tutmadığı — doğrulanır. */
+  assert.match(
+    MAP_PAGE,
+    /const journeyGeometryWkt = journeyDisplayGeometryWkt\(\{\s*simulation: journeySimulation\.simulation,\s*previewGeometryWkt: journey\.preview\?\.geometryWkt \?\? null,\s*\}\)/,
+  )
+  assert.ok(!MAP_PAGE.includes('journeySimulation.simulation?.geometryWkt ?? journey.preview?.geometryWkt'))
+
+  // Sıra bilinçlidir: benimsenmiş çalıştırma önizlemenin ÖNÜNDE gelir.
+  const rule = read('../../src/map/journeySimulationState.js')
+  assert.ok(rule.includes('simulation?.geometryWkt ?? previewGeometryWkt ?? null'))
 })
 
 test('recovered steps and maneuver feed the live panel directly', () => {

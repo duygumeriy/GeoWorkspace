@@ -418,6 +418,29 @@
   cursor: pointer;
 }
 
+/* TERMİNAL sonuç (Faz 5E-B): hareket bitti, sonuç duruyor. Aynı mor aksan
+   kullanılır ama ilerleme çubuğunun yerini nihai başlık alır — panel "devam
+   ediyor" izlenimi vermemelidir. */
+.journey-terminal {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  border-left: 3px solid var(--journey-accent);
+}
+
+.journey-terminal strong {
+  font-size: 0.95rem;
+  color: var(--text-primary);
+}
+
+.journey-terminal span {
+  font-size: var(--font-small);
+  color: var(--text-secondary);
+}
+
 /* Anlık manevra vurgulanır; diğerleri okunur kalır. */
 .journey-step.is-current {
   background: color-mix(in srgb, var(--journey-accent) 16%, transparent);

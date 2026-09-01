@@ -79,6 +79,56 @@ export function applyJourneySnapshot(current, incoming) {
 }
 
 /**
+ * Yolculuk arayüzünün ÜÇ evresi.
+ *
+ * <b><code>simulation != null</code> "canlı" DEMEK DEĞİLDİR.</b> Bir yolculuk
+ * bittiğinde ya da iptal edildiğinde sunucunun son anlık görüntüsü hâlâ
+ * elimizdedir ve gösterilmeye devam etmelidir — ama artık hareket yoktur,
+ * dolayısıyla takip kamerası ve durdurma düğmesi de anlamsızdır. İkisini tek
+ * bayrağa bağlamak, biten bir yolculuğun paneli sonsuza dek işgal etmesi
+ * demekti: kullanıcı yeniden planlamaya dönemezdi.
+ */
+export const JOURNEY_PHASES = Object.freeze({
+  /** Benimsenmiş bir çalıştırma yok: sıradan planlama formu. */
+  PLANNER: 'planner',
+  /** Sunucu "Running" diyor: ilerleme, manevra ve takip anlamlıdır. */
+  ACTIVE: 'active',
+  /** Tamamlandı/iptal edildi: SONUÇ durur, hareket bitmiştir. */
+  TERMINAL: 'terminal',
+})
+
+/**
+ * Evreyi YALNIZCA sunucunun bildirdiği durumdan türetir.
+ *
+ * İstemci hiçbir zaman "bitti" demez: tamamlanma kararı sunucunundur ve buraya
+ * yalnızca okunur. Anlık görüntü henüz gelmemişse çalıştırma benimsenmiştir
+ * ama durumu bilinmiyordur — bu, biten bir yolculuk değil, başlayan bir
+ * yolculuktur; ACTIVE sayılır.
+ */
+export function journeyPhase({ simulation, snapshot } = {}) {
+  if (!simulation) return JOURNEY_PHASES.PLANNER
+  return isTerminalJourneyStatus(snapshot?.status)
+    ? JOURNEY_PHASES.TERMINAL
+    : JOURNEY_PHASES.ACTIVE
+}
+
+/**
+ * Haritadaki yolculuk çizgisinin SAHİBİ.
+ *
+ * Benimsenmiş bir çalıştırma varken (çalışıyor ya da bitmiş) sunucunun
+ * otoriter geometrisi kazanır: ekranda duran güzergah, panelde anlatılan
+ * yolculuğun ta kendisidir. Kullanıcı sonucu bıraktığında (`dismiss`)
+ * <code>simulation</code> düşer ve varsa geçerli önizleme yeniden görünür
+ * olur; yoksa harita temizlenir.
+ *
+ * <b>Geometri KOPYALANMAZ.</b> Burada yalnızca hangi kaynağın okunacağı
+ * seçilir; planlayıcı durumuna hiçbir zaman simülasyon geometrisi yazılmaz.
+ */
+export function journeyDisplayGeometryWkt({ simulation, previewGeometryWkt = null } = {}) {
+  return simulation?.geometryWkt ?? previewGeometryWkt ?? null
+}
+
+/**
  * Canlı panelin okuyacağı sunum modeli.
  *
  * <b>Hiçbir ölçüm burada hesaplanmaz.</b> Kalan mesafe, sunucunun otoriter

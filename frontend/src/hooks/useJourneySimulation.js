@@ -6,7 +6,12 @@ import {
   stopJourneySimulation,
 } from '../services/transportApi.js'
 import { createJourneySimulationConnection } from '../services/journeySimulationHub.js'
-import { applyJourneySnapshot, isTerminalJourneyStatus } from '../map/journeySimulationState.js'
+import {
+  JOURNEY_PHASES,
+  applyJourneySnapshot,
+  isTerminalJourneyStatus,
+  journeyPhase,
+} from '../map/journeySimulationState.js'
 import { journeyErrorMessage } from '../map/journeyPresentation.js'
 
 export const JOURNEY_UPDATED_EVENT = 'JourneySimulationUpdated'
@@ -197,7 +202,18 @@ export default function useJourneySimulation({ permitted = false } = {}) {
     }
   }, [simulation, applyUpdate, leave])
 
-  /** Paneli/haritayı temizler; simülasyonu DURDURMAZ. */
+  /**
+   * Benimsenen çalıştırmayı BIRAKIR: paneli ve haritayı serbest bırakır.
+   *
+   * <b>Sunucuya durdurma İSTEĞİ GÖNDERMEZ.</b> Biten bir yolculuk zaten
+   * bitmiştir; onu bir kez daha durdurmaya çalışmak anlamsız bir istek
+   * olurdu. Çalışan bir yolculukta ise durdurmak kullanıcının AYRI bir
+   * kararıdır ve kendi eylemi vardır — bırakmak onu susturmaz, sunucuda
+   * çalışmaya devam eder.
+   *
+   * Tekrar çağrılması güvenlidir: grup üyeliği zaten bırakılmışsa `leave`
+   * hiçbir yan etki üretmez ve durum zaten boştur.
+   */
   const dismiss = useCallback(async () => {
     await leave()
     setSimulation(null)
@@ -210,12 +226,19 @@ export default function useJourneySimulation({ permitted = false } = {}) {
     if (snapshot && isTerminalJourneyStatus(snapshot.status)) leave()
   }, [snapshot, leave])
 
+  /* Evre TEK bir yerden türetilir ve sunucunun durumundan başka hiçbir şeye
+     bakmaz; "benimsenmiş bir çalıştırma var" ile "hâlâ hareket ediyor" ayrı
+     iki sorudur. */
+  const phase = journeyPhase({ simulation, snapshot })
+
   return {
     simulation,
     snapshot,
     starting,
     error,
-    isActive: simulation != null && !isTerminalJourneyStatus(snapshot?.status),
+    phase,
+    isActive: phase === JOURNEY_PHASES.ACTIVE,
+    isTerminal: phase === JOURNEY_PHASES.TERMINAL,
     following,
     setFollowing,
     start,
