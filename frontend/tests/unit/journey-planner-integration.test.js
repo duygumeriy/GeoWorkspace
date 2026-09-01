@@ -266,13 +266,24 @@ test('the existing transport click chain is left exactly as it was', () => {
 
 test('the panel offers exactly three profiles with non-transit semantics', () => {
   assert.ok(PANEL.includes('JOURNEY_PROFILES.map'))
-  // İkonlar araç / yaya / bisiklet; otobüs ya da transit ikonu yoktur.
-  assert.ok(PANEL.includes('car: Car'))
-  assert.ok(PANEL.includes('pedestrian: Footprints'))
-  assert.ok(PANEL.includes('bicycle: Bike'))
-  assert.ok(!PANEL.includes('BusFront'))
-  assert.ok(!PANEL.includes('TramFront'))
-  assert.ok(!PANEL.includes('TrainFront'))
+
+  /* İkonlar Faz 5E-B · Dilim 6'da TEK bir sözlüğe taşındı: panel de haritadaki
+     canlı işaretçi de aynı üç sembolü kanonik profil kimliğinden okur. Panelin
+     kendi tablosu KALMADI — ikinci bir tablo, iki ayrı görünüm demekti. */
+  assert.ok(PANEL.includes('journeyProfileIcon(profile.id)'))
+  assert.ok(!PANEL.includes('PROFILE_ICONS'))
+
+  const icons = read('../../src/components/map/journeyProfileIcons.js')
+  assert.match(icons, /driving: Car/)
+  assert.match(icons, /walking: Footprints/)
+  assert.match(icons, /cycling: Bike/)
+
+  // Otobüs ya da transit ikonu hiçbir yerde yoktur.
+  for (const source of [PANEL, icons]) {
+    for (const forbidden of ['BusFront', 'TramFront', 'TrainFront', 'Bus', 'Train']) {
+      assert.ok(!source.includes(forbidden), `transit ikonu sızdı (${forbidden})`)
+    }
+  }
 })
 
 test('no client side duration estimate or speed multiplier exists', () => {

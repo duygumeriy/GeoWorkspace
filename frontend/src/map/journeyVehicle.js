@@ -1,9 +1,12 @@
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import Feature from 'ol/Feature.js'
 import Point from 'ol/geom/Point.js'
 import VectorLayer from 'ol/layer/Vector.js'
 import VectorSource from 'ol/source/Vector.js'
-import { Circle as CircleStyle, Fill, Stroke, Style, Text } from 'ol/style.js'
+import { Icon, Style } from 'ol/style.js'
 import { fromLonLat } from 'ol/proj.js'
+import { journeyProfileIcon } from '../components/map/journeyProfileIcons.js'
 
 /**
  * Kişisel yolculuğun canlı işaretçisi.
@@ -27,24 +30,79 @@ export const JOURNEY_VEHICLE_Z_INDEX = 21
 const ACCENT = '#7c3aed'
 const HALO = 'rgba(255, 255, 255, 0.92)'
 
+/* --- Profil rozeti ----------------------------------------------------------
+   İşaretçi artık EMOJİ DEĞİLDİR. Emoji, işletim sistemine göre bambaşka bir
+   resme dönüşür ve panelin çizgi ikonlarıyla aynı yolculuğu anlatmaz. Sembol,
+   panelin okuduğu AYNI sözlükten gelir; OpenLayers bir React bileşeni
+   çizemediği için bileşen bir KEZ durağan SVG'ye çevrilip `data:` URI olarak
+   önbelleklenir — POI rozetlerinde kurulmuş olan yolun aynısı.
+
+   Ağ yoktur, CDN yoktur, uzak simge adresi yoktur, yeni bir ikon paketi
+   yoktur. */
+
+/** Rozetin kanonik çizim kutusu; Lucide'ın kendi viewBox'ı. */
+const VIEW_BOX = 24
+
+/** İşaretçinin ekrandaki çapı (px) — eski dairesel rozetle aynı ağırlıkta. */
+const MARKER_SIZE = 28
+
+/** Retina ekranda bulanıklaşmaması için SVG iki katı doğal boyutta üretilir. */
+const SOURCE_SCALE = 2
+
+/** `profileId` → Lucide sembolünün İÇ işaretlemesi (dış <svg> olmadan). */
+const glyphCache = new Map()
+
+function profileGlyphMarkup(profileId) {
+  const cached = glyphCache.get(profileId)
+  if (cached !== undefined) return cached
+
+  const ProfileIcon = journeyProfileIcon(profileId)
+  const markup = renderToStaticMarkup(
+    createElement(ProfileIcon, { size: VIEW_BOX, color: '#FFFFFF', strokeWidth: 2 }),
+  )
+
+  /* Yalnızca çocuk düğümler alınır: rozetin kendi viewBox'ı, kendi ölçeği ve
+     kendi kılıfı vardır. Girdi kullanıcıdan değil kendi bağımlılığımızdan
+     gelir ve tek kök <svg> taşır. */
+  const inner = markup.replace(/^<svg\b[^>]*>/, '').replace(/<\/svg>\s*$/, '')
+
+  glyphCache.set(profileId, inner)
+  return inner
+}
+
+/** `profileId` → `data:` URI. */
+const badgeCache = new Map()
+
 /**
- * Profil → görsel semantik.
+ * Profil rozetinin <code>data:</code> URI'si.
  *
- * Glif, ikon dosyası yerine metin olarak çizilir: mevcut araç işaretçisi de
- * aynı yaklaşımı kullanır ve böylece yeni bir varlık hattı açılmaz.
+ * <b>Önbellek zorunludur:</b> stil fonksiyonu her karede çağrılabilir ve SVG
+ * metnini yeniden kurup yeniden kodlamak haritayı kilitlerdi. Anahtar sonludur
+ * — üç profil, artı güvenli varsayılan.
  */
-const PROFILE_GLYPHS = Object.freeze({
-  driving: '\u{1F697}',
-  walking: '\u{1F6B6}',
-  cycling: '\u{1F6B2}',
-})
+export function journeyVehicleBadgeDataUri(profileId) {
+  const key = profileId ?? ''
+  const cached = badgeCache.get(key)
+  if (cached !== undefined) return cached
 
-export const JOURNEY_VEHICLE_FALLBACK_GLYPH = PROFILE_GLYPHS.driving
+  const pixels = MARKER_SIZE * SOURCE_SCALE
 
-export function journeyVehicleGlyph(profileId) {
-  /* Bilinmeyen bir profil ÇÖKERTMEZ: sunucu sözleşmesi üç profille sınırlı
-     olsa da arayüz savunmacı davranır. */
-  return PROFILE_GLYPHS[profileId] ?? JOURNEY_VEHICLE_FALLBACK_GLYPH
+  /* POI rozetiyle AYNI üç katman — beyaz kılıf, vurgu renginde disk, beyaz
+     sembol — böylece harita üzerindeki iki işaretçi tek bir sistemden gelmiş
+     gibi okunur ve açık/koyu altlıkta da ayırt edilir. */
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${pixels}" height="${pixels}" viewBox="0 0 ${VIEW_BOX} ${VIEW_BOX}">`
+    + `<circle cx="12" cy="12" r="11" fill="${HALO}"/>`
+    + `<circle cx="12" cy="12" r="9.5" fill="${ACCENT}"/>`
+    + '<g transform="translate(12 12) scale(0.55) translate(-12 -12)"'
+    + ' fill="none" stroke="#FFFFFF" stroke-width="2.4"'
+    + ' stroke-linecap="round" stroke-linejoin="round">'
+    + profileGlyphMarkup(profileId)
+    + '</g></svg>'
+
+  // base64 DEĞİL: okunabilir kalır ve kodlaması ucuzdur.
+  const uri = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+  badgeCache.set(key, uri)
+  return uri
 }
 
 /**
@@ -122,19 +180,18 @@ export function createJourneyCameraLock() {
 const styleCache = new Map()
 
 function journeyVehicleStyle(profileId) {
-  const glyph = journeyVehicleGlyph(profileId)
-  if (!styleCache.has(glyph)) {
-    styleCache.set(glyph, new Style({
-      image: new CircleStyle({
-        radius: 13,
-        fill: new Fill({ color: HALO }),
-        stroke: new Stroke({ color: ACCENT, width: 3 }),
+  const key = profileId ?? ''
+  if (!styleCache.has(key)) {
+    styleCache.set(key, new Style({
+      image: new Icon({
+        src: journeyVehicleBadgeDataUri(profileId),
+        // SVG iki katı boyutta üretildi; ekrandaki ölçü sabit kalır.
+        scale: 1 / SOURCE_SCALE,
       }),
-      text: new Text({ text: glyph, font: '14px sans-serif', offsetY: 1 }),
       zIndex: JOURNEY_VEHICLE_Z_INDEX,
     }))
   }
-  return styleCache.get(glyph)
+  return styleCache.get(key)
 }
 
 export function createJourneyVehicleLayer() {

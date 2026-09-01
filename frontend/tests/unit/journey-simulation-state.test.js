@@ -8,11 +8,10 @@ import {
   shouldApplyJourneySnapshot,
 } from '../../src/map/journeySimulationState.js'
 import {
-  JOURNEY_VEHICLE_FALLBACK_GLYPH,
   JOURNEY_VEHICLE_KIND,
   JOURNEY_VEHICLE_LAYER_CLASSNAME,
   createJourneyVehicleLayer,
-  journeyVehicleGlyph,
+  journeyVehicleBadgeDataUri,
   syncJourneyVehicleFeature,
 } from '../../src/map/journeyVehicle.js'
 import { TRANSPORT_VEHICLE_LAYER_CLASSNAME } from '../../src/map/transportVehicle.js'
@@ -201,16 +200,19 @@ test('a recovered route-full journey without maneuvers stays valid', () => {
 /* --- İşaretçi ---------------------------------------------------------------- */
 
 test('each supported profile has its own visual semantic and bus has none', () => {
-  const driving = journeyVehicleGlyph('driving')
-  const walking = journeyVehicleGlyph('walking')
-  const cycling = journeyVehicleGlyph('cycling')
+  /* İşaretçi Faz 5E-B · Dilim 6'dan beri EMOJİ DEĞİL, panelin okuduğu aynı
+     sözlükten üretilen bir rozettir. Ayrıntılı görsel sözleşme
+     `journey-profile-marker.test.js` içinde ölçülür; buradaki iddia ürünün
+     değişmeyen kuralıdır: üç profil, üç ayrı görünüm, otobüs yok. */
+  const driving = journeyVehicleBadgeDataUri('driving')
+  const walking = journeyVehicleBadgeDataUri('walking')
+  const cycling = journeyVehicleBadgeDataUri('cycling')
 
   assert.equal(new Set([driving, walking, cycling]).size, 3)
 
   // Otobüs/transit bir profil DEĞİLDİR; bilinmeyen değer güvenli varsayılana düşer.
-  assert.equal(journeyVehicleGlyph('bus'), JOURNEY_VEHICLE_FALLBACK_GLYPH)
-  assert.equal(journeyVehicleGlyph(undefined), JOURNEY_VEHICLE_FALLBACK_GLYPH)
-  assert.equal(JOURNEY_VEHICLE_FALLBACK_GLYPH, driving)
+  assert.equal(journeyVehicleBadgeDataUri('bus'), driving)
+  assert.equal(journeyVehicleBadgeDataUri(undefined), driving)
 })
 
 test('the journey marker owns its own layer, distinct from the shared vehicle', () => {

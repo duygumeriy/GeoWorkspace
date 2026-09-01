@@ -26,15 +26,19 @@ export const WAYPOINT_SOURCES = Object.freeze({
 /**
  * Desteklenen seyahat profilleri — TAM OLARAK üç tane.
  *
+ * Görsel karşılıkları burada DEĞİL, tek bir ikon sözlüğündedir
+ * (`journeyProfileIcons`): panel ile haritadaki canlı işaretçi aynı sembolü
+ * kanonik profil kimliğinden okur, ikinci bir ara etiket üzerinden değil.
+ *
  * Otobüs/toplu taşıma KAPSAM DIŞIDIR: projede GTFS, transit grafiği veya
  * tarife altyapısı yoktur ve karayolu davranışıyla desteklenen sahte bir
  * otobüs seçeneği sunulmaz. Backend de `bus`'ı bilinmeyen profil olarak
  * reddeder.
  */
 export const JOURNEY_PROFILES = Object.freeze([
-  Object.freeze({ id: 'driving', label: 'Araç', icon: 'car' }),
-  Object.freeze({ id: 'walking', label: 'Yürüyüş', icon: 'pedestrian' }),
-  Object.freeze({ id: 'cycling', label: 'Bisiklet', icon: 'bicycle' }),
+  Object.freeze({ id: 'driving', label: 'Araç' }),
+  Object.freeze({ id: 'walking', label: 'Yürüyüş' }),
+  Object.freeze({ id: 'cycling', label: 'Bisiklet' }),
 ])
 
 export const JOURNEY_PROFILE_IDS = Object.freeze(JOURNEY_PROFILES.map((profile) => profile.id))

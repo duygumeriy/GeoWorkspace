@@ -6,11 +6,8 @@ import {
   RotateCcw,
   Play,
   Square,
-  Bike,
   ChevronDown,
   ChevronUp,
-  Car,
-  Footprints,
   Loader2,
   MapPin,
   Minus,
@@ -20,6 +17,7 @@ import {
   X,
 } from 'lucide-react'
 import './JourneyPlanner.css'
+import { journeyProfileIcon } from './journeyProfileIcons.js'
 import {
   JOURNEY_MODES,
   JOURNEY_PROFILES,
@@ -38,7 +36,9 @@ import {
 import { journeyPanelStyle } from '../../map/journeyLayout.js'
 import { formatRouteDistance, formatRouteDuration } from '../../map/transportPathPresentation.js'
 
-const PROFILE_ICONS = { car: Car, pedestrian: Footprints, bicycle: Bike }
+/* Profil ikonları TEK sözlükten gelir (`journeyProfileIcons`): haritadaki canlı
+   işaretçi de aynı üç sembolü kullanır. İkinci bir tablo, panelle harita
+   arasında zamanla ayrışan iki görünüm demekti. */
 
 const MODE_TABS = [
   { id: JOURNEY_MODES.ROUTE_FULL, label: 'Hat' },
@@ -144,8 +144,7 @@ export default function JourneyPlannerPanel({
   if (state.panel === PANEL_STATES.CLOSED) return null
 
   const collapsed = state.panel === PANEL_STATES.COLLAPSED
-  const activeProfile = JOURNEY_PROFILES.find((profile) => profile.id === state.profile)
-  const ActiveProfileIcon = PROFILE_ICONS[activeProfile?.icon] ?? Car
+  const ActiveProfileIcon = journeyProfileIcon(state.profile)
 
   /* MEVCUT bayraklar okunur; ikinci bir "meşgul" durumu ya da sahte bir
      ilerleme sayacı üretilmez. */
@@ -367,7 +366,7 @@ export default function JourneyPlannerPanel({
               `aria-pressed` ile bildirilir. */}
           <div className="journey-profiles" role="group" aria-label="Seyahat türü">
             {JOURNEY_PROFILES.map((profile) => {
-              const Icon = PROFILE_ICONS[profile.icon] ?? Car
+              const Icon = journeyProfileIcon(profile.id)
               return (
                 <button
                   key={profile.id}
