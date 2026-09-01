@@ -527,7 +527,32 @@ test('the shared route simulation wiring is untouched', () => {
   // Faz 1-4 aynen yerinde.
   assert.ok(MAP_PAGE.includes('useTransportSimulation({'))
   assert.ok(MAP_PAGE.includes('useTransportVehicleLayer(mapInstance, {'))
-  assert.ok(MAP_PAGE.includes('TransportTrackingControls'))
+
+  /* Faz 2 paylaşılan RUNTIME'a dokunmadı; DEĞİŞEN yalnızca sunum kabıdır:
+     ayrı kart yerine çalışma alanının paylaşılan bölümü.
+
+     "Dokunulmadı"nın ölçüsü bu yüzden "eski kart hâlâ çiziliyor" DEĞİL,
+     "aynı durum ve aynı eylemler kullanılıyor"dur. */
+  assert.ok(!MAP_PAGE.includes('TransportTrackingControls'), 'ana harita hâlâ eski ayrı karta bağlı')
+
+  // Seçili rota, durum gözlemi ve başlat/takip/bırak AYNI kancadan gelir.
+  assert.ok(MAP_PAGE.includes('sharedJourneyPresentation({'))
+  assert.match(MAP_PAGE, /sharedJourneyPresentation\(\{[^}]*routeId: selectedTransportRouteId/s)
+  assert.match(MAP_PAGE, /sharedJourneyPresentation\(\{[^}]*controls: simulationControls/s)
+  assert.match(MAP_PAGE, /sharedJourneyPresentation\(\{[^}]*statusLoading: simulation\.statusLoading/s)
+  assert.ok(MAP_PAGE.includes('const snapshot = await simulation.start(selectedTransportRouteId)'))
+  assert.ok(MAP_PAGE.includes('simulation.follow(selectedTransportRouteId)'))
+  assert.ok(MAP_PAGE.includes('simulation.unfollow()'))
+
+  // İKİNCİ bir paylaşılan kanca/istemci/depo AÇILMADI.
+  assert.equal((MAP_PAGE.match(/useTransportSimulation\(/g) ?? []).length, 1)
+  for (const forbidden of ['createTransportSimulationClient', '@microsoft/signalr', 'UnifiedSimulation']) {
+    assert.ok(!MAP_PAGE.includes(forbidden))
+  }
+
+  // Ve yönetim ekranı eski ortak bileşeni kullanmaya devam eder.
+  const adminPage = read('../../src/pages/admin/TransportRoutePage.jsx')
+  assert.match(adminPage, /<TransportTrackingControls/)
 
   // Ve yeni ürün onlardan ayrı çağrılır.
   assert.ok(MAP_PAGE.includes('useJourneySimulation({ permitted: allowed.canUseJourney })'))

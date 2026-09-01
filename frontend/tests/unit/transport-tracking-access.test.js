@@ -73,13 +73,17 @@ test('the canonical transport viewer role can open the map it is meant to read',
 })
 
 test('the main map exposes tracking behind transport.view alone', () => {
-  /* Ana harita `transport.view` ile ulaşılabilir tek yüzeydir; takip kartı da
-     aynı kapının arkasındadır. Yönetim ekranına girmeden hattı izlemek bu
-     sayede mümkün olur. */
+  /* Ana harita `transport.view` ile ulaşılabilir tek yüzeydir; takip yeteneği
+     de aynı kapının arkasındadır. Yönetim ekranına girmeden hattı izlemek bu
+     sayede mümkün olur.
+
+     Faz 2'de kapı DEĞİŞMEDİ, kabı değişti: denetimler ayrı bir karttan
+     YOLCULUK çalışma alanının paylaşılan bölümüne taşındı ve o bölüm hâlâ
+     yalnızca `transport.view` ile sunulur. */
   assert.match(mapPage, /permitted:\s*allowed\.canViewTransport/)
   assert.match(mapPage, /canView:\s*allowed\.canViewTransport/)
-  assert.match(mapPage, /\{allowed\.canViewTransport && selectedTransportRouteId != null && \(/)
-  assert.match(mapPage, /<TransportTrackingControls/)
+  assert.match(mapPage, /canUseTransport=\{allowed\.canViewTransport\}/)
+  assert.ok(!mapPage.includes('<TransportTrackingControls'))
   assert.match(read('../../src/hooks/useWorkspacePermissions.js'), /canViewTransport = can\(PERMISSIONS\.TRANSPORT_VIEW\)/)
 
   /* Ana harita rotası YÖNETİM yetkisiyle korunmuyor: kapı `map.view`dir ve
@@ -254,17 +258,28 @@ test('the map reuses the Phase 4 vehicle layer, presentation and popup', () => {
   assert.match(read('../../src/hooks/useTransportVehicleLayer.js'), /createTransportVehicleLayer\(\)/)
 })
 
-test('the tracking control is one shared component, used by both surfaces', () => {
-  assert.match(mapPage, /import TransportTrackingControls from '\.\.\/components\/map\/TransportTrackingControls\.jsx'/)
+test('the shared visibility rule is one pure function, used by both surfaces', () => {
+  /* Faz 2 ana haritadaki KABI değiştirdi, KURALI değil. Güzergah yönetimi
+     ekranı ortak bileşeni kullanmaya devam eder; ana harita ise aynı saf
+     kararı çalışma alanının paylaşılan bölümünde çizer. İkisi de kendi
+     görünürlük kuralını YAZMAZ. */
   assert.match(adminPage, /import TransportTrackingControls from '\.\.\/\.\.\/components\/map\/TransportTrackingControls\.jsx'/)
+  assert.ok(!mapPage.includes('TransportTrackingControls'))
 
-  // Görünürlük kuralı tek yerden gelir; iki ekran kendi kuralını yazmaz.
   for (const source of [mapPage, adminPage]) {
     assert.match(source, /transportSimulationControls\(\{/)
   }
   assert.match(controls, /controls\.showStart/)
   assert.match(controls, /controls\.showFollow/)
   assert.match(controls, /controls\.showUnfollow/)
+
+  /* Ana haritanın kabı, aynı kararı `sharedJourneyPresentation` üzerinden
+     okur; ikinci bir görünürlük kuralı doğmaz. */
+  assert.match(mapPage, /sharedJourneyPresentation\(\{[^}]*controls: simulationControls/s)
+  const shared = read('../../src/components/map/SharedTransportJourneyContent.jsx')
+  assert.match(shared, /shared\.showStart/)
+  assert.match(shared, /shared\.showFollow/)
+  assert.match(shared, /shared\.showUnfollow/)
 })
 
 /* --- Mevcut davranış korunur --------------------------------------------------- */
@@ -278,9 +293,25 @@ test('existing main-map transport wiring is untouched', () => {
 })
 
 test('the admin surface keeps its own start flow and button language', () => {
+  /* Faz 2 YÖNETİM ekranına DOKUNMADI: başlatma akışı, sahiplenilen çalıştırma
+     kimliği ve düğme dili aynen yerinde. */
   assert.match(adminPage, /simulation\.start\(selectedRoute\.id\)/)
   assert.match(adminPage, /setStartedSimulationId\(snapshot\.simulationId\)/)
+  assert.match(adminPage, /<TransportTrackingControls/)
+
   // Yönetim ekranı kendi düğme dilini korur (varsayılan admin-button).
   assert.doesNotMatch(adminPage, /primaryButtonClassName/)
-  assert.match(mapPage, /primaryButtonClassName="transport-popup-action"/)
+  assert.match(controls, /primaryButtonClassName = 'admin-button'/)
+
+  /* İDDİANIN ANA HARİTA YARISI DEĞİŞTİ. Eskiden ölçülen şey, ana haritanın
+     AYNI bileşeni farklı bir düğme diliyle ("transport-popup-action")
+     kullanmasıydı. Faz 2'de ana harita o bileşeni hiç kullanmıyor: paylaşılan
+     bölüm çalışma alanının kendi düğme dilini konuşuyor. Ölçülen ayrım
+     aynıdır — iki yüzey birbirinin görsel dilini taşımaz — yalnızca ana
+     haritanın tarafı artık kendi bileşeninde okunur. */
+  assert.ok(!mapPage.includes('transport-popup-action'))
+  const shared = read('../../src/components/map/SharedTransportJourneyContent.jsx')
+  assert.match(shared, /className="journey-primary"/)
+  assert.match(shared, /className="journey-secondary"/)
+  assert.ok(!shared.includes('admin-button'))
 })

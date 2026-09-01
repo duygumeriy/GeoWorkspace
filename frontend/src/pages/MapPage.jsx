@@ -48,7 +48,6 @@ import TransportStopForm from '../components/map/TransportStopForm.jsx'
 import TransportStopEditForm from '../components/map/TransportStopEditForm.jsx'
 import TransportStopPopup from '../components/map/TransportStopPopup.jsx'
 import TransportVehiclePopup from '../components/map/TransportVehiclePopup.jsx'
-import TransportTrackingControls from '../components/map/TransportTrackingControls.jsx'
 import {
   DrawingHint,
   HoverTooltip,
@@ -105,6 +104,13 @@ import useTransportLayer from '../hooks/useTransportLayer.js'
 import useTransportSimulation from '../hooks/useTransportSimulation.js'
 import useTransportVehicleLayer from '../hooks/useTransportVehicleLayer.js'
 import { transportSimulationControls } from '../map/transportSimulationState.js'
+import {
+  JOURNEY_PRODUCTS,
+  canOpenJourneyWorkspace,
+  journeyProductTabs,
+  resolveJourneyProduct,
+  sharedJourneyPresentation,
+} from '../map/journeyWorkspace.js'
 import { transportVehiclePopupModel, transportVehiclePresentation } from '../map/transportVehicle.js'
 import {
   journeyDisplayGeometryWkt,
@@ -277,6 +283,34 @@ export default function MapPage() {
     workspaceAtRest,
   })
 
+  /* --- Çalışma alanı ürünleri (Faz 2) -----------------------------------------
+     Çalışma alanı TEK bir paneldir ama İKİ ürünü sunar; ürünlerin kendileri
+     teknik olarak ayrı kalır (ayrı servis, ayrı hub, ayrı depo). Hangi ürünün
+     sunulacağına saf `journeyWorkspace` modülü karar verir; burada yalnızca
+     etkin yetkiler ona verilir. Rol adı, kullanıcı adı ya da yönetici bayrağı
+     hiçbir yerde okunmaz. */
+  const journeyCapabilities = useMemo(() => ({
+    canUseJourney: allowed.canUseJourney,
+    canViewTransport: allowed.canViewTransport,
+  }), [allowed.canUseJourney, allowed.canViewTransport])
+
+  /* Kısayol EN AZ BİR ürünle görünür. Bu bir yetki genişletmesi DEĞİLDİR:
+     içerideki her bölüm kendi yetkisini ayrıca ister ve bağlayıcı denetim
+     backend'dedir. */
+  const canOpenJourney = canOpenJourneyWorkspace(journeyCapabilities)
+
+  /* Kullanıcının erişemediği bir ürün seçili kalırsa boş panel çizilmez:
+     erişilen ürüne indirgenir. Yetki anında değiştiğinde de doğru kalır. */
+  const journeyProduct = resolveJourneyProduct({
+    requested: journey.state.product,
+    ...journeyCapabilities,
+  })
+
+  const journeyProductOptions = useMemo(
+    () => journeyProductTabs(journeyCapabilities),
+    [journeyCapabilities],
+  )
+
   /* --- Panel sahipliği (Faz 5E-B · Dilim 4) ----------------------------------
      Yolculuk paneli sol üstte analiz paneliyle AYNI yeri kaplar. Bu yüzden
      mevcut KOORDİNATÖRE katılır: bir birincil bağlam açıldığında panel çekilir,
@@ -287,6 +321,15 @@ export default function MapPage() {
      SUNUM durumudur: çalışan simülasyon, terminal sonuç ve plan seçimleri
      olduğu gibi kalır, yeniden açıldığında panel doğru içeriği gösterir. */
   const openJourneyPanel = useCallback(() => {
+    journey.openPanel()
+    mapContext.activate(MAP_CONTEXTS.journey)
+  }, [journey, mapContext])
+
+  /* Belirli bir ÜRÜNLE açmak: haritadan bir hatta tıklamak çalışma alanını
+     paylaşılan bağlamda açar. Yalnızca SUNUM değişir — hiçbir simülasyon
+     başlamaz, hiçbir kamera talep edilmez. */
+  const openJourneyWorkspaceWith = useCallback((product) => {
+    journey.setProduct(product)
     journey.openPanel()
     mapContext.activate(MAP_CONTEXTS.journey)
   }, [journey, mapContext])
@@ -777,6 +820,43 @@ export default function MapPage() {
     can,
   ])
 
+  const startSharedSimulation = useCallback(async () => {
+    if (selectedTransportRouteId == null) return
+    const snapshot = await simulation.start(selectedTransportRouteId)
+    if (snapshot) setStartedSimulationId(snapshot.simulationId)
+  }, [selectedTransportRouteId, simulation])
+
+  const followSharedSimulation = useCallback(
+    () => simulation.follow(selectedTransportRouteId),
+    [simulation, selectedTransportRouteId],
+  )
+
+  /* Takibi bırakmak yalnızca KAMERA sahipliğini bırakır: yayın sürer,
+     işaretçi hareket etmeye devam eder ve sunucudaki simülasyon herkes için
+     çalışmaya devam eder. "Takibi Bırak", "Simülasyonu Durdur" DEĞİLDİR. */
+  const unfollowSharedSimulation = useCallback(() => simulation.unfollow(), [simulation])
+
+  /* Paylaşılan hattın SUNUM modeli. Hiçbir değer burada üretilmez: rota adı
+     katalogdan, mesafe/süre kalıcı güzergahtan, durum/ilerleme sunucunun
+     anlık görüntüsünden ve denetim görünürlüğü mevcut saf karardan gelir. */
+  const sharedJourney = useMemo(() => sharedJourneyPresentation({
+    routeId: selectedTransportRouteId,
+    routes: transport.activeRoutes,
+    paths: transport.paths,
+    controls: simulationControls,
+    statusLoading: simulation.statusLoading,
+    starting: simulation.starting,
+    error: simulation.error,
+  }), [
+    selectedTransportRouteId,
+    transport.activeRoutes,
+    transport.paths,
+    simulationControls,
+    simulation.statusLoading,
+    simulation.starting,
+    simulation.error,
+  ])
+
   const transportVehicle = useMemo(() => transportVehiclePresentation({
     simulation: simulation.followedSimulation ?? simulation.observedSimulation ?? simulation.simulation,
     followingRouteId: simulation.followingRouteId,
@@ -859,16 +939,21 @@ export default function MapPage() {
   }, [mapContext])
 
   /* Haritadaki güzergah çizgisine doğrudan tıklamak, MEVCUT seçim durumunu
-     kullanır: ikinci bir "seçili rota" kavramı doğmaz ve takip kartı bu sayede
-     olduğu gibi açılır. Kamera oynatılmaz — kullanıcı zaten baktığı yere
-     tıklamıştır. */
+     kullanır: ikinci bir "seçili rota" kavramı doğmaz. Kamera oynatılmaz —
+     kullanıcı zaten baktığı yere tıklamıştır.
+
+     Faz 2'de tıklamanın SONUCU değişti: ayrı bir takip kartı açılmaz, YOLCULUK
+     çalışma alanı paylaşılan hat bağlamında açılır. Tıklama hâlâ bir SEÇİMDİR
+     ve bir yaşam döngüsü komutu DEĞİLDİR: simülasyon başlamaz, takip
+     açılmaz, kamera talep edilmez ve güzergah yeniden hesaplanmaz. */
   const handleTransportRouteSelected = useCallback((routeId) => {
     const next = Number(routeId)
     if (!Number.isFinite(next)) return
     setSelectedTransportRouteId(next)
     setSelectedTransportStop(null)
     mapContext.close(MAP_CONTEXTS.transportStopInfo)
-  }, [mapContext])
+    openJourneyWorkspaceWith(JOURNEY_PRODUCTS.SHARED)
+  }, [mapContext, openJourneyWorkspaceWith])
 
   /* Gizlenen güzergah tıklanamaz: kullanıcı onu bilerek kapatmıştır. */
   const isTransportRouteSelectable = useCallback(
@@ -1161,6 +1246,12 @@ export default function MapPage() {
       .sort((left, right) => left.sequenceOrder - right.sequenceOrder || left.id - right.id)
 
     setSelectedTransportRouteId(Number(routeId))
+    /* Durak balonundaki "Hattı Göster" de bir SEÇİMDİR ve seçimin karşılığı
+       artık çalışma alanının paylaşılan bölümüdür — ayrı kart kaldırıldığı
+       için aksi hâlde seçim hiçbir yerde görünmezdi. Kamera davranışı
+       DEĞİŞMEZ: bu uç zaten kullanıcının açık "bana bu hattı göster"
+       isteğidir; takip yine açılmaz ve simülasyon başlamaz. */
+    openJourneyWorkspaceWith(JOURNEY_PRODUCTS.SHARED)
     if (selectedTransportStop?.routeId !== Number(routeId)) setSelectedTransportStop(null)
     if (routeStops.length === 0) {
       showToast('info', 'Bu güzergahın haritada gösterilecek etkin durağı yok.')
@@ -1175,7 +1266,7 @@ export default function MapPage() {
       return
     }
     mapView.fitExtent(boundingExtent(routeStops.map((stop) => fromLonLat([stop.longitude, stop.latitude]))))
-  }, [transport.stops, selectedTransportStop, mapView, showToast])
+  }, [transport.stops, selectedTransportStop, mapView, showToast, openJourneyWorkspaceWith])
 
   const editTransportStop = useCallback((stop) => {
     if (!stop?.id || !allowed.canUpdateTransportStop) return
@@ -3338,7 +3429,13 @@ export default function MapPage() {
                    panelinin üstüne oturuyordu. Durum özeti sunucudan türetilir
                    ve panel kapalıyken de yolculuğun sürdüğünü söyler. */
                 journey={{
-                  permitted: allowed.canUseJourney,
+                  /* BİRLEŞİK çalışma alanı kısayolu: paylaşılan hat de bu
+                     panelin içinde olduğu için, kısayolu yalnızca
+                     `journey.use`'a bağlamak `transport.view` taşıyan bir
+                     kullanıcının hat simülasyonuna hiçbir yerden
+                     ulaşamaması demek olurdu. Kapı EN AZ BİR ürünle açılır;
+                     içerideki her bölüm kendi yetkisini ayrıca ister. */
+                  permitted: canOpenJourney,
                   open: journey.state.panel !== 'closed',
                   onToggle: toggleJourneyPanel,
                   status: journeyStatus,
@@ -3424,11 +3521,13 @@ export default function MapPage() {
                 scopeRestricted={analysisCatalog.isRestricted}
               />
 
-              {/* Yolculuk planlayıcısı YALNIZCA `journey.use` ile sunulur:
-                  yetkisi olmayana, backend'in 403 döndüreceği bir akış
+              {/* Çalışma alanı EN AZ BİR ürünle çizilir; içindeki bölümler
+                  kendi yetkilerini ayrıca ister (kişisel: `journey.use`,
+                  paylaşılan: `transport.view`). Hiçbir ürünü olmayana panel
+                  hiç çizilmez — backend'in 403 döndüreceği bir akış
                   gösterilmez. Rol adı, kullanıcı adı ya da yönetici bayrağı
                   hiçbir biçimde okunmaz. */}
-              {allowed.canUseJourney && (
+              {canOpenJourney && (
                 <JourneyPlannerPanel
                   state={journey.state}
                   routes={transport.activeRoutes}
@@ -3450,6 +3549,15 @@ export default function MapPage() {
                      seçimleri kendi yetkisini ister. Bu yalnızca GÖRÜNÜRLÜK
                      kararıdır; bağlayıcı denetim backend'dedir. */
                   canUseTransport={allowed.canViewTransport}
+                  /* ÜST DÜZEY ürün ekseni. Kararı saf modül verir; panel
+                     yalnızca çizer ve MapPage yetkiyi ikinci kez yorumlamaz. */
+                  product={journeyProduct}
+                  productTabs={journeyProductOptions}
+                  onProductChange={journey.setProduct}
+                  shared={sharedJourney}
+                  onStartShared={startSharedSimulation}
+                  onFollowShared={followSharedSimulation}
+                  onUnfollowShared={unfollowSharedSimulation}
                   poiSearch={journeyPickerSearch}
                   onModeChange={journey.setMode}
                   onProfileChange={journey.setProfile}
@@ -3755,23 +3863,18 @@ export default function MapPage() {
                 onClose={() => setJourneyPopupSimulationId(null)}
               />
 
-              {allowed.canViewTransport && selectedTransportRouteId != null && (
-                <TransportTrackingControls
-                  className="transport-tracking-card"
-                  primaryButtonClassName="transport-popup-action"
-                  secondaryButtonClassName="transport-popup-action"
-                  controls={simulationControls}
-                  statusLoading={simulation.statusLoading}
-                  starting={simulation.starting}
-                  error={simulation.error}
-                  onStart={async () => {
-                    const snapshot = await simulation.start(selectedTransportRouteId)
-                    if (snapshot) setStartedSimulationId(snapshot.simulationId)
-                  }}
-                  onFollow={() => simulation.follow(selectedTransportRouteId)}
-                  onUnfollow={() => simulation.unfollow()}
-                />
-              )}
+              {/* AYRI "Hat Simülasyonu" kartı KALDIRILDI (Faz 2). Aynı
+                  yetenekler artık YOLCULUK çalışma alanının paylaşılan
+                  bölümündedir: iki bağımsız panelin ekranda yarışması,
+                  kullanıcıya iki ayrı ürün gibi görünen tek bir işi iki yerden
+                  yönettiriyordu.
+
+                  Ana harita o kartın bileşenine ARTIK HİÇ BAĞLI DEĞİLDİR —
+                  ne içe aktarır ne çizer. Bileşenin kendisi silinmedi;
+                  güzergah yönetimi ekranı onu kendi düzeninde kullanmaya
+                  devam eder ve sahibi orasıdır. Adı burada bilinçli olarak
+                  yazılmaz: kaldırılmış bir bağımlılığa yapılan ölü bir atıf,
+                  arayan kişiyi hâlâ burada duruyormuş gibi yanıltır. */}
 
               <LocationAnalysisPanel
                 open={locationAnalysisOpen}

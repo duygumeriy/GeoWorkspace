@@ -92,13 +92,18 @@ test('the disarm action empties the slot without touching the rest of the plan',
   assert.equal(state.activeSlotKey, null)
   // Kip, panel ve noktalar YERİNDE kalır: silah bırakmak plan silmek değildir.
   assert.equal(state.mode, JOURNEY_MODES.WAYPOINTS)
-  assert.equal(state.panel, PANEL_STATES.OPEN)
+  assert.equal(state.panel, PANEL_STATES.CLOSED)
   assert.equal(state.waypoints.length, 2)
 })
 
 test('the planner hook applies both rules from the pure module', () => {
   // Kural kopyalanmaz, ÇAĞRILIR: ikinci bir tanım zamanla ayrışırdı.
-  assert.match(PLANNER_HOOK, /isPicking: journeyPickingActive\(\{/)
+  assert.match(PLANNER_HOOK, /isPicking: permitted && journeyPickingActive\(\{/)
+  /* Faz 2: nokta seçimi KİŞİSEL ürünün etkileşimidir. Ürün kapısı
+     (`journey.use`) olmadan hiç silahlanamaz — çalışma alanının paylaşılan
+     bölümünü kullanan ama kişisel ürünü olmayan kullanıcıda kişisel yüzey hiç
+     çizilmez ve bir tıklama görünmeyen bir yuvaya yazamaz. */
+  assert.match(PLANNER_HOOK, /product: state\.product,/)
   assert.match(PLANNER_HOOK, /workspaceAtRest,/)
   assert.match(PLANNER_HOOK, /shouldDisarmJourneySlot\(\{ activeSlotKey: state\.activeSlotKey, workspaceAtRest \}\)/)
 

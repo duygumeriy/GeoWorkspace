@@ -167,6 +167,9 @@ export default function useJourneyPlanner({
     assignWaypoint: (key, reference) => dispatch({ type: 'assignWaypoint', key, reference }),
     armSlot: (key) => dispatch({ type: 'armSlot', key }),
     disarmSlot: () => dispatch({ type: 'armSlot', key: null }),
+    /* ÜRÜN seçimi bir sunum kararıdır: ne kişisel yolculuğu ne de paylaşılan
+       hattı durdurur, hiçbir kanalı kapatmaz ve hiçbir takibi bırakmaz. */
+    setProduct: (product) => dispatch({ type: 'setProduct', product }),
     openPanel: () => dispatch({ type: 'setPanel', panel: PANEL_STATES.OPEN }),
     collapsePanel: () => dispatch({ type: 'setPanel', panel: PANEL_STATES.COLLAPSED }),
     closePanel: () => dispatch({ type: 'setPanel', panel: PANEL_STATES.CLOSED }),
@@ -200,7 +203,12 @@ export default function useJourneyPlanner({
        dinlenme durumundayken silahlanır: görünmeyen bir yuvaya atama
        yapılmamalı, başka bir aracın tıklaması da paylaşılmamalıdır. Kural saf
        modüldedir; burada yalnızca uygulanır. */
-    isPicking: journeyPickingActive({
+    /* Nokta seçimi KİŞİSEL ürünün etkileşimidir: ürün kapısı yoksa hiç
+       silahlanamaz. Kural, çalışma alanının paylaşılan bölümünü kullanan ama
+       `journey.use` taşımayan kullanıcıda da doğru kalır — onun için kişisel
+       yüzey hiç çizilmez ve bir tıklama görünmeyen bir yuvaya yazamaz. */
+    isPicking: permitted && journeyPickingActive({
+      product: state.product,
       mode: state.mode,
       panel: state.panel,
       activeSlotKey: state.activeSlotKey,

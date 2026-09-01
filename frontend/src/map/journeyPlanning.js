@@ -11,6 +11,8 @@
  * uygular. Koordinat, geometri ve süre bu dosyada HİÇ üretilmez.
  */
 
+import { JOURNEY_PRODUCTS } from './journeyWorkspace.js'
+
 /** Backend `JourneyContractNames` ile birebir aynı tel değerleri. */
 export const JOURNEY_MODES = Object.freeze({
   ROUTE_FULL: 'routeFull',
@@ -111,6 +113,12 @@ export function waypointReference({ source, id, label = '', routeName = '' }) {
  */
 export function initialJourneyPlannerState({ canUseTransport = true } = {}) {
   return {
+    /* ÜST DÜZEY ürün seçimi. Kişisel planlama KİPLERİYLE (Hat / Hat Bölümü /
+       Serbest) karıştırılmamalıdır: burası "hangi ÜRÜN", orası "kişisel
+       yolculuğum nasıl kurulur". Varsayılan kişiseldir; kullanıcının gerçekten
+       erişebildiği ürüne indirgeme `resolveJourneyProduct`'ın işidir ve yetki
+       kararı BURADA tekrarlanmaz. */
+    product: JOURNEY_PRODUCTS.PERSONAL,
     mode: canUseTransport ? JOURNEY_MODES.ROUTE_FULL : JOURNEY_MODES.WAYPOINTS,
     profile: DEFAULT_JOURNEY_PROFILE,
     routeId: null,
@@ -118,7 +126,12 @@ export function initialJourneyPlannerState({ canUseTransport = true } = {}) {
     toStopId: null,
     // Başlangıç ve varış her zaman vardır; aradakiler isteğe bağlıdır.
     waypoints: [createWaypointSlot(), createWaypointSlot()],
-    panel: PANEL_STATES.OPEN,
+    /* Harita TEMİZ açılır. Panelin kendiliğinden açılması, kullanıcının hiç
+       istemediği bir çalışma alanının her girişte ekranı kaplaması demekti;
+       çalışma alanı artık AÇIKÇA kısayoldan açılır. Bu yalnızca bir SUNUM
+       varsayılanıdır: çalışan bir kişisel yolculuk varsa kurtarma yine
+       çalışır ve durumunu kısayolun rozetinden bildirir. */
+    panel: PANEL_STATES.CLOSED,
     activeSlotKey: null,
   }
 }
@@ -219,6 +232,20 @@ export function journeyPlannerReducer(state, action) {
       }
     }
 
+    case 'setProduct': {
+      /* Ürün değiştirmek bir SUNUM kararıdır: iki üründen hiçbiri durmaz,
+         hiçbir takip bırakılmaz ve hiçbir kanal kapanmaz. Silah da bırakılmaz
+         DEĞİL — kişisel nokta seçimi silahlıyken paylaşılan hatta geçmek, o
+         seçimi görünmez bir yuvaya bırakırdı. */
+      if (!Object.values(JOURNEY_PRODUCTS).includes(action.product)) return state
+      if (action.product === state.product) return state
+      return {
+        ...state,
+        product: action.product,
+        activeSlotKey: action.product === JOURNEY_PRODUCTS.PERSONAL ? state.activeSlotKey : null,
+      }
+    }
+
     case 'setPanel': {
       if (!Object.values(PANEL_STATES).includes(action.panel)) return state
       // Panel kapanınca harita seçimi de bırakılır; görünmeyen bir yuva doldurulmaz.
@@ -229,7 +256,13 @@ export function journeyPlannerReducer(state, action) {
     case 'reset': {
       /* Panel durumu KORUNUR: "Temizle" seçimleri siler, kullanıcının açtığı
          paneli kapatmaz. */
-      return { ...initialJourneyPlannerState(), panel: state.panel, mode: state.mode, profile: state.profile }
+      return {
+        ...initialJourneyPlannerState(),
+        panel: state.panel,
+        product: state.product,
+        mode: state.mode,
+        profile: state.profile,
+      }
     }
 
     default:
@@ -336,8 +369,14 @@ export function buildJourneyPreviewRequest(state) {
  * değil, kuralın parçasıdır.
  *
  * <b>Görünmeyen yuvaya yazılmaz</b> — panel açık değilse seçim silahlanmaz.
+ *
+ * <b>Beşinci koşul ÜRÜNDÜR.</b> Çalışma alanı paylaşılan hattı gösterirken
+ * kişisel geçiş noktası yuvası ekranda yoktur; silahlı kalırsa haritadaki bir
+ * tıklama görünmeyen bir yuvaya yazardı. İndirgeyici ürün değişiminde silahı
+ * zaten bırakır; buradaki koşul o kuralı KURALIN KENDİSİNDE de sabitler.
  */
 export function journeyPickingActive({
+  product = JOURNEY_PRODUCTS.PERSONAL,
   mode,
   panel,
   activeSlotKey,
@@ -345,6 +384,7 @@ export function journeyPickingActive({
 } = {}) {
   return Boolean(
     workspaceAtRest
+    && product === JOURNEY_PRODUCTS.PERSONAL
     && mode === JOURNEY_MODES.WAYPOINTS
     && panel === PANEL_STATES.OPEN
     && activeSlotKey != null,

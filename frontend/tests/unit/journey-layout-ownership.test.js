@@ -326,20 +326,37 @@ test('the trigger lives in the existing control stack and reads that status', ()
   assert.match(MAP_PAGE, /const journeyStatus = useMemo\(\s*\(\) => journeyStatusIndicator\(\{/)
   assert.match(MAP_PAGE, /status: journeyStatus,/)
   assert.match(MAP_PAGE, /onToggle: toggleJourneyPanel,/)
-  /* Kısayolun kapısı, ürünün KENDİ yetkisidir (`journey.use`); ulaşım ağını
-     görebilmek kişisel yolculuğu ima ETMEZ. */
-  assert.match(MAP_PAGE, /permitted: allowed\.canUseJourney,/)
+  /* Faz 2: kısayol BİRLEŞİK çalışma alanını açar ve EN AZ BİR ürünle görünür
+     (`canOpenJourney`). Bu bir yetki genişletmesi değildir — içerideki kişisel
+     bölüm hâlâ `journey.use`, paylaşılan bölüm hâlâ `transport.view` ister ve
+     iki yetki birbirini İMA ETMEZ. */
+  assert.match(MAP_PAGE, /permitted: canOpenJourney,/)
 })
 
 test('a collapsed panel keeps showing the phase it is in', () => {
   const collapsed = PANEL.slice(
     PANEL.indexOf('className="journey-collapsed-summary"'),
-    PANEL.indexOf('{!collapsed && isLive && ('),
+    PANEL.indexOf('{!collapsed && showingPersonal && isLive && ('),
   )
+  assert.ok(collapsed.length > 0, 'katlanmış özet dilimi bulunamadı')
 
-  assert.ok(collapsed.includes('{isTerminal ? ('))
+  /* Faz 2: katlanmış özet artık ÖNCE hangi ÜRÜNE bakıldığını sorar, sonra
+     kişisel evreyi. Kişisel evre zinciri OLDUĞU GİBİ durur — yalnızca ürün
+     dalının içine yerleşti: paylaşılan hatta bakan kullanıcıya kişisel
+     yolculuk özetini okutmak, baktığı ürünün değil öbürünün durumunu
+     göstermek olurdu. */
+  assert.ok(collapsed.includes('{showingShared ? ('))
+  assert.ok(collapsed.includes(') : isTerminal ? ('))
   assert.ok(collapsed.includes(') : isActive ? ('))
   assert.ok(collapsed.includes('journeyTerminalTitle(liveModel.status)'))
+
+  // Ve paylaşılan dal kendi özetini verir; kişisel modeli hiç okumaz.
+  const sharedArm = collapsed.slice(
+    collapsed.indexOf('{showingShared ? ('),
+    collapsed.indexOf(') : isTerminal ? ('),
+  )
+  assert.ok(sharedArm.includes('shared.routeName'))
+  assert.ok(!sharedArm.includes('liveModel'))
 })
 
 /* --- 14/15. Kamera sözleşmesi ve yaşam döngüsü korunur ------------------------------ */

@@ -446,14 +446,33 @@ test('closing or collapsing never stops or dismisses a run', () => {
 test('a collapsed terminal result is still a result, not a planner prompt', () => {
   const collapsedSummary = PANEL.slice(
     PANEL.indexOf('className="journey-collapsed-summary"'),
-    PANEL.indexOf('{!collapsed && isLive && ('),
+    PANEL.indexOf('{!collapsed && showingPersonal && isLive && ('),
   )
+  assert.ok(collapsedSummary.length > 0, 'katlanmış özet dilimi bulunamadı')
 
-  // Katlanmış hâlde bile nihai başlık gösterilir; sonuç sessizce düşmez.
-  assert.ok(collapsedSummary.includes('{isTerminal ? ('))
+  /* Faz 2 evre zincirini ÜRÜN dalının içine taşıdı ama SIRASINI ve
+     ANLAMINI korudu: terminal önce sorulur, planlayıcı istemi hâlâ EN SON
+     çaredir. */
+  assert.ok(collapsedSummary.includes(') : isTerminal ? ('))
   assert.ok(collapsedSummary.includes('journeyTerminalTitle(liveModel.status)'))
   // Ve aktif özet ayrı bir daldadır.
   assert.ok(collapsedSummary.includes(') : isActive ? ('))
+
+  /* Sıra bağlayıcıdır: terminal, aktif ve özet dallarının HEPSİ planlayıcı
+     isteminden ÖNCE gelir — aksi hâlde biten bir yolculuk katlanınca
+     "Yolculuk planlamak için dokunun" yazısına düşerdi. */
+  const prompt = collapsedSummary.indexOf('Yolculuk planlamak için dokunun')
+  assert.ok(prompt > 0, 'planlayıcı istemi bulunamadı')
+  for (const arm of [') : isTerminal ? (', ') : isActive ? (', ') : summary ? (']) {
+    assert.ok(collapsedSummary.indexOf(arm) < prompt, `${arm} planlayıcı isteminden sonra geliyor`)
+  }
+
+  /* Katlamak bir SUNUM kararıdır: özet düğmesi yalnızca paneli geri açar ve
+     hiçbir yaşam döngüsü komutu taşımaz — terminal sonuç sessizce
+     bırakılmaz. */
+  for (const forbidden of ['onStopSimulation', 'onNewJourney', 'onReturnToPlanning', 'dismiss']) {
+    assert.ok(!collapsedSummary.includes(forbidden), `katlanmış özet ${forbidden} taşıyor`)
+  }
 })
 
 /* --- 13/14. Durdurma ve değişmeyen sözleşmeler ------------------------------------ */

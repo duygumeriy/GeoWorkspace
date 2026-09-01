@@ -151,8 +151,10 @@ test('an explicit invalid attempt is answered locally, with no backend request',
   assert.ok(PANEL.includes('disabled={!canRequest}'))
 })
 
+const PERSONAL_FEEDBACK = "{!collapsed && showingPersonal && (error || live?.error) && ("
+
 test('a real failure keeps error semantics', () => {
-  const feedback = branchWith("{!collapsed && (error || live?.error) && (", 'journey-feedback')
+  const feedback = branchWith(PERSONAL_FEEDBACK, 'journey-feedback')
 
   assert.match(feedback, /\{error && <p className="journey-error" role="alert">\{error\}<\/p>\}/)
 })
@@ -163,20 +165,57 @@ test('live error has exactly one home, outside the phase branches', () => {
   const renders = PANEL.match(/live\?\.error &&/g) ?? []
   assert.equal(renders.length, 1, 'canlı hata üç kez değil, bir kez çizilmeli')
 
-  const feedback = branchWith("{!collapsed && (error || live?.error) && (", 'journey-feedback')
+  const feedback = branchWith(PERSONAL_FEEDBACK, 'journey-feedback')
   assert.match(feedback, /\{live\?\.error && <p className="journey-error" role="alert">\{live\.error\}<\/p>\}/)
 
-  /* Ortak bölge, evre dallarından ÖNCE gelir: planlayıcı, ACTIVE ve TERMINAL
-     hepsi onu paylaşır — hiçbir dalın içinde yaşamaz. */
-  const feedbackAt = PANEL.indexOf('{!collapsed && (error || live?.error) && (')
-  for (const branchStart of ['{collapsed && (', '{!collapsed && isLive && (', '{!collapsed && !isLive && (']) {
+  /* Ortak bölge, KİŞİSEL evre dallarından ÖNCE gelir: planlayıcı, ACTIVE ve
+     TERMINAL hepsi onu paylaşır — hiçbir dalın içinde yaşamaz.
+
+     Faz 2 bölgeyi bir ürün koşuluyla daralttı (`showingPersonal`) ve bu
+     bilinçlidir: kişisel yolculuğun hatası, kullanıcı PAYLAŞILAN hatta
+     bakarken çizilirse başka bir ürünün başarısızlığı gibi okunurdu. Hata
+     KAYBOLMAZ — kanca durumu tutar ve kişisel ürüne dönüldüğünde yine
+     görünür. */
+  const feedbackAt = PANEL.indexOf(PERSONAL_FEEDBACK)
+  assert.ok(feedbackAt > 0, 'kişisel hata bölgesi bulunamadı')
+  for (const branchStart of [
+    '{collapsed && (',
+    '{!collapsed && showingPersonal && isLive && (',
+    '{!collapsed && showingPersonal && !isLive && (',
+  ]) {
     assert.ok(feedbackAt < PANEL.indexOf(branchStart), `${branchStart} hata bölgesinden önce geliyor`)
   }
 
   // Ve hata hiçbir şeyi durdurmaz/bırakmaz: bölgede eylem yoktur.
-  const feedbackBlock = branchWith("{!collapsed && (error || live?.error) && (", 'journey-feedback')
   for (const forbidden of ['onStopSimulation', 'onNewJourney', 'onReturnToPlanning', 'dismiss']) {
-    assert.ok(!feedbackBlock.includes(forbidden))
+    assert.ok(!feedback.includes(forbidden))
+  }
+})
+
+test('personal and shared failures never bleed into each other', () => {
+  /* İKİ ÜRÜN, İKİ HATA SAHİBİ. Kişisel hata kişisel bölgede, paylaşılan hata
+     paylaşılan bileşende yaşar; hiçbiri diğerinin yüzeyinde çizilmez ve
+     hiçbiri ikinci kez çizilmez. */
+  const shared = stripComments(read('../../src/components/map/SharedTransportJourneyContent.jsx'))
+
+  // Kişisel panel paylaşılan hatayı HİÇ okumaz.
+  assert.ok(!PANEL.includes('shared.error'))
+  assert.ok(!PANEL.includes('shared?.error'))
+
+  // Paylaşılan bölüm de kişisel hatayı okumaz.
+  assert.ok(!shared.includes('live?.error'))
+  assert.ok(!shared.includes('live.error'))
+
+  /* Paylaşılan hata GERÇEK bir başarısızlıktır ve nötr rehberliğe
+     dönüştürülmez: uyarı olarak duyurulur ve tam olarak bir kez çizilir. */
+  assert.match(shared, /\{shared\.error && <p className="journey-error" role="alert">\{shared\.error\}<\/p>\}/)
+  assert.equal((shared.match(/shared\.error &&/g) ?? []).length, 1)
+
+  // Ve o bölge de hiçbir yaşam döngüsü komutu taşımaz.
+  const sharedErrorAt = shared.indexOf('{shared.error &&')
+  const line = shared.slice(sharedErrorAt, shared.indexOf('\n', sharedErrorAt))
+  for (const forbidden of ['onStart', 'onFollow', 'onUnfollow']) {
+    assert.ok(!line.includes(forbidden))
   }
 })
 

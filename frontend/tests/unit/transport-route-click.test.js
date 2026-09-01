@@ -148,7 +148,7 @@ test('a missing map or pixel resolves to nothing instead of throwing', () => {
 
 /* --- Mevcut durum ve mimari korunur ------------------------------------------ */
 
-test('route clicks reuse the existing selection state and tracking card', () => {
+test('route clicks reuse the existing selection state and open the shared workspace', () => {
   const mapPage = read('../../src/pages/MapPage.jsx')
 
   // Yeni bir "seçili rota" durumu YOK: mevcut state güncellenir.
@@ -158,9 +158,22 @@ test('route clicks reuse the existing selection state and tracking card', () => 
   assert.match(mapPage, /isRouteVisible: isTransportRouteSelectable/)
   assert.equal((mapPage.match(/selectedTransportRouteId, setSelectedTransportRouteId/g) ?? []).length, 1)
 
-  // Aynı seçim, zaten var olan takip kartını açar.
-  assert.match(mapPage, /\{allowed\.canViewTransport && selectedTransportRouteId != null && \(/)
-  assert.match(mapPage, /<TransportTrackingControls/)
+  /* Faz 2: aynı seçim artık AYRI bir kart değil, YOLCULUK çalışma alanını
+     paylaşılan bağlamda açar. Sol alttaki bağımsız kart kaldırıldı. */
+  assert.match(mapPage, /openJourneyWorkspaceWith\(JOURNEY_PRODUCTS\.SHARED\)/)
+  assert.ok(!mapPage.includes('<TransportTrackingControls'))
+
+  /* Tıklama bir SEÇİMDİR, bir yaşam döngüsü komutu DEĞİL: işleyicide
+     başlatma, takip ve kamera talebi YOKTUR. */
+  const handler = mapPage.slice(
+    mapPage.indexOf('const handleTransportRouteSelected'),
+    mapPage.indexOf('const isTransportRouteSelectable'),
+  )
+  assert.ok(!handler.includes('simulation.start'))
+  assert.ok(!handler.includes('simulation.follow'))
+  assert.ok(!handler.includes('setFollowing'))
+  assert.ok(!handler.includes('mapView.'))
+  assert.ok(!handler.includes('focusRoute'))
 })
 
 test('no duplicate transport layer, map or SignalR client is introduced', () => {

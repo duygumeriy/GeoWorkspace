@@ -128,27 +128,11 @@
 .transport-simulation-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .65rem; }
 .transport-simulation-actions:empty { margin-top: 0; }
 
-/* Ana haritadaki takip kartı: mevcut panel diline uyan, küçük ve müdahaleci
-   olmayan bir yüzey. Harita etkileşimini kapatmaması için sol altta durur ve
-   dar ekranda tam genişliğe iner. */
-.transport-tracking-card {
-  position: absolute;
-  left: 1rem;
-  bottom: 1rem;
-  z-index: 5;
-  width: min(280px, calc(100% - 2rem));
-  margin-top: 0;
-  padding: .7rem .85rem;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-md);
-  background: var(--surface-solid);
-  box-shadow: 0 8px 24px rgba(15, 23, 42, .18);
-}
-
-@media (max-width: 520px) {
-  .transport-tracking-card { left: .5rem; right: .5rem; bottom: .5rem; width: auto; }
-  .transport-tracking-card .transport-simulation-actions { flex-direction: column; align-items: stretch; }
-}
+/* Ana haritadaki AYRI takip kartı KALDIRILDI (Faz 2): paylaşılan hattın
+   durumu ve denetimleri artık YOLCULUK çalışma alanının içinde yaşıyor, bu
+   yüzden sol altta ikinci bir panel yok. Bileşenin kendisi silinmedi —
+   güzergah yönetimi ekranı onu kendi düzeninde kullanmaya devam eder ve
+   oradaki stiller `admin-button` dilinden gelir. */
 
 .transport-popup-card {
   position: relative;

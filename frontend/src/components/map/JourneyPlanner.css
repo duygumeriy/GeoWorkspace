@@ -98,6 +98,57 @@
   overflow-y: auto;
 }
 
+/* ÜST DÜZEY ürün seçimi. Kip sekmelerinden (`.journey-tab`) görsel olarak
+   AYRIŞIR: ikisi aynı görünseydi kullanıcı "Hat" kipi ile "Hat Simülasyonu"
+   ürününü aynı eksenin iki değeri sanardı. Ürün çubuğu panelin başlığına
+   yapışır ve altında ince bir ayraç taşır. */
+.journey-products {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0 0.75rem 0.6rem;
+  border-bottom: 1px solid var(--border-soft, rgba(148, 163, 184, 0.25));
+}
+
+.journey-product-tab {
+  flex: 1;
+  padding: 0.4rem 0.3rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--font-small);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.journey-product-tab.is-active {
+  background: var(--journey-accent);
+  border-color: var(--journey-accent);
+  color: var(--surface, #fff);
+}
+
+/* --- Paylaşılan hat bölümü -------------------------------------------------- */
+
+.journey-shared-route {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: var(--font-body);
+}
+
+.journey-shared-swatch {
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 999px;
+  flex: none;
+}
+
+.journey-shared-status {
+  font-size: var(--font-small);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
 .journey-tabs { display: flex; gap: 0.25rem; }
 
 .journey-tab {

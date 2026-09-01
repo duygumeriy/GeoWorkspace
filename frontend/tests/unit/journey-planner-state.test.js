@@ -40,7 +40,11 @@ test('the planner opens on the full-route mode with the driving profile', () => 
 
   assert.equal(state.mode, JOURNEY_MODES.ROUTE_FULL)
   assert.equal(state.profile, DEFAULT_JOURNEY_PROFILE)
-  assert.equal(state.panel, PANEL_STATES.OPEN)
+  /* Faz 2: harita TEMİZ açılır. Panelin kendiliğinden açılması, kullanıcının
+     istemediği bir çalışma alanının her girişte ekranı kaplaması demekti;
+     çalışma alanı artık AÇIKÇA kısayoldan açılır. Bu yalnızca bir SUNUM
+     varsayılanıdır — çalışan bir yolculuğun kurtarılması etkilenmez. */
+  assert.equal(state.panel, PANEL_STATES.CLOSED)
   assert.equal(state.routeId, null)
   assert.equal(state.activeSlotKey, null)
   // Başlangıç ve varış her zaman vardır.

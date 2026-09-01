@@ -63,8 +63,14 @@ test('every personal journey surface is gated by the journey capability', () => 
   // Planlayıcı kancası, canlı simülasyon kancası, panel ve kısayol.
   assert.ok(/useJourneyPlanner\(\{[^}]*permitted:\s*allowed\.canUseJourney/s.test(code))
   assert.ok(code.includes('useJourneySimulation({ permitted: allowed.canUseJourney })'))
-  assert.ok(code.includes('{allowed.canUseJourney && ('))
-  assert.ok(/journey=\{\{\s*permitted:\s*allowed\.canUseJourney/s.test(code))
+  /* Faz 2: çalışma alanı EN AZ BİR ürünle çizilir (`canOpenJourney`); KİŞİSEL
+     bölüm ise hâlâ yalnızca `journey.use` ile sunulur ve o karar saf modülde
+     verilir. Kapıyı açmak, ürünü açmak DEĞİLDİR. */
+  assert.ok(code.includes('{canOpenJourney && ('))
+  assert.ok(code.includes('canUseJourney: allowed.canUseJourney'))
+  /* Faz 2: kısayol BİRLEŞİK çalışma alanını açar ve en az bir üründe
+     görünür; kişisel ürünün kendi kapısı yukarıda ölçüldü. */
+  assert.ok(/journey=\{\{\s*permitted:\s*canOpenJourney/s.test(code))
 
   /* Eski bağlanma geri gelmemelidir: hiçbir yolculuk yüzeyi artık
      `canViewTransport` üzerinden açılmaz. */

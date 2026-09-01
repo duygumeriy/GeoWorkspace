@@ -35,6 +35,8 @@ import {
   journeyTerminalTitle,
 } from '../../map/journeySimulationState.js'
 import { journeyPanelStyle } from '../../map/journeyLayout.js'
+import { JOURNEY_PRODUCTS, journeyProductLabel } from '../../map/journeyWorkspace.js'
+import SharedTransportJourneyContent from './SharedTransportJourneyContent.jsx'
 import { formatRouteDistance, formatRouteDuration } from '../../map/transportPathPresentation.js'
 
 /* Profil ikonları TEK sözlükten gelir (`journeyProfileIcons`): haritadaki canlı
@@ -64,6 +66,14 @@ function pickableLabelOf({ canUseStops, canUsePois }) {
   if (canUseStops) return 'durak'
   if (canUsePois) return 'yer'
   return 'nokta'
+}
+
+/* Ürün adı başlıkta okunur: kullanıcı hangi ÜRÜNE baktığını, hangi kipte
+   olduğundan önce bilmelidir. */
+function workspaceTitle(activeProduct) {
+  return activeProduct === JOURNEY_PRODUCTS.SHARED
+    ? journeyProductLabel(JOURNEY_PRODUCTS.SHARED)
+    : 'Yolculuk'
 }
 
 function formatStepMetric(step) {
@@ -102,6 +112,18 @@ export default function JourneyPlannerPanel({
      verilir: yetkisi olmayana, backend'in kesin olarak 403 döndüreceği hat
      seçimleri sunulmaz. Bağlayıcı denetim sunucudadır ve burada TEKRARLANMAZ. */
   canUseTransport = false,
+  /* ÜST DÜZEY ürün eksenini besleyen üç değer. Panel bunları HESAPLAMAZ:
+     hangi ürünlerin sunulacağına saf `journeyWorkspace` modülü karar verir ve
+     MapPage o kararı buraya geçirir. */
+  product = JOURNEY_PRODUCTS.PERSONAL,
+  productTabs = [],
+  onProductChange,
+  /* Paylaşılan hattın SUNUM modeli; `sharedJourneyPresentation` üretir.
+     Panel onu yalnızca çizer ve içinde ikinci bir durum makinesi kurmaz. */
+  shared = null,
+  onStartShared,
+  onFollowShared,
+  onUnfollowShared,
   poiSearch = null,
   onModeChange,
   onProfileChange,
@@ -181,6 +203,12 @@ export default function JourneyPlannerPanel({
   const collapsed = state.panel === PANEL_STATES.COLLAPSED
   const ActiveProfileIcon = journeyProfileIcon(state.profile)
 
+  /* ÜRÜN, kişisel planlama KİPİNDEN bağımsız bir eksendir: paylaşılan hat
+     gösterilirken kişisel evreler (canlı/terminal/planlama) hiç çizilmez ama
+     ÇALIŞMAYA DEVAM EDER — panel yalnızca neyi gösterdiğini değiştirir. */
+  const showingShared = product === JOURNEY_PRODUCTS.SHARED
+  const showingPersonal = !showingShared
+
   /* MEVCUT bayraklar okunur; ikinci bir "meşgul" durumu ya da sahte bir
      ilerleme sayacı üretilmez. */
   const busy = Boolean(loading || live?.starting)
@@ -191,13 +219,15 @@ export default function JourneyPlannerPanel({
       /* Ölçüler JS'te TANIMLI, CSS'te tüketilir: 340/240 gibi bir sayı iki
          dosyada birden yaşamaz. */
       style={journeyPanelStyle()}
-      aria-label="Yolculuk planlayıcısı"
+      aria-label="Yolculuk çalışma alanı"
       aria-busy={busy}
     >
       <header className="journey-head">
         <div className="journey-head-title">
-          <ActiveProfileIcon size={16} aria-hidden="true" />
-          <span>Yolculuk</span>
+          {showingShared
+            ? <RouteIcon size={16} aria-hidden="true" />
+            : <ActiveProfileIcon size={16} aria-hidden="true" />}
+          <span>{workspaceTitle(product)}</span>
         </div>
         <div className="journey-head-actions">
           <button
@@ -220,13 +250,48 @@ export default function JourneyPlannerPanel({
         </div>
       </header>
 
+      {/* ÜST DÜZEY ürün seçimi. Sekmeler YALNIZCA birden fazla ürüne erişimi
+          olan kullanıcıya çıkar (`journeyProductTabs`): tek seçeneği olan bir
+          sekme çubuğu hiçbir şey anlatmaz ve paneli gereksizce daraltırdı.
+
+          Bu, kişisel planlama kipleriyle (Hat / Hat Bölümü / Serbest)
+          KARIŞTIRILMAMALIDIR: orası kişisel yolculuğun nasıl kurulacağı,
+          burası hangi ÜRÜNE bakıldığıdır. Geçiş yapmak hiçbir ürünü
+          durdurmaz. */}
+      {!collapsed && productTabs.length > 1 && (
+        <div className="journey-products" role="group" aria-label="Yolculuk ürünü">
+          {productTabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              aria-pressed={product === tab.id}
+              className={`journey-product-tab ${product === tab.id ? 'is-active' : ''}`.trim()}
+              onClick={() => onProductChange?.(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* PAYLAŞILAN hat bölümü. Kendi servisini, kendi hub'ını ve kendi
+          durumunu kullanır; kişisel yolculukla hiçbir durumu paylaşmaz. */}
+      {!collapsed && showingShared && (
+        <SharedTransportJourneyContent
+          shared={shared}
+          onStart={onStartShared}
+          onFollow={onFollowShared}
+          onUnfollow={onUnfollowShared}
+        />
+      )}
+
       {/* TEK hata bölgesi, ÜÇ evre için. Canlı hata yalnızca planlayıcı
           dalında yaşasaydı, çalışan ya da bitmiş bir yolculukta hiç
           görünmezdi. Aynı bloğu üç kez yazmak yerine sahibi burasıdır.
 
           Hata KENDİ BAŞINA hiçbir şey durdurmaz ya da bırakmaz: sunucudaki
           çalıştırma sürer, bırakma kullanıcının açık kararıdır. */}
-      {!collapsed && (error || live?.error) && (
+      {!collapsed && showingPersonal && (error || live?.error) && (
         <div className="journey-feedback">
           {error && <p className="journey-error" role="alert">{error}</p>}
           {live?.error && <p className="journey-error" role="alert">{live.error}</p>}
@@ -236,7 +301,19 @@ export default function JourneyPlannerPanel({
       {/* KATLANMIŞ: panel kaybolmaz, yeniden açmaya yetecek kadarını gösterir. */}
       {collapsed && (
         <button type="button" className="journey-collapsed-summary" onClick={onOpen}>
-          {isTerminal ? (
+          {showingShared ? (
+            /* Katlanmış PAYLAŞILAN görünüm kendi özetini verir: kişisel
+               yolculuk özetini burada göstermek, kullanıcıya baktığı ürünün
+               değil öbürünün durumunu okuturdu. */
+            shared ? (
+              <>
+                <strong>{shared.routeName || `Hat #${shared.routeId}`}</strong>
+                <span>{shared.isActive ? `${shared.statusLabel} · ${shared.progressLabel}` : 'Aktif simülasyon yok'}</span>
+              </>
+            ) : (
+              <span>Hat simülasyonu için bir hat seçin</span>
+            )
+          ) : isTerminal ? (
             /* Katlanmış terminal: sonuç GİZLENİR ama kaybolmaz — panel
                açıldığında hâlâ oradadır, yalnızca kullanıcı bırakınca gider. */
             <>
@@ -265,7 +342,7 @@ export default function JourneyPlannerPanel({
         </button>
       )}
 
-      {!collapsed && isLive && (
+      {!collapsed && showingPersonal && isLive && (
         <div className="journey-body">
           {isActive && (
             <>
@@ -379,7 +456,7 @@ export default function JourneyPlannerPanel({
         </div>
       )}
 
-      {!collapsed && !isLive && (
+      {!collapsed && showingPersonal && !isLive && (
         <div className="journey-body">
           {/* SEKME DEĞİL, kip düğmeleri. `role="tab"` bir tabpanel ilişkisi ve
               ok tuşlarıyla dolaşan bir odak (roving tabindex) sözü verir;
