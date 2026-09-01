@@ -35,6 +35,16 @@ public sealed class LocalOsrmSetupTests
     private const string PublishedPortPattern =
         @"-\s*""\$\{(?<name>[A-Z_]+):-(?<port>\d+)\}:\d+""";
 
+    /// <summary>
+    /// Bir servis gövdesi: yalnızca 4 boşlukla girintili satırlar ya da BOŞ
+    /// satırlar.
+    /// </summary>
+    /// <remarks>
+    /// Boş satırdan sonra girintiyi denetlemeyen bir desen, bir sonraki servis
+    /// başlığını da yutar ve iddialar yanlış servise uygulanır.
+    /// </remarks>
+    private const string ServiceBodyPattern = @"(?:[ \t]*\r?\n|    .*\r?\n)*";
+
     private const string EnvPortPattern = @"^(?<name>OSRM[A-Z_]*HOST_PORT)=(?<port>\d+)\s*$";
 
     /// <summary>
@@ -82,9 +92,11 @@ public sealed class LocalOsrmSetupTests
     {
         /* ASIL İDDİA: profil veri kümesine GÖMÜLÜR. Üç ayrı extract komutu
            olmadan, üç sunucu aynı sürüş verisini farklı adlarla sunardı. */
+        // Sürüş sade kalır: iş parçacığı sınırı YALNIZCA isteğe bağlı profillerdedir.
         Assert.Contains("osrm-extract -p /opt/car.lua", Compose, StringComparison.Ordinal);
-        Assert.Contains("osrm-extract -p /opt/foot.lua", Compose, StringComparison.Ordinal);
-        Assert.Contains("osrm-extract -p /opt/bicycle.lua", Compose, StringComparison.Ordinal);
+
+        Assert.Contains(OptionalExtractInvocation("foot.lua"), Compose, StringComparison.Ordinal);
+        Assert.Contains(OptionalExtractInvocation("bicycle.lua"), Compose, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -233,10 +245,166 @@ public sealed class LocalOsrmSetupTests
     [Fact]
     public void One_shared_source_extract_feeds_all_three_profiles()
     {
-        /* Kaynak PBF tek dosya olarak salt okunur bind edilir: üç kez indirmek
-           ya da kopyalamak gigabaytları üçe katlardı. */
-        Assert.Equal(2, Occurrences(Compose, ".osm.pbf:ro"));
+        /* Kaynak PBF TEK kez indirilir ve paylaşılır; üç ayrı indirme
+           gigabaytları üçe katlardı. İsteğe bağlı profiller onu kendi
+           /source bağlamalarından okur. */
+        Assert.Equal(2, Occurrences(Compose, ":/source:ro"));
         Assert.Contains("download map data", PrepareScript, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Optional_extract_services_never_nest_the_source_inside_the_output_mount()
+    {
+        /* GERÇEK ÇALIŞTIRMADA YAKALANAN HATA. Önceki topoloji kaynak PBF'i tek
+           dosya olarak /data'nın İÇİNE bağlıyordu; Docker Desktop'ın virtiofs'u
+           bu iç içe bağlamayı reddediyor ("mountpoint is outside the rootfs")
+           ve konteyner osrm-extract hiç başlamadan ölüyordu. Bellek sorunu
+           DEĞİLDİ.
+
+           Koruma: hiçbir servisin bağlama HEDEFLERİ örtüşmemelidir. */
+        foreach (var (service, targets) in MountTargets())
+        {
+            foreach (var target in targets)
+            {
+                foreach (var other in targets.Where(candidate => candidate != target))
+                {
+                    Assert.False(
+                        target.StartsWith(other.TrimEnd('/') + "/", StringComparison.Ordinal),
+                        $"{service}: {target} bağlaması {other} içinde iç içe kalıyor.");
+                }
+            }
+
+            Assert.Equal(targets.Count, targets.Distinct(StringComparer.Ordinal).Count());
+        }
+    }
+
+    [Fact]
+    public void Optional_extract_uses_a_read_only_source_and_a_writable_output()
+    {
+        foreach (var service in (string[])["osrm-extract-walking", "osrm-extract-cycling"])
+        {
+            var block = ServiceBlock(service);
+
+            // Paylaşılan kaynak KENDİ hedefinde ve salt okunur.
+            Assert.Contains("${OSRM_DATA_DIR:-./data}:/source:ro", block, StringComparison.Ordinal);
+
+            /* Çıktı /data'da ve YAZILABİLİR: osrm-extract üretimini girdisinin
+               YANINA yazar, dolayısıyla salt okunur bir hedefte çalışamaz. */
+            Assert.Matches(@"_DATA_DIR:-\./data/(walking|cycling)\}:/data""", block);
+            Assert.DoesNotContain(":/data:ro", block, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void Optional_extract_runs_against_the_writable_copy_and_cleans_it_up()
+    {
+        foreach (var (service, lua) in ((string, string)[])
+                 [("osrm-extract-walking", "foot.lua"), ("osrm-extract-cycling", "bicycle.lua")])
+        {
+            /* Ham blok metni yerine ÇÖZÜLMÜŞ argüman okunur: doğru metnin
+               yanlış temsille taşınması tam olarak yaşanan regresyondu. */
+            var script = Assert.Single(CommandArguments(service));
+
+            // Kopyalama yönü: salt okunur kaynaktan yazılabilir çıktıya.
+            Assert.Contains(@"cp ""/source/", script, StringComparison.Ordinal);
+
+            /* Çıkarım /source'taki ORİJİNALE değil, /data'daki kopyaya karşı
+               çalışır; aksi hâlde çıktı yanlış yere düşer ya da yazılamaz. */
+            Assert.Contains($"{OptionalExtractInvocation(lua)} \"/data/", script, StringComparison.Ordinal);
+            Assert.DoesNotContain($"{OptionalExtractInvocation(lua)} \"/source/", script, StringComparison.Ordinal);
+
+            // Geçici kopya başarıdan sonra silinir; kalıcı ikinci bir PBF yok.
+            Assert.Contains(@"rm -f ""/data/", script, StringComparison.Ordinal);
+
+            // Herhangi bir adım başarısızsa zincir durur.
+            Assert.Contains("set -e;", script, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void Optional_extract_passes_the_whole_script_as_one_shell_argument()
+    {
+        /* ÇALIŞTIRMADA YAKALANAN İKİNCİ HATA. `sh -c` betiğin TAMAMINI TEK bir
+           argüman olarak ister. YAML'de `command: >` kullanmak bir dizge üretir
+           ve Compose dizge komutlarını argv'ye böler; çözülen komut
+           ["set", "-e"] oluyor, kopyalama ve çıkarım hiç çalışmıyordu.
+
+           İddia bu yüzden METİN değil TEMSİL üzerinedir: tek öğeli bir liste. */
+        foreach (var (service, lua) in ((string, string)[])
+                 [("osrm-extract-walking", "foot.lua"), ("osrm-extract-cycling", "bicycle.lua")])
+        {
+            Assert.Contains(@"entrypoint: [""/bin/sh"", ""-c""]", ServiceBlock(service), StringComparison.Ordinal);
+
+            var arguments = CommandArguments(service);
+
+            // TEK argüman: `sh -c` ikincisini $0 sayar ve betiği çalıştırmaz.
+            var script = Assert.Single(arguments);
+
+            // Ve o tek argüman yaşam döngüsünün tamamını taşır.
+            foreach (var fragment in (string[])
+                     ["set -e;", @"test -f ""/source/", @"cp ""/source/",
+                      $@"{OptionalExtractInvocation(lua)} ""/data/", @"rm -f ""/data/"])
+            {
+                Assert.Contains(fragment, script, StringComparison.Ordinal);
+            }
+        }
+    }
+
+    [Fact]
+    public void Optional_extraction_caps_its_threads_through_one_configurable_default()
+    {
+        /* ÇALIŞTIRMADA YAKALANAN ÜÇÜNCÜ SORUN — ve bu bir hata değil, bir
+           KAYNAK gerçeğiydi. osrm-extract'in tepe belleği iş parçacığı
+           sayısıyla ölçeklenir; 12 iş parçacığı ve ~10 GB Docker sınırıyla
+           kenar genişletme aşaması OOM ile öldürüldü (log yalnızca "Killed"
+           diyor, OSRM bir hata üretmiyor).
+
+           İsteğe bağlı profiller bu yüzden çekirdek sayısını değil, AÇIK ve
+           düşük bir varsayılanı kullanır. */
+        foreach (var (service, lua) in ((string, string)[])
+                 [("osrm-extract-walking", "foot.lua"), ("osrm-extract-cycling", "bicycle.lua")])
+        {
+            var script = Assert.Single(CommandArguments(service));
+
+            // Sayı GÖMÜLÜ DEĞİL: ortamdan geçersiz kılınabilir, varsayılanı 4.
+            Assert.Contains(OptionalExtractInvocation(lua), script, StringComparison.Ordinal);
+        }
+
+        // Aynı ayar iki profil için de kullanılır; ikinci bir değişken yok.
+        Assert.Equal(2, Occurrences(Compose, "${OSRM_OPTIONAL_EXTRACT_THREADS:-4}"));
+
+        // Ve şablon onu belgeler.
+        Assert.Matches(@"^OSRM_OPTIONAL_EXTRACT_THREADS=4\s*$", EnvExampleLine("OSRM_OPTIONAL_EXTRACT_THREADS"));
+    }
+
+    [Fact]
+    public void The_driving_extract_never_gains_the_optional_thread_setting()
+    {
+        /* Sürüş veri kümesi zaten hazırdır ve boru hattı DEĞİŞMEZ: buraya bir
+           -t eklemek, dokunulmaması gereken bir akışı yeniden çıkarım
+           gerektirir hâle sokardı. */
+        var block = ServiceBlock("osrm-extract");
+
+        Assert.DoesNotContain("OSRM_OPTIONAL_EXTRACT_THREADS", block, StringComparison.Ordinal);
+        Assert.DoesNotContain(" -t ", block, StringComparison.Ordinal);
+        Assert.Contains(
+            "command: osrm-extract -p /opt/car.lua /data/",
+            block,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_driving_extract_keeps_its_original_single_mount_pipeline()
+    {
+        /* Sürüş bu düzeltmeden HİÇ etkilenmez: tek dizin, tek hedef, kabuk
+           sarmalayıcı yok. Hazır bir sürüş veri kümesi olduğu gibi çalışır. */
+        var block = ServiceBlock("osrm-extract");
+
+        Assert.Contains("command: osrm-extract -p /opt/car.lua /data/", block, StringComparison.Ordinal);
+        Assert.Contains("${OSRM_DATA_DIR:-./data}:/data", block, StringComparison.Ordinal);
+        Assert.DoesNotContain("/source", block, StringComparison.Ordinal);
+        Assert.DoesNotContain("entrypoint", block, StringComparison.Ordinal);
+        Assert.DoesNotContain("cp ", block, StringComparison.Ordinal);
     }
 
     /* --- Sürüş geriye dönük uyumlu ------------------------------------------------ */
@@ -383,6 +551,11 @@ public sealed class LocalOsrmSetupTests
         Assert.Contains("ignored", Readme, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("osrm-extract", Readme, StringComparison.Ordinal);
 
+        /* Belgelenen komut GERÇEK komutla aynı olmalıdır. Bu tam olarak
+           kaçırılan şeydi: iş parçacığı sınırı eklendiğinde README hâlâ eski
+           çağrıyı gösteriyordu ve hiçbir test bunu görmüyordu. */
+        Assert.Contains(OptionalExtractInvocation("foot.lua"), Readme, StringComparison.Ordinal);
+
         // Her profilin lua dosyası, dizini ve portu belgelenmiştir.
         foreach (var value in (string[])
                  ["foot.lua", "bicycle.lua", "./data/walking", "./data/cycling", "5001", "5002"])
@@ -416,6 +589,128 @@ public sealed class LocalOsrmSetupTests
     /// JSON, sıra bağımsız olsun diye bölüm bölüm okunur: alanların dosyadaki
     /// yeri değiştiğinde test kırılmamalı, ama DEĞERLER değiştiğinde kırılmalı.
     /// </remarks>
+    /// <summary>
+    /// Bir servisin <c>command:</c> anahtarını ARGV ÖĞELERİ olarak okur.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Neden ham metinde `cp` aramak YETMEZ.</b> Gerçek regresyon tam olarak
+    /// buydu: YAML'de betiğin tamamı yazılıydı ama <c>command: &gt;</c> bir
+    /// DİZGE üretir ve Compose dizge komutları argv'ye böler — lifecycle
+    /// <c>["set", "-e"]</c>'ye çöküyor, ilk <c>;</c>'den sonrası kayboluyordu.
+    /// Metin araması bunu göremezdi çünkü metin doğruydu; yanlış olan
+    /// TEMSİLDİ.
+    /// </para>
+    /// <para>
+    /// Bu yüzden okuyucu skaler biçimi AÇIKÇA reddeder ve blok dizisinin
+    /// öğelerini sayar.
+    /// </para>
+    /// </remarks>
+    private static IReadOnlyList<string> CommandArguments(string serviceName)
+    {
+        var body = ServiceBlock(serviceName);
+
+        var match = Regex.Match(
+            body,
+            @"^    command:(?<inline>.*)\r?\n(?<rest>(?:[ \t]*\r?\n|      .*\r?\n)*)",
+            RegexOptions.Multiline);
+
+        Assert.True(match.Success, $"{serviceName}: command anahtarı yok.");
+
+        /* Skaler biçim (`command: ...` ya da `command: >`) argv'ye bölünmeye
+           AÇIKTIR; tek güvenli temsil blok dizisidir. */
+        Assert.True(
+            match.Groups["inline"].Value.Trim().Length == 0,
+            $"{serviceName}: command skaler biçimde; Compose onu argv'ye bölebilir.");
+
+        var arguments = new List<string>();
+        List<string>? current = null;
+
+        foreach (var line in match.Groups["rest"].Value.Split('\n'))
+        {
+            var text = line.TrimEnd('\r');
+
+            if (text.StartsWith("      - ", StringComparison.Ordinal))
+            {
+                if (current is not null) arguments.Add(string.Join(' ', current));
+                current = [];
+
+                // Blok skaler göstergesi (`>-`, `|`) içeriğin kendisi değildir.
+                var tail = text[8..].Trim();
+                if (tail.Length > 0 && tail is not (">" or ">-" or "|" or "|-")) current.Add(tail);
+            }
+            else if (current is not null && text.Trim().Length > 0)
+            {
+                current.Add(text.Trim());
+            }
+        }
+
+        if (current is not null) arguments.Add(string.Join(' ', current));
+        return arguments;
+    }
+
+    /// <summary>
+    /// İsteğe bağlı bir profilin KANONİK <c>osrm-extract</c> çağrısı.
+    /// </summary>
+    /// <remarks>
+    /// Tek yerde durur: çağrı şekli değiştiğinde (iş parçacığı sınırı böyle
+    /// eklendi) beş ayrı testin aynı dizgeyi ayrı ayrı taşıması, üçünün
+    /// bayatlayıp ikisinin geçmesi demekti. <c>-t</c> bilinçle <c>-p</c>'den
+    /// ÖNCEDİR; sıra burada da sabitlenir.
+    /// </remarks>
+    private static string OptionalExtractInvocation(string lua) =>
+        $@"osrm-extract -t ""${{OSRM_OPTIONAL_EXTRACT_THREADS:-4}}"" -p /opt/{lua}";
+
+    /// <summary>Şablondaki tek bir <c>NAME=VALUE</c> satırı.</summary>
+    private static string EnvExampleLine(string name)
+    {
+        var line = EnvExample
+            .Split('\n')
+            .Select(text => text.TrimEnd('\r'))
+            .FirstOrDefault(text => text.StartsWith(name + "=", StringComparison.Ordinal));
+
+        Assert.NotNull(line);
+        return line!;
+    }
+
+    /// <summary>Bir compose servisinin ham metin bloğu.</summary>
+    /// <remarks>
+    /// İddialar servis BAZINDA yapılır: tüm dosyada dizge aramak, sürüşe ait
+    /// bir satırın yürüyüş iddiasını sessizce karşılamasına izin verirdi.
+    /// </remarks>
+    private static string ServiceBlock(string serviceName)
+    {
+        var match = Regex.Match(
+            Compose,
+            $@"^  {Regex.Escape(serviceName)}:\r?\n(?<body>{ServiceBodyPattern})",
+            RegexOptions.Multiline);
+
+        Assert.True(match.Success, $"compose servisi bulunamadı: {serviceName}");
+        return match.Groups["body"].Value;
+    }
+
+    /// <summary>Servis adı → o servisin konteyner içi bağlama HEDEFLERİ.</summary>
+    private static IReadOnlyList<(string Service, IReadOnlyList<string> Targets)> MountTargets()
+    {
+        var services = new List<(string, IReadOnlyList<string>)>();
+
+        foreach (Match service in Regex.Matches(
+                     Compose,
+                     $@"^  (?<name>osrm[a-z-]*):\r?\n(?<body>{ServiceBodyPattern})",
+                     RegexOptions.Multiline))
+        {
+            var targets = Regex
+                .Matches(service.Groups["body"].Value, @"-\s*""[^""]*?:(?<target>/[A-Za-z0-9_./-]+?)(?::ro)?""")
+                .Select(mount => mount.Groups["target"].Value)
+                .ToArray();
+
+            if (targets.Length > 0) services.Add((service.Groups["name"].Value, targets));
+        }
+
+        Assert.NotEmpty(services);
+        return services;
+    }
+
     private static IReadOnlyDictionary<string, string> DevelopmentEndpoints()
     {
         using var document = JsonDocument.Parse(DevelopmentSettings);

@@ -77,6 +77,7 @@ OSRM_WALKING_HOST_PORT=5002
 OSRM_CYCLING_HOST_PORT=5003
 OSRM_WALKING_DATA_DIR=./data/walking
 OSRM_CYCLING_DATA_DIR=./data/cycling
+OSRM_OPTIONAL_EXTRACT_THREADS=4
 ```
 
 - `OSRM_DATA_DIR` holds the source PBF and the generated **driving** files. A
@@ -90,6 +91,8 @@ OSRM_CYCLING_DATA_DIR=./data/cycling
   `OSRM_DATA_DIR`. `osrm-extract` writes beside its input, so pointing a walking
   run at the driving directory would overwrite the driving dataset in place. The
   preparation script refuses to do this.
+- `OSRM_OPTIONAL_EXTRACT_THREADS` caps the threads walking/cycling extraction
+  uses (default 4). See the memory note in step 3. Driving ignores it.
 
 The `.env` file is ignored by Git. `.env.example` is the tracked, machine-neutral
 template. The defaults also work without creating `.env`.
@@ -98,6 +101,24 @@ template. The defaults also work without creating `.env`.
 
 Preparation is per profile and is the slow part: it needs plenty of Docker
 memory and disk, and takes a while on a country-sized extract.
+
+**Memory.** `osrm-extract`'s peak usage scales with thread count, and the
+edge-expansion stage is where it peaks. With 12 threads and a ~10 GB Docker
+limit it was OOM-killed partway through — the log simply ends in `Killed`, with
+no OSRM error. Walking and cycling therefore extract with
+`OSRM_OPTIONAL_EXTRACT_THREADS` (default **4**) rather than every available
+core: slower, but it fits. Raise it if Docker has more memory:
+
+```bash
+OSRM_OPTIONAL_EXTRACT_THREADS=8 ./prepare-osrm.sh walking
+```
+
+Driving keeps OSRM's own default and is not affected — its dataset is already
+prepared and its pipeline is unchanged.
+
+If an extraction is killed, the profile directory holds partial `.osrm*` files.
+Nothing deletes them automatically; inspect them if useful, then re-run — each
+step overwrites its own artifacts.
 
 From `tools/osrm/`:
 
@@ -113,7 +134,7 @@ output over the shared driving directory.
 
 Each run performs the project's existing three-step MLD pipeline with that
 profile's Lua file: `osrm-extract`, then `osrm-partition`, then `osrm-customize`.
-The equivalent compose calls (driving shown) are still available directly:
+The equivalent compose calls are still available directly — driving:
 
 ```bash
 docker compose -f docker-compose.osrm.yml run --rm osrm-extract
@@ -121,7 +142,45 @@ docker compose -f docker-compose.osrm.yml run --rm osrm-partition
 docker compose -f docker-compose.osrm.yml run --rm osrm-customize
 ```
 
-Walking and cycling use the same services with a `-walking` / `-cycling` suffix.
+and the optional profiles, using the same services with a `-walking` /
+`-cycling` suffix:
+
+```bash
+docker compose -f docker-compose.osrm.yml run --rm osrm-extract-walking
+docker compose -f docker-compose.osrm.yml run --rm osrm-partition-walking
+docker compose -f docker-compose.osrm.yml run --rm osrm-customize-walking
+```
+
+### How the optional profiles reach the shared PBF
+
+Driving reads and writes one directory, so it mounts `OSRM_DATA_DIR` at `/data`
+and nothing else. The optional profiles need the *source* from one place and
+write their *output* to another, and those two container paths must not overlap:
+
+| Mount | Container target | Mode |
+|---|---|---|
+| `OSRM_DATA_DIR` (shared source) | `/source` | read-only |
+| `OSRM_WALKING_DATA_DIR` / `OSRM_CYCLING_DATA_DIR` | `/data` | writable |
+
+An earlier version instead bind-mounted the single PBF file *inside* `/data`.
+Docker Desktop's virtiofs rejects that nested mount outright — the container
+fails to create with *"mountpoint is outside the rootfs"* before `osrm-extract`
+ever runs. It is not a memory error, and no amount of Docker RAM fixes it.
+
+Because `osrm-extract` writes its generated dataset **beside the input file**,
+the input cannot sit on the read-only `/source` mount. The extract service
+therefore copies the PBF into the writable profile directory, extracts, and
+deletes the copy:
+
+```text
+cp /source/<dataset>.osm.pbf  /data/<dataset>.osm.pbf
+osrm-extract -t "${OSRM_OPTIONAL_EXTRACT_THREADS:-4}" -p /opt/foot.lua /data/<dataset>.osm.pbf
+rm -f /data/<dataset>.osm.pbf
+```
+
+That copy is transient — there is still only one downloaded PBF — but it does
+need the PBF's size in free space again while extraction runs. A failed run
+leaves the copy behind; re-running overwrites it.
 
 If the PBF changes, rerun preparation for **every** profile you use, so all
 datasets match the same source.

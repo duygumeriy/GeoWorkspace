@@ -65,6 +65,14 @@ prepare() {
   if [[ -n "${suffix}" ]]; then
     assert_distinct_output "${profile}" "${output}"
     mkdir -p -- "$(absolute "${output}")"
+
+    # Optional profiles copy the source PBF into their own directory for the
+    # duration of extraction (see the compose file: /source is read-only and
+    # osrm-extract writes beside its input). Budget the PBF's size again here,
+    # transiently. A failed extraction leaves that copy behind; re-running
+    # overwrites it.
+    printf '    note: needs ~%s of extra free space during extraction\n' \
+      "$(du -h -- "${source_pbf}" 2>/dev/null | cut -f1 || printf 'the PBF size')"
   fi
 
   printf '\n==> %s  (profile %s, output %s)\n' "${profile}" "${lua}" "${output}"

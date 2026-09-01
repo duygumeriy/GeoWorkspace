@@ -50,16 +50,42 @@ services:
     restart: unless-stopped
 
   # --- walking ---------------------------------------------------------------
-  # The SOURCE PBF is bind-mounted as a single read-only file so one download
-  # feeds all three profiles; only the generated .osrm* artifacts are separate.
-  # Mounting the whole shared directory instead would make osrm-extract write
-  # its output over the driving dataset.
+  # MOUNT TOPOLOGY. The shared source directory is mounted read-only at its own
+  # target (/source) and the profile output directory writable at /data. The two
+  # targets must NOT overlap: bind-mounting the source PBF *inside* /data is a
+  # nested mount, which Docker Desktop's virtiofs rejects outright ("mountpoint
+  # is outside the rootfs") before osrm-extract even starts.
+  #
+  # osrm-extract writes its generated dataset BESIDE the input file, so the input
+  # cannot live on the read-only /source mount. The PBF is therefore copied into
+  # the writable profile directory for the duration of extraction and removed
+  # afterwards — a transient copy, not a second permanent download.
+  #
+  # THREAD CAP. `osrm-extract` scales its peak memory with thread count: on a
+  # 12-thread machine with a ~10 GB Docker limit, edge-expansion was OOM-killed
+  # around 30%. The optional profiles therefore pass an explicit, low default
+  # (4) instead of letting OSRM use every core. Raise
+  # OSRM_OPTIONAL_EXTRACT_THREADS if Docker has more memory available. Driving
+  # is deliberately left alone — its dataset is already prepared and its
+  # pipeline must not change.
   osrm-extract-walking:
     <<: *osrm
-    command: osrm-extract -p /opt/foot.lua /data/${OSRM_DATASET:-turkey-latest}.osm.pbf
+    entrypoint: ["/bin/sh", "-c"]
+    # LIST form, exactly ONE element. A scalar `command: >` is a STRING, and
+    # Compose shell-splits string commands into argv — the whole lifecycle
+    # collapsed to ["set", "-e"] and everything after the first `;` was lost.
+    # A single-item sequence is passed through verbatim, which is what
+    # `sh -c` needs: one argument holding the entire script.
+    command:
+      - >-
+        set -e;
+        test -f "/source/${OSRM_DATASET:-turkey-latest}.osm.pbf";
+        cp "/source/${OSRM_DATASET:-turkey-latest}.osm.pbf" "/data/${OSRM_DATASET:-turkey-latest}.osm.pbf";
+        osrm-extract -t "${OSRM_OPTIONAL_EXTRACT_THREADS:-4}" -p /opt/foot.lua "/data/${OSRM_DATASET:-turkey-latest}.osm.pbf";
+        rm -f "/data/${OSRM_DATASET:-turkey-latest}.osm.pbf"
     volumes:
+      - "${OSRM_DATA_DIR:-./data}:/source:ro"
       - "${OSRM_WALKING_DATA_DIR:-./data/walking}:/data"
-      - "${OSRM_DATA_DIR:-./data}/${OSRM_DATASET:-turkey-latest}.osm.pbf:/data/${OSRM_DATASET:-turkey-latest}.osm.pbf:ro"
 
   osrm-partition-walking:
     <<: *osrm
@@ -83,12 +109,25 @@ services:
     restart: unless-stopped
 
   # --- cycling ---------------------------------------------------------------
+  # Same non-overlapping /source + /data topology as walking above.
   osrm-extract-cycling:
     <<: *osrm
-    command: osrm-extract -p /opt/bicycle.lua /data/${OSRM_DATASET:-turkey-latest}.osm.pbf
+    entrypoint: ["/bin/sh", "-c"]
+    # LIST form, exactly ONE element. A scalar `command: >` is a STRING, and
+    # Compose shell-splits string commands into argv — the whole lifecycle
+    # collapsed to ["set", "-e"] and everything after the first `;` was lost.
+    # A single-item sequence is passed through verbatim, which is what
+    # `sh -c` needs: one argument holding the entire script.
+    command:
+      - >-
+        set -e;
+        test -f "/source/${OSRM_DATASET:-turkey-latest}.osm.pbf";
+        cp "/source/${OSRM_DATASET:-turkey-latest}.osm.pbf" "/data/${OSRM_DATASET:-turkey-latest}.osm.pbf";
+        osrm-extract -t "${OSRM_OPTIONAL_EXTRACT_THREADS:-4}" -p /opt/bicycle.lua "/data/${OSRM_DATASET:-turkey-latest}.osm.pbf";
+        rm -f "/data/${OSRM_DATASET:-turkey-latest}.osm.pbf"
     volumes:
+      - "${OSRM_DATA_DIR:-./data}:/source:ro"
       - "${OSRM_CYCLING_DATA_DIR:-./data/cycling}:/data"
-      - "${OSRM_DATA_DIR:-./data}/${OSRM_DATASET:-turkey-latest}.osm.pbf:/data/${OSRM_DATASET:-turkey-latest}.osm.pbf:ro"
 
   osrm-partition-cycling:
     <<: *osrm
