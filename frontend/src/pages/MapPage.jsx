@@ -3268,8 +3268,16 @@ export default function MapPage() {
                   stops={transport.stops}
                   preview={journey.preview}
                   loading={journey.loading}
-                  error={journey.error || journey.validationError}
+                  /* HATA ve REHBERLİK ayrı iki kavramdır: eksik bir seçim
+                     kullanıcının yaptığı bir yanlış değildir ve kırmızı bir
+                     uyarı gibi sunulmaz. */
+                  error={journey.error}
+                  guidance={journey.validationError}
                   canRequest={journey.canRequest}
+                  /* Etkin seçim kipi: yalnızca çalışma alanı dinlenirken
+                     doğrudur (Faz 5E-B · Dilim 1), dolayısıyla haritanın
+                     gerçekten beklediği durumu anlatır. */
+                  picking={journey.isPicking}
                   canUsePois={allowed.canViewPoi}
                   poiSearch={journeyPickerSearch}
                   onModeChange={journey.setMode}

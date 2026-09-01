@@ -83,8 +83,12 @@ export default function JourneyPlannerPanel({
   stops = [],
   preview = null,
   loading = false,
+  /** GERÇEK bir başarısızlık: önizleme/istek hatası. Uyarı olarak sunulur. */
   error = '',
+  /** Eksik seçimin NEDENİ: nötr yardım metni, uyarı DEĞİL. */
+  guidance = '',
   canRequest = false,
+  picking = false,
   canUsePois = false,
   poiSearch = null,
   onModeChange,
@@ -161,10 +165,15 @@ export default function JourneyPlannerPanel({
   const activeProfile = JOURNEY_PROFILES.find((profile) => profile.id === state.profile)
   const ActiveProfileIcon = PROFILE_ICONS[activeProfile?.icon] ?? Car
 
+  /* MEVCUT bayraklar okunur; ikinci bir "meşgul" durumu ya da sahte bir
+     ilerleme sayacı üretilmez. */
+  const busy = Boolean(loading || live?.starting)
+
   return (
     <section
       className={`journey-panel ${collapsed ? 'is-collapsed' : ''}`.trim()}
       aria-label="Yolculuk planlayıcısı"
+      aria-busy={busy}
     >
       <header className="journey-head">
         <div className="journey-head-title">
@@ -191,6 +200,19 @@ export default function JourneyPlannerPanel({
           </button>
         </div>
       </header>
+
+      {/* TEK hata bölgesi, ÜÇ evre için. Canlı hata yalnızca planlayıcı
+          dalında yaşasaydı, çalışan ya da bitmiş bir yolculukta hiç
+          görünmezdi. Aynı bloğu üç kez yazmak yerine sahibi burasıdır.
+
+          Hata KENDİ BAŞINA hiçbir şey durdurmaz ya da bırakmaz: sunucudaki
+          çalıştırma sürer, bırakma kullanıcının açık kararıdır. */}
+      {!collapsed && (error || live?.error) && (
+        <div className="journey-feedback">
+          {error && <p className="journey-error" role="alert">{error}</p>}
+          {live?.error && <p className="journey-error" role="alert">{live.error}</p>}
+        </div>
+      )}
 
       {/* KATLANMIŞ: panel kaybolmaz, yeniden açmaya yetecek kadarını gösterir. */}
       {collapsed && (
@@ -233,8 +255,17 @@ export default function JourneyPlannerPanel({
                 <span>{formatRouteDistance(liveModel.remainingDistanceMeters)} kaldı</span>
               </div>
 
-              <div className="journey-live-bar" role="progressbar" aria-valuenow={Math.round(liveModel.progressPercent)}
-                   aria-valuemin={0} aria-valuemax={100}>
+              {/* İlerleme SUNUCUNUN değeridir (kırpılmış canlı modelden);
+                  ikinci bir yüzde hesaplanmaz. */}
+              <div
+                className="journey-live-bar"
+                role="progressbar"
+                aria-label="Yolculuk ilerlemesi"
+                aria-valuenow={Math.round(liveModel.progressPercent)}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuetext={`%${Math.round(liveModel.progressPercent)} tamamlandı`}
+              >
                 <span style={{ width: `${liveModel.progressPercent}%` }} />
               </div>
             </>
@@ -262,7 +293,14 @@ export default function JourneyPlannerPanel({
               yolculuğu takip etmek ya da durdurmak diye bir şey yoktur. */}
           {isActive && (
             <div className="journey-actions">
-              <button type="button" className="journey-secondary" onClick={onToggleFollow}>
+              {/* Gerçekten bir AÇMA/KAPAMA düğmesidir; durumu bildirilir.
+                  Kamera davranışının kendisi bu dilimde değişmez. */}
+              <button
+                type="button"
+                className="journey-secondary"
+                onClick={onToggleFollow}
+                aria-pressed={Boolean(live?.following)}
+              >
                 <Crosshair size={14} aria-hidden="true" />
                 {live?.following ? 'Takibi Bırak' : 'Takip Et'}
               </button>
@@ -318,13 +356,18 @@ export default function JourneyPlannerPanel({
 
       {!collapsed && !isLive && (
         <div className="journey-body">
-          <div className="journey-tabs" role="tablist" aria-label="Planlama türü">
+          {/* SEKME DEĞİL, kip düğmeleri. `role="tab"` bir tabpanel ilişkisi ve
+              ok tuşlarıyla dolaşan bir odak (roving tabindex) sözü verir;
+              ikisi de burada yoktur ve yarım bir sekme kalıbı, hiç sekme
+              olmamasından daha yanıltıcıdır. Sıradan düğmeler klavyeyle
+              zaten çalışır; söylenmesi gereken tek şey hangisinin AÇIK
+              olduğudur. */}
+          <div className="journey-tabs" role="group" aria-label="Planlama türü">
             {MODE_TABS.map((tab) => (
               <button
                 key={tab.id}
                 type="button"
-                role="tab"
-                aria-selected={state.mode === tab.id}
+                aria-pressed={state.mode === tab.id}
                 className={`journey-tab ${state.mode === tab.id ? 'is-active' : ''}`.trim()}
                 onClick={() => onModeChange?.(tab.id)}
               >
@@ -334,15 +377,17 @@ export default function JourneyPlannerPanel({
           </div>
 
           {/* Tam olarak üç profil. Otobüs/toplu taşıma seçeneği YOKTUR. */}
-          <div className="journey-profiles" role="radiogroup" aria-label="Seyahat türü">
+          {/* Aynı gerekçe: `role="radio"` ok tuşlarıyla dolaşan bir grup
+              sözü verir. Üç düğme birer AÇMA/KAPAMA kontrolüdür ve durumları
+              `aria-pressed` ile bildirilir. */}
+          <div className="journey-profiles" role="group" aria-label="Seyahat türü">
             {JOURNEY_PROFILES.map((profile) => {
               const Icon = PROFILE_ICONS[profile.icon] ?? Car
               return (
                 <button
                   key={profile.id}
                   type="button"
-                  role="radio"
-                  aria-checked={state.profile === profile.id}
+                  aria-pressed={state.profile === profile.id}
                   className={`journey-profile ${state.profile === profile.id ? 'is-active' : ''}`.trim()}
                   onClick={() => onProfileChange?.(profile.id)}
                   title={profile.label}
@@ -469,6 +514,16 @@ export default function JourneyPlannerPanel({
                 Ara nokta ekle
               </button>
 
+              {/* Haritanın BEKLEDİĞİ durum görünür bir cümleyle söylenir:
+                  ipucu balonu tek başına yeterli değildir, imleç de öyle.
+                  `role="status"` nazik bir canlı bölgedir — bu bir hata
+                  değil, sürmekte olan bir kiptir. */}
+              {picking && (
+                <p className="journey-picking-status" role="status">
+                  Haritadan bir durak{canUsePois ? ' ya da yer' : ''} seçin · Vazgeçmek için Esc
+                </p>
+              )}
+
               {/* Silahlı yuva için arama: sınırlı sonuç, mevcut arama yolu. */}
               {state.activeSlotKey && (
                 <WaypointPicker
@@ -486,6 +541,7 @@ export default function JourneyPlannerPanel({
               type="button"
               className="journey-primary"
               disabled={!canRequest}
+              aria-busy={loading}
               onClick={onRequestPreview}
             >
               {loading ? <Loader2 size={15} className="journey-spin" aria-hidden="true" /> : null}
@@ -497,8 +553,14 @@ export default function JourneyPlannerPanel({
             </button>
           </div>
 
-          {error && <p className="journey-error" role="alert">{error}</p>}
-          {live?.error && <p className="journey-error" role="alert">{live.error}</p>}
+          {/* Eksik seçim bir HATA DEĞİLDİR: kullanıcı henüz yanlış bir şey
+              yapmadı, planı tamamlamadı. Düğmenin kapalı olmasının nedenini
+              anlatan nötr bir yardım metnidir — uyarı sunumu (role="alert")
+              gerçek başarısızlıklara ayrılmıştır. Gerçek bir hata varken
+              tekrar etmez: o zaman söylenecek şey yukarıdaki hatadır. */}
+          {!error && guidance && !loading && (
+            <p className="journey-note journey-guidance">{guidance}</p>
+          )}
 
           {summary && (
             <div className="journey-summary">
@@ -524,6 +586,7 @@ export default function JourneyPlannerPanel({
                 type="button"
                 className="journey-primary journey-start"
                 disabled={!canRequest || live?.starting}
+                aria-busy={Boolean(live?.starting)}
                 onClick={onStartSimulation}
               >
                 {live?.starting

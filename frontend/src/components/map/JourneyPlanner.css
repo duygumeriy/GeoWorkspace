@@ -255,6 +255,33 @@
   color: var(--text-secondary);
 }
 
+/* Hata bölgesi TEK yerdedir ve üç evre de onu paylaşır; başlığın hemen
+   altında durur ki çalışan bir yolculukta da görünsün. */
+.journey-feedback {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0 0.75rem 0.5rem;
+  flex-shrink: 0;
+}
+
+/* REHBERLİK bir hata değildir: kırmızı zemin, uyarı ikonu ya da vurgu yoktur.
+   Yalnızca kapalı düğmenin nedenini söyleyen sakin bir nottur. */
+.journey-guidance {
+  font-style: italic;
+}
+
+/* Seçim kipi sürerken haritanın ne beklediğini SÖYLER; imleç ya da ipucu
+   balonu tek başına bunu anlatmaz. */
+.journey-picking-status {
+  margin: 0;
+  padding: 0.35rem 0.5rem;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--journey-accent) 12%, transparent);
+  color: var(--text-primary);
+  font-size: var(--font-small);
+}
+
 .journey-summary {
   display: flex;
   flex-direction: column;
