@@ -1,5 +1,8 @@
 using System.Collections.Concurrent;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using StajProject.Application.Activity;
+using StajProject.Application.Interfaces;
 using StajProject.Application.Options;
 using StajProject.Application.Simulation;
 
@@ -42,6 +45,12 @@ public sealed class JourneySimulationRunner
     private readonly JourneySimulationOptions _options;
     private readonly ILogger<JourneySimulationRunner> _logger;
 
+    /* Runner SINGLETON, aktivite yazıcısı ise SCOPED (DbContext taşır). Kapsam
+       yalnızca gerçekten yazılacak bir olay olduğunda — yani çalıştırma başına
+       en fazla bir kez — açılır ve hemen kapanır; hiçbir DbContext tick'ler
+       arasında tutulmaz. */
+    private readonly IServiceScopeFactory _scopeFactory;
+
     /* Kümülatif mesafeler çalıştırma başına BİR KEZ ölçülür; binlerce köşeyi
        her tick'te yeniden ölçmek boşuna iştir. Anahtar simulationId olduğu
        için yeni bir çalıştırma eski ölçümü devralmaz. */
@@ -51,11 +60,13 @@ public sealed class JourneySimulationRunner
         IJourneySimulationStateStore state,
         IJourneySimulationBroadcaster broadcaster,
         JourneySimulationOptions options,
+        IServiceScopeFactory scopeFactory,
         ILogger<JourneySimulationRunner> logger)
     {
         _state = state;
         _broadcaster = broadcaster;
         _options = options;
+        _scopeFactory = scopeFactory;
         _logger = logger;
     }
 
@@ -132,6 +143,12 @@ public sealed class JourneySimulationRunner
             if (_state.TryStop(simulation.SimulationId))
             {
                 _tracks.TryRemove(simulation.SimulationId, out _);
+
+                /* Denetim kaydı TAM OLARAK bu dalda yazılır: terminal geçişi
+                   kazanan tick burasıdır. Bayat bir tick ya da araya giren bir
+                   durdurma isteği `TryStop`u kaybeder ve ikinci bir satır
+                   yazamaz — mükerrerlik yapısal olarak imkânsızdır. */
+                await RecordCompletionAsync(advanced, cancellationToken);
                 await PublishAsync(advanced, JourneySimulationStatus.Completed, cancellationToken);
             }
             else
@@ -150,6 +167,49 @@ public sealed class JourneySimulationRunner
         }
 
         await PublishAsync(advanced, JourneySimulationStatus.Running, cancellationToken);
+    }
+
+    /// <summary>
+    /// Doğal tamamlanmanın denetim kaydı.
+    /// </summary>
+    /// <remarks>
+    /// <b>Sahip kimliği çalıştırmanın kendi değişmez durumundan gelir.</b> Arka
+    /// planda oturum yoktur; uydurma bir "sistem kullanıcısı" ise olayın gerçek
+    /// sahibini gizlerdi. Yazma hatası simülasyonu ETKİLEMEZ: denetim kaydı,
+    /// kaydettiği işlemin yanında ikincil bir sorumluluktur.
+    /// </remarks>
+    private async Task RecordCompletionAsync(
+        ActiveJourneySimulation simulation,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var recorder = scope.ServiceProvider.GetService<IJourneyActivityRecorder>();
+
+            if (recorder is null) return;
+
+            await recorder.RecordAsync(
+                new JourneyActivityOutcome(
+                    JourneyActivityKind.Completed,
+                    simulation.SimulationId,
+                    simulation.Mode,
+                    simulation.RequestedProfile,
+                    RouteId: simulation.Details.RouteId,
+                    // Terminal ilerleme SUNUCUNUN son değeridir; yuvarlanmaz.
+                    ProgressPercent: simulation.Snapshot.ProgressRatio * 100,
+                    DistanceMeters: simulation.Path.DistanceMeters,
+                    DurationSeconds: simulation.Path.DurationSeconds),
+                simulation.OwnerUserId,
+                cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            _logger.LogWarning(
+                exception,
+                "Yolculuk tamamlanma aktivitesi kaydedilemedi. SimulationId: {SimulationId}",
+                simulation.SimulationId);
+        }
     }
 
     private async Task CancelAsync(ActiveJourneySimulation simulation, CancellationToken cancellationToken)

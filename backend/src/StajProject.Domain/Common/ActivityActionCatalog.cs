@@ -85,6 +85,17 @@ public static class ActivityActionCatalog
     public const string TransportStopTransfer = "transport.stop.transfer";
     public const string TransportStopCoordinateMove = "transport.stop.coordinate_move";
 
+    /* --- Kişisel yolculuk simülasyonu -----------------------------------------
+       Yalnızca YAŞAM DÖNGÜSÜ geçişleri: başlatma ve tek terminal olay. Önizleme,
+       takip/takibi bırakma, kurtarma, SignalR katılımı ve hareket tick'leri
+       burada YOKTUR — onlar sistemin durumunu değiştirmeyen sunum/çalışma
+       zamanı gürültüsüdür ve kaydedilselerdi tablo saniyede bir satırla
+       dolardı. */
+
+    public const string JourneySimulationStart = "journey.simulation.start";
+    public const string JourneySimulationCancel = "journey.simulation.cancel";
+    public const string JourneySimulationComplete = "journey.simulation.complete";
+
     /// <summary>Kanonik katalog.</summary>
     public static readonly IReadOnlyList<Definition> All =
     [
@@ -132,7 +143,11 @@ public static class ActivityActionCatalog
         new(TransportStopDelete, "Durak silindi"),
         new(TransportStopRestore, "Durak geri yüklendi"),
         new(TransportStopTransfer, "Durak başka güzergaha taşındı"),
-        new(TransportStopCoordinateMove, "Durak konumu güncellendi")
+        new(TransportStopCoordinateMove, "Durak konumu güncellendi"),
+
+        new(JourneySimulationStart, "Kişisel yolculuk simülasyonu başlatıldı"),
+        new(JourneySimulationCancel, "Yolculuk simülasyonu kullanıcı tarafından durduruldu"),
+        new(JourneySimulationComplete, "Yolculuk simülasyonu tamamlandı")
     ];
 
     private static readonly IReadOnlyDictionary<string, string> Names =

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { fetchAdminActivity, readApiError } from '../../services/api.js'
 import AdminPageHeader from '../../components/admin/AdminPageHeader.jsx'
 import { formatDateTime } from '../../map/datetime.js'
-import { transportActivityContext } from '../../map/transportActivityPresentation.js'
+import { activityContext } from '../../map/transportActivityPresentation.js'
 import './ActivityPage.css'
 
 const PAGE_SIZE = 25
@@ -23,6 +23,7 @@ const RESOURCE_LABELS = {
   poi_category: 'POI Kategorisi',
   transport_route: 'Güzergah',
   transport_stop: 'Durak',
+  journey_simulation: 'Yolculuk simülasyonu',
 }
 
 /**
@@ -145,7 +146,10 @@ export default function ActivityPage() {
           ) : (
             <ul className="admin-activity-rows">
               {items.map((item) => {
-                const transportContext = transportActivityContext(item.details)
+                /* Tek çağrı, tüm ürünler: ulaşım ya da kişisel yolculuk
+                   bağlamı aynı güvenli sunumdan geçer. Tanınmayan ayrıntı
+                   `null` döner ve satır ham JSON GÖSTERMEZ. */
+                const context = activityContext(item.details)
                 return (
                   <li key={item.id} className="admin-activity-row" data-action={item.action}>
                     <span className="admin-user-date" data-label="Tarih">{formatDateTime(item.occurredAt)}</span>
@@ -157,7 +161,7 @@ export default function ActivityPage() {
                     <span data-label="İşlem">
                       <strong>{item.actionName}</strong>
                       <small className="admin-activity-code">{item.action}</small>
-                      {transportContext && <small className="admin-transport-activity-context">{transportContext}</small>}
+                      {context && <small className="admin-transport-activity-context">{context}</small>}
                     </span>
                     <span data-label="Kaynak">
                       {item.resourceType

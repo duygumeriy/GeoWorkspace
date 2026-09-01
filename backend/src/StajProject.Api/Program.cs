@@ -315,6 +315,11 @@ builder.Services.AddScoped<IGeographicAuthorizationService, GeographicAuthorizat
    bağımlılığı taşımak zorunda kalmasın. İkisi de AppDbContext'e bağlı olduğu
    için scoped'dır. */
 builder.Services.AddScoped<IActivityLogWriter, ActivityLogWriter>();
+
+/* Yolculuk yaşam döngüsü kaydı: İKİNCİ bir günlük sistemi değil, aynı yazıcının
+   önüne konmuş ince bir eşleme. Scoped'dır çünkü yazıcı DbContext taşır; arka
+   plan runner'ı onu kendi kapsamında (scope factory) çözer. */
+builder.Services.AddScoped<IJourneyActivityRecorder, JourneyActivityRecorder>();
 builder.Services.AddScoped<IActivityLogQueryService, ActivityLogQueryService>();
 
 /* Yetki reddiyle biten mutasyon denemeleri de kaydedilir. Yetkilendirme MVC

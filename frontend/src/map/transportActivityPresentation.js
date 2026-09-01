@@ -53,3 +53,69 @@ export function transportActivityContext(details) {
 
   return null
 }
+
+/* --- Kişisel yolculuk simülasyonu (Faz 5E-B · Dilim 7B) ----------------------
+   Aynı defter, aynı `kind` ayırt edicisi, aynı güvenli sunum sözleşmesi:
+   ikinci bir aktivite ekranı ya da ikinci bir çözümleyici kurulmaz. */
+
+/** Kanonik profil → Türkçe. Otobüs/transit YOKTUR. */
+const JOURNEY_PROFILE_LABELS = {
+  Driving: 'Araç',
+  Walking: 'Yaya',
+  Cycling: 'Bisiklet',
+}
+
+/** Kanonik kip → Türkçe. */
+const JOURNEY_MODE_LABELS = {
+  RouteFull: 'Tam güzergâh',
+  RouteSegment: 'İki durak arası',
+  Waypoints: 'Özel rota',
+}
+
+const JOURNEY_KINDS = new Set(['JourneyStarted', 'JourneyCancelled', 'JourneyCompleted'])
+
+/**
+ * Yolculuk olayının okunabilir bağlamı.
+ *
+ * <b>Ham JSON asla gösterilmez.</b> Tanınmayan bir kip/profil değeri satırı
+ * bozmaz: o parça sessizce atlanır ve geriye anlamlı olan alanlar kalır. Hiçbir
+ * alan tanınmıyorsa <code>null</code> döner ve satır yalnızca kendi Türkçe
+ * işlem adıyla görünür.
+ */
+export function journeyActivityContext(details) {
+  const value = parseDetails(details)
+  if (!JOURNEY_KINDS.has(value?.kind)) return null
+
+  const parts = []
+
+  const profile = JOURNEY_PROFILE_LABELS[value.profile]
+  if (profile) parts.push(`Profil: ${profile}`)
+
+  const mode = JOURNEY_MODE_LABELS[value.mode]
+  if (mode) parts.push(`Tür: ${mode}`)
+
+  if (Number.isFinite(value.routeId)) parts.push(`Hat #${value.routeId}`)
+  if (Number.isInteger(value.waypointCount)) parts.push(`${value.waypointCount} nokta`)
+
+  /* Yüzde SUNUCUNUN değeridir; burada yalnızca gösterim için yuvarlanır ve
+     kırpılır — ikinci bir ilerleme hesabı yoktur. */
+  if (Number.isFinite(value.progressPercent)) {
+    const percent = Math.round(Math.min(100, Math.max(0, value.progressPercent)))
+    parts.push(`Tamamlanma: %${percent}`)
+  }
+
+  if (Number.isFinite(value.distanceMeters)) parts.push(formatRouteDistance(value.distanceMeters))
+  if (Number.isFinite(value.durationSeconds)) parts.push(formatRouteDuration(value.durationSeconds))
+
+  return parts.length > 0 ? parts.join(' · ') : null
+}
+
+/**
+ * Aktivite satırının bağlamı — hangi ürün olursa olsun.
+ *
+ * Sayfa tek bir yardımcı çağırır; yeni bir olay ailesi eklemek sayfayı
+ * değiştirmeyi gerektirmez.
+ */
+export function activityContext(details) {
+  return transportActivityContext(details) ?? journeyActivityContext(details)
+}

@@ -18,4 +18,27 @@ public interface IActivityLogWriter
     /// oturumdan okunur.
     /// </summary>
     Task WriteAsync(ActivityLogEntry entry, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Kaydı, aktörü AÇIKÇA verilen bir olay için yazar.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Bu bir kaçış kapısı DEĞİLDİR.</b> İstek gövdesinden gelen bir kimlik
+    /// buraya giremez: tek meşru kaynak, sunucunun kendi çalışma zamanı
+    /// durumunda saklanan sahip kimliğidir (örneğin bir simülasyonun
+    /// <c>OwnerUserId</c>'si, kullanıcı isteği sırasında doğrulanmış token'dan
+    /// yazılmıştır).
+    /// </para>
+    /// <para>
+    /// <b>Neden gerekli.</b> Bazı yaşam döngüsü geçişleri ilk istekten SONRA,
+    /// arka plan çalışma zamanında gerçekleşir; orada bir oturum yoktur. Olayı
+    /// hiç kaydetmemek geçmişi eksik bırakırdı, uydurma bir "sistem kullanıcısı"
+    /// ise olayın gerçek sahibini gizlerdi.
+    /// </para>
+    /// </remarks>
+    Task WriteAsync(
+        ActivityLogEntry entry,
+        ActivityActor actor,
+        CancellationToken cancellationToken = default);
 }

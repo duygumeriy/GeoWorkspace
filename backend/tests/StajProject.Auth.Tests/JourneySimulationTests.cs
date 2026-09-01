@@ -10,6 +10,8 @@ using NSubstitute;
 using StajProject.Api.Authorization;
 using StajProject.Api.Controllers;
 using StajProject.Api.Hubs;
+using Microsoft.Extensions.DependencyInjection;
+using StajProject.Application.Activity;
 using StajProject.Application.Common;
 using StajProject.Application.DTOs;
 using StajProject.Application.Interfaces;
@@ -793,6 +795,290 @@ public sealed class JourneySimulationTests
     private static LineString Line(params (double X, double Y)[] coordinates) =>
         new([.. coordinates.Select(coordinate => new Coordinate(coordinate.X, coordinate.Y))]) { SRID = 4326 };
 
+    /* --- AKTİVİTE GEÇMİŞİ (Faz 5E-B · Dilim 7B) ---------------------------------
+       Kayıt, atomik geçişi KAZANAN kod yolunda oluşur; mükerrerlik bu yüzden
+       bir kontrolle değil, yapıyla engellenir. */
+
+    [Fact]
+    public async Task A_successful_start_writes_exactly_one_started_activity()
+    {
+        await using var fixture = await Fixture.WithRouteAsync();
+
+        var started = (await fixture.Simulations.StartAsync(fixture.Intent())).Value!;
+
+        var (outcome, ownerUserId) = Assert.Single(fixture.Activity.Written);
+
+        Assert.Equal(JourneyActivityKind.Started, outcome.Kind);
+        Assert.Equal(started.SimulationId, outcome.SimulationId);
+        Assert.Equal(Owner, ownerUserId);
+        Assert.Equal(JourneyTravelProfile.Driving, outcome.RequestedProfile);
+    }
+
+    [Fact]
+    public async Task A_failed_start_writes_no_activity_at_all()
+    {
+        await using var fixture = await Fixture.WithRouteAsync();
+
+        // Geçersiz seçim: planlama hiç başarılı olmaz.
+        var failed = await fixture.Simulations.StartAsync(
+            new JourneyPlanRequest
+            {
+                Mode = JourneyContractNames.RouteFull,
+                Profile = JourneyContractNames.Driving,
+                RouteId = null,
+            });
+
+        Assert.False(failed.IsSuccess);
+        Assert.Empty(fixture.Activity.Written);
+
+        // Çakışan ikinci başlatma da kaydedilmez: geçişi kazanmamıştır.
+        Assert.True((await fixture.Simulations.StartAsync(fixture.Intent())).IsSuccess);
+        var conflict = await fixture.Simulations.StartAsync(fixture.Intent());
+
+        Assert.False(conflict.IsSuccess);
+        Assert.Single(fixture.Activity.Written);
+    }
+
+    [Fact]
+    public async Task Reading_the_current_simulation_writes_no_activity()
+    {
+        await using var fixture = await Fixture.WithRouteAsync();
+        await fixture.Simulations.StartAsync(fixture.Intent());
+        fixture.Activity.Written.Clear();
+
+        // Kurtarma bir OKUMADIR: benimseme, durum değişikliği değildir.
+        Assert.True((await fixture.Simulations.GetCurrentAsync()).IsSuccess);
+        Assert.Empty(fixture.Activity.Written);
+    }
+
+    [Fact]
+    public async Task Movement_ticks_write_no_activity_until_the_terminal_transition()
+    {
+        await using var fixture = await Fixture.WithRouteAsync();
+        await fixture.Simulations.StartAsync(fixture.Intent());
+        var startedAt = fixture.Store.FindByOwner(Owner)!.StartedAt;
+        fixture.Activity.Written.Clear();
+
+        var runner = fixture.Runner(speedMultiplier: 1);
+
+        // Ara tick'ler ilerleme yayar ama denetim olayı DEĞİLDİR.
+        await runner.AdvanceAsync(startedAt.AddSeconds(FakeJourneyRouter.DefaultDurationSeconds * 0.25));
+        await runner.AdvanceAsync(startedAt.AddSeconds(FakeJourneyRouter.DefaultDurationSeconds * 0.5));
+        await runner.AdvanceAsync(startedAt.AddSeconds(FakeJourneyRouter.DefaultDurationSeconds * 0.75));
+
+        Assert.Empty(fixture.Activity.Written);
+    }
+
+    [Fact]
+    public async Task An_explicit_stop_writes_exactly_one_cancelled_activity()
+    {
+        await using var fixture = await Fixture.WithRouteAsync();
+        var started = (await fixture.Simulations.StartAsync(fixture.Intent())).Value!;
+        fixture.Activity.Written.Clear();
+
+        Assert.True((await fixture.Simulations.StopAsync(started.SimulationId)).IsSuccess);
+
+        var (outcome, ownerUserId) = Assert.Single(fixture.Activity.Written);
+        Assert.Equal(JourneyActivityKind.Cancelled, outcome.Kind);
+        Assert.Equal(started.SimulationId, outcome.SimulationId);
+        Assert.Equal(Owner, ownerUserId);
+    }
+
+    [Fact]
+    public async Task A_repeated_or_foreign_stop_cannot_duplicate_the_terminal_activity()
+    {
+        await using var fixture = await Fixture.WithRouteAsync();
+        var started = (await fixture.Simulations.StartAsync(fixture.Intent())).Value!;
+        fixture.Activity.Written.Clear();
+
+        Assert.True((await fixture.Simulations.StopAsync(started.SimulationId)).IsSuccess);
+
+        // İkinci durdurma geçişi KAYBEDER: ikinci satır yazılmaz.
+        Assert.False((await fixture.Simulations.StopAsync(started.SimulationId)).IsSuccess);
+        // Başkasının isteği zaten 404'tür.
+        Assert.False((await fixture.As(Stranger).Simulations.StopAsync(started.SimulationId)).IsSuccess);
+
+        Assert.Single(fixture.Activity.Written);
+    }
+
+    [Fact]
+    public async Task Natural_completion_writes_exactly_one_completed_activity()
+    {
+        await using var fixture = await Fixture.WithRouteAsync();
+        await fixture.Simulations.StartAsync(fixture.Intent());
+        var startedAt = fixture.Store.FindByOwner(Owner)!.StartedAt;
+        fixture.Activity.Written.Clear();
+
+        var runner = fixture.Runner(speedMultiplier: 1);
+        var afterEnd = startedAt.AddSeconds(FakeJourneyRouter.DefaultDurationSeconds * 2);
+
+        await runner.AdvanceAsync(afterEnd);
+        // Bayat bir tick daha: çalıştırma zaten durumdan düştü.
+        await runner.AdvanceAsync(afterEnd.AddSeconds(1));
+
+        var (outcome, ownerUserId) = Assert.Single(fixture.Activity.Written);
+        Assert.Equal(JourneyActivityKind.Completed, outcome.Kind);
+        Assert.Equal(Owner, ownerUserId);
+
+        /* Sahip kimliği ARKA PLANDA oturumdan değil, çalıştırmanın kendi
+           değişmez durumundan gelir. */
+        Assert.Equal(100, outcome.ProgressPercent);
+    }
+
+    [Fact]
+    public async Task A_completed_run_can_never_also_produce_a_cancelled_activity()
+    {
+        await using var fixture = await Fixture.WithRouteAsync();
+        var started = (await fixture.Simulations.StartAsync(fixture.Intent())).Value!;
+        var startedAt = fixture.Store.FindByOwner(Owner)!.StartedAt;
+        fixture.Activity.Written.Clear();
+
+        await fixture.Runner(speedMultiplier: 1)
+            .AdvanceAsync(startedAt.AddSeconds(FakeJourneyRouter.DefaultDurationSeconds * 2));
+
+        // Tamamlanmış çalıştırmayı durdurmak artık mümkün değildir.
+        Assert.False((await fixture.Simulations.StopAsync(started.SimulationId)).IsSuccess);
+
+        var single = Assert.Single(fixture.Activity.Written);
+        Assert.Equal(JourneyActivityKind.Completed, single.Outcome.Kind);
+    }
+
+    [Fact]
+    public async Task A_cancelled_run_can_never_later_produce_a_completed_activity()
+    {
+        await using var fixture = await Fixture.WithRouteAsync();
+        var started = (await fixture.Simulations.StartAsync(fixture.Intent())).Value!;
+        var startedAt = fixture.Store.FindByOwner(Owner)!.StartedAt;
+        fixture.Activity.Written.Clear();
+
+        Assert.True((await fixture.Simulations.StopAsync(started.SimulationId)).IsSuccess);
+
+        // Runner artık o çalıştırmayı görmez; geç tick bir olay üretemez.
+        await fixture.Runner(speedMultiplier: 1)
+            .AdvanceAsync(startedAt.AddSeconds(FakeJourneyRouter.DefaultDurationSeconds * 2));
+
+        var single = Assert.Single(fixture.Activity.Written);
+        Assert.Equal(JourneyActivityKind.Cancelled, single.Outcome.Kind);
+    }
+
+    /* --- DENETİM ARIZASI YAŞAM DÖNGÜSÜNÜ YALANLAYAMAZ ----------------------------
+       Aktivite geçmişi GÖZLEMDİR. Kalıcılığı arızalandığında eksik kalan şey bir
+       denetim satırıdır; simülasyonun gerçeği ya da çağırana verilen cevap
+       değil. Aşağıdaki testler gerçek kaydediciyi, HER YAZMADA fırlatan bir
+       yazıcının üzerine kurar. */
+
+    [Fact]
+    public async Task A_failing_activity_store_cannot_turn_a_successful_start_into_a_failure()
+    {
+        await using var fixture = await Fixture.WithRouteAsync(failingActivity: true);
+
+        var started = await fixture.Simulations.StartAsync(fixture.Intent());
+
+        // Geçiş kazanıldı: çağıran BAŞARI görür.
+        Assert.True(started.IsSuccess);
+
+        // Ve simülasyon gerçekten çalışıyor: durum geri alınmaz.
+        var active = fixture.Store.FindByOwner(Owner);
+        Assert.NotNull(active);
+        Assert.Equal(started.Value!.SimulationId, active!.SimulationId);
+    }
+
+    [Fact]
+    public async Task A_failing_activity_store_cannot_turn_a_successful_stop_into_a_failure()
+    {
+        await using var fixture = await Fixture.WithRouteAsync(failingActivity: true);
+        var started = (await fixture.Simulations.StartAsync(fixture.Intent())).Value!;
+
+        var stopped = await fixture.Simulations.StopAsync(started.SimulationId);
+
+        Assert.True(stopped.IsSuccess);
+        Assert.Equal("Cancelled", stopped.Value!.Status);
+
+        // Terminal durum KALICIDIR: çalıştırma durumdan düşmüştür.
+        Assert.Null(fixture.Store.FindByOwner(Owner));
+        Assert.Null(fixture.Store.Find(started.SimulationId));
+    }
+
+    [Fact]
+    public async Task A_failing_activity_store_cannot_undo_or_repeat_natural_completion()
+    {
+        await using var fixture = await Fixture.WithRouteAsync(failingActivity: true);
+        await fixture.Simulations.StartAsync(fixture.Intent());
+        var startedAt = fixture.Store.FindByOwner(Owner)!.StartedAt;
+
+        var runner = fixture.Runner(speedMultiplier: 1);
+        var afterEnd = startedAt.AddSeconds(FakeJourneyRouter.DefaultDurationSeconds * 2);
+
+        /* Runner AYAKTA kalır: denetim arızası ilerletme yolundan dışarı
+           sızmaz. */
+        await runner.AdvanceAsync(afterEnd);
+        await runner.AdvanceAsync(afterEnd.AddSeconds(1));
+
+        // Tamamlanma gerçekleşti ve TEK kez yayınlandı.
+        Assert.Null(fixture.Store.FindByOwner(Owner));
+        Assert.Single(fixture.Broadcaster.Published.Where(update => update.Status == JourneySimulationStatus.Completed));
+    }
+
+    [Fact]
+    public async Task The_broadcast_still_reaches_the_client_when_the_activity_store_fails()
+    {
+        await using var fixture = await Fixture.WithRouteAsync(failingActivity: true);
+        var started = (await fixture.Simulations.StartAsync(fixture.Intent())).Value!;
+
+        Assert.True((await fixture.Simulations.StopAsync(started.SimulationId)).IsSuccess);
+
+        /* Yayın davranışı DEĞİŞMEZ: istemci durduğunu canlı kanaldan da
+           öğrenir, denetim deposu arızalı olsa bile. */
+        Assert.Single(fixture.Broadcaster.Published.Where(update => update.Status == JourneySimulationStatus.Cancelled));
+    }
+
+    [Fact]
+    public async Task A_failed_activity_write_is_never_retried_and_never_duplicated()
+    {
+        var writer = new ThrowingActivityLogWriter();
+        var recorder = new JourneyActivityRecorder(writer, NullLogger<JourneyActivityRecorder>.Instance);
+
+        var outcome = new JourneyActivityOutcome(
+            JourneyActivityKind.Completed,
+            Guid.NewGuid(),
+            JourneyMode.Waypoints,
+            JourneyTravelProfile.Driving);
+
+        // Sınır YUTAR: çağıranın görebileceği bir istisna yoktur.
+        await recorder.RecordAsync(outcome, ownerUserId: Owner);
+
+        /* Ve TEK bir deneme yapılır: kuyruk, outbox, arka plan yeniden deneme
+           ya da döngü YOKTUR — tekrar denemek mükerrer bir yaşam döngüsü
+           satırı riski demekti. */
+        Assert.Equal(1, writer.Attempts);
+    }
+
+    [Fact]
+    public void The_journey_activity_path_introduces_no_retry_or_outbox_infrastructure()
+    {
+        var source = File.ReadAllText(RepositoryPath("src/StajProject.Infrastructure/Services/JourneyActivityRecorder.cs"))
+            + File.ReadAllText(RepositoryPath("src/StajProject.Infrastructure/Simulation/JourneySimulationRunner.cs"));
+
+        foreach (var forbidden in (string[])
+                 ["Outbox", "Retry", "Polly", "Queue", "Channel<", "Task.Delay", "Thread.Sleep"])
+        {
+            Assert.DoesNotContain(forbidden, source, StringComparison.Ordinal);
+        }
+    }
+
+    private static string RepositoryPath(string relative)
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+
+        while (directory is not null && !Directory.Exists(Path.Combine(directory.FullName, "src")))
+        {
+            directory = directory.Parent;
+        }
+
+        Assert.NotNull(directory);
+        return Path.Combine(directory!.FullName, relative);
+    }
+
     private static ActiveJourneySimulation Simulation(int ownerUserId)
     {
         var now = DateTime.UtcNow;
@@ -807,7 +1093,7 @@ public sealed class JourneySimulationTests
 
     private sealed class Fixture : IAsyncDisposable
     {
-        private Fixture(AppDbContext db, FakeJourneyRouter router, int? userId)
+        private Fixture(AppDbContext db, FakeJourneyRouter router, int? userId, bool failingActivity)
         {
             Db = db;
             Router = router;
@@ -824,7 +1110,16 @@ public sealed class JourneySimulationTests
                 .Returns(true);
 
             Planning = new JourneyPlanningService(db, currentUser, permissions, router);
-            Simulations = new JourneySimulationService(Planning, currentUser, Store, Broadcaster);
+
+            /* Arıza senaryosunda GERÇEK kaydedici, hep fırlatan bir yazıcının
+               üzerine kurulur: ölçülen şey projenin kendi "en iyi çaba"
+               sınırıdır, uydurma bir sahtenin davranışı değil. */
+            Recorder = failingActivity
+                ? new JourneyActivityRecorder(new ThrowingActivityLogWriter(), NullLogger<JourneyActivityRecorder>.Instance)
+                : new RecordingJourneyActivityRecorder();
+
+            Activity = Recorder as RecordingJourneyActivityRecorder ?? new RecordingJourneyActivityRecorder();
+            Simulations = new JourneySimulationService(Planning, currentUser, Store, Broadcaster, Recorder);
         }
 
         private Fixture(Fixture origin, int? userId)
@@ -846,13 +1141,21 @@ public sealed class JourneySimulationTests
                 .Returns(true);
 
             Planning = new JourneyPlanningService(Db, currentUser, permissions, Router);
-            Simulations = new JourneySimulationService(Planning, currentUser, Store, Broadcaster);
+            Activity = origin.Activity;
+            Recorder = origin.Recorder;
+            Simulations = new JourneySimulationService(Planning, currentUser, Store, Broadcaster, Recorder);
         }
 
         public AppDbContext Db { get; }
         public FakeJourneyRouter Router { get; }
         public InMemoryJourneySimulationStateStore Store { get; }
         public RecordingJourneyBroadcaster Broadcaster { get; }
+
+        /// <summary>Yazılan yolculuk aktivite olayları; defterin kendisi değil, aynası.</summary>
+        public RecordingJourneyActivityRecorder Activity { get; }
+
+        /// <summary>Servise/runner'a verilen kaydedici (arızalı senaryoda GERÇEK olanı).</summary>
+        public IJourneyActivityRecorder Recorder { get; }
         public JourneyPlanningService Planning { get; }
         public JourneySimulationService Simulations { get; }
         public int RouteId { get; private set; }
@@ -863,7 +1166,8 @@ public sealed class JourneySimulationTests
 
         public static async Task<Fixture> WithRouteAsync(
             IEnumerable<JourneyTravelProfile>? routable = null,
-            FakeJourneyRouter? router = null)
+            FakeJourneyRouter? router = null,
+            bool failingActivity = false)
         {
             var options = new DbContextOptionsBuilder<AppDbContext>()
                 .UseInMemoryDatabase($"journey-simulation-{Guid.NewGuid():N}")
@@ -873,7 +1177,8 @@ public sealed class JourneySimulationTests
             var fixture = new Fixture(
                 new AppDbContext(options),
                 router ?? new FakeJourneyRouter(routable),
-                Owner);
+                Owner,
+                failingActivity);
 
             var route = new TransportRoute
             {
@@ -943,9 +1248,64 @@ public sealed class JourneySimulationTests
                 Store,
                 Broadcaster,
                 new JourneySimulationOptions { SpeedMultiplier = speedMultiplier },
+                /* Runner singleton, kaydedici scoped: gerçek uygulamadaki gibi
+                   bir kapsam fabrikasından çözülür. */
+                new SingleRecorderScopeFactory(Recorder),
                 NullLogger<JourneySimulationRunner>.Instance);
 
         public ValueTask DisposeAsync() => Db.DisposeAsync();
+    }
+
+    /// <summary>Yazılan yolculuk aktivite olaylarını toplar.</summary>
+    private sealed class RecordingJourneyActivityRecorder : IJourneyActivityRecorder
+    {
+        public List<(JourneyActivityOutcome Outcome, int OwnerUserId)> Written { get; } = [];
+
+        public Task RecordAsync(
+            JourneyActivityOutcome outcome,
+            int ownerUserId,
+            CancellationToken cancellationToken = default)
+        {
+            Written.Add((outcome, ownerUserId));
+            return Task.CompletedTask;
+        }
+    }
+
+    /// <summary>Denetim kalıcılığı tamamen arızalı: her yazma fırlatır.</summary>
+    private sealed class ThrowingActivityLogWriter : IActivityLogWriter
+    {
+        public int Attempts { get; private set; }
+
+        public Task WriteAsync(ActivityLogEntry entry, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("aktivite deposu kullanılamıyor");
+
+        public Task WriteAsync(
+            ActivityLogEntry entry,
+            ActivityActor actor,
+            CancellationToken cancellationToken = default)
+        {
+            Attempts++;
+            throw new InvalidOperationException("aktivite deposu kullanılamıyor");
+        }
+    }
+
+    /// <summary>Runner'ın kapsam fabrikası: tek bir kaydediciyi sunar.</summary>
+    private sealed class SingleRecorderScopeFactory : IServiceScopeFactory, IServiceScope, IServiceProvider
+    {
+        private readonly IJourneyActivityRecorder _recorder;
+
+        public SingleRecorderScopeFactory(IJourneyActivityRecorder recorder) => _recorder = recorder;
+
+        public IServiceScope CreateScope() => this;
+
+        public IServiceProvider ServiceProvider => this;
+
+        public object? GetService(Type serviceType) =>
+            serviceType == typeof(IJourneyActivityRecorder) ? _recorder : null;
+
+        public void Dispose()
+        {
+        }
     }
 
     private sealed class RecordingJourneyBroadcaster : IJourneySimulationBroadcaster

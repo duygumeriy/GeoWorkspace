@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using StajProject.Application.Activity;
 using StajProject.Application.Interfaces;
@@ -39,14 +40,54 @@ public class ActivityLogWriter : IActivityLogWriter
         _logger = logger;
     }
 
-    public async Task WriteAsync(ActivityLogEntry entry, CancellationToken cancellationToken = default)
+    public Task WriteAsync(ActivityLogEntry entry, CancellationToken cancellationToken = default) =>
+        PersistAsync(entry, _currentUser.UserId, _currentUser.UserName, cancellationToken);
+
+    /// <summary>
+    /// Aktörü AÇIKÇA verilen olay. Kimlik yine istemciden değil, sunucunun
+    /// kendi çalışma zamanı durumundan gelir; ad bilinmiyorsa kayıt anında
+    /// çözülür ki satır "kim yaptı" sorusunu yanıtlayabilsin.
+    /// </summary>
+    public async Task WriteAsync(
+        ActivityLogEntry entry,
+        ActivityActor actor,
+        CancellationToken cancellationToken = default)
+    {
+        var userName = actor.UserName;
+
+        if (string.IsNullOrWhiteSpace(userName))
+        {
+            try
+            {
+                userName = await _dbContext.Users
+                    .Where(user => user.Id == actor.UserId)
+                    .Select(user => user.UserName)
+                    .FirstOrDefaultAsync(cancellationToken);
+            }
+            catch (Exception exception)
+            {
+                /* Ad çözülemedi: kaydı BIRAKMAK yerine adsız yazılır. Kimlik
+                   zaten satırdadır; eksik bir ad, hiç olmayan bir kayıttan
+                   iyidir. */
+                _logger.LogWarning(exception, "Aktivite aktörünün adı çözülemedi: {UserId}", actor.UserId);
+            }
+        }
+
+        await PersistAsync(entry, actor.UserId, userName, cancellationToken);
+    }
+
+    private async Task PersistAsync(
+        ActivityLogEntry entry,
+        int? actorUserId,
+        string? actorUserName,
+        CancellationToken cancellationToken)
     {
         try
         {
             _dbContext.ActivityLogs.Add(new ActivityLog
             {
-                ActorUserId = _currentUser.UserId,
-                ActorUsername = Truncate(_currentUser.UserName, ActivityLog.MaxUsernameLength),
+                ActorUserId = actorUserId,
+                ActorUsername = Truncate(actorUserName, ActivityLog.MaxUsernameLength),
                 Action = Truncate(entry.Action, ActivityLog.MaxActionLength)!,
                 ResourceType = Truncate(entry.ResourceType, ActivityLog.MaxResourceTypeLength),
                 ResourceId = Truncate(entry.ResourceId, ActivityLog.MaxResourceIdLength),

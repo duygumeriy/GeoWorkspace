@@ -1,4 +1,5 @@
 using NetTopologySuite.IO;
+using StajProject.Application.Activity;
 using StajProject.Application.Common;
 using StajProject.Application.DTOs;
 using StajProject.Application.Interfaces;
@@ -51,17 +52,20 @@ public sealed class JourneySimulationService : IJourneySimulationService
     private readonly ICurrentUserService _currentUser;
     private readonly IJourneySimulationStateStore _state;
     private readonly IJourneySimulationBroadcaster _broadcaster;
+    private readonly IJourneyActivityRecorder _activity;
 
     public JourneySimulationService(
         IJourneyPlanningService planning,
         ICurrentUserService currentUser,
         IJourneySimulationStateStore state,
-        IJourneySimulationBroadcaster broadcaster)
+        IJourneySimulationBroadcaster broadcaster,
+        IJourneyActivityRecorder activity)
     {
         _planning = planning;
         _currentUser = currentUser;
         _state = state;
         _broadcaster = broadcaster;
+        _activity = activity;
     }
 
     public async Task<ServiceResult<JourneySimulationResponse>> StartAsync(
@@ -147,6 +151,22 @@ public sealed class JourneySimulationService : IJourneySimulationService
             return ServiceResult<JourneySimulationResponse>.Conflict(AlreadyRunningMessage);
         }
 
+        /* Denetim kaydı GEÇİŞİ KAZANAN yoldadır: başarısız planlama, geçersiz
+           seçim ya da çakışma buraya hiç ulaşmaz, dolayısıyla defterde yalnızca
+           gerçekten oluşturulmuş çalıştırmalar bulunur. */
+        await _activity.RecordAsync(
+            new JourneyActivityOutcome(
+                JourneyActivityKind.Started,
+                simulation.SimulationId,
+                simulation.Mode,
+                simulation.RequestedProfile,
+                RouteId: plan.RouteId,
+                WaypointCount: plan.Waypoints?.Count,
+                DistanceMeters: plan.DistanceMeters,
+                DurationSeconds: plan.DurationSeconds),
+            userId,
+            cancellationToken);
+
         return ServiceResult<JourneySimulationResponse>.Success(ToResponse(simulation));
     }
 
@@ -194,6 +214,22 @@ public sealed class JourneySimulationService : IJourneySimulationService
 
         var cancelled = simulation.With(simulation.Snapshot with { CapturedAt = DateTime.UtcNow });
         var update = JourneySimulationLiveUpdate.From(cancelled, JourneySimulationStatus.Cancelled);
+
+        /* Terminal geçişi BU istek kazandı (`TryStop` yukarıda true döndü);
+           mükerrer ya da bayat bir durdurma isteği buraya ulaşamaz ve ikinci
+           bir satır yazamaz. */
+        await _activity.RecordAsync(
+            new JourneyActivityOutcome(
+                JourneyActivityKind.Cancelled,
+                cancelled.SimulationId,
+                cancelled.Mode,
+                cancelled.RequestedProfile,
+                RouteId: cancelled.Details.RouteId,
+                ProgressPercent: cancelled.Snapshot.ProgressRatio * 100,
+                DistanceMeters: cancelled.Path.DistanceMeters,
+                DurationSeconds: cancelled.Path.DurationSeconds),
+            userId,
+            cancellationToken);
 
         // Tek bir terminal olay: istemci durduğunu YAYINDAN da öğrenir.
         await _broadcaster.PublishAsync(update, cancellationToken);
