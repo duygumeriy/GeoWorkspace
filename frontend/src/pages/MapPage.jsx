@@ -56,6 +56,7 @@ import {
   SavingIndicator,
 } from '../components/map/MapOverlays.jsx'
 import JourneyPlannerPanel from '../components/map/JourneyPlannerPanel.jsx'
+import JourneyVehiclePopup from '../components/map/JourneyVehiclePopup.jsx'
 import useMediaQuery from '../hooks/useMediaQuery.js'
 import useToasts from '../hooks/useToasts.js'
 import useDrawingWorkspace from '../hooks/useDrawingWorkspace.js'
@@ -105,7 +106,11 @@ import useTransportSimulation from '../hooks/useTransportSimulation.js'
 import useTransportVehicleLayer from '../hooks/useTransportVehicleLayer.js'
 import { transportSimulationControls } from '../map/transportSimulationState.js'
 import { transportVehiclePopupModel, transportVehiclePresentation } from '../map/transportVehicle.js'
-import { journeyDisplayGeometryWkt, journeyStatusIndicator } from '../map/journeySimulationState.js'
+import {
+  journeyDisplayGeometryWkt,
+  journeyStatusIndicator,
+  journeyVehiclePopupModel,
+} from '../map/journeySimulationState.js'
 import { JOURNEY_COMPACT_QUERY } from '../map/journeyLayout.js'
 import useTransportStopPlacement from '../hooks/useTransportStopPlacement.js'
 import useTransportStopInteraction from '../hooks/useTransportStopInteraction.js'
@@ -914,10 +919,50 @@ export default function MapPage() {
     }
   }, [journeySimulation.simulation, journeySimulation.snapshot])
 
+  /* --- Yolculuk aracı balonu (Faz 5E-B · Dilim 7A) ---------------------------
+     Balon KENDİ ürünüdür: paylaşılan hat aracının balonuyla birleştirilmez.
+     Açık olup olmadığı ÇALIŞTIRMA KİMLİĞİYLE tutulur — bir kimlik değiştiğinde
+     ya da sonuç bırakıldığında eski balon kendiliğinden düşer, çünkü model
+     yalnızca benimsenmiş çalıştırmadan türetilir. */
+  const [journeyPopupSimulationId, setJourneyPopupSimulationId] = useState(null)
+
+  const openJourneyVehiclePopup = useCallback((simulationId) => {
+    if (!simulationId) return
+    setJourneyPopupSimulationId(simulationId)
+    /* Aynı anda tek araç balonu: paylaşılan hattınki koordinasyonla kapanır.
+       İki ürün birbirini TANIMAZ; sıralamayı sayfa kurar. */
+    setVehiclePopupSimulationId(null)
+  }, [])
+
   useJourneyVehicleLayer(mapInstance, {
     presentation: journeyVehicle,
     following: journeySimulation.following,
+    onVehicleClick: openJourneyVehiclePopup,
+    /* Nokta seçimi silahlıyken tıklamanın sahibi odur (Dilim 1); balon
+       açılmaz. */
+    clickEnabled: !journey.isPicking,
   })
+
+  /* Balon modeli SUNUCUNUN benimsenmiş çalıştırmasından türetilir: yüzde canlı
+     panelin okuduğu anlık görüntünün aynısıdır, profil ise
+     `requestedProfile` — planlayıcının o anki seçimi değil. Kimlik
+     eşleşmiyorsa balon yoktur: önceki çalıştırmanın bilgisi gösterilmez. */
+  const journeyVehiclePopup = useMemo(() => {
+    if (!journeyPopupSimulationId) return null
+    const model = journeyVehiclePopupModel({
+      simulation: journeySimulation.simulation,
+      snapshot: journeySimulation.snapshot,
+    })
+    return model && model.simulationId === journeyPopupSimulationId ? model : null
+  }, [journeyPopupSimulationId, journeySimulation.simulation, journeySimulation.snapshot])
+
+  /* Diğer yön: paylaşılan hat aracının balonu açıldığında kişisel yolculuk
+     balonu çekilir. İki ürün birbirini tanımaz; sıra yalnızca burada,
+     sayfanın kendi düzeyinde kurulur. */
+  useEffect(() => {
+    if (vehiclePopupSimulationId == null) return
+    setJourneyPopupSimulationId(null)
+  }, [vehiclePopupSimulationId])
 
   /* Başlatma niyeti PLANLAYICININ mevcut seçiminden türetilir; önizlemenin
      planId'si, geometrisi ya da ölçümleri GÖNDERİLMEZ. */
@@ -929,6 +974,36 @@ export default function MapPage() {
     // Başarılı başlatmada panel kendiliğinden AÇILIR (sahipliğiyle birlikte).
     if (started) openJourneyPanel()
   }, [journey, journeySimulation, openJourneyPanel])
+
+  /* --- Durdurma onayı (Faz 5E-B · Dilim 7A) ----------------------------------
+     Durdurmak GERİ ALINAMAZ: sunucudaki çalıştırma sona erer. Uygulamanın kendi
+     onay diyaloğu kullanılır (`window.confirm` DEĞİL) — silme akışlarıyla aynı
+     bileşen, aynı Esc davranışı, aynı erişilebilirlik.
+
+     Onay YALNIZCA çalışan bir yolculuğu durdurmaya aittir: paneli kapatmak,
+     katlamak, terminal sonucu bırakmak ya da yeni yolculuk başlatmak onay
+     sormaz ve hiçbiri sunucuya durdurma isteği göndermez. */
+  const [journeyStopPending, setJourneyStopPending] = useState(false)
+  const [journeyStopping, setJourneyStopping] = useState(false)
+  const journeyStopInFlight = useRef(false)
+
+  const requestJourneyStop = useCallback(() => setJourneyStopPending(true), [])
+
+  const confirmJourneyStop = useCallback(async () => {
+    // Çift gönderim koruması: düğme de kilitlenir, ama ref yarışı da kapatır.
+    if (journeyStopInFlight.current) return
+    journeyStopInFlight.current = true
+    setJourneyStopping(true)
+
+    try {
+      // MEVCUT durdurma eylemi; ikinci bir uç ya da ikinci bir akış yoktur.
+      await journeySimulation.stop()
+    } finally {
+      journeyStopInFlight.current = false
+      setJourneyStopping(false)
+      setJourneyStopPending(false)
+    }
+  }, [journeySimulation])
 
   /* Kapalı/katlanmış panelde bile yolculuğun VARLIĞI söylenir. Özet
      sunucunun evre + ilerleme değerlerinden türetilir; yeni bir ölçüm
@@ -3379,7 +3454,8 @@ export default function MapPage() {
                     following: journeySimulation.following,
                   }}
                   onStartSimulation={startJourney}
-                  onStopSimulation={journeySimulation.stop}
+                  /* Durdurma ONAYDAN geçer; balon/panel kapatma geçmez. */
+                  onStopSimulation={requestJourneyStop}
                   onToggleFollow={toggleJourneyFollow}
                   /* Terminal çıkışları: ikisi de YALNIZCA sunucu sonucunu
                      bırakır; paneli kapatmak ya da durdurmak değildir. */
@@ -3648,6 +3724,15 @@ export default function MapPage() {
                 onClose={() => setVehiclePopupSimulationId(null)}
               />
 
+              {/* Kişisel yolculuk balonu AYRI bir üründür; paylaşılan hat
+                  aracının balonuyla aynı yerleşim dilini kullanır ama onunla
+                  hiçbir durumu paylaşmaz. Kapatmak yalnızca kapatır. */}
+              <JourneyVehiclePopup
+                map={mapInstance}
+                journey={journeyVehiclePopup}
+                onClose={() => setJourneyPopupSimulationId(null)}
+              />
+
               {allowed.canViewTransport && selectedTransportRouteId != null && (
                 <TransportTrackingControls
                   className="transport-tracking-card"
@@ -3860,6 +3945,19 @@ export default function MapPage() {
               {/* POI silme onayı. Çizimlerle AYNI diyalog bileşeni: iki
                   silme de aynı görünür ve ikisi de yumuşak silmedir — metin
                   bu yüzden kalıcı bir kayıp vaat etmez. */}
+              <ConfirmDialog
+                open={journeyStopPending}
+                title="Yolculuğu durdur"
+                message="Bu yolculuk simülasyonunu durdurmak istediğinize emin misiniz?"
+                description="Durdurulan yolculuk yeniden başlatılamaz; sonuç panelde kalır ve dilediğinizde yeni bir yolculuk planlayabilirsiniz."
+                confirmLabel="Yolculuğu Durdur"
+                cancelLabel="Vazgeç"
+                busy={journeyStopping}
+                onConfirm={confirmJourneyStop}
+                /* Vazgeçmek HİÇBİR ŞEY yapmaz: sunucuya istek gitmez. */
+                onCancel={() => setJourneyStopPending(false)}
+              />
+
               <ConfirmDialog
                 open={Boolean(pendingPoiDelete)}
                 title="POI'yi sil"

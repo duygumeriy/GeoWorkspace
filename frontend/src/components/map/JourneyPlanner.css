@@ -472,3 +472,89 @@
 @media (prefers-reduced-motion: reduce) {
   .journey-live-bar > span { transition: none; }
 }
+
+/* --- Yol tarifi (Faz 5E-B · Dilim 7A) ---------------------------------------
+   Tamamlanan / güncel / sıradaki ayrımı SAKİN tutulur: güncel adım vurgulanır,
+   tamamlananlar geri çekilir, sıradakiler olduğu gibi okunur. */
+
+.journey-steps-title {
+  margin: 0.2rem 0 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.journey-step.is-done {
+  opacity: 0.55;
+}
+
+.journey-step.is-done .journey-step-text strong {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+/* --- Araç balonu ------------------------------------------------------------
+   Paylaşılan hat aracının balonuyla AYNI yerleşim dili, kendi ürününün
+   aksanıyla. Transport.css'e bağlanmaz: iki ürün ayrı kalır. */
+
+.journey-popup-card {
+  width: min(280px, calc(100vw - 2rem));
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: var(--radius-md);
+  background: var(--surface-solid);
+  border: 1px solid var(--journey-accent, #7c3aed);
+  box-shadow: var(--shadow-panel);
+  color: var(--text-primary);
+}
+
+.journey-popup-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.journey-popup-card header strong {
+  font-size: 0.9rem;
+  color: var(--journey-accent, #7c3aed);
+}
+
+.journey-popup-card dl {
+  margin: 0;
+  display: flex;
+  gap: 1rem;
+}
+
+.journey-popup-card dl > div { display: flex; flex-direction: column; gap: 0.1rem; }
+.journey-popup-card dt { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-secondary); }
+.journey-popup-card dd { margin: 0; font-size: var(--font-small); font-weight: 600; }
+
+.journey-popup-step {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+}
+
+.journey-popup-step.is-current {
+  border-left: 3px solid var(--journey-accent, #7c3aed);
+}
+
+.journey-popup-step h3 {
+  margin: 0;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-secondary);
+}
+
+.journey-popup-step p { margin: 0; font-size: var(--font-small); font-weight: 600; }
+.journey-popup-step span { font-size: 0.72rem; color: var(--text-secondary); }
+.journey-popup-step em { font-size: 0.7rem; color: var(--text-secondary); font-style: normal; }

@@ -3,6 +3,7 @@ import { fromLonLat } from 'ol/proj.js'
 import {
   createJourneyCameraLock,
   createJourneyVehicleLayer,
+  findJourneyVehicleAtPixel,
   journeyCameraOwner,
   syncJourneyVehicleFeature,
 } from '../map/journeyVehicle.js'
@@ -25,6 +26,16 @@ export default function useJourneyVehicleLayer(map, {
   presentation = null,
   following = false,
   cameraDuration = 400,
+  /** İşaretçiye tıklandığında çağrılır; verilmezse hiç dinleyici kurulmaz. */
+  onVehicleClick = null,
+  /**
+   * Tıklama/balon sahipliği.
+   *
+   * Yalnızca İSABET DENETİMİNİ kapatır: katman, çizim, canlı güncellemeler ve
+   * takip kamerası bu bayraktan HİÇ etkilenmez. Yolculuk noktası seçimi
+   * silahlıyken tıklamanın sahibi odur (Faz 5E-B · Dilim 1).
+   */
+  clickEnabled = true,
 } = {}) {
   const sourceRef = useRef(null)
   const layerRef = useRef(null)
@@ -82,6 +93,21 @@ export default function useJourneyVehicleLayer(map, {
     /* Kuşak atlar: bu andan sonra gelen ESKİ geri çağrılar kilide dokunamaz. */
     cameraLockRef.current.invalidate()
   }, [following, presentation])
+
+  /* İsteğe bağlı isabet denetimi — paylaşılan araçtakiyle AYNI sözleşme:
+     yalnızca bir işleyici verildiğinde kaydedilir, böylece hiçbir ekranda
+     ikinci bir dinleyici oluşmaz. */
+  useEffect(() => {
+    if (!map || !clickEnabled || typeof onVehicleClick !== 'function') return undefined
+
+    const handleClick = (event) => {
+      const feature = findJourneyVehicleAtPixel(map, event.pixel)
+      if (feature) onVehicleClick(feature.get('simulationId') ?? null, feature)
+    }
+
+    map.on('singleclick', handleClick)
+    return () => map.un('singleclick', handleClick)
+  }, [map, onVehicleClick, clickEnabled])
 
   useEffect(() => {
     if (!map || !following || !presentation) return

@@ -293,8 +293,10 @@ test('the start response replaces the preview as route truth', () => {
   // Ve haritaya giden değer o kuralın sonucudur.
   assert.match(MAP_PAGE, /geometryWkt: journeyGeometryWkt,/)
 
-  // Panel canlı modda önizleme adımlarını DEĞİL, sunucu adımlarını gösterir.
-  assert.ok(PANEL.includes('isLive ? live?.simulation?.steps : preview?.steps'))
+  /* Panel canlı modda önizleme adımlarını DEĞİL, sunucu adımlarını gösterir.
+     Faz 5E-B · Dilim 7A'da bu, adım DURUMLARINI da taşıyan ortak gezinme
+     modelinden okunur. */
+  assert.match(PANEL, /journeyNavigationModel\(\{\s*steps: live\?\.simulation\?\.steps/)
 })
 
 test('a successful start opens the panel automatically', () => {
@@ -383,11 +385,14 @@ test('recovered geometry replaces any absent or stale preview truth', () => {
 })
 
 test('recovered steps and maneuver feed the live panel directly', () => {
-  // Canlı modda adımlar SUNUCU yanıtından okunur, önizlemeden değil.
-  assert.ok(PANEL.includes('isLive ? live?.simulation?.steps : preview?.steps'))
+  /* Canlı modda adımlar SUNUCU yanıtından okunur, önizlemeden değil; güncel
+     adım da sunucunun sıra numarasına göre çözülür. Kural Dilim 7A'da ortak
+     bir modele taşındı ve orada çalıştırılarak ölçülür
+     (`journey-navigation-popup.test.js`); burada bağlama denetlenir. */
+  assert.match(PANEL, /journeyNavigationModel\(\{\s*steps: live\?\.simulation\?\.steps,\s*currentStepSequence: liveModel\?\.currentStepSequence,\s*\}\)/)
+  assert.ok(PANEL.includes('previewSteps'), 'önizleme adımları ayrı okunmalı')
 
-  // Anlık manevra kurtarılan adım dizisine karşı çözülür.
-  assert.ok(PANEL.includes('step.sequence === liveModel.currentStepSequence'))
+  // Ve anlık manevra alanı hâlâ sunucunun tam sayısıdır.
   assert.ok(LIVE_STATE.includes('Number.isInteger(snapshot.currentStepSequence)'))
 })
 
@@ -508,8 +513,12 @@ test('a missing maneuver list is presented as normal, not as an error', () => {
   /* Kalıcı güzergahı yeniden kullanan tam-hat yolculuğunda manevra yoktur.
      Bu bir NOT'tur, bir uyarı değil: hata sunumu (role="alert") yalnızca
      gerçek hatalara ayrılmıştır. */
-  assert.ok(PANEL.includes('Bu yolculuk için adım adım yol tarifi bulunmuyor.'))
-  assert.match(PANEL, /className="journey-note">\s*Bu yolculuk için adım adım/)
+  assert.ok(PANEL.includes('Bu güzergâh için adım adım yönlendirme bulunmuyor.'))
+  assert.match(PANEL, /className="journey-note">\s*Bu güzergâh için adım adım/)
+
+  /* Önizleme tarafındaki kardeş not da NOT olarak kalır: kalıcı güzergah
+     kullanıldığında manevra bulunmaması beklenen bir sonuçtur. */
+  assert.match(PANEL, /className="journey-note">\s*Bu hat için kayıtlı güzergah kullanıldı/)
 })
 
 /* --- MEVCUT SİSTEMLE BİR ARADA ----------------------------------------------- */

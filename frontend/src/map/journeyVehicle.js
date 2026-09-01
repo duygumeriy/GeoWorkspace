@@ -106,6 +106,29 @@ export function journeyVehicleBadgeDataUri(profileId) {
 }
 
 /**
+ * Bir pikseldeki kişisel yolculuk işaretçisi.
+ *
+ * <b>Kimlik AÇIKÇA sorulur:</b> hem katman sınıfı hem de feature'ın kendi
+ * <code>featureKind</code> ayırt edicisi aranır. Stile ya da katman sırasına
+ * bakarak "herhalde yolculuk aracıdır" demek, paylaşılan hat aracını ya da bir
+ * POI'yi yanlışlıkla yolculuk sanmaya açık kapı bırakırdı. Desen paylaşılan
+ * araçtaki <code>findTransportVehicleAtPixel</code> ile birebir aynıdır.
+ */
+export function findJourneyVehicleAtPixel(map, pixel, hitTolerance = 10) {
+  if (!map || !pixel) return null
+  return map.forEachFeatureAtPixel(
+    pixel,
+    (feature, layer) => (
+      layer?.getClassName?.().includes(JOURNEY_VEHICLE_LAYER_CLASSNAME)
+      && feature.get('featureKind') === JOURNEY_VEHICLE_KIND
+        ? feature
+        : null
+    ),
+    { hitTolerance },
+  ) ?? null
+}
+
+/**
  * Kameranın SAHİBİ olan çalıştırma; sahip yoksa <code>null</code>.
  *
  * <b>Neden saf bir fonksiyon.</b> "Uçan animasyon hâlâ bizim mi" sorusu bir

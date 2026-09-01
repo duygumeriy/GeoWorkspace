@@ -6,6 +6,9 @@
  * "eskiyse yok say" mantığı ne testten geçerdi ne de gözden geçirmeden.
  */
 
+import { journeyNavigationModel } from './journeyNavigation.js'
+import { journeyProfileLabel } from './journeyPresentation.js'
+
 export const JOURNEY_SIMULATION_STATUS = Object.freeze({
   RUNNING: 'Running',
   COMPLETED: 'Completed',
@@ -186,6 +189,61 @@ export function journeyStatusIndicator({ simulation, snapshot } = {}) {
     tone: 'active',
     label: percent === null ? 'Yolculuk sürüyor' : `Yolculuk sürüyor · %${percent}`,
   }
+}
+
+/** Durumun kısa Türkçe karşılığı; sunucunun değerinden okunur. */
+const STATUS_LABELS = Object.freeze({
+  [JOURNEY_SIMULATION_STATUS.RUNNING]: 'Sürüyor',
+  [JOURNEY_SIMULATION_STATUS.COMPLETED]: 'Tamamlandı',
+  [JOURNEY_SIMULATION_STATUS.CANCELLED]: 'Durduruldu',
+})
+
+export function journeyStatusLabel(status) {
+  return STATUS_LABELS[status] ?? 'Bilinmiyor'
+}
+
+/**
+ * Hareket eden kişisel yolculuk işaretçisinin bilgi balonu modeli.
+ *
+ * <b>Otorite SUNUCUDUR ve TEK kaynaktır.</b> Yüzde, canlı panelin okuduğu
+ * anlık görüntünün ta kendisidir (`journeyLiveModel`); ikinci bir ilerleme
+ * formülü — geometri uzunluğu, tarayıcı zamanlayıcısı, adım sayısı, animasyon
+ * konumu — YOKTUR. Profil, planlayıcının o anki seçimi değil, benimsenmiş
+ * çalıştırmanın <code>requestedProfile</code>'ıdır: başlattıktan sonra panelde
+ * profil değiştirmek çalışan yolculuğun balonunu yeniden adlandırmaz.
+ *
+ * <b>Talimatlar gezinme modelinden gelir</b> — panelin okuduğu AYNI model.
+ *
+ * @returns {object|null} benimsenmiş çalıştırma yoksa null
+ */
+export function journeyVehiclePopupModel({ simulation, snapshot } = {}) {
+  const live = journeyLiveModel({ simulation, snapshot })
+  if (!live) return null
+
+  const navigation = journeyNavigationModel({
+    steps: simulation.steps,
+    currentStepSequence: live.currentStepSequence,
+  })
+
+  return Object.freeze({
+    simulationId: live.simulationId,
+    profileId: live.profileId,
+    profileLabel: journeyProfileLabel(live.profileId),
+    // "Araç Yolculuğu" / "Yürüyüş Yolculuğu" / "Bisiklet Yolculuğu".
+    title: `${journeyProfileLabel(live.profileId)} Yolculuğu`,
+    status: live.status,
+    statusLabel: journeyStatusLabel(live.status),
+    isTerminal: live.isTerminal,
+    /* Yüzde SUNUCUNUN kırpılmış değeridir; biçimlendirme yalnızca gösterim
+       güvenliğidir. */
+    progressPercent: live.progressPercent,
+    progressLabel: `%${Math.round(live.progressPercent)}`,
+    longitude: live.longitude,
+    latitude: live.latitude,
+    currentStep: navigation.current,
+    nextStep: navigation.next,
+    hasSteps: navigation.hasSteps,
+  })
 }
 
 /**

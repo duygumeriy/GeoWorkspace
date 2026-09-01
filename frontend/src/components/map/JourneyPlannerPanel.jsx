@@ -27,6 +27,7 @@ import {
 } from '../../map/journeyPlanning.js'
 import { journeyPreviewSummary, journeyProfileLabel as journeyProfileLabelOf } from '../../map/journeyPresentation.js'
 import { journeyStepList } from '../../map/journeyManeuvers.js'
+import { JOURNEY_STEP_STATES, journeyNavigationModel } from '../../map/journeyNavigation.js'
 import {
   JOURNEY_PHASES,
   journeyLiveModel,
@@ -125,10 +126,20 @@ export default function JourneyPlannerPanel({
   const isTerminal = liveModel != null && phase === JOURNEY_PHASES.TERMINAL
   const isLive = isActive || isTerminal
 
-  const steps = useMemo(
-    () => journeyStepList(isLive ? live?.simulation?.steps : preview?.steps),
-    [isLive, live?.simulation?.steps, preview?.steps],
+  /* CANLI yönlendirme: adımlar sunucunun benimsenmiş ayrıntılarından, "şu anki
+     adım" ise yine sunucunun `currentStepSequence`'ından gelir. Balon da AYNI
+     modeli okur (`journeyNavigationModel`), böylece iki yüzey farklı talimat
+     gösteremez. */
+  const navigation = useMemo(
+    () => journeyNavigationModel({
+      steps: live?.simulation?.steps,
+      currentStepSequence: liveModel?.currentStepSequence,
+    }),
+    [live?.simulation?.steps, liveModel?.currentStepSequence],
   )
+
+  /* Önizlemede güncel adım KAVRAMI yoktur: henüz yola çıkılmamıştır. */
+  const previewSteps = useMemo(() => journeyStepList(preview?.steps), [preview?.steps])
   const routeStops = useMemo(
     () => stops.filter((stop) => stop.routeId === state.routeId)
       .slice()
@@ -312,28 +323,34 @@ export default function JourneyPlannerPanel({
 
           {/* Manevra YOKSA hata gibi sunulmaz: kalıcı güzergahı yeniden
               kullanan tam-hat yolculuğunda adım verisi bulunmaz. */}
-          {steps.length === 0 && (
-            <p className="journey-note">Bu yolculuk için adım adım yol tarifi bulunmuyor.</p>
+          {!navigation.hasSteps && (
+            <p className="journey-note">Bu güzergâh için adım adım yönlendirme bulunmuyor.</p>
           )}
 
-          {steps.length > 0 && (
-            <ol className="journey-steps">
-              {steps.map((step) => (
-                <li
-                  key={step.key}
-                  className={`journey-step dir-${step.direction} ${
-                    step.sequence === liveModel.currentStepSequence ? 'is-current' : ''
-                  }`.trim()}
-                  aria-current={step.sequence === liveModel.currentStepSequence ? 'step' : undefined}
-                >
-                  <div className="journey-step-text">
-                    <strong>{step.instruction}</strong>
-                    {step.name && <span>{step.name}</span>}
-                  </div>
-                  <span className="journey-step-metric">{formatStepMetric(step)}</span>
-                </li>
-              ))}
-            </ol>
+          {navigation.hasSteps && (
+            <>
+              <h3 className="journey-steps-title">Yol Tarifi</h3>
+              <ol className="journey-steps">
+                {navigation.steps.map((step) => {
+                  const isCurrent = step.state === JOURNEY_STEP_STATES.CURRENT
+                  return (
+                    <li
+                      key={step.key}
+                      className={`journey-step dir-${step.direction} is-${step.state}`}
+                      /* Güncel adım programatik olarak da ayırt edilir; sahte
+                         sekme/radyo semantiği kurulmaz. */
+                      aria-current={isCurrent ? 'step' : undefined}
+                    >
+                      <div className="journey-step-text">
+                        <strong>{step.instruction}</strong>
+                        {step.name && <span>{step.name}</span>}
+                      </div>
+                      <span className="journey-step-metric">{formatStepMetric(step)}</span>
+                    </li>
+                  )
+                })}
+              </ol>
+            </>
           )}
         </div>
       )}
@@ -581,9 +598,9 @@ export default function JourneyPlannerPanel({
             </div>
           )}
 
-          {summary && steps.length > 0 && (
+          {summary && previewSteps.length > 0 && (
             <ol className="journey-steps">
-              {steps.map((step) => (
+              {previewSteps.map((step) => (
                 <li key={step.key} className={`journey-step dir-${step.direction}`}>
                   <div className="journey-step-text">
                     <strong>{step.instruction}</strong>
@@ -596,7 +613,7 @@ export default function JourneyPlannerPanel({
           )}
 
           {/* Manevrasız kalıcı hat GEÇERLİDİR; hata gibi sunulmaz. */}
-          {summary && steps.length === 0 && summary.stepsUnavailableIsExpected && (
+          {summary && previewSteps.length === 0 && summary.stepsUnavailableIsExpected && (
             <p className="journey-note">
               Bu hat için kayıtlı güzergah kullanıldı; adım adım yol tarifi bulunmuyor.
             </p>

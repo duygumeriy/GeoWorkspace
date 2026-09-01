@@ -22,6 +22,14 @@ export default function ConfirmDialog({
   confirmLabel = 'Sil',
   cancelLabel = 'Vazgeç',
   tone = 'danger',
+  /**
+   * Onaylanan iş HÂLÂ sürüyor.
+   *
+   * Onay düğmesi kilitlenir: aynı isteği ikinci kez göndermek, sunucuya
+   * gereksiz bir çağrı ve kullanıcıya belirsiz bir durum demekti. Varsayılan
+   * `false` olduğu için mevcut çağıranların davranışı değişmez.
+   */
+  busy = false,
   onConfirm,
   onCancel,
 }) {
@@ -64,7 +72,13 @@ export default function ConfirmDialog({
           </Button>
           {/* Focus lands on the confirm button so the dialog is operable from
               the keyboard the moment it opens. */}
-          <Button autoFocus onClick={onConfirm} className={`confirm-button confirm-button--${tone}`}>
+          <Button
+            autoFocus
+            disabled={busy}
+            aria-busy={busy}
+            onClick={onConfirm}
+            className={`confirm-button confirm-button--${tone}`}
+          >
             {confirmLabel}
           </Button>
         </div>
