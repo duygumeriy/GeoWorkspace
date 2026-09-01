@@ -33,7 +33,7 @@ namespace StajProject.Infrastructure.Simulation;
 /// YENİ bir çalıştırmayı ne günceller ne de durdurur.
 /// </para>
 /// </remarks>
-public sealed class TransportSimulationRunner : ITransportSimulationCanceller
+public sealed class TransportSimulationRunner : ITransportSimulationCanceller, ITransportSimulationTerminator
 {
     private readonly ITransportSimulationStateStore _state;
     private readonly ITransportSimulationBroadcaster _broadcaster;
@@ -88,6 +88,16 @@ public sealed class TransportSimulationRunner : ITransportSimulationCanceller
         }
     }
 
+    /// <summary>
+    /// SİSTEMİN kendi iptali: güzergah geçersizleştiğinde o rotada ne
+    /// çalışıyorsa durur.
+    /// </summary>
+    /// <remarks>
+    /// Burada bir kullanıcı niyeti YOKTUR ve bu yüzden hiçbir yetki aranmaz —
+    /// tetikleyen şey bir veri gerçeğidir. Kullanıcının açık durdurma komutu
+    /// AYRI bir yoldur (<see cref="TerminateAsync"/>) ve kendi yetkisini uçta
+    /// ister.
+    /// </remarks>
     public async Task CancelForRoutesAsync(
         IReadOnlyCollection<int> routeIds,
         CancellationToken cancellationToken = default)
@@ -104,20 +114,62 @@ public sealed class TransportSimulationRunner : ITransportSimulationCanceller
             /* Kimlik denetimi burada da geçerlidir: Find ile TryStop arasında
                çalıştırma değişmişse eski kimlikle durdurma BAŞARISIZ olur ve
                yeni çalıştırmaya dokunulmaz. */
-            if (!_state.TryStop(routeId, simulation.SimulationId))
+            var terminated = await TerminateAsync(routeId, simulation.SimulationId, cancellationToken);
+
+            if (terminated is not null)
             {
-                continue;
+                _logger.LogInformation(
+                    "Güzergah geçersizleştiği için simülasyon iptal edildi. RouteId: {RouteId}, SimulationId: {SimulationId}",
+                    routeId,
+                    simulation.SimulationId);
             }
-
-            _tracks.TryRemove(simulation.SimulationId, out _);
-
-            _logger.LogInformation(
-                "Güzergah geçersizleştiği için simülasyon iptal edildi. RouteId: {RouteId}, SimulationId: {SimulationId}",
-                routeId,
-                simulation.SimulationId);
-
-            await PublishAsync(simulation, TransportSimulationStatus.Cancelled, cancellationToken);
         }
+    }
+
+    /// <summary>
+    /// KULLANICI komutunun çalışma zamanı ilkeli: yalnızca verilen kimlikli
+    /// çalıştırmayı sonlandırır.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Sıra, doğal tamamlanmanın sırasıyla AYNIDIR</b> ve bilinçlidir:
+    /// önce durumdan kaldırılır (atomik ve kimlik denetimli), sonra terminal
+    /// olay yayınlanır. Ters sıra bir "hayalet Running" bırakırdı — yayın
+    /// gitmişken kayıt hâlâ aktif görünürdü. Kaldırma başarısız olursa hiçbir
+    /// şey yayınlanmaz: geç kalmış bir komut, yerine geçmiş YENİ çalıştırmayı
+    /// ne durdurur ne de onun adına terminal olay üretir.
+    /// </para>
+    /// <para>
+    /// Anlık görüntü kaldırmadan ÖNCE okunur; kayıt değişmez bir record olduğu
+    /// için kaldırıldıktan sonra da geçerli kalır ve terminal yayın son bilinen
+    /// OTORİTER konumu taşır.
+    /// </para>
+    /// </remarks>
+    public async Task<TransportSimulationLiveUpdate?> TerminateAsync(
+        int routeId,
+        Guid simulationId,
+        CancellationToken cancellationToken = default)
+    {
+        var simulation = _state.Find(routeId);
+
+        if (simulation is null || simulation.SimulationId != simulationId)
+        {
+            return null;
+        }
+
+        // BAĞLAYICI denetim: kimlik tutmuyorsa hiçbir şeye dokunulmaz.
+        if (!_state.TryStop(routeId, simulationId))
+        {
+            return null;
+        }
+
+        _tracks.TryRemove(simulationId, out _);
+
+        var update = TransportSimulationLiveUpdate.From(simulation, TransportSimulationStatus.Cancelled);
+
+        await PublishAsync(simulation, TransportSimulationStatus.Cancelled, cancellationToken);
+
+        return update;
     }
 
     private async Task AdvanceOneAsync(

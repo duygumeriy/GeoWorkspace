@@ -361,18 +361,36 @@ test('unfollow releases only the camera and never stops the shared run', () => {
 
 /* --- 16/17. Bu fazda OLMAYANLAR ------------------------------------------------ */
 
-test('no shared stop control exists yet anywhere in the workspace', () => {
-  /* `transport.simulation.stop` Faz 1'den beri bir yetki KİMLİĞİDİR; onu
-     tüketen açık bir backend komutu HENÜZ YOK. Bu yüzden düğme de yok. */
+test('the shared stop control stays a permission-gated, confirmed command', () => {
+  /* Faz 2'de bu bir OLUMSUZLUKTU: durdurmayı tüketen bir backend komutu
+     henüz yoktu, bu yüzden düğme de yoktu. Faz 3 komutu ekledi; iddia
+     ZAYIFLAMADI, sınırları taşındı — düğme artık var ama YALNIZCA kendi
+     yetkisiyle, yalnızca aktif bir çalıştırmada ve YALNIZCA onayın ardında.
+
+     Bu bölümün ölçtüğü şey hâlâ aynıdır: paylaşılan bölüm kendi yetki
+     kararını vermez, komutu kendi göndermez ve terminal durumu uydurmaz.
+     Yaşam döngüsünün tamamı `transport-simulation-stop.test.js`'tedir. */
   for (const [name, source] of [['SharedTransportJourneyContent.jsx', SHARED], ['journeyWorkspace.js', WORKSPACE]]) {
-    assert.ok(!source.includes('TRANSPORT_SIMULATION_STOP'), `${name} paylaşılan durdurmayı tüketiyor`)
-    assert.ok(!source.includes('Simülasyonu Durdur'), `${name} paylaşılan durdurma düğmesi çiziyor`)
+    // Yetki kararı burada VERİLMEZ; hazır bir bayrak olarak gelir.
+    assert.ok(!source.includes('TRANSPORT_SIMULATION_STOP'), `${name} yetki kodunu kendisi okuyor`)
+    // Komut da buradan GÖNDERİLMEZ.
     assert.ok(!/stopTransportSimulation|cancelTransportSimulation/.test(source), `${name} durdurma komutu çağırıyor`)
   }
 
-  // Başlatma yetkisi durdurma otoritesi olarak KULLANILMAZ.
-  assert.ok(!SHARED.includes('showStop'))
-  assert.ok(!WORKSPACE.includes('showStop'))
+  /* Düğme SUNUM bileşenindedir ve yalnızca haber verir; onayı ve isteği
+     çağıran yüzey yönetir. */
+  assert.ok(SHARED.includes('shared.showStop &&'))
+  assert.ok(SHARED.includes('onClick={onStop}'))
+  assert.ok(SHARED.includes('Simülasyonu Durdur'))
+
+  // Ve karar saf kuralın ürettiği bayraklardan okunur.
+  assert.ok(WORKSPACE.includes('showStop: Boolean(controls?.showStop)'))
+  assert.ok(WORKSPACE.includes('stoppableSimulationId: controls?.stoppableSimulationId ?? null'))
+
+  /* Başlatma yetkisi durdurma otoritesi olarak KULLANILMAZ: iki bayrak
+     birbirinden türetilmez. */
+  assert.ok(!/showStop[^\n]*showStart/.test(WORKSPACE))
+  assert.ok(!/showStop[^\n]*canStart/.test(WORKSPACE))
 })
 
 test('no shared navigation or maneuver is fabricated', () => {

@@ -402,29 +402,44 @@ public class JourneyCenterPermissionFoundationTests
     }
 
     [Fact]
-    public void No_shared_stop_endpoint_or_service_command_was_introduced_in_this_phase()
+    public void The_shared_stop_code_gates_exactly_one_endpoint_across_the_whole_api()
     {
-        /* Bu faz yalnızca KİMLİĞİ tanımlar. Kodu tüketen komut sonraki fazın
-           işidir; şimdi eklenseydi yaşam döngüsü, üzerinde anlaşılmamış bir
-           davranışla açılmış olurdu. */
-        Assert.DoesNotContain(
-            typeof(TransportSimulationController).GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly),
-            method => method.GetCustomAttributes<RequirePermissionAttribute>(true)
-                .Any(attribute => attribute.PermissionCode == PermissionCodes.TransportSimulationStop));
+        /* Faz 1'de bu test bir OLUMSUZLUKTU: kod yalnızca KİMLİK olarak
+           tanımlanmıştı ve onu tüketen hiçbir uç yoktu. Faz 3 o komutu
+           bilinçli olarak ekledi; iddia bu yüzden "hiç uç yok"tan "TAM OLARAK
+           BİR uç" ölçüsüne taşındı. Zayıflama değildir — kodun sessizce ikinci
+           bir yüzeye yayılması hâlâ burada düşer. */
+        var gated = typeof(TransportSimulationController).Assembly
+            .GetTypes()
+            .Where(type => typeof(ControllerBase).IsAssignableFrom(type))
+            .SelectMany(type => type
+                .GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly)
+                .Select(method => (Type: type, Method: method)))
+            .Where(entry => entry.Method
+                .GetCustomAttributes<RequirePermissionAttribute>(true)
+                .Any(attribute => attribute.PermissionCode == PermissionCodes.TransportSimulationStop))
+            .ToArray();
 
-        Assert.DoesNotContain(
-            typeof(ITransportSimulationService).GetMethods(),
-            method => method.Name.Contains("Stop", StringComparison.Ordinal)
-                || method.Name.Contains("Cancel", StringComparison.Ordinal));
+        var only = Assert.Single(gated);
 
-        // Yeni kodu isteyen HİÇBİR uç yoktur (tüm API yüzeyi taranır).
-        Assert.Empty(
-            typeof(TransportSimulationController).Assembly
-                .GetTypes()
-                .Where(type => typeof(ControllerBase).IsAssignableFrom(type))
-                .SelectMany(type => type.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly))
-                .SelectMany(method => method.GetCustomAttributes<RequirePermissionAttribute>(true))
-                .Where(attribute => attribute.PermissionCode == PermissionCodes.TransportSimulationStop));
+        Assert.Equal(typeof(TransportSimulationController), only.Type);
+        Assert.Equal(nameof(TransportSimulationController.Stop), only.Method.Name);
+
+        /* Komut İKİ kimliği birden taşır: yalnızca rota alan bir durdurma,
+           eski bir sekmenin yerine geçmiş YENİ çalıştırmayı durdurmasına açık
+           kapı bırakırdı. */
+        Assert.Contains(only.Method.GetParameters(), parameter => parameter.ParameterType == typeof(Guid));
+        Assert.Contains(only.Method.GetParameters(), parameter => parameter.ParameterType == typeof(int));
+
+        /* Ve servis sözleşmesinde durdurma TEKTİR: iç iptal (rota
+           geçersizleşmesi) hâlâ AYRI bir porttadır ve bu servisten geçmez. */
+        var stops = typeof(ITransportSimulationService)
+            .GetMethods()
+            .Where(method => method.Name.Contains("Stop", StringComparison.Ordinal)
+                || method.Name.Contains("Cancel", StringComparison.Ordinal))
+            .ToArray();
+
+        Assert.Equal(nameof(ITransportSimulationService.StopAsync), Assert.Single(stops).Name);
     }
 
     [Fact]

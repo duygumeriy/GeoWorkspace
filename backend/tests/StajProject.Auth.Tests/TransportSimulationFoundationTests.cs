@@ -5,12 +5,14 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Logging;
 using NetTopologySuite.Geometries;
 using NSubstitute;
 using StajProject.Api.Authorization;
 using StajProject.Api.Controllers;
 using StajProject.Application.Common;
 using StajProject.Application.Interfaces;
+using StajProject.Application.Options;
 using StajProject.Application.Simulation;
 using StajProject.Domain.Common;
 using StajProject.Domain.Entities;
@@ -469,6 +471,19 @@ public sealed class TransportSimulationFoundationTests
             new TransportSimulationSnapshot(points[0], 0, 0, 0, now));
     }
 
+    private sealed class RecordingBroadcaster : ITransportSimulationBroadcaster
+    {
+        public List<TransportSimulationLiveUpdate> Updates { get; } = [];
+
+        public Task PublishAsync(
+            TransportSimulationLiveUpdate update,
+            CancellationToken cancellationToken = default)
+        {
+            Updates.Add(update);
+            return Task.CompletedTask;
+        }
+    }
+
     private sealed class Fixture : IAsyncDisposable
     {
         public const int UserId = 42;
@@ -480,11 +495,30 @@ public sealed class TransportSimulationFoundationTests
             var currentUser = Substitute.For<ICurrentUserService>();
             currentUser.UserId.Returns(userId);
             currentUser.IsAuthenticated.Returns(userId is not null);
-            Service = new TransportSimulationService(db, currentUser, state);
+
+            /* Sonlandırma için SAHTE değil, GERÇEK çalışma zamanı sahibi
+               kullanılır: durdurmanın ölçülen davranışı (kimlik denetimi,
+               terminal yayın, durumdan kaldırma) tam olarak orada yaşıyor.
+               Sahte bir terminatör, kendi uydurduğumuz davranışı doğrulardı. */
+            Broadcaster = new RecordingBroadcaster();
+            Runner = new TransportSimulationRunner(
+                state,
+                Broadcaster,
+                new TransportSimulationOptions
+                {
+                    TickIntervalMilliseconds = 1_000,
+                    SpeedMultiplier = 1,
+                    FallbackDurationSeconds = 300
+                },
+                Substitute.For<ILogger<TransportSimulationRunner>>());
+
+            Service = new TransportSimulationService(db, currentUser, state, Runner);
         }
 
         public AppDbContext Db { get; }
         public ITransportSimulationStateStore State { get; }
+        public RecordingBroadcaster Broadcaster { get; }
+        public TransportSimulationRunner Runner { get; }
         public TransportSimulationService Service { get; }
 
         public static Fixture Create(int? userId = UserId) =>

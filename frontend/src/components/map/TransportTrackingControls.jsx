@@ -22,13 +22,16 @@ export default function TransportTrackingControls({
   controls,
   statusLoading = false,
   starting = false,
+  stopping = false,
   error = '',
   onStart,
+  onStop,
   onFollow,
   onUnfollow,
   className = '',
   primaryButtonClassName = 'admin-button',
   secondaryButtonClassName = 'admin-button secondary',
+  dangerButtonClassName = 'admin-button danger',
 }) {
   if (!controls) return null
 
@@ -63,6 +66,21 @@ export default function TransportTrackingControls({
             onClick={onStart}
           >
             {starting ? 'Başlatılıyor…' : 'Simülasyonu Başlat'}
+          </button>
+        )}
+        {/* DURDURMA çok kullanıcılı canlı bir çalıştırmayı sonlandırır ve
+            AYRI bir yetkiye (`transport.simulation.stop`) bağlıdır: başlatma
+            yetkisi onu İMA ETMEZ. Tıklama komutu göndermez — çağıran yüzey
+            onayı açar ve komutu ancak onaydan sonra gönderir. */}
+        {controls.showStop && (
+          <button
+            type="button"
+            className={dangerButtonClassName}
+            disabled={controls.stopDisabled}
+            aria-busy={stopping}
+            onClick={onStop}
+          >
+            {stopping ? 'Durduruluyor…' : 'Simülasyonu Durdur'}
           </button>
         )}
         {controls.showFollow && (

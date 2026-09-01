@@ -114,6 +114,27 @@ export function fetchTransportSimulation(routeId) {
   return authFetch(`/api/transport/simulations/routes/${routeId}`)
 }
 
+/**
+ * PAYLAŞILAN bir hattın BELİRLİ çalıştırmasını herkes için durdurur.
+ * Yetki: `transport.simulation.stop`.
+ *
+ * <b>İki kimlik de zorunludur ve bu yalnızca bir doğrulama değildir.</b>
+ * Yalnızca rota göndermek "şu hatta ne çalışıyorsa durdur" demek olurdu: A
+ * çalıştırması bitip yerine B başladıysa, hâlâ A'yı gösteren eski bir sekme
+ * B'yi — başka kullanıcıların canlı izlediği çalıştırmayı — durdururdu. Sunucu
+ * kimliği doğrulayamazsa komutu REDDEDER; tarayıcı "en güncel olanı durdur"
+ * diyemez.
+ *
+ * Yanıt, gözlemcilere yayınlanan OTORİTER terminal güncellemenin aynısıdır;
+ * istemci terminal durumu yerel olarak UYDURMAZ.
+ */
+export function stopTransportSimulation(routeId, simulationId, { signal } = {}) {
+  return authFetch(
+    `/api/transport/simulations/routes/${routeId}/${simulationId}/stop`,
+    { method: 'POST', signal },
+  )
+}
+
 /* --- Yolculuk planlama (Faz 5B önizleme ucu) ----------------------------------
    Ayrı bir API katmanı ya da ikinci bir token deposu AÇILMAZ: aynı authFetch,
    aynı Authorization başlığı, aynı 401/403 davranışı ve aynı hata okuma

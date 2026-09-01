@@ -137,24 +137,49 @@ test('shared observation stays on transport.view and start stays on its own code
   assert.ok(code.includes('canStart: can(PERMISSIONS.TRANSPORT_SIMULATION_START)'))
 })
 
-test('the shared stop code is defined but no client command consumes it yet', () => {
-  /* Bu faz yalnızca KİMLİĞİ tanımlar. Kodu tüketen düğme/istek sonraki fazın
-     işidir; şimdi eklenseydi yaşam döngüsü, üzerinde anlaşılmamış bir
-     davranışla açılmış olurdu. */
+test('the shared stop code is read only where the decision is made', () => {
+  /* Faz 1'de bu bir OLUMSUZLUKTU (kodu tüketen hiçbir şey yoktu); Faz 3 komutu
+     ekledi. İddia zayıflamadı, KONUMLANDI: yetki kodu YALNIZCA kararın
+     verildiği yerlerde — yetenek bayrağını üreten iki sayfada — okunur.
+     Sunum bileşenleri, saf kurallar ve istemci fonksiyonu onu HİÇ görmez;
+     görselerdi, arayüz backend'in kuralından ayrı ikinci bir kural kitabına
+     sahip olurdu. */
   assert.ok(PERMISSION_CODES.includes("TRANSPORT_SIMULATION_STOP: 'transport.simulation.stop'"))
 
+  /* Kararı veren yüzeyler kodu okur ve her biri onu TEK bir yetenek adına
+     bağlar. Sabit bir satır biçimi ARANMAZ: okuma yerel bir değişkene
+     alınabilir ya da adı değişebilir; ölçülen şey yeteneğin etkin yetki
+     kodundan türetildiği ve görünürlük kuralına verildiğidir. */
+  const capabilityRead = /const\s+([A-Za-z0-9_]+)\s*=\s*can\(\s*PERMISSIONS\.TRANSPORT_SIMULATION_STOP\s*\)/
+
+  const adminPage = stripComments(read('../../src/pages/admin/TransportRoutePage.jsx'))
+
+  for (const [name, source] of [['MapPage.jsx', MAP_PAGE], ['TransportRoutePage.jsx', adminPage]]) {
+    const match = source.match(capabilityRead)
+    assert.ok(match, `${name} durdurma yeteneğini etkin yetki kodundan türetmiyor`)
+    assert.ok(
+      new RegExp(`canStop:\\s*${match[1]}\\b`).test(source),
+      `${name} yeteneği görünürlük kuralına vermiyor`,
+    )
+  }
+
+  // …çizen ve gönderen katmanlar OKUMAZ.
   for (const [name, source] of [
-    ['MapPage.jsx', MAP_PAGE],
     ['JourneyPlannerPanel.jsx', PANEL],
-    ['useWorkspacePermissions.js', WORKSPACE_PERMISSIONS],
+    ['SharedTransportJourneyContent.jsx', read('../../src/components/map/SharedTransportJourneyContent.jsx')],
     ['TransportTrackingControls.jsx', read('../../src/components/map/TransportTrackingControls.jsx')],
     ['transportSimulationState.js', read('../../src/map/transportSimulationState.js')],
+    ['transportApi.js', read('../../src/services/transportApi.js')],
   ]) {
     assert.ok(
       !stripComments(source).includes('TRANSPORT_SIMULATION_STOP'),
-      `${name} bu fazda olmaması gereken paylaşılan durdurma komutunu tüketiyor`,
+      `${name} yetki kararını kendisi veriyor`,
     )
   }
+
+  /* Ve yetenek çalışma alanı kancasına SIZMADI: paylaşılan yaşam döngüsü
+     kişisel ürünün yetenek kümesinin parçası değildir. */
+  assert.ok(!stripComments(WORKSPACE_PERMISSIONS).includes('TRANSPORT_SIMULATION_STOP'))
 })
 
 /* --- Yetkilendirme kestirmesi YOKTUR ----------------------------------------- */

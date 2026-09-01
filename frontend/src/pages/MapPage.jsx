@@ -103,7 +103,11 @@ import usePoiEditDraft from '../hooks/usePoiEditDraft.js'
 import useTransportLayer from '../hooks/useTransportLayer.js'
 import useTransportSimulation from '../hooks/useTransportSimulation.js'
 import useTransportVehicleLayer from '../hooks/useTransportVehicleLayer.js'
-import { transportSimulationControls } from '../map/transportSimulationState.js'
+import {
+  sharedStopIntent,
+  sharedStopIntentIsCurrent,
+  transportSimulationControls,
+} from '../map/transportSimulationState.js'
 import {
   JOURNEY_PRODUCTS,
   canOpenJourneyWorkspace,
@@ -803,20 +807,33 @@ export default function MapPage() {
     canView: allowed.canViewTransport,
   })
 
+  /* Yetenek TEK yerde okunur ve İKİ yerde tüketilir: görünürlük kararı ve
+     KOMUT yolu. Yalnızca görünürlüğe bağlamak, açık bir onay kutusu dururken
+     yetkisi geri alınan bir kullanıcının komutu yine de gönderebilmesi demekti
+     (yetkiler oturum içinde `refreshPermissions` ile değişebilir). */
+  const canStopSharedSimulation = can(PERMISSIONS.TRANSPORT_SIMULATION_STOP)
+
   const simulationControls = useMemo(() => transportSimulationControls({
     routeId: selectedTransportRouteId,
     simulation: simulation.simulation,
     followingRouteId: simulation.followingRouteId,
     // Başlatma AYRI bir yetkidir; yalnızca izleyen kullanıcı bu düğmeyi görmez.
     canStart: can(PERMISSIONS.TRANSPORT_SIMULATION_START),
+    /* DURDURMA da AYRI bir yetkidir ve başlatmayı İMA ETMEZ: bir kurulum
+       hattı işletebilen birine durdurma vermeyebilir, ya da tersi. İki kod
+       burada ayrı ayrı okunur ve biri diğerinin yerine geçmez. */
+    canStop: canStopSharedSimulation,
     starting: simulation.starting,
+    stopping: simulation.stopping,
     following: simulation.following,
   }), [
     selectedTransportRouteId,
     simulation.simulation,
     simulation.followingRouteId,
     simulation.starting,
+    simulation.stopping,
     simulation.following,
+    canStopSharedSimulation,
     can,
   ])
 
@@ -825,6 +842,81 @@ export default function MapPage() {
     const snapshot = await simulation.start(selectedTransportRouteId)
     if (snapshot) setStartedSimulationId(snapshot.simulationId)
   }, [selectedTransportRouteId, simulation])
+
+  /* Paylaşılan durdurma ONAYIN arkasındadır: çok kullanıcılı canlı bir
+     çalıştırmayı sonlandırır ve yanlış bir tıklama başkalarının izlediği
+     yayını keser.
+
+     BEKLEYEN DURUM BİR BAYRAK DEĞİL, BİR KİMLİKTİR. Onay kutusu açıkken A
+     çalıştırması bitip AYNI rotada B başlayabilir; yalnızca "onay açık"
+     bilgisi tutulsaydı, onay anında o anki kimlik okunur ve kullanıcının A
+     için verdiği karar sessizce B'yi durdururdu. Sunucu bunu yakalayamaz:
+     kendisine B için geçerli, yetkili ve kimliği tutan bir istek ulaşırdı.
+     Niyet bu yüzden TETİKLEME anında dondurulur. */
+  const [pendingSharedStop, setPendingSharedStop] = useState(null)
+  const sharedStopInFlight = useRef(false)
+
+  /* Onayı AÇMAK da bir yetenek ve KİMLİK kararıdır: düğme zaten gizli olsa
+     bile komut yolunun girişi kendi kapısını taşır, ve tam olarak burada
+     hangi çalıştırmanın durdurulmak istendiği YAKALANIR. */
+  const requestSharedStop = useCallback(() => {
+    if (!canStopSharedSimulation) return
+
+    const intent = sharedStopIntent({
+      routeId: selectedTransportRouteId,
+      simulationId: simulationControls.stoppableSimulationId,
+    })
+
+    // Rota + çalıştırma çiftinden biri eksikse niyet KURULAMAZ.
+    if (!intent) return
+
+    setPendingSharedStop(intent)
+  }, [canStopSharedSimulation, selectedTransportRouteId, simulationControls.stoppableSimulationId])
+
+  const confirmSharedStop = useCallback(async () => {
+    /* ÇİFT GÖNDERİM KORUMASI. Ref anında yazılır; state güncellemesini
+       beklemek, hızlı iki tıklamada ikinci isteğin yola çıkmasına izin
+       verirdi. */
+    if (sharedStopInFlight.current) return
+
+    const intent = pendingSharedStop
+
+    /* KOMUT ANINDA yeniden denetim — FAIL-CLOSED, İKİ eksende:
+
+       YETKİ: onay kutusu açıkken yetki geri alınmış olabilir (yetkiler
+       oturum içinde tazelenebilir); düğme kaybolur ama açık kalan kutu hâlâ
+       tıklanabilirdi. Görünürlük bir denetim değildir.
+
+       KİMLİK: yakalanan niyet HÂLÂ o anki çalıştırmaya işaret etmiyorsa
+       (A bitti, yerine B geçti ya da başka bir hatta geçildi) komut
+       GÖNDERİLMEZ. Yakalanan kimliği o anki kimlikle DEĞİŞTİRMEK,
+       kullanıcının hiç vermediği bir kararı uygulamak olurdu. */
+    if (!canStopSharedSimulation
+      || !sharedStopIntentIsCurrent(intent, {
+        routeId: selectedTransportRouteId,
+        stoppableSimulationId: simulationControls.stoppableSimulationId,
+      })) {
+      setPendingSharedStop(null)
+      return
+    }
+
+    sharedStopInFlight.current = true
+
+    try {
+      /* Komut YAKALANMIŞ kimlikleri taşır — o anki değerleri değil. İkisi de
+         tetikleme anındaki sunucu gerçeğinden gelir. */
+      await simulation.stop(intent.routeId, intent.simulationId)
+    } finally {
+      sharedStopInFlight.current = false
+      setPendingSharedStop(null)
+    }
+  }, [
+    simulation,
+    pendingSharedStop,
+    selectedTransportRouteId,
+    simulationControls.stoppableSimulationId,
+    canStopSharedSimulation,
+  ])
 
   const followSharedSimulation = useCallback(
     () => simulation.follow(selectedTransportRouteId),
@@ -846,6 +938,7 @@ export default function MapPage() {
     controls: simulationControls,
     statusLoading: simulation.statusLoading,
     starting: simulation.starting,
+    stopping: simulation.stopping,
     error: simulation.error,
   }), [
     selectedTransportRouteId,
@@ -854,6 +947,7 @@ export default function MapPage() {
     simulationControls,
     simulation.statusLoading,
     simulation.starting,
+    simulation.stopping,
     simulation.error,
   ])
 
@@ -3556,6 +3650,7 @@ export default function MapPage() {
                   onProductChange={journey.setProduct}
                   shared={sharedJourney}
                   onStartShared={startSharedSimulation}
+                  onStopShared={requestSharedStop}
                   onFollowShared={followSharedSimulation}
                   onUnfollowShared={unfollowSharedSimulation}
                   poiSearch={journeyPickerSearch}
@@ -4070,6 +4165,23 @@ export default function MapPage() {
               {/* POI silme onayı. Çizimlerle AYNI diyalog bileşeni: iki
                   silme de aynı görünür ve ikisi de yumuşak silmedir — metin
                   bu yüzden kalıcı bir kayıp vaat etmez. */}
+              {/* PAYLAŞILAN hat durdurma onayı. Kişisel yolculuk onayıyla AYNI
+                  diyalog bileşeni ama AYRI bir durum ve ayrı bir metin: bu
+                  çalıştırmayı yalnızca kullanıcının kendisi değil, hattı
+                  izleyen HERKES kaybeder — metin bunu açıkça söyler. */}
+              <ConfirmDialog
+                open={pendingSharedStop != null && canStopSharedSimulation}
+                title="Hat simülasyonunu durdur"
+                message="Bu hat simülasyonunu durdurmak istediğinize emin misiniz?"
+                description="Simülasyon herkes için sona erer; hattı izleyen diğer kullanıcılar da aracı görmeyi bırakır. Hat daha sonra yeniden başlatılabilir."
+                confirmLabel="Simülasyonu Durdur"
+                cancelLabel="Vazgeç"
+                busy={simulation.stopping}
+                onConfirm={confirmSharedStop}
+                /* Vazgeçmek HİÇBİR ŞEY yapmaz: sunucuya istek gitmez. */
+                onCancel={() => setPendingSharedStop(null)}
+              />
+
               <ConfirmDialog
                 open={journeyStopPending}
                 title="Yolculuğu durdur"

@@ -136,10 +136,65 @@ export function mergeSimulationState(current, incoming) {
   }
 
   if (isOlder) return current
+
+  /* AYNI çalıştırma bir kez bittiyse GERİ DÖNMEZ. Zaman damgası tek başına
+     yetmiyor: terminal anlık görüntü son Running tick'iyle AYNI damgayı
+     taşır, dolayısıyla sırası bozulmuş bir Running olayı "daha eski"
+     sayılmaz ve eski kural onu kabul ederdi — bitmiş bir çalıştırma yeniden
+     yürüyor görünürdü.
+
+     Kilit ÇALIŞTIRMAYA ÖZELDİR: yukarıdaki dal farklı `simulationId`'yi
+     zaten yeni bir çalıştırma olarak kabul eder, bu yüzden aynı hatta
+     başlayan YENİ çalıştırma B bu kuraldan ETKİLENMEZ. */
+  if (isTerminalSimulationStatus(current.status)) return current
+
   if (isTerminalSimulationStatus(incoming.status)) return incoming
   if (incoming.progressPercent < current.progressPercent) return current
 
   return incoming
+}
+
+/**
+ * Kullanıcının durdurmak İSTEDİĞİ çalıştırmanın YAKALANMIŞ kimliği.
+ *
+ * <b>Neden bir nesne, bir bayrak değil.</b> Onay kutusu açıkken dünya
+ * değişebilir: A çalıştırması bitip AYNI rotada B başlayabilir. Bekleyen
+ * durum yalnızca "onay açık mı" bilgisini taşısaydı, onay anında o anki
+ * kimlik okunur ve kullanıcının A için verdiği karar sessizce B'yi
+ * durdururdu. Niyet bu yüzden TETİKLEME anında dondurulur.
+ *
+ * <b>Rota tek başına bir niyet DEĞİLDİR.</b> İkisinden biri eksikse
+ * <c>null</c> döner; böylece "şu hatta ne çalışıyorsa durdur" biçiminde bir
+ * bekleyen niyet KURULAMAZ.
+ */
+export function sharedStopIntent({ routeId = null, simulationId = null } = {}) {
+  const route = finiteNumber(routeId)
+  if (route === null) return null
+  if (typeof simulationId !== 'string' || simulationId.length === 0) return null
+
+  return Object.freeze({ routeId: route, simulationId })
+}
+
+/**
+ * Yakalanmış niyet HÂLÂ o anki çalıştırmaya mı işaret ediyor?
+ *
+ * <b>Eşitlik İKİ eksende birden aranır.</b> Rota değişmişse kullanıcı artık
+ * başka bir hatta bakıyordur; çalıştırma kimliği değişmişse A bitmiş ve
+ * yerine B geçmiştir. İkisinde de doğru cevap komutu GÖNDERMEMEKTİR —
+ * yakalanan kimliği o anki kimlikle DEĞİŞTİRMEK, kullanıcının hiç vermediği
+ * bir kararı uygulamak olurdu.
+ *
+ * Sunucu yine son sözü söyler (yetki + rota + çalıştırma kimliği + atomik
+ * denetim); buradaki kural KULLANICI NİYETİNİ korur, sunucunun yetkisini
+ * değil.
+ */
+export function sharedStopIntentIsCurrent(intent, { routeId = null, stoppableSimulationId = null } = {}) {
+  if (!intent) return false
+
+  const current = sharedStopIntent({ routeId, simulationId: stoppableSimulationId })
+  if (!current) return false
+
+  return current.routeId === intent.routeId && current.simulationId === intent.simulationId
 }
 
 /**
@@ -156,7 +211,9 @@ export function transportSimulationControls({
   simulation = null,
   followingRouteId = null,
   canStart = false,
+  canStop = false,
   starting = false,
+  stopping = false,
   following = false,
 } = {}) {
   const route = finiteNumber(routeId)
@@ -167,14 +224,37 @@ export function transportSimulationControls({
 
   const isFollowing = route !== null && followingRouteId === route
 
+  /* Durdurma komutu ÇALIŞTIRMA KİMLİĞİ ister; kimlik bilinmiyorsa düğme hiç
+     sunulmaz. Rota tek başına yeterli olsaydı, eski bir sekme yerine geçmiş
+     YENİ bir çalıştırmayı durdurabilirdi — o yüzden kimlik burada bir
+     GÖRÜNÜRLÜK koşuludur, sonradan yapılan bir doğrulama değil. */
+  const stoppableSimulationId = active ? simulation.simulationId ?? null : null
+
   return {
     isActive: active,
     isFollowing,
     // Çalışan bir simülasyon varken başlatma sunulmaz: backend zaten 409 döner.
     showStart: route !== null && canStart === true && !active,
     startDisabled: starting === true,
+
+    /* BAŞLATMA ile DURDURMA birbirini İMA ETMEZ: `canStop` ayrı bir etkin
+       yetkiden (`transport.simulation.stop`) gelir ve `canStart`'a hiç
+       bakmaz. Görünürlük yalnızca DENEYİMDİR — backend yetkisiz isteğe 403
+       döndürmeye devam eder. */
+    showStop: active && canStop === true && stoppableSimulationId !== null,
+    stopDisabled: stopping === true,
+    stoppableSimulationId,
+
     showFollow: active && !isFollowing,
-    showUnfollow: isFollowing,
+
+    /* TAKİBİ BIRAK yalnızca AKTİF bir çalıştırmada anlamlıdır. Eskiden
+       koşul yalnızca `isFollowing` idi; çalıştırma bittiğinde ekranda aynı
+       anda "Aktif simülasyon yok" ve "Takibi Bırak" görünüyordu — üstelik o
+       düğmeye basmak rotanın SignalR grubundan çıkmaya yol açıyor ve aynı
+       hatta başlayan YENİ çalıştırma sayfaya hiç ulaşmıyordu. Kamera
+       sahipliğinin terminal durumda bırakılması artık kancanın işidir ve
+       ABONELİĞİ KORUYARAK yapılır. */
+    showUnfollow: active && isFollowing,
     followDisabled: following === true,
     statusLabel: simulation && simulation.routeId === route
       ? simulationStatusLabel(simulation.status)

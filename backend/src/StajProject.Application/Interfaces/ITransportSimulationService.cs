@@ -40,6 +40,40 @@ public interface ITransportSimulationService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// PAYLAŞILAN bir hattın çalıştırmasını AÇIKÇA durdurur.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Komut iki kimlik birden taşır ve bu zorunludur.</b> Yalnızca
+    /// <paramref name="routeId"/> ile durdurmak, "12 numaralı hatta ne
+    /// çalışıyorsa durdur" demek olurdu: A çalıştırması bitip yerine B
+    /// başladıysa, hâlâ A'yı gösteren eski bir tarayıcı B'yi — başka
+    /// kullanıcıların canlı izlediği bir çalıştırmayı — durdururdu.
+    /// <paramref name="simulationId"/> bu yüzden isteğe bağlı bir doğrulama
+    /// değil, komutun kimliğidir.
+    /// </para>
+    /// <para>
+    /// <b>Sunucu karar verir.</b> Kimlik tutmuyorsa hiçbir şey durmaz ve
+    /// istek GÜVENLİ biçimde reddedilir; "her ihtimale karşı güncel olanı
+    /// durdur" davranışı YOKTUR.
+    /// </para>
+    /// <para>
+    /// <b>Sistemin KENDİ iptalinden ayrıdır.</b> Güzergah geçersizleşmesi gibi
+    /// iç yollar bu komuttan geçmez ve kullanıcının
+    /// <c>transport.simulation.stop</c> yetkisini İSTEMEZ.
+    /// </para>
+    /// </remarks>
+    /// <returns>
+    /// Başarılıysa gözlemcilere yayınlanan OTORİTER terminal güncellemenin
+    /// aynısı; böylece komutu veren istemci de aynı gerçeği görür ve terminal
+    /// durumu yerel olarak UYDURMAK zorunda kalmaz.
+    /// </returns>
+    Task<ServiceResult<TransportSimulationLiveUpdate>> StopAsync(
+        int routeId,
+        Guid simulationId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Rotada çalışan simülasyonun CANLI yayın biçimindeki anlık görüntüsü;
     /// çalışan yoksa <c>null</c>.
     /// </summary>

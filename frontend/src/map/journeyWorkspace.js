@@ -118,6 +118,7 @@ export function sharedJourneyPresentation({
   controls = null,
   statusLoading = false,
   starting = false,
+  stopping = false,
   error = '',
 } = {}) {
   const id = finiteId(routeId)
@@ -146,11 +147,20 @@ export function sharedJourneyPresentation({
     progressLabel: controls?.progressLabel ?? null,
     showStart: Boolean(controls?.showStart),
     startDisabled: Boolean(controls?.startDisabled),
+
+    /* DURDURMA çok kullanıcılı canlı bir çalıştırmayı sonlandırır ve komut
+       ÇALIŞTIRMA KİMLİĞİ taşır. Kimlik burada da taşınır çünkü düğmeyi basan
+       yüzey onu isteğe koymak zorundadır — rota tek başına gönderilirse eski
+       bir sekme, yerine geçmiş yeni bir çalıştırmayı durdurabilirdi. */
+    showStop: Boolean(controls?.showStop),
+    stopDisabled: Boolean(controls?.stopDisabled),
+    stoppableSimulationId: controls?.stoppableSimulationId ?? null,
     showFollow: Boolean(controls?.showFollow),
     showUnfollow: Boolean(controls?.showUnfollow),
     followDisabled: Boolean(controls?.followDisabled),
     statusLoading: Boolean(statusLoading),
     starting: Boolean(starting),
+    stopping: Boolean(stopping),
     error: error || '',
   })
 }

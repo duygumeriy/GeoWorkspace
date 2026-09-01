@@ -427,6 +427,13 @@ builder.Services.AddSingleton<ITransportSimulationBroadcaster, SignalRTransportS
 builder.Services.AddSingleton<TransportSimulationRunner>();
 builder.Services.AddSingleton<ITransportSimulationCanceller>(
     provider => provider.GetRequiredService<TransportSimulationRunner>());
+
+/* Açık kullanıcı durdurması AYNI çalışma zamanı sahibinden geçer: yaşam
+   döngüsünün (durumdan kaldırma + terminal yayın + iz temizliği) TEK bir sahibi
+   olmalıdır. İkinci bir uygulama, izleri sızdıran ya da terminal olayı hiç
+   yayınlamayan sessizce farklı bir durdurma yolu doğururdu. */
+builder.Services.AddSingleton<ITransportSimulationTerminator>(
+    provider => provider.GetRequiredService<TransportSimulationRunner>());
 builder.Services.AddHostedService<TransportSimulationBackgroundService>();
 
 /* POI sahiplik/yetki kararının TEK yeri. Çizim tarafındaki

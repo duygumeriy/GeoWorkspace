@@ -41,21 +41,31 @@ public sealed class TransportSimulationService : ITransportSimulationService
     private const string NoActiveSimulationMessage = "Bu rota için çalışan bir simülasyon yok.";
     private const string UnknownUserMessage = "Simülasyon başlatmak için kimlik doğrulaması gerekiyor.";
 
+    /* Eskimiş komut bir DOĞRULAMA hatası değildir: istek kusursuzdur, sistemin
+       o anki durumuyla çelişir. Çakışma (409), istemciye "durumu tazele ve
+       gerekiyorsa aynı komutu yeni kimlikle tekrarla" diyebilen tek
+       kategoridir — başlatmadaki AlreadyRunning ile aynı gerekçe. */
+    private const string StaleSimulationMessage =
+        "Bu çalıştırma artık aktif değil; hattaki güncel simülasyon farklı. Durumu yenileyip tekrar deneyin.";
+
     /// <summary>Bir çizgi için anlamlı en az köşe sayısı.</summary>
     private const int MinimumPathPoints = 2;
 
     private readonly AppDbContext _dbContext;
     private readonly ICurrentUserService _currentUser;
     private readonly ITransportSimulationStateStore _state;
+    private readonly ITransportSimulationTerminator _terminator;
 
     public TransportSimulationService(
         AppDbContext dbContext,
         ICurrentUserService currentUser,
-        ITransportSimulationStateStore state)
+        ITransportSimulationStateStore state,
+        ITransportSimulationTerminator terminator)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
         _state = state;
+        _terminator = terminator;
     }
 
     public async Task<ServiceResult<TransportSimulationResponse>> StartAsync(
@@ -167,6 +177,63 @@ public sealed class TransportSimulationService : ITransportSimulationService
         return simulation is null
             ? ServiceResult<TransportSimulationResponse>.NotFound(NoActiveSimulationMessage)
             : ServiceResult<TransportSimulationResponse>.Success(ToResponse(simulation));
+    }
+
+    /// <summary>
+    /// AÇIK kullanıcı durdurması. Yetki (<c>transport.simulation.stop</c>)
+    /// uçtadır; burada KİMLİK ve DURUM denetlenir.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Aşağıdaki ön okumalar yalnızca DOĞRU HATA MESAJI içindir.</b>
+    /// Bağlayıcı karar, deponun atomik <c>TryStop(routeId, simulationId)</c>
+    /// işlemidir ve o da terminatörün içindedir: ön okuma ile sonlandırma
+    /// arasında çalıştırma değişirse terminatör <c>null</c> döner ve komut yine
+    /// reddedilir. "Her ihtimale karşı güncel olanı durdur" yolu YOKTUR.
+    /// </para>
+    /// <para>
+    /// Kimlik (kim durdurdu) SORULMAZ: başlatmadan farklı olarak durdurma bir
+    /// sahiplik işlemi değildir — hattı başlatan kişi ile durduran kişi aynı
+    /// olmak zorunda değildir ve yetki bunu zaten söyler.
+    /// </para>
+    /// </remarks>
+    public async Task<ServiceResult<TransportSimulationLiveUpdate>> StopAsync(
+        int routeId,
+        Guid simulationId,
+        CancellationToken cancellationToken = default)
+    {
+        if (!await _dbContext.TransportRoutes
+                .IgnoreQueryFilters()
+                .AnyAsync(item => item.Id == routeId && !item.IsDeleted, cancellationToken))
+        {
+            return ServiceResult<TransportSimulationLiveUpdate>.NotFound(RouteNotFoundMessage);
+        }
+
+        var active = _state.Find(routeId);
+
+        if (active is null)
+        {
+            /* Zaten terminal ya da hiç başlamamış: GÜVENLİ başarısızlık.
+               Sessizce "başarılı" demek, istemciye durdurmadığı bir şeyi
+               durdurmuş gibi gösterirdi. */
+            return ServiceResult<TransportSimulationLiveUpdate>.NotFound(NoActiveSimulationMessage);
+        }
+
+        if (active.SimulationId != simulationId)
+        {
+            /* ASIL YARIŞ KORUMASI. Hatta bir çalıştırma var ama istenen O
+               DEĞİL: eski bir sekme, yerine geçmiş yeni çalıştırmayı — başka
+               kullanıcıların izlediği bir yayını — durduramaz. */
+            return ServiceResult<TransportSimulationLiveUpdate>.Conflict(StaleSimulationMessage);
+        }
+
+        var terminated = await _terminator.TerminateAsync(routeId, simulationId, cancellationToken);
+
+        return terminated is null
+            /* Ön okuma ile sonlandırma arasında çalıştırma değişti; kimlik
+               denetimi tuttu ve hiçbir şeye dokunulmadı. */
+            ? ServiceResult<TransportSimulationLiveUpdate>.Conflict(StaleSimulationMessage)
+            : ServiceResult<TransportSimulationLiveUpdate>.Success(terminated);
     }
 
     public TransportSimulationLiveUpdate? FindActiveLiveUpdate(int routeId)

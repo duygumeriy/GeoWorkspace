@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { readApiError } from '../services/api.js'
 import { liveConnectionMessage } from '../map/liveConnectionMessage.js'
-import { fetchTransportSimulation, startTransportSimulation } from '../services/transportApi.js'
+import {
+  fetchTransportSimulation,
+  startTransportSimulation,
+  stopTransportSimulation,
+} from '../services/transportApi.js'
 import { createTransportSimulationHubClient } from '../services/transportSimulationHub.js'
 import {
   isTerminalSimulationStatus,
@@ -34,6 +38,10 @@ export default function useTransportSimulation({ routeId = null, canView = false
   const [observedRouteId, setObservedRouteId] = useState(null)
   const [statusLoading, setStatusLoading] = useState(false)
   const [starting, setStarting] = useState(false)
+  /* Durdurma UÇUŞTAYKEN düğme kapanır: çift gönderim, ikinci isteğin ya
+     404/409 alması ya da (kimlik olmasaydı) yerine geçmiş bir çalıştırmayı
+     vurması demekti. */
+  const [stopping, setStopping] = useState(false)
   const [following, setFollowing] = useState(false)
   const [error, setError] = useState('')
 
@@ -151,6 +159,44 @@ export default function useTransportSimulation({ routeId = null, canView = false
     }
   }, [applyState, canView, client, starting, syncSubscriptions])
 
+  /**
+   * PAYLAŞILAN çalıştırmayı herkes için durdurur.
+   *
+   * <b>Komut İKİ kimlik taşır.</b> Rota tek başına yetmez: eski bir sekme,
+   * yerine geçmiş yeni bir çalıştırmayı durduramamalıdır. Kimlik
+   * bilinmiyorsa istek HİÇ yola çıkmaz — "en güncel olanı durdur" gibi bir
+   * geri dönüş YOKTUR.
+   *
+   * <b>Terminal durum UYDURULMAZ.</b> Ekran, sunucunun döndürdüğü otoriter
+   * terminal güncellemeyle — gözlemcilerin SignalR'dan aldığının aynısıyla —
+   * güncellenir; yerel bir "durdu" varsayımı yazılmaz. Kamera/takip da burada
+   * bırakılmaz: terminal durumu gören mevcut yaşam döngüsü onu zaten çözer.
+   */
+  const stop = useCallback(async (targetRouteId, simulationId) => {
+    if (!targetRouteId || !simulationId || stopping) return null
+
+    setStopping(true)
+    setError('')
+    try {
+      const response = await stopTransportSimulation(targetRouteId, simulationId)
+      if (!response.ok) {
+        throw new Error(await readApiError(response, 'Simülasyon durdurulamadı.'))
+      }
+
+      /* Yanıt canlı yayın SÖZLEŞMESİDİR; aynı saf normalleştirme ve aynı tek
+         birleştirme kuralından geçer. Geç gelen bir Running olayı terminal
+         durumu geri saramaz — kural `mergeSimulationState`'tedir. */
+      const terminal = normalizeLiveUpdate(await response.json())
+      applyState(terminal)
+      return terminal
+    } catch (stopError) {
+      setError(liveConnectionMessage(stopError, 'Simülasyon durdurulamadı.'))
+      return null
+    } finally {
+      setStopping(false)
+    }
+  }, [applyState, stopping])
+
   const follow = useCallback(async (targetRouteId) => {
     if (!targetRouteId || !canView) return null
     setFollowing(true)
@@ -202,6 +248,48 @@ export default function useTransportSimulation({ routeId = null, canView = false
     clientRef.current = null
   }, [])
 
+  /* TERMİNAL DURUM KAMERAYI BIRAKIR — ABONELİĞİ DEĞİL.
+
+     Takip edilen çalıştırma bittiğinde kamera sahipliği kullanıcıda kalmaya
+     devam etmemelidir: aksi hâlde "Aktif simülasyon yok" ile "Takibi Bırak"
+     aynı anda görünür ve aynı hatta başlayan YENİ çalıştırma B, kullanıcı hiç
+     istemeden takip ediliyormuş gibi davranır.
+
+     Bırakma SIRALI yapılır ve sıra kritiktir: ÖNCE pasif izleme yuvasına
+     geçilir (grup üyeliği o yuvada tutulur), SONRA takip yuvası boşaltılır.
+     Ters sıra gruptan çıkıp yeniden katılmak olurdu ve o pencerede B'nin ilk
+     yayını kaçabilirdi. İstemci "diğer yuva da istiyorsa ayrılma" kuralını
+     zaten uyguladığı için burada tek bir JoinRoute/LeaveRoute bile
+     gerekmez. */
+  const releasedFollowRef = useRef(null)
+
+  useEffect(() => {
+    if (followingRouteId == null) return
+
+    const followed = byRoute[followingRouteId] ?? null
+    if (!followed || !isTerminalSimulationStatus(followed.status)) return
+
+    // Aynı çalıştırma için ikinci kez devretmeye çalışılmaz.
+    if (releasedFollowRef.current === followed.simulationId) return
+    releasedFollowRef.current = followed.simulationId
+
+    const route = followingRouteId
+
+    ;(async () => {
+      try {
+        /* Abonelik KORUNUR: pasif izleme yuvası aynı rotayı devralır ve
+           gruptan çıkılmaz. */
+        await client().observe(route)
+        await clientRef.current?.unfollow()
+      } catch {
+        /* Devir başarısız olsa bile kamera sahipliği bırakılmalıdır; sunucu
+           durumu otoriterdir ve kullanıcı Takip Et ile yeniden deneyebilir. */
+      } finally {
+        syncSubscriptions()
+      }
+    })()
+  }, [followingRouteId, byRoute, client, syncSubscriptions])
+
   /* Görüntüleme yetkisi düşerse canlı kanal da kapanır: arayüz, backend'in
      artık reddedeceği bir aboneliği sürdürmez. */
   useEffect(() => {
@@ -219,17 +307,25 @@ export default function useTransportSimulation({ routeId = null, canView = false
 
   const observedSimulation = observedRouteId == null ? null : byRoute[observedRouteId] ?? null
 
-  /* Pasif izlemenin ömrü DAR tutulur: yalnızca izlenen rota hâlâ seçiliyken ve
-     çalıştırma sürerken anlamlıdır. Başka bir rotaya geçildiğinde ya da
-     çalıştırma bittiğinde abonelik bırakılır — açıkça takip ediliyorsa
-     dokunulmaz, çünkü o karar kullanıcınındır. */
+  /* Pasif izlemenin ömrü ROTA SEÇİMİNE bağlıdır — çalıştırmanın yaşam
+     döngüsüne DEĞİL.
+
+     ESKİ KURAL YANLIŞTI: çalıştırma terminal olunca abonelik bırakılıyordu.
+     Ama ROTA GÖZLEMİ ile ÇALIŞTIRMA YAŞAM DÖNGÜSÜ ayrı şeylerdir: A bitince
+     kullanıcı hâlâ R hattına bakıyordur ve az sonra AYNI hatta B
+     başlayabilir. Grubu terk etmek, B'nin ilk otoriter yayınının sayfaya hiç
+     ulaşmaması ve kullanıcının onu ancak SAYFAYI YENİLEYEREK görmesi
+     demekti.
+
+     Grup yalnızca gerçek GÖZLEM olayları için bırakılır: seçili rota
+     değişti, seçim temizlendi, yetki düştü ya da bileşen söküldü. */
   useEffect(() => {
     if (observedRouteId == null) return
     if (observedRouteId === followingRouteId) return
-    const finished = observedSimulation != null && isTerminalSimulationStatus(observedSimulation.status)
-    if (observedRouteId === routeId && !finished) return
+    // Hâlâ seçili olan rotanın aboneliği KORUNUR; durumu ne olursa olsun.
+    if (observedRouteId === routeId) return
     stopObserving()
-  }, [observedRouteId, followingRouteId, observedSimulation, routeId, stopObserving])
+  }, [observedRouteId, followingRouteId, routeId, stopObserving])
 
   return {
     simulation,
@@ -239,10 +335,12 @@ export default function useTransportSimulation({ routeId = null, canView = false
     observedRouteId,
     statusLoading,
     starting,
+    stopping,
     following,
     error,
     clearError: () => setError(''),
     start,
+    stop,
     follow,
     unfollow,
     reloadStatus: () => loadStatus(routeId),

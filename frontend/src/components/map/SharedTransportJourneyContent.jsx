@@ -10,13 +10,17 @@ import { formatRouteDistance, formatRouteDuration } from '../../map/transportPat
  * biçimde okunmaz — görünürlük ETKİN yetki kodundan türer ve zaten yalnızca
  * deneyimdir: backend yetkisiz isteğe 403 döndürmeye devam eder.
  *
+ * <b>Durdurma çok kullanıcılı bir çalıştırmayı sonlandırır</b> ve bu yüzden
+ * ONAY ister; onaylanana kadar hiçbir istek yola çıkmaz. Komut rota kimliğiyle
+ * birlikte ÇALIŞTIRMA kimliğini de taşır — sunucu ikisini birden doğrular,
+ * böylece eski bir sekme yerine geçmiş yeni bir çalıştırmayı durduramaz.
+ * Başlatma yetkisi durdurma otoritesi olarak KULLANILMAZ: iki kod ayrıdır.
+ *
  * <b>Uydurulmayanlar bilinçlidir.</b>
  * <ul>
- *   <li><b>Durdurma YOKTUR.</b> Paylaşılan hattı herkes için durduran açık bir
- *       komut backend'de henüz bulunmuyor; `transport.simulation.stop` şu an
- *       yalnızca bir yetki KİMLİĞİDİR. Başlatma yetkisini durdurma otoritesi
- *       gibi kullanmak ya da sistemin iç iptalini tarayıcıdan çağırmak
- *       yapılmaz.</li>
+ *   <li><b>Terminal durum UYDURULMAZ.</b> Durdurma sonrası ekran, sunucunun
+ *       döndürdüğü otoriter terminal güncellemeyle değişir; yerel bir "durdu"
+ *       varsayımı yazılmaz ve sistemin iç iptali tarayıcıdan çağrılmaz.</li>
  *   <li><b>Yönlendirme YOKTUR.</b> Kalıcı güzergah manevra bilgisi taşımaz;
  *       "şu anki talimat" ya da "sonraki dönüş" geometriden TÜRETİLMEZ.</li>
  *   <li><b>Sahte ilerleme YOKTUR.</b> Çalışan bir simülasyon yokken yüzde,
@@ -30,6 +34,7 @@ import { formatRouteDistance, formatRouteDuration } from '../../map/transportPat
 export default function SharedTransportJourneyContent({
   shared = null,
   onStart,
+  onStop,
   onFollow,
   onUnfollow,
 }) {
@@ -102,6 +107,19 @@ export default function SharedTransportJourneyContent({
             onClick={onStart}
           >
             {shared.starting ? 'Başlatılıyor…' : 'Simülasyonu Başlat'}
+          </button>
+        )}
+        {/* Yıkıcı eylem, kendi görsel dilinde ve ONAYIN arkasında: tıklama
+            komutu göndermez, yalnızca onayı açar. */}
+        {shared.showStop && (
+          <button
+            type="button"
+            className="journey-danger"
+            disabled={shared.stopDisabled}
+            aria-busy={shared.stopping}
+            onClick={onStop}
+          >
+            {shared.stopping ? 'Durduruluyor…' : 'Simülasyonu Durdur'}
           </button>
         )}
         {shared.showFollow && (
