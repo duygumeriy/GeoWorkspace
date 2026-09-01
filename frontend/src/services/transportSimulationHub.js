@@ -29,6 +29,17 @@ export function createTransportSimulationConnection() {
     .withUrl(transportSimulationHubUrl(), {
       accessTokenFactory: () => getAccessToken() ?? '',
       transport: HttpTransportType.WebSockets | HttpTransportType.LongPolling,
+      /* <b>Kimlik BAŞLIKTA/SORGUDA taşınır, ÇEREZDE değil.</b> `@microsoft/signalr`
+         varsayılan olarak `withCredentials: true` ile pazarlık isteği atar;
+         tarayıcı o durumda yanıtta `Access-Control-Allow-Credentials` arar ve
+         sunucunun köken listesi bunu vermediği için isteği bloklar — kullanıcıya
+         "Failed to complete negotiation with the server: TypeError: Failed to
+         fetch" olarak görünen şey buydu.
+
+         Doğru düzeltme sunucunun CORS'unu çerezlere açmak DEĞİL, çerez
+         göndermeyi kapatmaktır: bu üründe oturum bir bearer token'dır ve
+         `accessTokenFactory` ile taşınır. */
+      withCredentials: false,
     })
     .withAutomaticReconnect()
     .configureLogging(LogLevel.Warning)

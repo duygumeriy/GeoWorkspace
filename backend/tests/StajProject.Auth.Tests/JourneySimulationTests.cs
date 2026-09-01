@@ -456,7 +456,12 @@ public sealed class JourneySimulationTests
     [Fact]
     public async Task A_route_full_journey_with_no_steps_still_recovers()
     {
-        await using var fixture = await Fixture.WithRouteAsync();
+        /* Motor kullanılamıyorken kişisel yolculuk KALICI yola düşer ve o yol
+           manevra saklamaz. Ölçülen şey budur: manevrasız bir yolculuk
+           kurtarılabilir olmalıdır. (Motor çalışırken routeFull artık kendi
+           planını üretir ve adımları OLUR — bkz. JourneyRoutingTests.) */
+        await using var fixture = await Fixture.WithRouteAsync(
+            router: FakeJourneyRouter.Failing(ServiceErrorKind.Upstream));
         await fixture.AddPathAsync(Line((30, 40), (30.5, 40.5), (31, 41)));
 
         var started = (await fixture.Simulations.StartAsync(new JourneyPlanRequest
@@ -476,8 +481,36 @@ public sealed class JourneySimulationTests
         Assert.Equal("Hat", recovered.RouteName);
         Assert.Equal(2, recovered.Waypoints.Count);
 
-        // Kalıcı yol yeniden kullanıldı; kurtarma da motora gitmedi.
-        Assert.Equal(0, fixture.Router.CallCount);
+        /* Kurtarma SÜREÇ İÇİ oturumdan okunur: motora ikinci kez gidilmez.
+           (Tek çağrı başlatma anındaki başarısız denemedir.) */
+        Assert.Equal(1, fixture.Router.CallCount);
+    }
+
+    [Fact]
+    public async Task A_route_full_journey_carries_real_navigation_steps_when_routing_works()
+    {
+        /* Manuel kabul testinde görülen eksik: gerçek bir rota çizilirken panel
+           "bu güzergâh için adım adım yönlendirme bulunmuyor" diyordu. */
+        await using var fixture = await Fixture.WithRouteAsync();
+        await fixture.AddPathAsync(Line((30, 40), (30.5, 40.5), (31, 41)));
+
+        var started = (await fixture.Simulations.StartAsync(new JourneyPlanRequest
+        {
+            Mode = JourneyContractNames.RouteFull,
+            Profile = JourneyContractNames.Driving,
+            RouteId = fixture.RouteId,
+        })).Value!;
+
+        Assert.NotEmpty(started.Steps);
+
+        // Geometri ve adımlar AYNI plandandır: simülasyon o geometride ilerler.
+        var active = fixture.Store.FindByOwner(Owner)!;
+        Assert.Equal(started.Steps.Count, active.Details.Steps.Count);
+        Assert.NotEmpty(active.Path.StepDistances);
+
+        // Kurtarma da aynı adımları döndürür.
+        var recovered = (await fixture.Simulations.GetCurrentAsync()).Value!;
+        Assert.Equal(started.Steps.Count, recovered.Steps.Count);
     }
 
     [Fact]
@@ -548,10 +581,22 @@ public sealed class JourneySimulationTests
     }
 
     [Fact]
-    public async Task A_route_full_journey_on_a_persisted_path_runs_with_a_null_current_step()
+    public async Task A_journey_without_maneuvers_still_runs_and_keeps_a_null_current_step()
     {
-        await using var fixture = await Fixture.WithRouteAsync();
-        await fixture.AddPathAsync(Line((30, 40), (30.5, 40.5), (31, 41)));
+        /* SENARYO DÜRÜSTÇE KURULUR (routeFull sözleşmesi değişti).
+
+           Artık kalıcı bir yolun VARLIĞI motoru atlatmaz: kişisel yolculuk önce
+           canlı yönlendirmeyi dener. Manevrasız bir plan ancak motor
+           kullanılamadığında doğar — kayıtlı yol devreye girer ve o yol manevra
+           saklamaz.
+
+           Korunan ASIL değer bu testin adındadır: manevra verisi OLMAYAN bir
+           yolculuk da güvenle çalışır ve güncel adım boş kalır. */
+        await using var fixture = await Fixture.WithRouteAsync(
+            router: FakeJourneyRouter.Failing(ServiceErrorKind.Upstream));
+
+        var persisted = Line((30, 40), (30.5, 40.5), (31, 41));
+        await fixture.AddPathAsync(persisted);
 
         var started = await fixture.Simulations.StartAsync(new JourneyPlanRequest
         {
@@ -562,16 +607,31 @@ public sealed class JourneySimulationTests
 
         Assert.True(started.IsSuccess);
 
-        // Kalıcı yol yeniden kullanıldı: motor çağrılmadı, manevra yok.
-        Assert.Equal(0, fixture.Router.CallCount);
-        Assert.Empty(started.Value!.Steps);
+        // Canlı yönlendirme DENENDİ ve başarısız oldu; kayıtlı yol devraldı.
+        Assert.Equal(1, fixture.Router.CallCount);
+        Assert.Equal(persisted.NumPoints, fixture.Store.FindByOwner(Owner)!.Path.Points.Count);
+        Assert.Equal(900, started.Value!.TotalDistanceMeters);
+
+        // Manevra yok: uydurulmuş bir adım listesi yerine dürüst bir boşluk.
+        Assert.Empty(started.Value.Steps);
         Assert.Null(started.Value.Snapshot.CurrentStepSequence);
 
         // Ve simülasyon yine de sorunsuz ilerler.
         var startedAt = fixture.Store.FindByOwner(Owner)!.StartedAt;
         await fixture.Runner(speedMultiplier: 1).AdvanceAsync(startedAt.AddSeconds(10));
-        Assert.NotEmpty(fixture.Broadcaster.Published);
-        Assert.Null(fixture.Broadcaster.Published[^1].CurrentStepSequence);
+
+        var published = Assert.Single(fixture.Broadcaster.Published);
+        Assert.True(published.ProgressPercent > 0);
+        // Adım verisi yokken güncel adım BOŞ kalır; sıra uydurulmaz.
+        Assert.Null(published.CurrentStepSequence);
+
+        /* Kalıcı yol OKUNDU, yazılmadı: paylaşılan ürünün otoritesi yerinde
+           kalır. */
+        var stored = await fixture.Db.TransportRoutePaths.AsNoTracking()
+            .SingleAsync(item => item.RouteId == fixture.RouteId);
+        Assert.False(stored.IsStale);
+        Assert.Equal(900, stored.DistanceMeters);
+        Assert.Equal(persisted.NumPoints, stored.Geometry.NumPoints);
     }
 
     /* --- PROFİL ------------------------------------------------------------------ */

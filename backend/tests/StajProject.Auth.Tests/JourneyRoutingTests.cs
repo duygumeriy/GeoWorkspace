@@ -36,7 +36,7 @@ public sealed class JourneyRoutingTests
     /* --- ROTA TAMAMI ------------------------------------------------------------- */
 
     [Fact]
-    public async Task Route_full_reuses_the_persisted_path_without_calling_the_engine()
+    public async Task Route_full_routes_the_personal_journey_itself_so_it_keeps_navigation_steps()
     {
         await using var fixture = Fixture.Create();
         var route = await fixture.AddRouteAsync();
@@ -51,27 +51,69 @@ public sealed class JourneyRoutingTests
         Assert.True(result.IsSuccess);
         var plan = result.Value!;
 
-        /* ASIL İDDİA: otoriter yol varken aynı güzergahı yeniden üretmek için
-           motora GİDİLMEZ. */
-        Assert.Equal(0, fixture.Router.CallCount);
+        /* SÖZLEŞME DEĞİŞTİ (manuel kabul testi sonrası).
 
-        // Kanonik geometri ve ölçümler olduğu gibi taşınır.
-        Assert.Equal(new WKTWriter().Write(persisted), plan.GeometryWkt);
-        Assert.Equal(1234, plan.Summary.DistanceMeters);
-        Assert.Equal(321, plan.Summary.DurationSeconds);
-        Assert.Equal("persistedRoutePath", plan.Summary.GeometrySource);
+           Kalıcı `TransportRoutePath` PAYLAŞILAN hat ürününün otoritesidir ama
+           manevra saklamaz. Kişisel yolculuk onu olduğu gibi kullandığında
+           kullanıcı gerçek bir rota görüyor, yanında da "bu güzergâh için adım
+           adım yönlendirme bulunmuyor" yazısını okuyordu.
+
+           Kişisel yolculuk artık KENDİ planını üretir: geometri, ölçümler ve
+           adımlar TEK bir yönlendirme sonucundan gelir. */
+        Assert.Equal(1, fixture.Router.CallCount);
+        Assert.NotEmpty(plan.Steps);
+        Assert.Equal("liveRouting", plan.Summary.GeometrySource);
         Assert.Equal("driving", plan.Summary.EffectiveProfile);
-        Assert.Equal("routed", plan.Summary.ProfileSupport);
 
-        /* Kalıcı kayıt adım verisi taşımaz; yalnızca adım üretmek için motora
-           yeniden gidilmez ve bu durum açıkça bildirilir. */
+        // Geometri ve adımlar AYNI plandan: kalıcı yol artık çizilen şey değildir.
+        Assert.NotEqual(new WKTWriter().Write(persisted), plan.GeometryWkt);
+        Assert.Contains(plan.Summary.Assumptions, note => note.Contains("AYNI plandan", StringComparison.Ordinal));
+
+        /* Ve kalıcı yol DEĞİŞTİRİLMEZ: paylaşılan ürünün otoritesi yerinde
+           kalır, kişisel yolculuk yalnızca onu tercih etmez. */
+        var stored = await fixture.Db.TransportRoutePaths.AsNoTracking()
+            .SingleAsync(item => item.RouteId == route.Id);
+        Assert.Equal(new WKTWriter().Write(persisted), new WKTWriter().Write(stored.Geometry));
+        Assert.Equal(1234, stored.DistanceMeters);
+        Assert.Equal(321, stored.DurationSeconds);
+    }
+
+    [Fact]
+    public async Task Route_full_still_falls_back_to_the_persisted_path_when_the_engine_is_unavailable()
+    {
+        /* Motor o profil için kullanılamıyorsa yolculuk YİNE ÇALIŞIR: kayıtlı
+           yol devreye girer ve manevrasız bir güzergah gösterilir. Yedeğin
+           kaybı, arıza anında ürünü tamamen kullanılamaz yapardı. */
+        await using var fixture = Fixture.Create(FakeJourneyRouter.Failing(ServiceErrorKind.Upstream));
+        var route = await fixture.AddRouteAsync();
+        await fixture.AddStopAsync(route, "A", 30, 40, sequence: 1);
+        await fixture.AddStopAsync(route, "B", 31, 41, sequence: 2);
+
+        var persisted = Geometry((30, 40), (30.4, 40.9), (31, 41));
+        await fixture.AddPathAsync(route, geometry: persisted, distance: 1234, duration: 321);
+
+        var result = await fixture.Service.PreviewAsync(Request(JourneyContractNames.RouteFull, route.Id));
+
+        Assert.True(result.IsSuccess);
+        var plan = result.Value!;
+
+        Assert.Equal(new WKTWriter().Write(persisted), plan.GeometryWkt);
+        Assert.Equal("persistedRoutePath", plan.Summary.GeometrySource);
+        Assert.Equal(1234, plan.Summary.DistanceMeters);
+
+        /* Manevra YOKTUR ve bu açıkça bildirilir: uydurulmuş bir adım listesi
+           yerine dürüst bir boşluk. */
         Assert.Empty(plan.Steps);
         Assert.Contains(plan.Summary.Assumptions, note => note.Contains("kayıtlı", StringComparison.Ordinal));
     }
 
     [Fact]
-    public async Task Route_full_falls_back_to_read_only_live_routing_when_the_path_is_stale_or_missing()
+    public async Task Route_full_uses_live_routing_even_when_the_persisted_path_is_stale_or_missing()
     {
+        /* Adı da sözleşmesi de DEĞİŞTİ: canlı yönlendirme artık bir "yedek"
+           değil, kişisel yolculuğun BİRİNCİL planıdır. Kayıtlı yolun bayat mı
+           yoksa hiç yok mu olduğu bu kararı etkilemez — ikisinde de sonuç
+           aynı olmalıdır. */
         foreach (var stale in (bool[])[true, false])
         {
             await using var fixture = Fixture.Create();
@@ -87,13 +129,29 @@ public sealed class JourneyRoutingTests
             var result = await fixture.Service.PreviewAsync(Request(JourneyContractNames.RouteFull, route.Id));
 
             Assert.True(result.IsSuccess);
-            Assert.Equal(1, fixture.Router.CallCount);
-            Assert.Equal("liveRouting", result.Value!.Summary.GeometrySource);
+            var plan = result.Value!;
 
-            // Kullanıcı otoriter yolu gördüğünü SANMAMALIDIR.
+            // Motora TAM OLARAK bir kez gidilir ve sonuç odur.
+            Assert.Equal(1, fixture.Router.CallCount);
+            Assert.Equal("liveRouting", plan.Summary.GeometrySource);
+
+            /* Geometri, ölçümler ve adımlar AYNI yönlendirme sonucundan gelir:
+               simülasyon tam olarak bu geometride ilerleyecektir. */
+            Assert.Equal(FakeJourneyRouter.DefaultDistanceMeters, plan.Summary.DistanceMeters);
+            Assert.Equal(FakeJourneyRouter.DefaultDurationSeconds, plan.Summary.DurationSeconds);
+            Assert.NotEmpty(plan.Steps);
+            Assert.Equal([0, 1, 2], plan.Steps.Select(step => step.Sequence));
+
+            /* Kullanıcı otoriter kayıtlı yolu gördüğünü SANMAMALIDIR. Ölçülen
+               şey KAVRAMDIR, cümlenin kendisi değil: sonucun baştan
+               hesaplandığı söylenir ve kayıtlı yol kullanıldığı iddia
+               EDİLMEZ. */
             Assert.Contains(
-                result.Value.Summary.Assumptions,
-                note => note.Contains("kaydedilmedi", StringComparison.Ordinal));
+                plan.Summary.Assumptions,
+                note => note.Contains("baştan hesaplandı", StringComparison.Ordinal));
+            Assert.DoesNotContain(
+                plan.Summary.Assumptions,
+                note => note.Contains("kayıtlı ve güncel yolundan", StringComparison.Ordinal));
 
             // Bayat kayıt olduğu gibi durur; tazelenmez, silinmez, yazılmaz.
             if (stale)

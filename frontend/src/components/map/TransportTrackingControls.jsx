@@ -33,10 +33,19 @@ export default function TransportTrackingControls({
   if (!controls) return null
 
   return (
-    <section className={`transport-simulation-panel ${className}`.trim()} aria-label="Simülasyon durumu">
+    <section
+      className={`transport-simulation-panel ${className}`.trim()}
+      /* İKİ ÜRÜN aynı anda ekranda olabilir: bu kart PAYLAŞILAN bir HATTIN
+         çalıştırmasıdır, sol üstteki "Yolculuk" kartı ise kullanıcının KİŞİSEL
+         yolculuğu. Yalnızca "Simülasyon" yazan bir başlık, ikisinin aynı şeyin
+         iki yüzü olduğunu ima ediyordu — kullanıcı hattın ilerlemesini görüp
+         yolculuk panelinin de onu yansıtmasını bekliyordu. Ad, ürünü söyler;
+         davranışın kendisi DEĞİŞMEZ. */
+      aria-label="Hat simülasyonu durumu"
+    >
       <div className="transport-simulation-heading">
         <div>
-          <span>Simülasyon</span>
+          <span>Hat Simülasyonu</span>
           <strong>{statusLoading ? 'Yükleniyor…' : controls.statusLabel ?? 'Çalışmıyor'}</strong>
         </div>
         {controls.isActive && (

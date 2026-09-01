@@ -99,7 +99,12 @@ public sealed class JourneyPlanningService : IJourneyPlanningService
         "Bölüm, hattın kalıcı durak sırasına göre TERS yönde planlandı; duraklar seçime uygun biçimde sıralandı.";
 
     private const string PersistedPathAssumption =
-        "Güzergah, rotanın kayıtlı ve güncel yolundan olduğu gibi alındı; yeniden hesaplanmadı.";
+        "Güzergah, rotanın kayıtlı ve güncel yolundan olduğu gibi alındı; yeniden hesaplanmadı. "
+        + "Kayıtlı yol manevra bilgisi taşımadığı için adım adım yönlendirme bulunmuyor.";
+
+    private const string LiveRoutingPreferredAssumption =
+        "Hat, seçilen profil için baştan hesaplandı; böylece güzergah ve adım adım yönlendirme "
+        + "AYNI plandan gelir. Rotanın kayıtlı yolu değiştirilmedi.";
 
     private const string MissingPathAssumption =
         "Rotanın kayıtlı bir güzergahı bulunmadığı için bu önizleme geçici olarak hesaplandı ve hiçbir yere kaydedilmedi.";
@@ -266,6 +271,28 @@ public sealed class JourneyPlanningService : IJourneyPlanningService
 
         var requestedProfileName = JourneyContractNames.Of(profile);
 
+        /* ÖNCE CANLI YÖNLENDİRME — bilinçli bir öncelik değişikliği.
+
+           Kalıcı `TransportRoutePath` PAYLAŞILAN hat ürününün otoritesidir ve
+           orada öyle kalır; ama manevra saklamaz. Kişisel yolculuk onu olduğu
+           gibi kullandığında geometri geliyor, adım adım yönlendirme
+           gelmiyordu — kullanıcı gerçek bir rota görüyor ama "bu güzergâh için
+           adım adım yönlendirme bulunmuyor" yazısıyla karşılaşıyordu.
+
+           Kişisel yolculuk KENDİ planına sahiptir: geometri, mesafe, süre ve
+           adımlar TEK bir yönlendirme sonucundan gelir. Kalıcı yol
+           DEĞİŞTİRİLMEZ, yalnızca burada tercih edilmez.
+
+           Yedek yol korunur: motor o profil için kullanılamıyorsa kayıtlı yol
+           yine devreye girer — yolculuk manevrasız da olsa çalışır. */
+        var live = await RouteLiveAsync(journey, profile, assumptions, cancellationToken);
+
+        if (live.IsSuccess)
+        {
+            assumptions.Add(LiveRoutingPreferredAssumption);
+            return live;
+        }
+
         if (path is not null
             && !path.IsStale
             && path.Geometry.NumPoints >= MinimumGeometryPoints
@@ -281,13 +308,15 @@ public sealed class JourneyPlanningService : IJourneyPlanningService
                 Steps: []));
         }
 
+        /* Ne canlı yönlendirme ne de kullanılabilir bir kayıtlı yol var:
+           motorun kendi hatası olduğu gibi döner. */
         assumptions.Add(path is null
             ? MissingPathAssumption
             : path.IsStale
                 ? StalePathAssumption
                 : ProfileMismatchAssumption);
 
-        return await RouteLiveAsync(journey, profile, assumptions, cancellationToken);
+        return live;
     }
 
     /// <summary>

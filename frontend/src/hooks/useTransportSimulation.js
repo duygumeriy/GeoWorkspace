@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { readApiError } from '../services/api.js'
+import { liveConnectionMessage } from '../map/liveConnectionMessage.js'
 import { fetchTransportSimulation, startTransportSimulation } from '../services/transportApi.js'
 import { createTransportSimulationHubClient } from '../services/transportSimulationHub.js'
 import {
@@ -97,7 +98,7 @@ export default function useTransportSimulation({ routeId = null, canView = false
     } catch (loadError) {
       if (requestId !== statusRequestId.current) return null
       setRouteState(targetRouteId, null)
-      setError(loadError?.message || 'Simülasyon durumu okunamadı.')
+      setError(liveConnectionMessage(loadError, 'Simülasyon durumu okunamadı.'))
       return null
     } finally {
       if (requestId === statusRequestId.current) setStatusLoading(false)
@@ -143,7 +144,7 @@ export default function useTransportSimulation({ routeId = null, canView = false
 
       return snapshot
     } catch (startError) {
-      setError(startError?.message || 'Simülasyon başlatılamadı.')
+      setError(liveConnectionMessage(startError, 'Simülasyon başlatılamadı.'))
       return null
     } finally {
       setStarting(false)
@@ -161,7 +162,8 @@ export default function useTransportSimulation({ routeId = null, canView = false
       applyState(normalizeLiveUpdate(snapshot))
       return snapshot
     } catch (followError) {
-      setError(followError?.message || 'Canlı takip başlatılamadı.')
+      // Ham pazarlık hatası arayüze çıkmaz; teknik ayrıntı konsolda kalır.
+      setError(liveConnectionMessage(followError, 'Canlı takip başlatılamadı.'))
       syncSubscriptions()
       return null
     } finally {

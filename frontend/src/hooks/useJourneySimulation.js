@@ -15,6 +15,7 @@ import {
   journeyPhase,
 } from '../map/journeySimulationState.js'
 import { journeyErrorMessage } from '../map/journeyPresentation.js'
+import { liveConnectionMessage } from '../map/liveConnectionMessage.js'
 
 export const JOURNEY_UPDATED_EVENT = 'JourneySimulationUpdated'
 export const JOIN_SIMULATION_METHOD = 'JoinSimulation'
@@ -52,16 +53,19 @@ export default function useJourneySimulation({ permitted = false } = {}) {
   const joinedRef = useRef(null)
   const disposedRef = useRef(false)
 
-  /* Dinleyici her zaman EN GÜNCEL anlık görüntüyü görmelidir; state closure'ı
-     yakalasaydı ilk render'ın değeriyle karşılaştırma yapardı. */
-  const snapshotRef = useRef(null)
-  snapshotRef.current = snapshot
-
   const applyUpdate = useCallback((incoming) => {
     /* `stop()` asenkrondur: sökülmeyle durmanın tamamlanması arasında yolda
        kalmış bir olay hâlâ tetiklenebilir. Sökülmüş bir bağlantıdan gelen
        güncelleme duruma YAZILMAZ. */
     if (disposedRef.current) return
+
+    /* <b>Karşılaştırma İŞLEVSEL güncelleyicinin içinde yapılır.</b> Dinleyici
+       ömür boyu BİR kez kaydedilir; bir state closure'ı okusaydı sonsuza dek
+       ilk render'ın anlık görüntüsüyle karşılaştırma yapardı ve ikinci
+       güncellemeden sonrası sessizce yanlış kararlar üretirdi. Güncelleyici
+       ise React'in tuttuğu GÜNCEL değeri verir — bunun için ayrıca bir ref
+       tutmak, aynı gerçeğin ikinci ve render sırasında yazılan bir kopyası
+       olurdu. */
     setSnapshot((current) => applyJourneySnapshot(current, incoming))
   }, [])
 
@@ -105,9 +109,14 @@ export default function useJourneySimulation({ permitted = false } = {}) {
       joinedRef.current = simulationId
       const latest = await connection.invoke(JOIN_SIMULATION_METHOD, simulationId)
       if (latest) applyUpdate(latest)
-    } catch {
+    } catch (caught) {
       /* Canlı kanal kurulamazsa simülasyon SUNUCUDA devam eder; kullanıcıya
-         gösterilen son anlık görüntü başlatma yanıtındakidir. */
+         gösterilen son anlık görüntü başlatma yanıtındakidir. Ama SESSİZ
+         kalmak yanıltıcıydı: işaretçi kıpırdamıyorken arayüz her şey yolunda
+         gibi görünürdü. Metin güvenlidir, teknik ayrıntı konsoldadır. */
+      if (!disposedRef.current) {
+        setError(liveConnectionMessage(caught, 'Canlı bağlantı kurulamadı.'))
+      }
     }
   }, [ensureConnection, applyUpdate])
 
@@ -122,11 +131,33 @@ export default function useJourneySimulation({ permitted = false } = {}) {
     }
   }, [])
 
-  useEffect(() => () => {
-    disposedRef.current = true
-    joinedRef.current = null
-    connectionRef.current?.stop?.().catch(() => {})
-    connectionRef.current = null
+  /* Sökülme bayrağı BU ETKİNİN İÇİNDE sıfırlanır.
+
+     React bir bileşeni söküp AYNI örnekle yeniden monte edebilir — geliştirme
+     modundaki `StrictMode` her montajda tam olarak bunu yapar: efektler
+     çalışır, temizlenir, sonra yeniden çalışır. State ve `useRef` kutuları bu
+     sırada KORUNUR. Bayrak yalnızca temizlikte yazılıp bir daha hiç
+     sıfırlanmasaydı — ki hata buydu — ikinci montajda kalıcı olarak `true`
+     kalırdı: `ensureConnection` `null` döner, `JoinSimulation` hiç çağrılmaz
+     ve gelen her anlık görüntü `applyUpdate`'in ilk satırında düşerdi. Panel,
+     balon ve işaretçi başlatma yanıtındaki %0'da DONARDI; oysa sunucu
+     ilerlemeye devam ediyordu.
+
+     Paylaşılan hat kancasında böyle bir bayrak yoktur (istemci atılır, ref
+     boşaltılır) ve o yüzden aynı arızaya hiç düşmedi. Buradaki kanca bayrağa
+     ihtiyaç duyar — `stop()` asenkrondur ve yolda kalmış bir olay sökülmüş
+     bağlantıdan hâlâ gelebilir — ama bayrak MONTAJA ait olmalıdır, bileşenin
+     ömrüne değil. */
+  useEffect(() => {
+    disposedRef.current = false
+
+    return () => {
+      disposedRef.current = true
+      joinedRef.current = null
+      connectionRef.current?.stop?.().catch(() => {})
+      connectionRef.current = null
+      startPromiseRef.current = null
+    }
   }, [])
 
   /* Yenileme/yeniden bağlanma kurtarması: otorite SUNUCUDUR. Yetki yoksa hiç

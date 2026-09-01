@@ -119,6 +119,7 @@ import useJourneyPreviewLayer from '../hooks/useJourneyPreviewLayer.js'
 import useJourneyWaypointPicking from '../hooks/useJourneyWaypointPicking.js'
 import useJourneySimulation from '../hooks/useJourneySimulation.js'
 import useJourneyVehicleLayer from '../hooks/useJourneyVehicleLayer.js'
+import useJourneyWaypointLayer from '../hooks/useJourneyWaypointLayer.js'
 import useTransportStopRelocation from '../hooks/useTransportStopRelocation.js'
 import { createTransportStop, deleteTransportStop, updateTransportStop } from '../services/transportApi.js'
 import { deleteStopThenMaybeGenerate, persistStopThenMaybeGenerate } from '../services/transportStopWorkflow.js'
@@ -1047,6 +1048,17 @@ export default function MapPage() {
     simulation: journeySimulation.simulation,
     previewGeometryWkt: journey.preview?.geometryWkt ?? null,
   })
+
+  /* Geçiş noktalarının OTORİTESİ: benimsenmiş çalıştırma varken sunucunun
+     çözdüğü noktalar (ad, konum, sıra, rol) kazanır — planlayıcının o anki
+     seçimi canlı haritayı boyayamaz. Çalıştırma yokken önizlemenin kendi
+     noktaları gösterilir; bırakıldığında katman boşalır. */
+  const journeyWaypoints = useMemo(
+    () => journeySimulation.simulation?.waypoints ?? journey.preview?.waypoints ?? null,
+    [journeySimulation.simulation, journey.preview],
+  )
+
+  useJourneyWaypointLayer(mapInstance, { waypoints: journeyWaypoints })
 
   /* Çağrı BURADADIR: gösterilecek geometri canlı simülasyona da bağlı olduğu
      için planlayıcıdan SONRA gelmesi gerekir. Katman ve uyum davranışı
