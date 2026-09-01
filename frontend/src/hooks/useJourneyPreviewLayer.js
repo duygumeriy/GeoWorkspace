@@ -1,9 +1,6 @@
 import { useEffect, useRef } from 'react'
-import {
-  createJourneyPreviewLayer,
-  journeyFitPadding,
-  syncJourneyPreviewFeature,
-} from '../map/journeyPreviewLayer.js'
+import { createJourneyPreviewLayer, syncJourneyPreviewFeature } from '../map/journeyPreviewLayer.js'
+import { journeyFitPadding } from '../map/journeyLayout.js'
 
 /**
  * Yolculuk önizlemesini MEVCUT haritaya çizer.
@@ -22,7 +19,9 @@ import {
 export default function useJourneyPreviewLayer(map, {
   geometryWkt = null,
   previewToken = 0,
-  panelWidth = 0,
+  /* Panelin kapladığı alan TEK bir düzen modelinden gelir (`journeyLayout.js`):
+     görünür mü ve dar ekran mı. Genişlik burada elle taşınmaz. */
+  panelVisible = false,
   compact = false,
   fitDuration = 400,
   maxZoom = 16,
@@ -32,8 +31,8 @@ export default function useJourneyPreviewLayer(map, {
   const fittedTokenRef = useRef(0)
 
   // Uyum anında okunur; değişimleri kendi başına uyum TETİKLEMEZ.
-  const paddingRef = useRef({ panelWidth, compact })
-  paddingRef.current = { panelWidth, compact }
+  const paddingRef = useRef({ panelVisible, compact })
+  paddingRef.current = { panelVisible, compact }
 
   useEffect(() => {
     if (!map) return undefined

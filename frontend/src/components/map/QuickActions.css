@@ -37,6 +37,32 @@
   color: var(--primary-light);
 }
 
+/* Yolculuk kısayolu arama düğmesiyle AYNI dili konuşur: açık durum, yığının
+   zaten kullandığı vurgudur. */
+.journey-trigger.is-open {
+  border-color: var(--border-strong);
+  color: var(--primary-light);
+}
+
+/* Panel kapalıyken bile yolculuğun sürdüğünü/bittiğini söyleyen sakin bir
+   nokta. Bildirim değildir, animasyon döngüsü yoktur; rengi durumdan gelir. */
+.journey-trigger {
+  position: relative;
+}
+
+.journey-trigger-dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1px solid var(--surface-soft);
+}
+
+.journey-trigger-dot.is-active { background: #7c3aed; }
+.journey-trigger-dot.is-terminal { background: var(--text-secondary); }
+
 .quick-action:focus-visible {
   outline: 2px solid var(--primary-light);
   outline-offset: 2px;

@@ -11,9 +11,14 @@
 
   position: absolute;
   top: 1rem;
-  left: 4.25rem;
-  z-index: 27;
-  width: min(340px, calc(100% - 5.25rem));
+  /* Ölçüler `journeyLayout.js`ten gelir: panel bileşeni onları özel değişken
+     olarak yazar (`journeyPanelStyle`), kamera dolgusu da AYNI sayılardan
+     üretilir. Burada yedek bir sayı BİLEREK yoktur: bir yedek yazmak, aynı
+     geometriyi ikinci kez — ve sessizce ayrışabilecek biçimde — tanımlamak
+     olurdu. */
+  left: var(--journey-panel-left);
+  z-index: 26;
+  width: min(var(--journey-panel-width), calc(100% - 5.25rem));
   /* Haritadan asla uzun değil: içerik panelin içinde kayar, ekrandan taşmaz. */
   max-height: calc(100% - 2rem);
   display: flex;
@@ -350,40 +355,30 @@
 .journey-picker-list button:hover { background: var(--surface-soft); }
 .journey-picker-list em { margin-left: auto; font-size: 0.7rem; color: var(--text-secondary); font-style: normal; }
 
-/* KAPALI durum: panel çalışma alanından çıkar, yerine küçük bir açma düğmesi kalır. */
-.journey-reopen {
-  position: absolute;
-  top: 1rem;
-  left: 4.25rem;
-  z-index: 27;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 38px;
-  height: 38px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--surface-soft);
-  background: var(--surface-solid);
-  color: #7c3aed;
-  box-shadow: var(--shadow-panel);
-  cursor: pointer;
-}
+/* KAPALI durumun burada bir görünümü YOKTUR: yeniden açma kısayolu haritanın
+   kendi denetim yığınındadır (`QuickActions.css`). Panelin köşesinde duran eski
+   düğme, analiz panelinin tam üstüne oturuyordu. */
 
-/* Dar ekranda alt sayfa: mevcut responsive dil korunur, ikinci bir mobil
-   çatı KURULMAZ. */
-@media (max-width: 720px) {
+/* Dar ekran: mevcut responsive dil KORUNUR ve uygulamanın kendi kesme noktası
+   (640px) kullanılır — panelin kendine ait 720px'lik istisnası kalktı.
+
+   Alt sayfa haritanın ALTINI kapatır ama zorunlu denetimleri AÇIKTA bırakır:
+   çizim çubuğu (alt orta) ve yakınlaştırma sütunu (sağ alt) şeridin dışında
+   kalır. Yükseklik de `journeyLayout.js`teki şerit ölçüsüyle sınırlıdır;
+   kamera dolgusu tam olarak o şeridi hesaba katar. */
+@media (max-width: 640px) {
   .journey-panel {
     top: auto;
     left: 0.5rem;
-    right: 0.5rem;
-    bottom: 0.5rem;
+    /* Yakınlaştırma sütunu (44px + kenar boşluğu) serbest kalır. */
+    right: 4.75rem;
+    /* Çizim çubuğunun şeridi serbest kalır. */
+    bottom: 5.25rem;
     width: auto;
-    max-height: 62%;
+    max-height: min(var(--journey-sheet-height), 55%);
   }
 
   .journey-panel.is-collapsed { width: auto; }
-
-  .journey-reopen { top: auto; bottom: 0.5rem; left: 0.5rem; }
 }
 
 /* --- Canlı navigasyon (Faz 5D) -----------------------------------------------

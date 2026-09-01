@@ -7,6 +7,7 @@ import {
   journeyDisplayGeometryWkt,
   journeyLiveModel,
   journeyPhase,
+  journeyTerminalTitle,
 } from '../../src/map/journeySimulationState.js'
 
 /**
@@ -227,9 +228,12 @@ test('the terminal card shows the final server result, computing nothing new', (
   const card = branchWith('{isTerminal && (', 'journey-terminal')
 
   // Nihai durum başlığı sunucunun durumundan okunur.
-  assert.ok(card.includes('TERMINAL_TITLES[liveModel.status]'))
-  assert.match(PANEL, /\[JOURNEY_SIMULATION_STATUS\.COMPLETED\]: 'Yolculuk tamamlandı'/)
-  assert.match(PANEL, /\[JOURNEY_SIMULATION_STATUS\.CANCELLED\]: 'Yolculuk durduruldu'/)
+  /* Başlık Faz 5E-B · Dilim 4'te durum modeline taşındı: panel de, kapalı
+     paneldeki kısayol da AYNI cümleyi kullanır. */
+  assert.ok(card.includes('journeyTerminalTitle(liveModel.status)'))
+  assert.equal(journeyTerminalTitle(JOURNEY_SIMULATION_STATUS.COMPLETED), 'Yolculuk tamamlandı')
+  assert.equal(journeyTerminalTitle(JOURNEY_SIMULATION_STATUS.CANCELLED), 'Yolculuk durduruldu')
+  assert.equal(journeyTerminalTitle('Beklenmeyen'), 'Yolculuk sona erdi')
 
   // Özet satırı (profil · mesafe · süre) her iki evrede de aynı modelden gelir.
   assert.ok(PANEL.includes('formatRouteDistance(liveModel.totalDistanceMeters)'))
@@ -273,14 +277,53 @@ test('dismiss is idempotent: leaving twice has no second effect', () => {
 
 /* --- 7/8. İki çıkış ------------------------------------------------------------- */
 
-const mapPageAction = (name) =>
-  MAP_PAGE.slice(MAP_PAGE.indexOf(`const ${name} = useCallback(`), MAP_PAGE.indexOf('}, [', MAP_PAGE.indexOf(`const ${name} = useCallback(`)))
+const mapPageAction = (name) => {
+  const from = MAP_PAGE.indexOf(`const ${name} = useCallback(`)
+  assert.ok(from > 0, `${name} bulunamadı`)
+  return MAP_PAGE.slice(from, MAP_PAGE.indexOf('}, [', from))
+}
+
+/**
+ * Panel görünürlüğü Faz 5E-B · Dilim 4'ten beri KANONİK sarmalayıcılardan
+ * geçer (harita bağlam sahipliğiyle birlikte). Terminal çıkışları artık
+ * `journey.openPanel()`i doğrudan çağırmaz; sorumluluk sarmalayıcınındır ve
+ * onun sözleşmesi burada AYRI ölçülür.
+ */
+const PRESENTATION_ONLY_FORBIDDEN = [
+  'journeySimulation.start',
+  'journeySimulation.stop',
+  'journeySimulation.dismiss',
+  'journey.clear',
+  'setSimulation',
+  'setSnapshot',
+  'fetchCurrentJourneySimulation',
+  'fetch(',
+]
+
+test('the panel open/close wrappers are presentation-only', () => {
+  const open = mapPageAction('openJourneyPanel')
+  assert.match(open, /journey\.openPanel\(\)/)
+  assert.match(open, /mapContext\.activate\(MAP_CONTEXTS\.journey\)/)
+
+  const close = mapPageAction('closeJourneyPanel')
+  assert.match(close, /mapContext\.close\(MAP_CONTEXTS\.journey\)/)
+  assert.match(close, /journey\.closePanel\(\)/)
+
+  /* Paneli açmak ya da kapatmak bir yaşam döngüsü işlemi DEĞİLDİR: çalışan
+     yolculuk durmaz, terminal sonuç bırakılmaz, seçimler temizlenmez. */
+  for (const [name, body] of [['openJourneyPanel', open], ['closeJourneyPanel', close]]) {
+    for (const forbidden of PRESENTATION_ONLY_FORBIDDEN) {
+      assert.ok(!body.includes(forbidden), `${name} ${forbidden} çağırıyor`)
+    }
+  }
+})
 
 test('"Planlamaya Dön" drops the result and keeps the planner selections', () => {
   const action = mapPageAction('returnToJourneyPlanning')
 
   assert.ok(action.includes('journeySimulation.dismiss()'))
-  assert.ok(action.includes('journey.openPanel()'))
+  // Panel kanonik sarmalayıcıyla geri gelir (sözleşmesi yukarıda ölçülür).
+  assert.ok(action.includes('openJourneyPanel()'))
 
   // Seçimler KORUNUR: temizleme bu eylemin işi değildir.
   assert.ok(!action.includes('journey.clear()'))
@@ -295,7 +338,7 @@ test('"Yeni Yolculuk" drops the result and reuses the existing clear behaviour',
   // İkinci bir sıfırlama mekanizması YOKTUR: mevcut `clear` kullanılır.
   assert.ok(action.includes('journey.clear()'))
   // Ve panel açık kalır, kullanıcı hemen planlamaya başlayabilir.
-  assert.ok(action.includes('journey.openPanel()'))
+  assert.ok(action.includes('openJourneyPanel()'))
 
   assert.ok(!action.includes('journeySimulation.stop'))
   assert.ok(!action.includes('requestPreview'))
@@ -305,9 +348,17 @@ test('both exits are wired to the terminal card, and only there', () => {
   assert.match(PANEL_USAGE, /onReturnToPlanning=\{returnToJourneyPlanning\}/)
   assert.match(PANEL_USAGE, /onNewJourney=\{startNewJourney\}/)
 
-  // Kapatma/katlama düğmeleri hâlâ YALNIZCA panel durumudur.
-  assert.match(PANEL_USAGE, /onClose=\{journey\.closePanel\}/)
+  // Kapatma/katlama/açma hâlâ YALNIZCA panel durumudur.
+  assert.match(PANEL_USAGE, /onClose=\{closeJourneyPanel\}/)
+  assert.match(PANEL_USAGE, /onOpen=\{openJourneyPanel\}/)
   assert.match(PANEL_USAGE, /onCollapse=\{journey\.collapsePanel\}/)
+
+  // Ve terminal eylemleri kapatma yollarına SIZMAZ.
+  for (const handler of ['closeJourneyPanel', 'openJourneyPanel']) {
+    const body = mapPageAction(handler)
+    assert.ok(!body.includes('returnToJourneyPlanning'))
+    assert.ok(!body.includes('startNewJourney'))
+  }
 })
 
 /* --- 9/10. Harita geometrisinin sahipliği ---------------------------------------- */
@@ -361,7 +412,7 @@ test('closing or collapsing never stops or dismisses a run', () => {
 
   /* Sayfa tarafında sözleşme YALNIZCA planlayıcı panelinin çağrısına aittir:
      kapatma ve katlama panel durumundan başka hiçbir şeye bağlanmamalıdır. */
-  assert.match(PANEL_USAGE, /onClose=\{journey\.closePanel\}/)
+  assert.match(PANEL_USAGE, /onClose=\{closeJourneyPanel\}/)
   assert.match(PANEL_USAGE, /onCollapse=\{journey\.collapsePanel\}/)
 
   const closeProps = [...PANEL_USAGE.matchAll(/on(?:Close|Collapse)=\{([^}]*)\}/g)].map(
@@ -369,17 +420,26 @@ test('closing or collapsing never stops or dismisses a run', () => {
   )
   assert.equal(closeProps.length, 2, 'kapatma/katlama sözleşmesi tek biçimli olmalı')
 
+  /* Sarmalayıcıya bağlanmak iddiayı zayıflatmaz: adı geçen her işleyicinin
+     GÖVDESİ çözülür ve yasak eylemler orada aranır. Doğrudan bir indirgeyici
+     eylemi (`journey.collapsePanel`) zaten yalnızca panel durumudur. */
   for (const handler of closeProps) {
-    for (const forbidden of [
-      'dismiss',
-      'stopJourneySimulation',
-      'journeySimulation.stop',
-      'returnToJourneyPlanning',
-      'startNewJourney',
-      'journey.clear',
-    ]) {
-      assert.ok(!handler.includes(forbidden), `kapatma/katlama ${forbidden} çağırıyor: ${handler}`)
+    if (!handler.startsWith('journey.')) {
+      const body = mapPageAction(handler)
+      for (const forbidden of [
+        'journeySimulation.dismiss',
+        'stopJourneySimulation',
+        'journeySimulation.stop',
+        'returnToJourneyPlanning',
+        'startNewJourney',
+        'journey.clear',
+      ]) {
+        assert.ok(!body.includes(forbidden), `${handler} ${forbidden} çağırıyor`)
+      }
+      continue
     }
+
+    assert.match(handler, /^journey\.(closePanel|collapsePanel)$/)
   }
 })
 
@@ -391,7 +451,7 @@ test('a collapsed terminal result is still a result, not a planner prompt', () =
 
   // Katlanmış hâlde bile nihai başlık gösterilir; sonuç sessizce düşmez.
   assert.ok(collapsedSummary.includes('{isTerminal ? ('))
-  assert.ok(collapsedSummary.includes('TERMINAL_TITLES[liveModel.status]'))
+  assert.ok(collapsedSummary.includes('journeyTerminalTitle(liveModel.status)'))
   // Ve aktif özet ayrı bir daldadır.
   assert.ok(collapsedSummary.includes(') : isActive ? ('))
 })

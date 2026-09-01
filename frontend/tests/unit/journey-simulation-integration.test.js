@@ -31,6 +31,61 @@ const JOURNEY_LIVE_SOURCES = [
   ['journeySimulationHub.js', HUB],
 ]
 
+/**
+ * Bir modülden alınan İSİMLER.
+ *
+ * Kesin biçimli bir import satırı beklemek, aynı modülden ikinci bir yardımcı
+ * alındığı anda kırılır — ki bu meşru bir değişikliktir. Ölçülen şey neyin
+ * ALINDIĞIDIR, satırın nasıl yazıldığı değil.
+ */
+const namedImports = (source, modulePath) => {
+  const pattern = new RegExp(`import \\{([^}]*)\\} from '${modulePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'`, 's')
+  const match = source.match(pattern)
+  assert.ok(match, `${modulePath} içe aktarımı bulunamadı`)
+  return match[1].split(',').map((name) => name.trim()).filter(Boolean)
+}
+
+/** Adı verilen `useCallback` gövdesi (yorumlar ayıklanmış sayfadan). */
+const callbackBody = (name) => {
+  const code = stripComments(MAP_PAGE)
+  const from = code.indexOf(`const ${name} = useCallback(`)
+  assert.ok(from > 0, `${name} bulunamadı`)
+  return code.slice(from, code.indexOf('}, [', from))
+}
+
+/** Bir JSX bileşen çağrısı (öznitelik ifadelerinin içi atlanarak). */
+function jsxElement(source, tag) {
+  const from = source.indexOf(`<${tag}`)
+  assert.ok(from > 0, `<${tag} … /> çağrısı bulunamadı`)
+
+  let depth = 0
+  for (let index = from; index < source.length; index += 1) {
+    const char = source[index]
+    if (char === '{') depth += 1
+    else if (char === '}') depth -= 1
+    else if (depth === 0 && char === '/' && source[index + 1] === '>') {
+      return source.slice(from, index + 2)
+    }
+  }
+
+  return assert.fail(`<${tag} … /> kapanışı bulunamadı`)
+}
+
+/**
+ * Panel sahipliği bir SUNUM işidir: açma/kapama sarmalayıcıları hiçbir yaşam
+ * döngüsü ya da sunucu işlemi çalıştırmaz.
+ */
+const PRESENTATION_ONLY_FORBIDDEN = [
+  'journeySimulation.start',
+  'journeySimulation.stop',
+  'journeySimulation.dismiss',
+  'journey.clear',
+  'setSimulation',
+  'setSnapshot',
+  'fetchCurrentJourneySimulation',
+  'fetch(',
+]
+
 /* --- BAŞLATMA GÜVEN SINIRI --------------------------------------------------- */
 
 test('the start request carries the journey intent and nothing else', () => {
@@ -203,7 +258,8 @@ test('the start response replaces the preview as route truth', () => {
      ölçülür (`journey-terminal-lifecycle.test.js`). Burada denetlenen tek şey
      ENTEGRASYON SINIRIDIR: sayfa kuralı çağırıyor, doğru iki girdiyi veriyor
      ve ikinci bir sıralama kopyası tutmuyor. */
-  assert.match(MAP_PAGE, /import \{ journeyDisplayGeometryWkt \} from '\.\.\/map\/journeySimulationState\.js'/)
+  const stateImports = namedImports(MAP_PAGE, '../map/journeySimulationState.js')
+  assert.ok(stateImports.includes('journeyDisplayGeometryWkt'))
   assert.match(
     MAP_PAGE,
     /journeyDisplayGeometryWkt\(\{\s*simulation: journeySimulation\.simulation,\s*previewGeometryWkt: journey\.preview\?\.geometryWkt \?\? null,\s*\}\)/,
@@ -218,7 +274,19 @@ test('the start response replaces the preview as route truth', () => {
 })
 
 test('a successful start opens the panel automatically', () => {
-  assert.ok(MAP_PAGE.includes('if (started) journey.openPanel()'))
+  /* Davranış aynı: başarılı başlatma paneli kendiliğinden görünür kılar. Faz
+     5E-B · Dilim 4'ten beri bunu KANONİK açma sarmalayıcısı yapar; panel
+     görünürlüğü artık harita bağlam sahipliğini de taşır. */
+  assert.match(callbackBody('startJourney'), /if \(started\) openJourneyPanel\(\)/)
+
+  const open = callbackBody('openJourneyPanel')
+  assert.match(open, /journey\.openPanel\(\)/)
+  assert.match(open, /mapContext\.activate\(MAP_CONTEXTS\.journey\)/)
+
+  // Açmak yalnızca göstermektir: yeniden başlatmaz, kurtarma isteği atmaz.
+  for (const forbidden of PRESENTATION_ONLY_FORBIDDEN) {
+    assert.ok(!open.includes(forbidden), `openJourneyPanel ${forbidden} çağırıyor`)
+  }
 })
 
 test('terminal state releases the group and cannot regress', () => {
@@ -351,7 +419,10 @@ test('unfollowing stops the camera while movement continues', () => {
 /* --- PANEL ------------------------------------------------------------------- */
 
 test('the three panel states survive live mode and closing does not stop it', () => {
-  assert.ok(PANEL.includes('journey-reopen'))
+  /* Yeniden açma kısayolu artık haritanın denetim yığınındadır; panel
+     KAPALI durumda hiçbir şey çizmez. */
+  assert.ok(PANEL.includes('PANEL_STATES.CLOSED'))
+  assert.ok(read('../../src/components/map/QuickActions.jsx').includes('journey-trigger'))
   assert.ok(PANEL.includes('journey-collapsed-summary'))
 
   // Katlanmış canlı özet: ilerleme ve kalan mesafe.
@@ -362,7 +433,19 @@ test('the three panel states survive live mode and closing does not stop it', ()
   assert.ok(PANEL.includes('Simülasyonu Durdur'))
   assert.ok(PANEL.includes('onStopSimulation'))
   assert.ok(!/onClose=\{[^}]*onStopSimulation/.test(PANEL))
-  assert.ok(MAP_PAGE.includes('onClose={journey.closePanel}'))
+  /* Kapatma artık koordinatörden geçen kanonik sarmalayıcıdır: panel sahipliği
+     bırakılır, çalıştırma DOKUNULMADAN kalır. */
+  const usage = jsxElement(stripComments(MAP_PAGE), 'JourneyPlannerPanel')
+  assert.match(usage, /onClose=\{closeJourneyPanel\}/)
+  assert.match(usage, /onOpen=\{openJourneyPanel\}/)
+  assert.match(usage, /onCollapse=\{journey\.collapsePanel\}/)
+
+  const close = callbackBody('closeJourneyPanel')
+  assert.match(close, /mapContext\.close\(MAP_CONTEXTS\.journey\)/)
+  assert.match(close, /journey\.closePanel\(\)/)
+  for (const forbidden of PRESENTATION_ONLY_FORBIDDEN) {
+    assert.ok(!close.includes(forbidden), `closeJourneyPanel ${forbidden} çağırıyor`)
+  }
 })
 
 test('the start action appears only after a valid preview', () => {

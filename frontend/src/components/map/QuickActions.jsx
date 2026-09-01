@@ -1,4 +1,4 @@
-import { Search } from 'lucide-react'
+import { Route as RouteIcon, Search } from 'lucide-react'
 import { HomeIcon, CrosshairIcon, FocusIcon } from '../ui/icons/index.js'
 import './QuickActions.css'
 
@@ -30,6 +30,18 @@ export default function QuickActions({
    * birinin bulunmasından gelir; burada rol adına bakan bir kural yoktur.
    */
   search = null,
+  /**
+   * `{ permitted, open, onToggle, status }` — yoksa düğme hiç çizilmez.
+   *
+   * Arama düğmesiyle AYNI gerekçe: yolculuk paneli de bir panel açar ve
+   * kısayolu bu yığına aittir. Panelin kendi köşesinde duran ayrı bir yeniden
+   * açma düğmesi, analiz panelinin tam üstüne oturuyordu.
+   *
+   * `status` sunucudan türetilmiş bir DURUM ÖZETİDİR (`journeyStatusIndicator`)
+   * ve yalnızca okunur: burada hiçbir ölçüm hesaplanmaz, hiçbir animasyon
+   * döngüsü kurulmaz.
+   */
+  journey = null,
   children,
 }) {
   const actions = [
@@ -46,6 +58,24 @@ export default function QuickActions({
         </button>
       ))}
       {children}
+
+      {journey?.permitted && (
+        <button
+          type="button"
+          className={`quick-action journey-trigger ${journey.open ? 'is-open' : ''}`.trim()}
+          /* Panel kapalıyken bile yolculuğun SÜRDÜĞÜ söylenir: nokta görsel
+             ipucudur, cümle ise erişilebilir addadır. */
+          aria-label={journey.status ? `Yolculuk planlayıcısı · ${journey.status.label}` : 'Yolculuk planlayıcısı'}
+          title={journey.status ? journey.status.label : 'Yolculuk planla'}
+          aria-pressed={Boolean(journey.open)}
+          onClick={journey.onToggle}
+        >
+          <RouteIcon size={18} strokeWidth={2} />
+          {journey.status && (
+            <span className={`journey-trigger-dot is-${journey.status.tone}`} aria-hidden="true" />
+          )}
+        </button>
+      )}
 
       {search?.permitted && (
         <button

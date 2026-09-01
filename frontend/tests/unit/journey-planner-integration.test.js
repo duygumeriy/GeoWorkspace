@@ -52,6 +52,20 @@ const AUTH_SHORTCUT_PATTERNS = [
   /\busername\s*[=!]==?/i,
 ]
 
+/**
+ * Bir modülden alınan İSİMLER.
+ *
+ * Kesin biçimli bir import satırı beklemek, aynı modülden ikinci bir yardımcı
+ * alındığı anda kırılır — ki bu meşru bir değişikliktir. Ölçülen şey neyin
+ * ALINDIĞIDIR, satırın nasıl yazıldığı değil.
+ */
+const namedImports = (source, modulePath) => {
+  const pattern = new RegExp(`import \\{([^}]*)\\} from '${modulePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'`, 's')
+  const match = source.match(pattern)
+  assert.ok(match, `${modulePath} içe aktarımı bulunamadı`)
+  return match[1].split(',').map((name) => name.trim()).filter(Boolean)
+}
+
 /* --- İstek yaşam döngüsü ----------------------------------------------------- */
 
 test('a stale preview response can never overwrite a newer request', () => {
@@ -176,7 +190,8 @@ test('the live-journey action is real server work, never fake local behaviour', 
      yalnızca entegrasyon sınırı denetlenir: sayfa kuralı çağırıyor, doğru iki
      girdiyi veriyor, sonucu mevcut önizleme katmanına aktarıyor ve ikinci bir
      sıralama kopyası tutmuyor. */
-  assert.match(MAP_PAGE, /import \{ journeyDisplayGeometryWkt \} from '\.\.\/map\/journeySimulationState\.js'/)
+  const stateImports = namedImports(MAP_PAGE, '../map/journeySimulationState.js')
+  assert.ok(stateImports.includes('journeyDisplayGeometryWkt'))
   assert.match(
     MAP_PAGE,
     /const journeyGeometryWkt = journeyDisplayGeometryWkt\(\{\s*simulation: journeySimulation\.simulation,\s*previewGeometryWkt: journey\.preview\?\.geometryWkt \?\? null,\s*\}\)/,
@@ -285,14 +300,23 @@ test('an unavailable profile keeps the user choice rather than switching to driv
 
 test('the panel renders three distinct states including a reopen affordance', () => {
   assert.ok(PANEL.includes('PANEL_STATES.CLOSED'))
-  assert.ok(PANEL.includes('journey-reopen'))
   assert.ok(PANEL.includes('journey-collapsed-summary'))
+
+  /* KAPALI durumun görünümü Faz 5E-B · Dilim 4'te haritanın kendi denetim
+     yığınına taşındı: panelin köşesindeki eski düğme analiz panelinin tam
+     üstüne oturuyordu. Yeniden açma hâlâ vardır, yeri değişti. */
+  assert.ok(!PANEL.includes('journey-reopen'))
+  const quick = read('../../src/components/map/QuickActions.jsx')
+  assert.ok(quick.includes('journey-trigger'))
+  assert.ok(quick.includes('journey.onToggle'))
 
   const css = read('../../src/components/map/JourneyPlanner.css')
   // Katlanmış panel ekranda KALIR.
   assert.ok(css.includes('.journey-panel.is-collapsed'))
-  // Ve dar ekranda mevcut responsive dil kullanılır; ikinci bir mobil çatı yok.
-  assert.ok(css.includes('@media (max-width: 720px)'))
+  /* Dar ekranda uygulamanın KENDİ kesme noktası kullanılır (640px ailesi);
+     panelin kendine ait 720px istisnası kalktı. */
+  assert.ok(css.includes('@media (max-width: 640px)'))
+  assert.ok(!/@media \(max-width: 720px\)/.test(css))
 })
 
 test('the panel is a component rather than business logic inside MapPage', () => {

@@ -87,17 +87,7 @@ export function syncJourneyPreviewFeature(source, geometryWkt) {
   return feature
 }
 
-/**
- * Sol paneli hesaba katan kamera dolgusu.
- *
- * Panel haritanın SOLUNU kapatır; eşit dolgu, yolculuğun bir kısmını panelin
- * altına iterdi. Katlanmış panel daha dardır ve daha az dolgu ister.
- *
- * @returns {[number, number, number, number]} OpenLayers `[üst, sağ, alt, sol]`
- */
-export function journeyFitPadding({ panelWidth = 0, compact = false } = {}) {
-  const base = compact ? 32 : 48
-  // Dar ekranda panel altta durur; soldan itmek yerine alttan yer açılır.
-  if (compact) return [base, base, Math.max(base, 220), base]
-  return [base, base, base, base + Math.max(0, panelWidth)]
-}
+/* Kamera dolgusu ARTIK BURADA DEĞİLDİR: panelin kapladığı alan bir DÜZEN
+   sorusudur ve `journeyLayout.js` içinde, CSS'in tükettiği ölçülerle birlikte
+   tek bir yerde tanımlıdır. Aynı sayıyı burada da tutmak, panelin genişliği
+   değiştiğinde haritanın sessizce yanlış dolgu kullanması demekti. */

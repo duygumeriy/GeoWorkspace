@@ -26,6 +26,20 @@ const bar = read('../../src/components/map/PoiSearchBar.jsx')
 const barCss = read('../../src/components/map/PoiSearchBar.css')
 const hook = read('../../src/hooks/usePoiSearch.js')
 
+/**
+ * Bir modülden alınan İSİMLER.
+ *
+ * Kesin biçimli bir import satırı beklemek, aynı modülden ikinci bir isim
+ * alındığı anda kırılır — ki bu meşru bir değişikliktir. Ölçülen şey neyin
+ * ALINDIĞIDIR.
+ */
+const namedImports = (source, modulePath) => {
+  const pattern = new RegExp(`import \\{([^}]*)\\} from '${modulePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'`, 's')
+  const match = source.match(pattern)
+  assert.ok(match, `${modulePath} içe aktarımı bulunamadı`)
+  return match[1].split(',').map((name) => name.trim()).filter(Boolean)
+}
+
 /* --- Düğme --------------------------------------------------------------------- */
 
 test('the trigger lives in the existing control stack, at the bottom', () => {
@@ -51,7 +65,25 @@ test('the trigger is visually indistinguishable from the other controls', () => 
 })
 
 test('the trigger uses lucide-react, not a new icon library', () => {
-  assert.match(quick, /import \{ Search \} from 'lucide-react'/)
+  /* Ölçülen şey ikon KAYNAĞIDIR, import satırının biçimi değil: aynı yığın
+     artık yolculuk kısayolunu da barındırdığı için aynı paketten ikinci bir
+     ikon alınması meşrudur ve bu sözleşmeyi zayıflatmaz. */
+  const icons = namedImports(quick, 'lucide-react')
+  assert.ok(icons.includes('Search'), 'arama ikonu lucide-react\'ten gelmiyor')
+
+  // Ve düğme gerçekten o ikonu çiziyor.
+  assert.match(between(quick, 'poi-search-trigger', '</button>'), /<Search size=\{18\}/)
+
+  /* Arama tetikleyicisi için İKİNCİ bir ikon kütüphanesi açılmaz: bileşendeki
+     tek ikon kaynağı lucide-react'tir. */
+  const iconImports = [...quick.matchAll(/from '([^']+)'/g)]
+    .map(([, module]) => module)
+    .filter((module) => /icon/i.test(module) || module === 'lucide-react')
+  assert.deepEqual([...new Set(iconImports)].sort(), ['../ui/icons/index.js', 'lucide-react'])
+
+  /* Yolculuk kısayolunun ikonu da AYNI import'tan gelir; bu bir bonus
+     gözlemdir, arama sözleşmesinin koşulu değildir. */
+  assert.ok(icons.some((name) => name.startsWith('Route as ')))
 })
 
 test('the trigger reports its state to assistive technology', () => {

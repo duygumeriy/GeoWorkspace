@@ -31,10 +31,11 @@ import { journeyPreviewSummary, journeyProfileLabel as journeyProfileLabelOf } f
 import { journeyStepList } from '../../map/journeyManeuvers.js'
 import {
   JOURNEY_PHASES,
-  JOURNEY_SIMULATION_STATUS,
   journeyLiveModel,
   journeyPhase,
+  journeyTerminalTitle,
 } from '../../map/journeySimulationState.js'
+import { journeyPanelStyle } from '../../map/journeyLayout.js'
 import { formatRouteDistance, formatRouteDuration } from '../../map/transportPathPresentation.js'
 
 const PROFILE_ICONS = { car: Car, pedestrian: Footprints, bicycle: Bike }
@@ -46,18 +47,6 @@ const MODE_TABS = [
 ]
 
 const ROLE_LABELS = { origin: 'Başlangıç', via: 'Ara nokta', destination: 'Varış' }
-
-/**
- * Terminal başlıkları — durum SUNUCUDAN gelir, tarayıcıda türetilmez.
- *
- * Bilinmeyen bir terminal durum çökertmez: sözleşme iki değerle sınırlı olsa
- * da arayüz savunmacı davranır ve nötr bir başlık gösterir.
- */
-const TERMINAL_TITLES = {
-  [JOURNEY_SIMULATION_STATUS.COMPLETED]: 'Yolculuk tamamlandı',
-  [JOURNEY_SIMULATION_STATUS.CANCELLED]: 'Yolculuk durduruldu',
-  default: 'Yolculuk sona erdi',
-}
 
 function formatStepMetric(step) {
   if (!Number.isFinite(step.distanceMeters)) return ''
@@ -147,19 +136,12 @@ export default function JourneyPlannerPanel({
     [stops, state.routeId],
   )
 
-  if (state.panel === PANEL_STATES.CLOSED) {
-    return (
-      <button
-        type="button"
-        className="journey-reopen"
-        onClick={onOpen}
-        aria-label="Yolculuk planlayıcısını aç"
-        title="Yolculuk planla"
-      >
-        <RouteIcon size={18} aria-hidden="true" />
-      </button>
-    )
-  }
+  /* KAPALI: panel çalışma alanından tamamen çıkar ve YERİNE HİÇBİR ŞEY
+     BIRAKMAZ. Yeniden açma kısayolu artık haritanın kendi denetim yığınındadır
+     (`QuickActions`), çünkü buradaki küçük düğme tam olarak analiz panelinin
+     durduğu köşeye oturuyor ve onu örtüyordu. Çalıştırma durumu bu karardan
+     HİÇ etkilenmez: kapatmak bir sunum kararıdır. */
+  if (state.panel === PANEL_STATES.CLOSED) return null
 
   const collapsed = state.panel === PANEL_STATES.COLLAPSED
   const activeProfile = JOURNEY_PROFILES.find((profile) => profile.id === state.profile)
@@ -172,6 +154,9 @@ export default function JourneyPlannerPanel({
   return (
     <section
       className={`journey-panel ${collapsed ? 'is-collapsed' : ''}`.trim()}
+      /* Ölçüler JS'te TANIMLI, CSS'te tüketilir: 340/240 gibi bir sayı iki
+         dosyada birden yaşamaz. */
+      style={journeyPanelStyle()}
       aria-label="Yolculuk planlayıcısı"
       aria-busy={busy}
     >
@@ -221,7 +206,7 @@ export default function JourneyPlannerPanel({
             /* Katlanmış terminal: sonuç GİZLENİR ama kaybolmaz — panel
                açıldığında hâlâ oradadır, yalnızca kullanıcı bırakınca gider. */
             <>
-              <strong>{TERMINAL_TITLES[liveModel.status] ?? TERMINAL_TITLES.default}</strong>
+              <strong>{journeyTerminalTitle(liveModel.status)}</strong>
               <span>
                 {formatRouteDistance(liveModel.totalDistanceMeters)} ·{' '}
                 {formatRouteDuration(liveModel.totalDurationSeconds)}
@@ -276,7 +261,7 @@ export default function JourneyPlannerPanel({
               tarayıcıda yeniden hesaplanmaz. */}
           {isTerminal && (
             <div className="journey-terminal">
-              <strong>{TERMINAL_TITLES[liveModel.status] ?? TERMINAL_TITLES.default}</strong>
+              <strong>{journeyTerminalTitle(liveModel.status)}</strong>
               <span>%{Math.round(liveModel.progressPercent)} tamamlandı</span>
             </div>
           )}

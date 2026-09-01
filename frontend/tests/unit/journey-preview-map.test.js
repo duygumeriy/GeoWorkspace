@@ -6,10 +6,13 @@ import {
   JOURNEY_PREVIEW_KIND,
   JOURNEY_PREVIEW_LAYER_CLASSNAME,
   createJourneyPreviewLayer,
-  journeyFitPadding,
   journeyPreviewFeature,
   syncJourneyPreviewFeature,
 } from '../../src/map/journeyPreviewLayer.js'
+/* Kamera dolgusu Faz 5E-B · Dilim 4'te DÜZEN modeline taşındı: panelin
+   kapladığı alan CSS ile aynı sayılardan türer. Davranışın kendisi
+   `journey-layout-ownership.test.js` içinde ayrıntılı ölçülür. */
+import { journeyFitPadding } from '../../src/map/journeyLayout.js'
 import {
   TRANSPORT_ROUTE_PATH_LAYER_CLASSNAME,
   TRANSPORT_STOP_KIND,
@@ -88,10 +91,10 @@ test('the preview owns a dedicated layer rather than the persisted transport sou
 /* --- Kamera ------------------------------------------------------------------ */
 
 test('fit padding leaves room for the left panel and switches on compact layouts', () => {
-  const [, , , left] = journeyFitPadding({ panelWidth: 340 })
+  const [, , , left] = journeyFitPadding({ panelVisible: true })
   assert.ok(left > 340)
 
-  const [, , bottom, compactLeft] = journeyFitPadding({ panelWidth: 340, compact: true })
+  const [, , bottom, compactLeft] = journeyFitPadding({ panelVisible: true, compact: true })
   // Dar ekranda panel alttadır: soldan değil alttan yer açılır.
   assert.ok(bottom > compactLeft)
 })
@@ -103,9 +106,9 @@ test('the camera fits once per new successful preview, not on every rerender', (
   assert.ok(source.includes('fittedTokenRef'))
   assert.ok(source.includes('previewToken === fittedTokenRef.current'))
 
-  // Panel genişliği ref üzerinden okunur: değişmesi tek başına uyum tetiklemez.
+  // Panelin kapladığı alan ref üzerinden okunur: değişmesi tek başına uyum tetiklemez.
   assert.ok(source.includes('paddingRef'))
-  assert.ok(!/\}, \[[^\]]*panelWidth[^\]]*\]\)/.test(source))
+  assert.ok(!/\}, \[[^\]]*panelVisible[^\]]*\]\)/.test(source))
 
   const planner = read('../../src/hooks/useJourneyPlanner.js')
   assert.ok(planner.includes('setPreviewToken((token) => token + 1)'))

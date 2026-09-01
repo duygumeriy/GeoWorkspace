@@ -105,7 +105,8 @@ import useTransportSimulation from '../hooks/useTransportSimulation.js'
 import useTransportVehicleLayer from '../hooks/useTransportVehicleLayer.js'
 import { transportSimulationControls } from '../map/transportSimulationState.js'
 import { transportVehiclePopupModel, transportVehiclePresentation } from '../map/transportVehicle.js'
-import { journeyDisplayGeometryWkt } from '../map/journeySimulationState.js'
+import { journeyDisplayGeometryWkt, journeyStatusIndicator } from '../map/journeySimulationState.js'
+import { JOURNEY_COMPACT_QUERY } from '../map/journeyLayout.js'
 import useTransportStopPlacement from '../hooks/useTransportStopPlacement.js'
 import useTransportStopInteraction from '../hooks/useTransportStopInteraction.js'
 import useJourneyPlanner from '../hooks/useJourneyPlanner.js'
@@ -263,6 +264,47 @@ export default function MapPage() {
     permitted: allowed.canViewTransport,
     workspaceAtRest,
   })
+
+  /* --- Panel sahipliği (Faz 5E-B · Dilim 4) ----------------------------------
+     Yolculuk paneli sol üstte analiz paneliyle AYNI yeri kaplar. Bu yüzden
+     mevcut KOORDİNATÖRE katılır: bir birincil bağlam açıldığında panel çekilir,
+     panel açıldığında diğeri emekliye ayrılır. İkinci bir koordinatör
+     kurulmaz.
+
+     Devredilen şey YALNIZCA paneldir. Emeklilik `closePanel` çağırır — bu bir
+     SUNUM durumudur: çalışan simülasyon, terminal sonuç ve plan seçimleri
+     olduğu gibi kalır, yeniden açıldığında panel doğru içeriği gösterir. */
+  const openJourneyPanel = useCallback(() => {
+    journey.openPanel()
+    mapContext.activate(MAP_CONTEXTS.journey)
+  }, [journey, mapContext])
+
+  const closeJourneyPanel = useCallback(() => {
+    // Kapatma da koordinatörden geçer: sahiplik bırakılmadan panel gizlenmez.
+    mapContext.close(MAP_CONTEXTS.journey)
+    journey.closePanel()
+  }, [journey, mapContext])
+
+  /* Katlanmış panel HÂLÂ görünürdür ve aynı köşeyi kaplar; sahipliği bırakmaz. */
+  const toggleJourneyPanel = useCallback(() => {
+    if (journey.state.panel === 'closed') openJourneyPanel()
+    else closeJourneyPanel()
+  }, [journey.state.panel, openJourneyPanel, closeJourneyPanel])
+
+  /* Görünür panel, sahipliği de TAŞIR. Açılış durumu (panel açık, henüz
+     hiçbir bağlam etkin değil) tek istisnadır; sahiplik burada devralınır ki
+     ardından açılan bir birincil bağlam paneli gerçekten emekliye ayırabilsin.
+     Döngü yoktur: sahiplik alındıktan sonra koşul sağlanmaz, panel bir başkası
+     devraldığında ise emeklilikle KAPANIR ve koşul yine sağlanmaz. */
+  useEffect(() => {
+    if (journey.state.panel === 'closed') return
+    if (mapContext.active !== null) return
+    mapContext.activate(MAP_CONTEXTS.journey)
+  }, [journey.state.panel, mapContext])
+
+  /* Düzenin TEK ölçütü görüntü alanı genişliğidir; işaretçi yeteneği değil.
+     Sorgu, CSS'teki kesme noktasının birebir aynısıdır (`journeyLayout.js`). */
+  const journeyCompact = useMediaQuery(JOURNEY_COMPACT_QUERY)
 
   // Declared before the drawing workspace because saving a polygon feeds
   // straight into it: one analysis engine serves both the temporary tool and
@@ -884,9 +926,20 @@ export default function MapPage() {
     if (!intent) return
     const started = await journeySimulation.start(intent)
 
-    // Başarılı başlatmada panel kendiliğinden AÇILIR.
-    if (started) journey.openPanel()
-  }, [journey, journeySimulation])
+    // Başarılı başlatmada panel kendiliğinden AÇILIR (sahipliğiyle birlikte).
+    if (started) openJourneyPanel()
+  }, [journey, journeySimulation, openJourneyPanel])
+
+  /* Kapalı/katlanmış panelde bile yolculuğun VARLIĞI söylenir. Özet
+     sunucunun evre + ilerleme değerlerinden türetilir; yeni bir ölçüm
+     hesaplanmaz. */
+  const journeyStatus = useMemo(
+    () => journeyStatusIndicator({
+      simulation: journeySimulation.simulation,
+      snapshot: journeySimulation.snapshot,
+    }),
+    [journeySimulation.simulation, journeySimulation.snapshot],
+  )
 
   const toggleJourneyFollow = useCallback(() => {
     journeySimulation.setFollowing((current) => !current)
@@ -902,15 +955,15 @@ export default function MapPage() {
   const returnToJourneyPlanning = useCallback(async () => {
     await journeySimulation.dismiss()
     // Panel zaten açıktır; kapalıyken bırakılırsa da planlayıcı geri gelir.
-    journey.openPanel()
-  }, [journeySimulation, journey])
+    openJourneyPanel()
+  }, [journeySimulation, openJourneyPanel])
 
   /** Sonucu bırakır ve MEVCUT temizleme davranışıyla sıfırdan planlamaya döner. */
   const startNewJourney = useCallback(async () => {
     await journeySimulation.dismiss()
     journey.clear()
-    journey.openPanel()
-  }, [journeySimulation, journey])
+    openJourneyPanel()
+  }, [journeySimulation, journey, openJourneyPanel])
 
   /* Haritadaki yolculuk çizgisinin sahibi: benimsenmiş çalıştırma varken
      sunucunun OTORİTER yanıtı, bırakıldığında yeniden önizleme. Kural saf
@@ -926,9 +979,10 @@ export default function MapPage() {
   useJourneyPreviewLayer(mapInstance, {
     geometryWkt: journeyGeometryWkt,
     previewToken: journey.previewToken,
-    // Sol panel haritanın solunu kapatır; kamera dolgusu bunu hesaba katar.
-    panelWidth: journey.state.panel === 'open' ? 340 : 0,
-    compact: !hasFinePointer,
+    /* Panel haritanın bir kenarını kapatır; hangi kenarı ve ne kadarı tek bir
+       düzen modelinden gelir. Görünürlük, panelin KAPALI olmamasıdır. */
+    panelVisible: journey.state.panel !== 'closed',
+    compact: journeyCompact,
   })
 
   /* Harita seçimi yalnızca bir yuva silahlıyken devrededir; o sırada normal
@@ -3078,6 +3132,16 @@ export default function MapPage() {
       if (!sharesState(TRANSPORT_STOP_CONTEXTS, next)) setSelectedTransportStop(null)
     },
     [MAP_CONTEXTS.transportStopCreate]: retireTransportStopCreate,
+    /* Yolculuk paneli: bırakılan şey YALNIZCA paneldir.
+
+       Çalışan bir simülasyon DURDURULMAZ, terminal sonuç BIRAKILMAZ, plan
+       seçimleri TEMİZLENMEZ — bunların hepsi kullanıcının açık kararlarıdır
+       (Durdur / Planlamaya Dön / Yeni Yolculuk / Temizle). Isı haritasıyla
+       aynı sözleşme: panel kapanır, ürün yaşamaya devam eder ve panel
+       yeniden açıldığında doğru evrenin içeriği geri gelir. */
+    [MAP_CONTEXTS.journey]: () => {
+      journey.closePanel()
+    },
     [MAP_CONTEXTS.inventory]: () => {
       /* Analiz alanı geçicidir ve sonuç onunla birlikte gider; veritabanına
          hiçbir şey yazılmamıştı. Çizim katmanları etkilenmez. */
@@ -3175,6 +3239,16 @@ export default function MapPage() {
                   open: poiSearchOpen,
                   onToggle: togglePoiSearch,
                   buttonRef: poiSearchButtonRef,
+                }}
+                /* Yolculuk kısayolu haritanın KENDİ denetim yığınındadır:
+                   panelin köşesindeki eski yeniden açma düğmesi analiz
+                   panelinin üstüne oturuyordu. Durum özeti sunucudan türetilir
+                   ve panel kapalıyken de yolculuğun sürdüğünü söyler. */
+                journey={{
+                  permitted: allowed.canViewTransport,
+                  open: journey.state.panel !== 'closed',
+                  onToggle: toggleJourneyPanel,
+                  status: journeyStatus,
                 }}
                 onGoTurkey={mapView.goToTurkey}
                 onGoMyLocation={mapView.goToMyLocation}
@@ -3295,8 +3369,8 @@ export default function MapPage() {
                   onRequestPreview={journey.requestPreview}
                   onClear={journey.clear}
                   onCollapse={journey.collapsePanel}
-                  onClose={journey.closePanel}
-                  onOpen={journey.openPanel}
+                  onClose={closeJourneyPanel}
+                  onOpen={openJourneyPanel}
                   live={{
                     simulation: journeySimulation.simulation,
                     snapshot: journeySimulation.snapshot,

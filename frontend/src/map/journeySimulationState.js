@@ -113,6 +113,52 @@ export function journeyPhase({ simulation, snapshot } = {}) {
 }
 
 /**
+ * Terminal başlıkları — durum SUNUCUDAN gelir, tarayıcıda türetilmez.
+ *
+ * Panel de, kapalıyken görünen kısayol da AYNI metni kullanır: iki yerde iki
+ * ayrı Türkçe cümle tutmak, zamanla "tamamlandı" ile "bitti"nin yan yana
+ * yaşaması demekti. Bilinmeyen bir terminal durum çökertmez.
+ */
+export const JOURNEY_TERMINAL_TITLES = Object.freeze({
+  [JOURNEY_SIMULATION_STATUS.COMPLETED]: 'Yolculuk tamamlandı',
+  [JOURNEY_SIMULATION_STATUS.CANCELLED]: 'Yolculuk durduruldu',
+  default: 'Yolculuk sona erdi',
+})
+
+export function journeyTerminalTitle(status) {
+  return JOURNEY_TERMINAL_TITLES[status] ?? JOURNEY_TERMINAL_TITLES.default
+}
+
+/**
+ * Panel kapalıyken/katlanmışken kısayolun anlatacağı durum.
+ *
+ * <b>Yeni ölçüm HESAPLANMAZ.</b> Yüzde, sunucunun anlık görüntüsündeki
+ * değerdir ve yalnızca kırpılıp yuvarlanır; bir tahmin, bir sayaç ya da bir
+ * animasyon yoktur. Benimsenmiş çalıştırma yoksa <code>null</code> döner ve
+ * kısayol sıradan bir düğme gibi görünür.
+ *
+ * @returns {{ phase: string, tone: 'active'|'terminal', label: string } | null}
+ */
+export function journeyStatusIndicator({ simulation, snapshot } = {}) {
+  const phase = journeyPhase({ simulation, snapshot })
+  if (phase === JOURNEY_PHASES.PLANNER) return null
+
+  if (phase === JOURNEY_PHASES.TERMINAL) {
+    return { phase, tone: 'terminal', label: journeyTerminalTitle(snapshot?.status) }
+  }
+
+  const percent = Number.isFinite(snapshot?.progressPercent)
+    ? Math.round(Math.min(100, Math.max(0, snapshot.progressPercent)))
+    : null
+
+  return {
+    phase,
+    tone: 'active',
+    label: percent === null ? 'Yolculuk sürüyor' : `Yolculuk sürüyor · %${percent}`,
+  }
+}
+
+/**
  * Haritadaki yolculuk çizgisinin SAHİBİ.
  *
  * Benimsenmiş bir çalıştırma varken (çalışıyor ya da bitmiş) sunucunun

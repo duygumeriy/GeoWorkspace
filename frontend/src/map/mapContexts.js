@@ -46,6 +46,17 @@ export const MAP_CONTEXTS = Object.freeze({
   /** Var olan bir POI'nin düzenleme formu. */
   poiEdit: 'poiEdit',
 
+  /**
+   * Yolculuk planlayıcısı paneli.
+   *
+   * <b>Yalnızca PANEL sahipliğidir.</b> Bağlam, yolculuğun iş durumunu (plan
+   * seçimleri, çalışan simülasyon, terminal sonuç) HİÇ tutmaz ve emekliliği
+   * hiçbirini bırakmaz — tıpkı ısı haritası panelinin kapanmasının katmanı
+   * kapatmaması gibi. Buraya alınmasının tek nedeni, panelin sol üstte analiz
+   * paneliyle AYNI yeri kaplaması ve iki panelin üst üste binmesiydi.
+   */
+  journey: 'journey',
+
   /* --- Akıllı ulaşım ------------------------------------------------------ */
   transportStopInfo: 'transportStopInfo',
   transportStopCreate: 'transportStopCreate',
