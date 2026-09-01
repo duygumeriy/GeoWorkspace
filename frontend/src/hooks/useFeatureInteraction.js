@@ -53,6 +53,11 @@ export default function useFeatureInteraction(map, { enabled, hoverEnabled, onSe
       return undefined
     }
 
+    /* İmleç SAHİPLİĞİ: yalnızca kendi yazdığımız değer geri alınır. Her
+       hareketde koşulsuz boş dizeye çekmek, imleci o an başka bir kip
+       (örneğin yolculuk noktası seçimi) tutuyorsa onu sessizce ezerdi. */
+    let ownsCursor = false
+
     const handleMove = (event) => {
       if (event.dragging) return
 
@@ -62,7 +67,17 @@ export default function useFeatureInteraction(map, { enabled, hoverEnabled, onSe
         { hitTolerance: HIT_TOLERANCE },
       )
 
-      map.getTargetElement().style.cursor = feature ? 'pointer' : ''
+      const target = map.getTargetElement()
+      if (target) {
+        if (feature) {
+          target.style.cursor = 'pointer'
+          ownsCursor = true
+        } else if (ownsCursor) {
+          target.style.cursor = ''
+          ownsCursor = false
+        }
+      }
+
       setHovered(feature ? describeHover(feature, event.pixel) : null)
     }
 
@@ -74,7 +89,10 @@ export default function useFeatureInteraction(map, { enabled, hoverEnabled, onSe
     return () => {
       map.un('pointermove', handleMove)
       map.getTargetElement()?.removeEventListener('pointerleave', handleOut)
-      if (map.getTargetElement()) map.getTargetElement().style.cursor = ''
+      if (ownsCursor && map.getTargetElement()) {
+        map.getTargetElement().style.cursor = ''
+        ownsCursor = false
+      }
     }
   }, [map, enabled, hoverEnabled])
 

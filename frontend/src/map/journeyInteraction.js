@@ -4,6 +4,36 @@ import { WAYPOINT_SOURCES, waypointReference } from './journeyPlanning.js'
 
 export const JOURNEY_PICK_TOLERANCE = 8
 
+/** Seçim kipinin imleci. Tek bir yerde durur ki geri alma da aynı değeri bilsin. */
+export const JOURNEY_PICK_CURSOR = 'crosshair'
+
+/**
+ * Seçim kipi boyunca imlecin SAHİPLİĞİNİ alır.
+ *
+ * <b>Önceki değer korunur ve aynen geri verilir.</b> Körlemesine boş dizeye
+ * çekmek, imleci başkası (bir başka kip ya da sayfa stili) ayarlamışsa onun
+ * durumunu sessizce silerdi. Aynı sahiplik deseni durak taşımada da
+ * kullanılıyor; ikinci bir imleç yöneticisi kurulmaz.
+ *
+ * <b>Sahiplik SORGULANIR.</b> Bırakırken imleç artık bizimki değilse (araya
+ * başka bir sahip girmiş) hiçbir şey yazılmaz — geç kalan bir geri alma,
+ * güncel sahibin imlecini ezmemelidir.
+ *
+ * @param {HTMLElement | null | undefined} element haritanın hedef elemanı
+ * @returns {() => void} imleci önceki değerine döndüren geri alma
+ */
+export function claimJourneyPickCursor(element) {
+  if (!element?.style) return () => {}
+
+  const previous = element.style.cursor ?? ''
+  element.style.cursor = JOURNEY_PICK_CURSOR
+
+  return () => {
+    if (element.style.cursor !== JOURNEY_PICK_CURSOR) return
+    element.style.cursor = previous
+  }
+}
+
 /**
  * Planlayıcı bir yuva için nokta beklerken bir tıklamanın neye denk geldiğini
  * çözer.

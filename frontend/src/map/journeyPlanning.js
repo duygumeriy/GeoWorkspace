@@ -307,6 +307,45 @@ export function buildJourneyPreviewRequest(state) {
   }
 }
 
+/* --- Harita seçiminin sahipliği ----------------------------------------------
+   Bir tıklamanın ne yapacağı TEK bir yerde cevaplanır. Kural saf tutulur çünkü
+   burada React'e ait hiçbir şey yoktur: dört koşulun hepsi durumdur. */
+
+/**
+ * Harita tıklaması bir geçiş noktası yuvasına mı yazacak?
+ *
+ * <b>Dördüncü koşul yapısaldır.</b> Yolculuk seçimi de bir ETKİLEŞİM
+ * AİLESİDİR: çalışma alanı dinlenme durumunda (sıradan tekli seçim) değilken
+ * silahlı kalırsa, aynı tıklama hem bir köşe noktası hem bir geçiş noktası
+ * olurdu. `workspaceAtRest` bu yüzden çağıranın hatırlaması gereken bir şey
+ * değil, kuralın parçasıdır.
+ *
+ * <b>Görünmeyen yuvaya yazılmaz</b> — panel açık değilse seçim silahlanmaz.
+ */
+export function journeyPickingActive({
+  mode,
+  panel,
+  activeSlotKey,
+  workspaceAtRest = true,
+} = {}) {
+  return Boolean(
+    workspaceAtRest
+    && mode === JOURNEY_MODES.WAYPOINTS
+    && panel === PANEL_STATES.OPEN
+    && activeSlotKey != null,
+  )
+}
+
+/**
+ * Çalışma alanı dinlenmeyi bıraktığında silahlı yuva bırakılmalı mı?
+ *
+ * Zaten silah yoksa <code>false</code> döner: her render'da aynı eylemi
+ * göndermek sonsuz bir döngü olurdu.
+ */
+export function shouldDisarmJourneySlot({ activeSlotKey, workspaceAtRest = true } = {}) {
+  return !workspaceAtRest && activeSlotKey != null
+}
+
 /** Yuvanın plandaki rolü — yalnızca gösterim içindir. */
 export function waypointRoleAt(index, total) {
   if (index === 0) return WAYPOINT_ROLES.ORIGIN

@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { resolveJourneyPick } from '../map/journeyInteraction.js'
+import { claimJourneyPickCursor, resolveJourneyPick } from '../map/journeyInteraction.js'
 
 /**
  * Haritadan geçiş noktası seçimi.
@@ -27,12 +27,15 @@ export default function useJourneyWaypointPicking(map, {
     }
 
     map.on('singleclick', handleClick)
-    const element = map.getTargetElement()
-    if (element) element.style.cursor = 'crosshair'
+
+    /* İmleç ÖDÜNÇ alınır, sıfırlanmaz: kip bittiğinde önceki değer aynen geri
+       verilir. Kip sürerken onu ezebilecek tek kod (çizim katmanının hover
+       imleci) çağıran tarafta kapalıdır. */
+    const releaseCursor = claimJourneyPickCursor(map.getTargetElement())
 
     return () => {
       map.un('singleclick', handleClick)
-      if (element) element.style.cursor = ''
+      releaseCursor()
     }
   }, [map, active, allowPoi, isStopSelectable, onPick])
 }

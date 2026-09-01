@@ -181,5 +181,11 @@ test('picking only listens while a slot is armed and restores normal behaviour a
   assert.ok(source.includes('if (!map || !active) return undefined'))
   // Ve söküldüğünde işleyici ile imleç geri alınır.
   assert.ok(source.includes("map.un('singleclick', handleClick)"))
-  assert.ok(source.includes("element.style.cursor = ''"))
+
+  /* İmleç Faz 5E-B'den beri ÖDÜNÇ alınır: körlemesine boş dizeye çekmek yerine
+     önceki değer aynen geri verilir. Davranışın kendisi
+     `journey-picking-ownership.test.js` içinde çalıştırılarak ölçülür. */
+  assert.ok(source.includes('claimJourneyPickCursor(map.getTargetElement())'))
+  assert.ok(source.includes('releaseCursor()'))
+  assert.ok(!source.includes("style.cursor = ''"))
 })

@@ -19,6 +19,16 @@ export default function useTransportVehicleLayer(map, {
   presentation = null,
   cameraDuration = 400,
   onVehicleClick = null,
+  /**
+   * Tıklama/balon sahipliği.
+   *
+   * Yalnızca İSABET DENETİMİNİ kapatır: katman, aracın çizimi, canlı
+   * güncellemeler ve takip kamerası bu bayraktan HİÇ etkilenmez. Harita
+   * tıklamasının sahibi başka bir kipken (yolculuk noktası seçimi) aracı
+   * gizlemek ya da akışını durdurmak, tıklamayı susturmaktan tamamen farklı
+   * bir şey olurdu.
+   */
+  clickEnabled = true,
 } = {}) {
   const sourceRef = useRef(null)
   const layerRef = useRef(null)
@@ -89,14 +99,14 @@ export default function useTransportVehicleLayer(map, {
      böylece yönetim haritasının KENDİ mevcut tıklama dalı olduğu gibi kalır ve
      hiçbir ekranda ikinci bir dinleyici oluşmaz. */
   useEffect(() => {
-    if (!map || typeof onVehicleClick !== 'function') return undefined
+    if (!map || !clickEnabled || typeof onVehicleClick !== 'function') return undefined
     const handleClick = (event) => {
       const feature = findTransportVehicleAtPixel(map, event.pixel)
       if (feature) onVehicleClick(feature.get('transportVehicle') ?? null, feature)
     }
     map.on('singleclick', handleClick)
     return () => map.un('singleclick', handleClick)
-  }, [map, onVehicleClick])
+  }, [map, onVehicleClick, clickEnabled])
 
   return { source: sourceRef, layer: layerRef }
 }

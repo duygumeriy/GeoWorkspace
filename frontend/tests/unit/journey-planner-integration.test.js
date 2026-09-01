@@ -213,10 +213,19 @@ test('normal map interactions resume when planner picking is not armed', () => {
   assert.ok(MAP_PAGE.includes('workspaceMode.isSelecting && !journey.isPicking'))
   assert.ok(MAP_PAGE.includes('poiClickEnabled && !journey.isPicking'))
 
-  // …ve `isPicking` yalnızca serbest kipte, panel açıkken ve bir yuva seçiliyken doğrudur.
-  assert.ok(PLANNER_HOOK.includes('state.mode === JOURNEY_MODES.WAYPOINTS'))
-  assert.ok(PLANNER_HOOK.includes('state.panel === PANEL_STATES.OPEN'))
-  assert.ok(PLANNER_HOOK.includes('state.activeSlotKey != null'))
+  /* …ve kancanın kendisi kuralı SAF modülden uygular. Koşullar Faz 5E-B'de
+     `journeyPickingActive`e taşındı: dördüncüsü (çalışma alanının dinlenme
+     durumu) orada da doğrudan çalıştırılarak ölçülür
+     (`journey-picking-ownership.test.js`). Buradaki iddia bağlamadır: kancada
+     ikinci bir kural KOPYASI yaşamamalıdır. */
+  assert.ok(PLANNER_HOOK.includes('isPicking: journeyPickingActive({'))
+  assert.ok(PLANNER_HOOK.includes('workspaceAtRest'))
+  assert.ok(!PLANNER_HOOK.includes('state.mode === JOURNEY_MODES.WAYPOINTS'))
+
+  const rules = read('../../src/map/journeyPlanning.js')
+  assert.ok(rules.includes('mode === JOURNEY_MODES.WAYPOINTS'))
+  assert.ok(rules.includes('panel === PANEL_STATES.OPEN'))
+  assert.ok(rules.includes('activeSlotKey != null'))
 })
 
 test('the existing transport click chain is left exactly as it was', () => {

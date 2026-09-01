@@ -242,6 +242,27 @@ export default function MapPage() {
      OpenLayers etkileşimini durdurmazdı. */
   const allowed = useWorkspacePermissions(workspaceMode)
 
+  /**
+   * Çalışma alanının DİNLENME durumu: sıradan tekli seçim.
+   *
+   * Yolculuk noktası seçimi de bir etkileşim ailesidir ve yalnızca burada
+   * silahlanabilir. Kutu/alan seçimi de dışarıdadır: ikisi de canlı bir
+   * sürükleme/çizim etkileşimidir, dolayısıyla "sıradan tıklama" değildir.
+   */
+  const workspaceAtRest =
+    workspaceMode.isSelecting && workspaceMode.activeSelectionTool === 'single'
+
+  /* --- Yolculuk planlayıcısı durumu (Faz 5C) ---------------------------------
+     Kancanın KENDİSİ burada, haritanın tıklama sahipliğini kuran kancalardan
+     ÖNCE çağrılır: `journey.isPicking` aşağıdaki her etkileşim kapısının
+     girdisidir ve "bir sonraki tıklama ne yapar" sorusunun tek cevabı odur.
+     Haritaya dokunan yolculuk kancaları (önizleme katmanı, nokta seçimi, canlı
+     simülasyon) yerlerinde, aşağıda kalır. */
+  const journey = useJourneyPlanner({
+    permitted: allowed.canViewTransport,
+    workspaceAtRest,
+  })
+
   // Declared before the drawing workspace because saving a polygon feeds
   // straight into it: one analysis engine serves both the temporary tool and
   // the automatic run after a polygon record is created.
@@ -467,10 +488,18 @@ export default function MapPage() {
   const { selectFeature, extentOf, extentOfKeys, visibleExtent, selectedKeys, selectedFeature, featureByKey } =
     workspace
 
-  // Click-to-select runs in select mode only, and not while an area polygon is
-  // being drawn — there a click is a vertex, not a selection.
+  /* Click-to-select runs in select mode only, and not while an area polygon is
+     being drawn — there a click is a vertex, not a selection.
+
+     Yolculuk noktası seçimi silahlıyken de çekilir: aynı tıklama hem bir geçiş
+     noktası yazıp hem bir çizimi seçemez. Bayrak İKİ şeyi birden kapatır —
+     seçim tıklaması ve hover imleci — böylece seçim kipinin artı imleci
+     ayakta kalır. */
   const clickSelectEnabled =
-    allowed.canSelect && workspaceMode.isSelecting && workspaceMode.activeSelectionTool !== 'polygon'
+    allowed.canSelect
+    && workspaceMode.isSelecting
+    && workspaceMode.activeSelectionTool !== 'polygon'
+    && !journey.isPicking
 
   /**
    * Haritadan seçim: seçimi kur, sonra çizim bağlamını etkinleştir.
@@ -718,6 +747,10 @@ export default function MapPage() {
   useTransportVehicleLayer(mapInstance, {
     presentation: transportVehicle,
     onVehicleClick: openVehiclePopup,
+    /* Yolculuk noktası seçimi silahlıyken YALNIZCA balon çekilir. Araç çizilmeye,
+       canlı konumunu almaya ve takip kamerasını sürdürmeye devam eder — sabit
+       hat simülasyonu ürünü bu koddan hiç etkilenmez. */
+    clickEnabled: !journey.isPicking,
   })
 
   const vehiclePopup = transportVehicle && vehiclePopupSimulationId === transportVehicle.simulationId
@@ -792,8 +825,11 @@ export default function MapPage() {
      Durum ve istek yaşam döngüsü `useJourneyPlanner`'dadır; burada yalnızca
      mevcut parçalar bağlanır. Önizleme CANLI SİMÜLASYON DEĞİLDİR: SignalR
      kancasına, takip kamerasına ya da araç durumuna hiçbir biçimde
-     dokunmaz ve kendi katmanında yaşar. */
-  const journey = useJourneyPlanner({ permitted: allowed.canViewTransport })
+     dokunmaz ve kendi katmanında yaşar.
+
+     Kancanın kendisi YUKARIDA, `allowed`ın hemen ardında çağrılır: tıklama
+     sahipliğini kuran kapılar `journey.isPicking`i okur ve ondan önce
+     tanımlanmış olmaları gerekir. */
 
   const assignActiveJourneyWaypoint = useCallback((reference) => {
     journey.assignWaypoint(journey.state.activeSlotKey, reference)
@@ -1305,6 +1341,9 @@ export default function MapPage() {
     poiOverlayVisible
     && workspaceMode.isSelecting
     && workspaceMode.activeSelectionTool !== 'polygon'
+    /* Yolculuk seçimi de bir sahiptir. Kapatılan YALNIZCA tıklama
+       inceleyicisidir: analiz sonucu, ısı haritası ve açık kart yerinde kalır. */
+    && !journey.isPicking
 
   const analysisPoiInspect = useLocationAnalysisPoiInspect(mapInstance, {
     analysis: activeAnalysis,
@@ -2703,6 +2742,72 @@ export default function MapPage() {
 
   const selectFromList = useCallback((key) => guardEdit(() => selectAndZoom(key)), [guardEdit, selectAndZoom])
 
+  /* --- Yolculuk noktası seçiminin sahipliği (Faz 5E-B) ------------------------
+     Silahlanmak, haritanın tıklamasını DEVRALMAKTIR. Devralmadan önce o an
+     tıklamanın sahibi olan aile bırakılır ve bırakma her zaman o ailenin
+     KENDİ mevcut çıkışından geçer: ikinci bir kapatma yolu açmak, yerleştirme
+     kipinin bekleyen noktası ya da analizin canlı Draw aracı gibi durumların
+     görünmeden ayakta kalmasına kapı aralardı. */
+  const leaveActiveWorkspaceTool = useCallback(() => {
+    /* Yerleştirme kipleri BAĞLAMLARIYLA birlikte yaşar: emeklilik bekleyen
+       noktayı ve formu da temizler (koordinatördeki emeklilik tablosu). */
+    if (workspaceMode.isPlacingPoi) mapContext.close(MAP_CONTEXTS.poiCreate)
+    if (workspaceMode.isPlacingTransportStop) mapContext.close(MAP_CONTEXTS.transportStopCreate)
+    if (workspaceMode.isRelocatingTransportStop) cancelTransportStopRelocation()
+
+    /* Analiz ailelerinde yalnızca ARAÇ bırakılır — Esc'nin yaptığının aynısı.
+       Sonuç ve paneli kapatmak, kullanıcının istemediği bir veri kaybı olurdu. */
+    if (workspaceMode.isAnalyzing) workspaceMode.stopAnalysis()
+    if (workspaceMode.isSelectingAnalysisArea) workspaceMode.stopLocationAnalysis()
+
+    if (workspaceMode.isDrawing) workspaceMode.stopDrawing()
+    if (workspaceMode.isMeasuring) workspaceMode.stopMeasuring()
+
+    // Kutu/alan seçimi de canlı bir etkileşimdir: sıradan tıklamaya dönülür.
+    if (workspaceMode.activeSelectionTool && workspaceMode.activeSelectionTool !== 'single') {
+      workspaceMode.selectSelectionTool('single')
+    }
+  }, [workspaceMode, mapContext, cancelTransportStopRelocation])
+
+  /**
+   * Silahlanma üreten eylemleri dinlenme durumunda çalıştırır.
+   *
+   * Dinlenme durumundaysak tek iş eylemin kendisidir; değilsek ÖNCE çalışma
+   * alanı dinlenmeye döner. Düzenleme oturumu mevcut `guardEdit` kapısından
+   * geçer: kaydedilmemiş geometri, uygulamanın kendi onayı sorulmadan atılmaz
+   * — ve onay verildikten sonra eylem kaldığı yerden sürer.
+   */
+  const withWorkspaceAtRest = useCallback(
+    (action) => {
+      if (workspaceAtRest) {
+        action()
+        return
+      }
+      guardEdit(() => {
+        leaveActiveWorkspaceTool()
+        action()
+      })
+    },
+    [workspaceAtRest, guardEdit, leaveActiveWorkspaceTool],
+  )
+
+  /** Bir geçiş noktası yuvasını silahlar. */
+  const armJourneySlot = useCallback(
+    (key) => withWorkspaceAtRest(() => journey.armSlot(key)),
+    [withWorkspaceAtRest, journey],
+  )
+
+  /* Yeni bir ara nokta da yuvasını SİLAHLI açar (indirgeyicideki kural), yani
+     o da bir devralmadır: aynı kapıdan geçer, yoksa eklenen yuva doğduğu anda
+     silahsız bırakılırdı. */
+  const addJourneyWaypoint = useCallback(
+    () => withWorkspaceAtRest(() => journey.addWaypoint()),
+    [withWorkspaceAtRest, journey],
+  )
+
+  /** Esc ve panel dışı çıkışlar: silahı bırakır, başka hiçbir şeye dokunmaz. */
+  const disarmJourneySlot = useCallback(() => journey.disarmSlot(), [journey])
+
   const editFromList = useCallback(
     (key) =>
       guardEdit(() => {
@@ -2747,6 +2852,14 @@ export default function MapPage() {
       setPendingPoiDelete(null)
       return
     }
+    /* SİLAHLI bir yolculuk yuvası, açık bir panelden ya da etkin bir araçtan
+       daha yereldir: haritanın bir SONRAKİ tıklamasını o tutuyordur ve Esc'nin
+       ilk anlamı "bu tıklamayı geri ver"dir. Tek başına silahı bırakır; ne bir
+       bağlam kapatır ne de başka bir araç değiştirir — bir tuş, bir iş. */
+    if (journey.isPicking) {
+      disarmJourneySlot()
+      return
+    }
     // The attribute popup is the most modal thing on screen: Esc there means
     // "discard this shape", not "leave the tool".
     if (workspace.pendingDrawing) {
@@ -2789,6 +2902,8 @@ export default function MapPage() {
     pendingDelete,
     pendingRestore,
     pendingPoiDelete,
+    journey.isPicking,
+    disarmJourneySlot,
     workspaceMode,
     mapContext,
     selectionCount,
@@ -3138,11 +3253,13 @@ export default function MapPage() {
                   onRouteChange={journey.setRoute}
                   onSegmentStopChange={journey.setSegmentStop}
                   onSwapSegmentStops={journey.swapSegmentStops}
-                  onAddWaypoint={journey.addWaypoint}
+                  onAddWaypoint={addJourneyWaypoint}
                   onRemoveWaypoint={journey.removeWaypoint}
                   onMoveWaypoint={journey.moveWaypoint}
                   onAssignWaypoint={journey.assignWaypoint}
-                  onArmSlot={journey.armSlot}
+                  /* Silahlanma çalışma alanının dinlenmesini İSTER: sarmalayıcı
+                     önce etkin aracı bırakır, sonra yuvayı silahlar. */
+                  onArmSlot={armJourneySlot}
                   onRequestPreview={journey.requestPreview}
                   onClear={journey.clear}
                   onCollapse={journey.collapsePanel}

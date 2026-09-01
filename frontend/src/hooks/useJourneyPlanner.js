@@ -2,11 +2,12 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'r
 import { readApiError } from '../services/api.js'
 import { previewJourney } from '../services/transportApi.js'
 import {
-  JOURNEY_MODES,
   PANEL_STATES,
   buildJourneyPreviewRequest,
   initialJourneyPlannerState,
+  journeyPickingActive,
   journeyPlannerReducer,
+  shouldDisarmJourneySlot,
 } from '../map/journeyPlanning.js'
 import { journeyErrorMessage } from '../map/journeyPresentation.js'
 
@@ -23,8 +24,16 @@ import { journeyErrorMessage } from '../map/journeyPresentation.js'
  *
  * <b>Otomatik istek YOKTUR.</b> Her tuş vuruşunda yönlendirme motorunu
  * dövmemek için hesaplama yalnızca açık `requestPreview` çağrısıyla başlar.
+ *
+ * <b>Seçim ÇALIŞMA ALANINA tabidir.</b> `workspaceAtRest`, `useWorkspaceMode`
+ * sıradan tekli seçimdeyken doğrudur; başka bir araç ailesi (çizim, ölçüm,
+ * analiz, yerleştirme, düzenleme, alan seçimi) etkinken seçim ne silahlanabilir
+ * ne de silahlı kalabilir. Aksi hâlde tek bir tıklama hem o aracın hem de
+ * planlayıcının işine yarardı.
+ *
+ * @param {{ permitted?: boolean, workspaceAtRest?: boolean }} [options]
  */
-export default function useJourneyPlanner({ permitted = false } = {}) {
+export default function useJourneyPlanner({ permitted = false, workspaceAtRest = true } = {}) {
   const [state, dispatch] = useReducer(journeyPlannerReducer, undefined, initialJourneyPlannerState)
   const [preview, setPreview] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -56,6 +65,14 @@ export default function useJourneyPlanner({ permitted = false } = {}) {
     setLoading(false)
     setError('')
   }, [permitted, abort])
+
+  /* Başka bir araç ailesi devraldığı anda silah BIRAKILIR. Koşul saf kuralda
+     durur ve zaten silahsızken hiçbir eylem gönderilmez — aksi hâlde her
+     render yeni bir durum nesnesi üretip döngü kurardı. */
+  useEffect(() => {
+    if (!shouldDisarmJourneySlot({ activeSlotKey: state.activeSlotKey, workspaceAtRest })) return
+    dispatch({ type: 'armSlot', key: null })
+  }, [workspaceAtRest, state.activeSlotKey])
 
   const validation = useMemo(() => buildJourneyPreviewRequest(state), [state])
 
@@ -138,6 +155,7 @@ export default function useJourneyPlanner({ permitted = false } = {}) {
     moveWaypoint: (key, direction) => dispatch({ type: 'moveWaypoint', key, direction }),
     assignWaypoint: (key, reference) => dispatch({ type: 'assignWaypoint', key, reference }),
     armSlot: (key) => dispatch({ type: 'armSlot', key }),
+    disarmSlot: () => dispatch({ type: 'armSlot', key: null }),
     openPanel: () => dispatch({ type: 'setPanel', panel: PANEL_STATES.OPEN }),
     collapsePanel: () => dispatch({ type: 'setPanel', panel: PANEL_STATES.COLLAPSED }),
     closePanel: () => dispatch({ type: 'setPanel', panel: PANEL_STATES.CLOSED }),
@@ -167,11 +185,15 @@ export default function useJourneyPlanner({ permitted = false } = {}) {
     validationError: validation.ok ? '' : validation.error ?? '',
     requestPreview,
     clear,
-    /* Harita seçimi yalnızca serbest kipte ve panel AÇIKKEN silahlanır:
-       görünmeyen bir yuvaya atama yapılmamalıdır. */
-    isPicking:
-      state.mode === JOURNEY_MODES.WAYPOINTS
-      && state.panel === PANEL_STATES.OPEN
-      && state.activeSlotKey != null,
+    /* Harita seçimi yalnızca serbest kipte, panel AÇIKKEN ve çalışma alanı
+       dinlenme durumundayken silahlanır: görünmeyen bir yuvaya atama
+       yapılmamalı, başka bir aracın tıklaması da paylaşılmamalıdır. Kural saf
+       modüldedir; burada yalnızca uygulanır. */
+    isPicking: journeyPickingActive({
+      mode: state.mode,
+      panel: state.panel,
+      activeSlotKey: state.activeSlotKey,
+      workspaceAtRest,
+    }),
   }
 }
