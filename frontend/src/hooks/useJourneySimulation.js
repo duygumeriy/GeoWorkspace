@@ -7,7 +7,9 @@ import {
 } from '../services/transportApi.js'
 import { createJourneySimulationConnection } from '../services/journeySimulationHub.js'
 import {
+  JOURNEY_ADOPTION,
   JOURNEY_PHASES,
+  adoptedJourneyFollow,
   applyJourneySnapshot,
   isTerminalJourneyStatus,
   journeyPhase,
@@ -40,7 +42,10 @@ export default function useJourneySimulation({ permitted = false } = {}) {
   const [snapshot, setSnapshot] = useState(null)
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState('')
-  const [following, setFollowing] = useState(true)
+  /* Kamera sahipliği KAPALI doğar. Açılışta ortada bir yolculuk yoktur ve
+     benimseme yollarının ikisi de değeri AÇIKÇA yazar (`adoptedJourneyFollow`);
+     böylece hiçbir çalıştırma bir öncekinin kamera hakkını devralmaz. */
+  const [following, setFollowing] = useState(false)
 
   const connectionRef = useRef(null)
   const startPromiseRef = useRef(null)
@@ -140,6 +145,10 @@ export default function useJourneySimulation({ permitted = false } = {}) {
         if (cancelled) return
         setSimulation(body)
         setSnapshot(body.snapshot ?? null)
+        /* GÖZLEM ≠ TAKİP. Kurtarma yalnızca sunucudaki yolculuğu izlemeye
+           devam eder; kullanıcının bıraktığı görüntü kaydırılmaz. Kamerayı
+           istemek için "Takip Et" vardır. */
+        setFollowing(adoptedJourneyFollow(JOURNEY_ADOPTION.RECOVERY))
         await join(body.simulationId)
       } catch {
         // Aktif çalıştırma yok ya da istek iptal edildi; ikisi de normaldir.
@@ -173,7 +182,8 @@ export default function useJourneySimulation({ permitted = false } = {}) {
          sonucudur. Eski önizleme burada bırakılır. */
       setSimulation(body)
       setSnapshot(body.snapshot ?? null)
-      setFollowing(true)
+      // Taze başlatma kamerayı TALEP EDER: kullanıcı yolculuğu o an başlattı.
+      setFollowing(adoptedJourneyFollow(JOURNEY_ADOPTION.START))
       await join(body.simulationId)
       return body
     } catch {
@@ -219,11 +229,17 @@ export default function useJourneySimulation({ permitted = false } = {}) {
     setSimulation(null)
     setSnapshot(null)
     setError('')
+    // Bırakılan çalıştırmanın kamera hakkı da BİTER; bir sonrakine miras kalmaz.
+    setFollowing(false)
   }, [leave])
 
-  // Yolculuk bittiğinde grup üyeliği bırakılır; zombi abonelik kalmaz.
+  /* Yolculuk bittiğinde grup üyeliği bırakılır; zombi abonelik kalmaz. Kamera
+     hakkı da orada biter: hareket etmeyen bir aracı takip etmek diye bir şey
+     yoktur ve sonuç ekranda dururken görüntü kilitli kalmamalıdır. */
   useEffect(() => {
-    if (snapshot && isTerminalJourneyStatus(snapshot.status)) leave()
+    if (!snapshot || !isTerminalJourneyStatus(snapshot.status)) return
+    leave()
+    setFollowing(false)
   }, [snapshot, leave])
 
   /* Evre TEK bir yerden türetilir ve sunucunun durumundan başka hiçbir şeye

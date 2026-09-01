@@ -47,6 +47,78 @@ export function journeyVehicleGlyph(profileId) {
   return PROFILE_GLYPHS[profileId] ?? JOURNEY_VEHICLE_FALLBACK_GLYPH
 }
 
+/**
+ * Kameranın SAHİBİ olan çalıştırma; sahip yoksa <code>null</code>.
+ *
+ * <b>Neden saf bir fonksiyon.</b> "Uçan animasyon hâlâ bizim mi" sorusu bir
+ * kimlik sorusudur ve React'e ihtiyaç duymaz. Takip kapalıysa ya da ortada
+ * araç yoksa sahip yoktur; başka bir çalıştırma devraldıysa sahip DEĞİŞMİŞTİR
+ * ve önceki animasyonun bayrağı devralınmamalıdır. Aynı yolculuk sürerken
+ * değer sabit kalır — kısma davranışı bu sayede korunur.
+ */
+export function journeyCameraOwner({ following = false, presentation = null } = {}) {
+  if (!following || !presentation) return null
+  return presentation.simulationId ?? null
+}
+
+/**
+ * Kamera animasyonunun KİLİDİ ve sahiplik kuşağı.
+ *
+ * <b>Sorun.</b> Tek bir "animasyon sürüyor" bayrağı yetmez, çünkü OpenLayers
+ * yeni bir <code>view.animate</code> çağrıldığında ÖNCEKİ animasyonun geri
+ * çağrısını da (iptal edildi diye) tetikler. Sahiplik A'dan B'ye geçtikten
+ * sonra gelen A geri çağrısı, B'nin kilidini açardı: kısma devre dışı kalır ve
+ * üst üste binen animasyonlar başlardı.
+ *
+ * <b>Çözüm.</b> Her sahiplik değişimi bir KUŞAK atlatır. Animasyon başlarken
+ * içinde bulunduğu kuşağı alır; geri çağrı ancak kendi kuşağı hâlâ geçerliyse
+ * kilidi bırakabilir. Eski bir geri çağrı böylece sessizce yutulur.
+ *
+ * React'ten bağımsız ve saf tutulur: yarış senaryosunun tamamı bir DOM ya da
+ * harita olmadan adım adım çalıştırılabilir.
+ */
+export function createJourneyCameraLock() {
+  let generation = 0
+  let animating = false
+
+  return {
+    /** Şu an bize ait, uçan bir animasyon var mı? */
+    get isAnimating() {
+      return animating
+    },
+
+    /** Geçerli sahiplik kuşağı; yalnızca gözlem/test içindir. */
+    get generation() {
+      return generation
+    },
+
+    /** Sahiplik değişti: eski geri çağrılar geçersizleşir, kilit açılır. */
+    invalidate() {
+      generation += 1
+      animating = false
+      return generation
+    },
+
+    /** Animasyon başlıyor; geri çağrısının taşıyacağı jeton döner. */
+    begin() {
+      animating = true
+      return generation
+    },
+
+    /**
+     * Animasyon bitti/iptal edildi. Kilit YALNIZCA jeton hâlâ güncel kuşağa
+     * aitse bırakılır.
+     *
+     * @returns {boolean} kilidin gerçekten bırakılıp bırakılmadığı
+     */
+    release(token) {
+      if (token !== generation) return false
+      animating = false
+      return true
+    },
+  }
+}
+
 const styleCache = new Map()
 
 function journeyVehicleStyle(profileId) {

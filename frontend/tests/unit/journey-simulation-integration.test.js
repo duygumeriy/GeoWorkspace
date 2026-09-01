@@ -45,6 +45,30 @@ const namedImports = (source, modulePath) => {
   return match[1].split(',').map((name) => name.trim()).filter(Boolean)
 }
 
+/**
+ * İçinde verilen işareti geçen `useEffect` çağrısının TAMAMI.
+ *
+ * Sınır, ilk `])` aranarak bulunamaz: gövdedeki sıradan bir dizi kapanışı
+ * iddiayı sessizce yarıda keserdi. Parantezler sayılır.
+ */
+const effectWith = (source, marker) => {
+  const bodies = stripComments(source).split('useEffect(').slice(1)
+  const found = bodies.find((body) => body.includes(marker))
+  assert.ok(found, `${marker} efekti bulunamadı`)
+
+  let depth = 1
+  for (let index = 0; index < found.length; index += 1) {
+    const char = found[index]
+    if (char === '(') depth += 1
+    else if (char === ')') {
+      depth -= 1
+      if (depth === 0) return found.slice(0, index + 1)
+    }
+  }
+
+  return assert.fail(`${marker} efektinin kapanışı bulunamadı`)
+}
+
 /** Adı verilen `useCallback` gövdesi (yorumlar ayıklanmış sayfadan). */
 const callbackBody = (name) => {
   const code = stripComments(MAP_PAGE)
@@ -290,7 +314,31 @@ test('a successful start opens the panel automatically', () => {
 })
 
 test('terminal state releases the group and cannot regress', () => {
-  assert.ok(SIM_HOOK.includes('isTerminalJourneyStatus(snapshot.status)) leave()'))
+  /* Terminal işlemesi TEK bir efekttedir; ne yaptığı o efektin gövdesinden
+     okunur — tek satırlık bir yazım biçimi şart değildir. */
+  const terminal = effectWith(SIM_HOOK, 'isTerminalJourneyStatus(snapshot.status)')
+
+  // Karar SUNUCUNUN durumundan verilir.
+  assert.match(terminal, /isTerminalJourneyStatus\(snapshot\.status\)/)
+
+  /* Biten yolculukta İKİ şey birden bırakılır: hub grubu (zombi abonelik
+     kalmaz) ve kamera sahipliği (hareket etmeyen aracı takip etmek yoktur). */
+  assert.match(terminal, /leave\(\)/)
+  assert.match(terminal, /setFollowing\(false\)/)
+
+  /* Ama SONUÇ kalır: terminal olmak bir bırakma ya da durdurma değildir.
+     Bunlar kullanıcının kendi açık eylemleridir (Durdur / Planlamaya Dön /
+     Yeni Yolculuk). */
+  for (const forbidden of [
+    'stopJourneySimulation',
+    'journeySimulation.stop',
+    'dismiss',
+    'setSimulation(null)',
+    'setSnapshot(null)',
+  ]) {
+    assert.ok(!terminal.includes(forbidden), `terminal dalı ${forbidden} çağırıyor`)
+  }
+
   assert.ok(SIM_HOOK.includes('applyJourneySnapshot'))
   // Kilit kuralı saf modüldedir ve orada sınanır.
   assert.ok(LIVE_STATE.includes('if (isTerminalJourneyStatus(current.status)) return false'))
@@ -399,8 +447,10 @@ test('the camera reuses the proven safe-box primitive and never resets zoom', ()
   assert.ok(VEHICLE_HOOK.includes('vehicleCameraTarget'))
   assert.ok(VEHICLE_HOOK.includes("from '../map/transportVehicle.js'"))
 
-  // Kutu içindeyse hiç oynamaz.
-  assert.ok(VEHICLE_HOOK.includes('if (!target || animatingRef.current) return'))
+  /* Kutu içindeyse ya da uçan bir animasyon varsa hiç oynamaz. Kilit Faz
+     5E-B · Dilim 5'te kuşak taşıyan saf bir nesneye taşındı (bayat geri
+     çağrı yarışı); kısma davranışı aynıdır. */
+  assert.ok(VEHICLE_HOOK.includes('if (!target || lock.isAnimating) return'))
 
   /* Animasyonda ZUM verilmez: kullanıcının yakınlaştırmasıyla güreşilmez. */
   const animate = stripComments(VEHICLE_HOOK).slice(stripComments(VEHICLE_HOOK).indexOf('view.animate'))

@@ -79,6 +79,36 @@ export function applyJourneySnapshot(current, incoming) {
 }
 
 /**
+ * Bir çalıştırmanın arayüze GİRİŞ yolu.
+ *
+ * <b>Zamanlamadan ya da eksik alanlardan çıkarılmaz</b>: çağıran hangi yoldan
+ * geldiğini AÇIKÇA söyler. "Anlık görüntüsü varsa kurtarmadır" gibi bir sezgi,
+ * ilk tick'i geç gelen taze bir yolculuğu da kurtarma sayardı.
+ */
+export const JOURNEY_ADOPTION = Object.freeze({
+  /** Kullanıcı bu oturumda "Simülasyonu Başlat" dedi. */
+  START: 'start',
+  /** Yenileme sonrası sunucudaki mevcut çalıştırma benimsendi. */
+  RECOVERY: 'recovery',
+})
+
+/**
+ * Benimseme kamerayı TALEP EDER Mİ?
+ *
+ * <b>Gözlemek takip etmek DEĞİLDİR.</b> Kurtarma, sunucuda zaten süren bir
+ * yolculuğu izlemeye devam etmektir: SignalR'a yeniden katılınır, araç çizilir,
+ * panel canlı duruma döner — ama kullanıcının bıraktığı görüntü kendiliğinden
+ * kaydırılmaz. Kamerayı ele geçirmek AÇIK bir eylemdir; yenilemeden sonra o
+ * eylem verilmemiştir.
+ *
+ * Taze başlatma bunun tersidir ve bilinçlidir: kullanıcı yolculuğu o an
+ * başlatmıştır, aracı görmek istediği varsayımı onun kendi eyleminden gelir.
+ */
+export function adoptedJourneyFollow(source) {
+  return source === JOURNEY_ADOPTION.START
+}
+
+/**
  * Yolculuk arayüzünün ÜÇ evresi.
  *
  * <b><code>simulation != null</code> "canlı" DEMEK DEĞİLDİR.</b> Bir yolculuk
