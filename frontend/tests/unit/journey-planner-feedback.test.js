@@ -227,14 +227,64 @@ test('the terminal card still has no follow control and keeps both exits', () =>
 test('an armed picking mode says so in plain, visible text', () => {
   const status = branchWith('{picking && (', 'journey-picking-status')
 
-  // Görünür cümle: imleç ya da ipucu balonu tek başına yeterli değildir.
-  assert.ok(status.includes('Haritadan bir durak'))
-  assert.ok(status.includes('Vazgeçmek için Esc'))
+  /* Görünür cümle: imleç ya da ipucu balonu tek başına yeterli değildir.
+
+     Cümlenin ADI artık sabit değil, YETKİDEN türetilmiş bir değerdir
+     (`pickableLabel`) — çünkü durak seçemeyen birine "bir durak seçin" demek,
+     seçemeyeceği bir şeye davet etmektir. Cümlenin İSKELETİ burada, adın
+     yetkiye göre nasıl kurulduğu ise aşağıdaki testte sabitlenir. */
+  assert.ok(status.includes('Haritadan bir {pickableLabel} seçin · Vazgeçmek için Esc'))
   assert.ok(!status.includes('title='))
+
+  // Ad SABİT yazılmaz: yetkiyi atlayan bir metin regresyonu burada düşer.
+  assert.ok(!/Haritadan bir (durak|yer|nokta)\b/.test(status))
 
   // Nazik canlı bölge — bir hata değil, sürmekte olan bir kip.
   assert.ok(status.includes('role="status"'))
   assert.ok(!status.includes('role="alert"'))
+})
+
+test('stop-picking guidance can only be produced for a user who may read the transport network', () => {
+  /* Faz 1 ayrımının SUNUM tarafı. Kullanıcı yetenekleri panele iki AYRI
+     bayrak olarak gelir ve ürün kapısıyla (`journey.use`) karıştırılmaz:
+
+         canUseTransport  ← transport.view
+         canUsePois       ← poi.view
+
+     Rehberlik cümlesindeki ad bu ikisinden türetilir. */
+  assert.match(
+    PANEL,
+    /const pickableLabel = pickableLabelOf\(\{ canUseStops: canUseTransport, canUsePois \}\)/,
+  )
+
+  const table = PANEL.slice(
+    PANEL.indexOf('function pickableLabelOf('),
+    PANEL.indexOf('function formatStepMetric('),
+  )
+  assert.ok(table.includes('function pickableLabelOf('), 'karar tablosu bulunamadı')
+
+  // Karar tablosunun TAMAMI — dört durumun dördü de sabitlenir.
+  assert.match(table, /if \(canUseStops && canUsePois\) return 'durak ya da yer'/)
+  assert.match(table, /if \(canUseStops\) return 'durak'/)
+  assert.match(table, /if \(canUsePois\) return 'yer'/)
+  assert.match(table, /\n\s*return 'nokta'/)
+
+  /* Ve asıl GÜVENLİK iddiası: "durak" sözü veren HER dal `canUseStops`
+     ardındadır. Yetkisiz bir kullanıcıya durak seçtiren bir rehberlik cümlesi
+     üretilemez — yeni bir dal eklenirse bu iddia düşer. */
+  const stopPromising = table
+    .split('\n')
+    .filter((line) => line.includes('return') && line.includes('durak'))
+
+  assert.equal(stopPromising.length, 2)
+  for (const line of stopPromising) {
+    assert.ok(line.includes('canUseStops'), `durak vaat eden korumasız dal: ${line.trim()}`)
+  }
+
+  /* Nokta seçici AYNI kuralı okur: iki yüzeyin metni ayrışamaz ve durak
+     listesi yetkisi olmayana boş geçilir (bkz. journey-center-permissions). */
+  assert.match(PANEL, /Haritadan bir \{pickableLabelOf\(\{ canUseStops, canUsePois \}\)\} seçebilirsiniz\./)
+  assert.ok(PANEL.includes('routeStops={canUseTransport ? stops : []}'))
 })
 
 test('the panel is told the EFFECTIVE picking state, and the slot keeps aria-pressed', () => {

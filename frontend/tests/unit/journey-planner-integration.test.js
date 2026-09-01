@@ -127,10 +127,12 @@ test('the browser never contacts a routing engine directly', () => {
 /* --- Yetki ------------------------------------------------------------------- */
 
 test('the planner is offered only through the effective permission model', () => {
-  // Panel `transport.view` olmadan hiç render edilmez.
-  assert.match(MAP_PAGE, /allowed\.canViewTransport && \(\s*<JourneyPlannerPanel/)
+  // Panel, ürünün KENDİ yetkisi (`journey.use`) olmadan hiç render edilmez.
+  assert.match(MAP_PAGE, /allowed\.canUseJourney && \(\s*<JourneyPlannerPanel/)
   // POI seçenekleri ayrı bir yetkiye bağlıdır.
   assert.ok(MAP_PAGE.includes('canUsePois={allowed.canViewPoi}'))
+  // Hat/durak seçenekleri de öyle: ürün kapısı bir kaynak anahtarı değildir.
+  assert.ok(MAP_PAGE.includes('canUseTransport={allowed.canViewTransport}'))
 
   for (const [name, source] of JOURNEY_SOURCES) {
     const code = stripComments(source)

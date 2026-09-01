@@ -112,7 +112,7 @@ test('MapPage defines the resting workspace as ordinary single-click selection',
     /const workspaceAtRest =\s*workspaceMode\.isSelecting && workspaceMode\.activeSelectionTool === 'single'/,
   )
   // Ve planlayıcı kancasına GEÇİRİLİR: kapı gerçekten kurulmuş olmalıdır.
-  assert.match(MAP_PAGE, /useJourneyPlanner\(\{\s*permitted: allowed\.canViewTransport,\s*workspaceAtRest,\s*\}\)/)
+  assert.match(MAP_PAGE, /useJourneyPlanner\(\{[^}]*permitted: allowed\.canUseJourney,[^}]*workspaceAtRest,\s*\}\)/s)
 })
 
 test('arming a slot first returns the workspace to rest, through each family own exit', () => {

@@ -97,7 +97,20 @@ public class AuthorizationFoundationTests
             /* Simülasyon başlatmak ayrı bir kanonik yetenektir: ne
                transport.view (izlemek) ne de transport.route.update
                (güzergahı yeniden hesaplamak) onu ima eder. */
-            "transport.simulation.start"
+            "transport.simulation.start",
+
+            /* Yolculuk Merkezi Faz 1: DURDURMA, başlatmanın üzerine
+               yüklenmez — bir hattı herkes için durdurmak, onu başlatmakla
+               aynı yetenek değildir ve ikisi ayrı ayrı verilebilir. */
+            "transport.simulation.stop",
+
+            /* Yolculuk Merkezi Faz 1: kişisel yolculuk KENDİ ürün kapısını
+               taşır. Eskiden transport.view ile korunuyordu; bu, ulaşım ağını
+               izleyebilmek ile kendine ait bir yolculuğu canlandırabilmeyi tek
+               koda bağlıyordu. Kod bir ÜRÜN kapısıdır, kaynak anahtarı
+               DEĞİLDİR: hat/durak hâlâ transport.view, POI hâlâ poi.view
+               ister. */
+            "journey.use"
         ];
 
         /* Beklenen liste kasıtlı olarak literal yazılır: katalog sabitlerinden
@@ -233,6 +246,8 @@ public class AuthorizationFoundationTests
         await using var scope = CreateScope();
         await SeedAsync(scope);
 
+        var codes = await PermissionCodesOfAsync(scope, GisRoles.Viewer);
+
         Assert.Equal(
             Sorted(
                 "map.view",
@@ -245,8 +260,28 @@ public class AuthorizationFoundationTests
                 /* Konum analizi Viewer profilindedir: ödev normal kullanıcının
                    konum analizi yapabilmesini açıkça ister. inventory.analysis
                    ve heatmap.view hâlâ YOKTUR — üçü ayrı yeteneklerdir. */
-                "location.analysis"),
-            await PermissionCodesOfAsync(scope, GisRoles.Viewer));
+                "location.analysis",
+
+                /* Yolculuk Merkezi Faz 1. İkisi de sıradan harita
+                   kullanıcısının yetenekleridir ve BİRBİRİNİ İMA ETMEZ:
+                   `transport.view` hat/durak katmanlarını ve çalışan bir hat
+                   simülasyonunun İZLENMESİNİ açar; `journey.use` ise
+                   kullanıcının KENDİ yolculuğunu planlayıp oynatabildiği ayrı
+                   ürünün kapısıdır. Hiçbiri yazma ya da paylaşılan yaşam
+                   döngüsü yetkisi vermez — onlar
+                   `transport.simulation.start` / `.stop` kodlarıdır ve bu
+                   profilde YOKTUR (aşağıda ayrıca doğrulanır). */
+                "transport.view",
+                "journey.use"),
+            codes);
+
+        /* Paylaşılan hattın YAŞAM DÖNGÜSÜ Viewer'a açılmadı: izlemek ile
+           işletmek ayrı yeteneklerdir. Bir "hepsini ver" regresyonu yalnızca
+           beklenenleri saymakla yakalanmayabilir. */
+        Assert.DoesNotContain("transport.simulation.start", codes);
+        Assert.DoesNotContain("transport.simulation.stop", codes);
+        Assert.DoesNotContain(codes, c => c.StartsWith("transport.stop.", StringComparison.Ordinal));
+        Assert.DoesNotContain(codes, c => c.StartsWith("transport.route.", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -287,7 +322,19 @@ public class AuthorizationFoundationTests
                 "poi.delete",
 
                 // Viewer profilinden devralınır; çizim yetkilerinden bağımsızdır.
-                "location.analysis"),
+                "location.analysis",
+
+                /* Yolculuk Merkezi Faz 1. İkisi de sıradan harita
+                   kullanıcısının yetenekleridir ve BİRBİRİNİ İMA ETMEZ:
+                   `transport.view` hat/durak katmanlarını ve çalışan bir hat
+                   simülasyonunun İZLENMESİNİ açar; `journey.use` ise
+                   kullanıcının KENDİ yolculuğunu planlayıp oynatabildiği ayrı
+                   ürünün kapısıdır. Hiçbiri yazma ya da paylaşılan yaşam
+                   döngüsü yetkisi vermez — onlar
+                   `transport.simulation.start` / `.stop` kodlarıdır ve bu
+                   profilde YOKTUR (aşağıda ayrıca doğrulanır). */
+                "transport.view",
+                "journey.use"),
             codes);
 
         // Varsayılan olarak verilmeyenler açıkça doğrulanır: bir "hepsini ver"
@@ -306,6 +353,12 @@ public class AuthorizationFoundationTests
         Assert.DoesNotContain(codes, c => c.StartsWith("users.", StringComparison.Ordinal));
         Assert.DoesNotContain(codes, c => c.StartsWith("roles.", StringComparison.Ordinal));
         Assert.DoesNotContain(codes, c => c.StartsWith("permissions.", StringComparison.Ordinal));
+
+        /* Ulaşım ağını GÖRMEK, onu YÖNETMEK ya da hattı işletmek değildir. */
+        Assert.DoesNotContain("transport.simulation.start", codes);
+        Assert.DoesNotContain("transport.simulation.stop", codes);
+        Assert.DoesNotContain(codes, c => c.StartsWith("transport.stop.", StringComparison.Ordinal));
+        Assert.DoesNotContain(codes, c => c.StartsWith("transport.route.", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -327,8 +380,27 @@ public class AuthorizationFoundationTests
                 "heatmap.view",
                 "layers.view",
                 "poi.view",
-                "location.analysis"),
+                "location.analysis",
+
+                /* Yolculuk Merkezi Faz 1. İkisi de sıradan harita
+                   kullanıcısının yetenekleridir ve BİRBİRİNİ İMA ETMEZ:
+                   `transport.view` hat/durak katmanlarını ve çalışan bir hat
+                   simülasyonunun İZLENMESİNİ açar; `journey.use` ise
+                   kullanıcının KENDİ yolculuğunu planlayıp oynatabildiği ayrı
+                   ürünün kapısıdır. Hiçbiri yazma ya da paylaşılan yaşam
+                   döngüsü yetkisi vermez — onlar
+                   `transport.simulation.start` / `.stop` kodlarıdır ve bu
+                   profilde YOKTUR (aşağıda ayrıca doğrulanır). */
+                "transport.view",
+                "journey.use"),
             codes);
+
+        /* Ulaşım ağını görmek analistin de yeteneğidir; hattı işletmek
+           değildir. */
+        Assert.DoesNotContain("transport.simulation.start", codes);
+        Assert.DoesNotContain("transport.simulation.stop", codes);
+        Assert.DoesNotContain(codes, c => c.StartsWith("transport.stop.", StringComparison.Ordinal));
+        Assert.DoesNotContain(codes, c => c.StartsWith("transport.route.", StringComparison.Ordinal));
 
         // Analist operasyonel çizim verisini düzenlemez.
         Assert.DoesNotContain(codes, c => c.EndsWith(".create", StringComparison.Ordinal));
@@ -376,8 +448,27 @@ public class AuthorizationFoundationTests
                 "poi.manage",
                 "poi.categories.manage",
 
-                "location.analysis"),
+                "location.analysis",
+
+                /* Yolculuk Merkezi Faz 1. İkisi de sıradan harita
+                   kullanıcısının yetenekleridir ve BİRBİRİNİ İMA ETMEZ:
+                   `transport.view` hat/durak katmanlarını ve çalışan bir hat
+                   simülasyonunun İZLENMESİNİ açar; `journey.use` ise
+                   kullanıcının KENDİ yolculuğunu planlayıp oynatabildiği ayrı
+                   ürünün kapısıdır. Hiçbiri yazma ya da paylaşılan yaşam
+                   döngüsü yetkisi vermez — onlar
+                   `transport.simulation.start` / `.stop` kodlarıdır ve bu
+                   profilde YOKTUR (aşağıda ayrıca doğrulanır). */
+                "transport.view",
+                "journey.use"),
             codes);
+
+        /* GIS verisinin yöneticisi olmak, ULAŞIM hattını işletmek ya da
+           yönetmek DEĞİLDİR: iki alan ayrıdır. */
+        Assert.DoesNotContain("transport.simulation.start", codes);
+        Assert.DoesNotContain("transport.simulation.stop", codes);
+        Assert.DoesNotContain(codes, c => c.StartsWith("transport.stop.", StringComparison.Ordinal));
+        Assert.DoesNotContain(codes, c => c.StartsWith("transport.route.", StringComparison.Ordinal));
 
         // Sistem yönetimi yetkileri GIS Manager'a varsayılan olarak verilmez.
         Assert.DoesNotContain(codes, c => c.StartsWith("users.", StringComparison.Ordinal));

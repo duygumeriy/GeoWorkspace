@@ -31,10 +31,21 @@ import { journeyErrorMessage } from '../map/journeyPresentation.js'
  * ne de silahlı kalabilir. Aksi hâlde tek bir tıklama hem o aracın hem de
  * planlayıcının işine yarardı.
  *
- * @param {{ permitted?: boolean, workspaceAtRest?: boolean }} [options]
+ * @param {{ permitted?: boolean, canUseTransport?: boolean, workspaceAtRest?: boolean }} [options]
  */
-export default function useJourneyPlanner({ permitted = false, workspaceAtRest = true } = {}) {
-  const [state, dispatch] = useReducer(journeyPlannerReducer, undefined, initialJourneyPlannerState)
+export default function useJourneyPlanner({
+  permitted = false,
+  canUseTransport = true,
+  workspaceAtRest = true,
+} = {}) {
+  /* Başlangıç kipi, kullanıcının erişebildiği kipe göre seçilir; yalnızca ilk
+     kurulumda okunur (useReducer'ın init argümanı). Bu bir yetkilendirme
+     kararı DEĞİL, bir başlangıç seçimidir. */
+  const [state, dispatch] = useReducer(
+    journeyPlannerReducer,
+    canUseTransport,
+    (allowed) => initialJourneyPlannerState({ canUseTransport: allowed }),
+  )
   const [preview, setPreview] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')

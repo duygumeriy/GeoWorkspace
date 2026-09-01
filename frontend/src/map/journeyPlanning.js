@@ -98,9 +98,20 @@ export function waypointReference({ source, id, label = '', routeName = '' }) {
   return { source, id: Number(id), label, routeName }
 }
 
-export function initialJourneyPlannerState() {
+/**
+ * Planlayıcının başlangıç durumu.
+ *
+ * <b>Kip, kullanıcının ERİŞEBİLDİĞİ kipe göre başlar.</b> Hat ve Hat Bölümü
+ * kipleri ulaşım ağına erişim ister (`transport.view`); o yetkisi olmayan
+ * birine varsayılan olarak hat seçimi açmak, hiç doldurulamayacak bir formla
+ * karşılaşmak demekti. Bu bir yetkilendirme kararı DEĞİL, bir başlangıç
+ * seçimidir — bağlayıcı denetim her zaman backend'dedir.
+ *
+ * @param {{ canUseTransport?: boolean }} [options]
+ */
+export function initialJourneyPlannerState({ canUseTransport = true } = {}) {
   return {
-    mode: JOURNEY_MODES.ROUTE_FULL,
+    mode: canUseTransport ? JOURNEY_MODES.ROUTE_FULL : JOURNEY_MODES.WAYPOINTS,
     profile: DEFAULT_JOURNEY_PROFILE,
     routeId: null,
     fromStopId: null,

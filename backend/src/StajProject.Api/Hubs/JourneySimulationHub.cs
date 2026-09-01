@@ -20,8 +20,10 @@ namespace StajProject.Api.Hubs;
 /// hat grubuna katılmasını yapısal olarak imkânsız kılar.
 /// </para>
 /// <para>
-/// <b>Katılım İKİ kapıdan geçer.</b> Önce <c>transport.view</c> etkin yetkisi
-/// (bağlantı zaten kimlik doğrulamalıdır), sonra SAHİPLİK. Grup üyeliği bir
+/// <b>Katılım İKİ kapıdan geçer.</b> Önce <c>journey.use</c> etkin yetkisi
+/// (bağlantı zaten kimlik doğrulamalıdır), sonra SAHİPLİK. Ürün kapısı
+/// bilinçle <c>transport.view</c> DEĞİLDİR: kişisel yolculuk kanalı, ulaşım
+/// ağını okuyabilmekten bağımsız kendi ürününün kanalıdır. Grup üyeliği bir
 /// yetki DEĞİLDİR; adı kimlikten türese de kimin katılabileceğine sahiplik
 /// karar verir — aksi hâlde bir GUID tahmin eden biri başkasının konumunu
 /// izleyebilirdi.
@@ -120,7 +122,7 @@ public sealed class JourneySimulationHub : Hub
 
         if (!await _permissions.HasPermissionAsync(
                 userId,
-                PermissionCodes.TransportView,
+                PermissionCodes.JourneyUse,
                 Context.ConnectionAborted))
         {
             throw new HubException(ForbiddenMessage);

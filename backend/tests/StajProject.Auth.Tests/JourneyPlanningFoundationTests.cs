@@ -38,17 +38,19 @@ public sealed class JourneyPlanningFoundationTests
     /* --- Sözleşme / yetki temeli ------------------------------------------------- */
 
     [Fact]
-    public void The_preview_endpoint_reuses_the_existing_transport_view_permission()
+    public void The_preview_endpoint_is_gated_by_the_personal_journey_product_permission()
     {
-        /* Asıl iddia: YENİ bir yetki kodu uydurulmadı. Önizleme hiçbir şey
-           yazmaz ve hiçbir çalıştırma başlatmaz; kullanıcının zaten görebildiği
-           verinin bir düzenlemesidir. */
+        /* Asıl iddia: ÜRÜN kapısı artık kişisel yolculuğun KENDİ kodudur.
+           Eskiden `transport.view` idi ve bu, iki ayrı yeteneği tek koda
+           bağlıyordu — hattı izleyebilen herkes kişisel yolculuk da
+           kullanabiliyordu. */
         var method = typeof(JourneyPlanningController).GetMethod(nameof(JourneyPlanningController.Preview))!;
         var http = Assert.Single(method.GetCustomAttributes(typeof(HttpPostAttribute), true).Cast<HttpMethodAttribute>());
         var required = Assert.Single(method.GetCustomAttributes<RequirePermissionAttribute>(true));
 
         Assert.Equal("preview", http.Template);
-        Assert.Equal(PermissionCodes.TransportView, required.PermissionCode);
+        Assert.Equal(PermissionCodes.JourneyUse, required.PermissionCode);
+        Assert.NotEqual(PermissionCodes.TransportView, required.PermissionCode);
 
         var route = Assert.Single(
             typeof(JourneyPlanningController)
@@ -58,17 +60,22 @@ public sealed class JourneyPlanningFoundationTests
 
         // Planlamak, hattı canlı işletmek DEĞİLDİR: simülasyon kodu istenmez.
         Assert.NotEqual(PermissionCodes.TransportSimulationStart, required.PermissionCode);
+        Assert.NotEqual(PermissionCodes.TransportSimulationStop, required.PermissionCode);
     }
 
     [Fact]
-    public void The_phase_introduces_no_new_permission_code()
+    public void The_personal_journey_product_carries_exactly_one_catalog_code()
     {
-        /* Katalog bu fazda BÜYÜMEZ. Yeni bir kod eklenseydi, mevcut
-           kurulumlarda ayrıca bir genişleme (RolePermissionExpansions) da
-           gerekirdi ve özellik kimseye ulaşmazdı. */
-        Assert.DoesNotContain(
-            PermissionCatalog.AllCodes,
-            code => code.Contains("journey", StringComparison.OrdinalIgnoreCase));
+        /* Ürün kapısı TEK bir koddur; "journey" adı taşıyan ikinci bir yetkilik
+           kimlik üretilmedi. Kodun kataloğa girmesi mevcut kurulumlarda ayrıca
+           bir genişleme gerektirir; onu RolePermissionExpansions ölçer. */
+        Assert.Equal(
+            [PermissionCodes.JourneyUse],
+            PermissionCatalog.AllCodes
+                .Where(code => code.Contains("journey", StringComparison.OrdinalIgnoreCase))
+                .ToArray());
+
+        Assert.Equal("journey.use", PermissionCodes.JourneyUse);
     }
 
     [Fact]
@@ -100,14 +107,14 @@ public sealed class JourneyPlanningFoundationTests
     }
 
     [Fact]
-    public async Task Missing_transport_view_permission_fails_closed_for_the_preview_endpoint()
+    public async Task Missing_journey_use_permission_fails_closed_for_the_preview_endpoint()
     {
         var permissions = Substitute.For<IEffectivePermissionService>();
         permissions
-            .HasPermissionAsync(42, PermissionCodes.TransportView, Arg.Any<CancellationToken>())
+            .HasPermissionAsync(42, PermissionCodes.JourneyUse, Arg.Any<CancellationToken>())
             .Returns(false);
 
-        var context = HandlerContext(PermissionCodes.TransportView);
+        var context = HandlerContext(PermissionCodes.JourneyUse);
         await new PermissionAuthorizationHandler(permissions).HandleAsync(context);
 
         Assert.False(context.HasSucceeded);
@@ -120,10 +127,10 @@ public sealed class JourneyPlanningFoundationTests
            rol de geçer. "Rol adı kestirmesi yok" iddiasının testi. */
         var permissions = Substitute.For<IEffectivePermissionService>();
         permissions
-            .HasPermissionAsync(42, PermissionCodes.TransportView, Arg.Any<CancellationToken>())
+            .HasPermissionAsync(42, PermissionCodes.JourneyUse, Arg.Any<CancellationToken>())
             .Returns(true);
 
-        var context = HandlerContext(PermissionCodes.TransportView);
+        var context = HandlerContext(PermissionCodes.JourneyUse);
         await new PermissionAuthorizationHandler(permissions).HandleAsync(context);
 
         Assert.True(context.HasSucceeded);
@@ -380,6 +387,110 @@ public sealed class JourneyPlanningFoundationTests
         [
             Waypoint(JourneyContractNames.Poi, poi.Id),
             Waypoint(JourneyContractNames.Poi, other.Id)
+        ];
+
+        var result = await fixture.Service.PreviewAsync(request);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ServiceErrorKind.Forbidden, result.ErrorKind);
+    }
+
+    /* --- Kaynak yetkileri: ürün kapısı bir ANAHTAR değildir --------------------
+
+       Ürün kapısı uçta `journey.use`'a taşındıktan sonra, eskiden onu örtük
+       biçimde koruyan `transport.view` gitmiştir. Aşağıdaki testler o örtük
+       korumanın yerine AÇIK bir kaynak denetimi geçtiğini sabitler. */
+
+    [Fact]
+    public async Task Route_based_modes_require_the_separate_transport_view_permission()
+    {
+        /* CASE A: journey.use VAR, transport.view YOK. Kişisel yolculuk ürünü
+           açıktır ama ulaşım rotası/durağı erişilemez kalır. */
+        await using var fixture = Fixture.Create(canViewTransport: false);
+        var route = await fixture.AddRouteAsync();
+        var a = await fixture.AddStopAsync(route, "A", 30, 40, sequence: 1);
+        var b = await fixture.AddStopAsync(route, "B", 31, 41, sequence: 2);
+
+        var full = Request(JourneyContractNames.RouteFull);
+        full.RouteId = route.Id;
+
+        var fullResult = await fixture.Service.PreviewAsync(full);
+        Assert.False(fullResult.IsSuccess);
+        Assert.Equal(ServiceErrorKind.Forbidden, fullResult.ErrorKind);
+
+        var segment = Request(JourneyContractNames.RouteSegment);
+        segment.RouteId = route.Id;
+        segment.FromStopId = a.Id;
+        segment.ToStopId = b.Id;
+
+        var segmentResult = await fixture.Service.PreviewAsync(segment);
+        Assert.False(segmentResult.IsSuccess);
+        Assert.Equal(ServiceErrorKind.Forbidden, segmentResult.ErrorKind);
+
+        // Motora hiç gidilmez: reddedilen bir istek güzergah hesaplatmaz.
+        Assert.Empty(fixture.Router.Calls);
+    }
+
+    [Fact]
+    public async Task A_transport_stop_waypoint_requires_the_transport_view_permission()
+    {
+        await using var fixture = Fixture.Create(canViewTransport: false);
+        var route = await fixture.AddRouteAsync("Gizli Hat");
+        var a = await fixture.AddStopAsync(route, "Gizli Durak", 30, 40, sequence: 1);
+        var b = await fixture.AddStopAsync(route, "Gizli Durak 2", 31, 41, sequence: 2);
+
+        var request = Request(JourneyContractNames.Waypoints);
+        request.Waypoints =
+        [
+            Waypoint(JourneyContractNames.TransportStop, a.Id),
+            Waypoint(JourneyContractNames.TransportStop, b.Id)
+        ];
+
+        var result = await fixture.Service.PreviewAsync(request);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ServiceErrorKind.Forbidden, result.ErrorKind);
+
+        /* Yanıt hiçbir DURAK verisi sızdırmaz: reddedilen istek, durağın
+           gerçekten var olduğunu bile doğrulamaz. */
+        Assert.DoesNotContain("Gizli", result.Error!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_poi_only_plan_works_without_the_transport_permission()
+    {
+        /* CASE A'nın olumlu yarısı: poi.view taşıyan bir kullanıcı, ulaşım
+           yetkisi olmadan da POI tabanlı serbest yolculuk kurabilir. Ürün
+           kapısı bir kaynak anahtarı değildir; tersi de doğrudur. */
+        await using var fixture = Fixture.Create(canViewTransport: false);
+        var first = await fixture.AddPoiAsync("POI", 30, 40);
+        var second = await fixture.AddPoiAsync("POI 2", 31, 41);
+
+        var request = Request(JourneyContractNames.Waypoints);
+        request.Waypoints =
+        [
+            Waypoint(JourneyContractNames.Poi, first.Id),
+            Waypoint(JourneyContractNames.Poi, second.Id)
+        ];
+
+        Assert.True((await fixture.Service.PreviewAsync(request)).IsSuccess);
+    }
+
+    [Fact]
+    public async Task A_mixed_plan_still_needs_both_reference_permissions()
+    {
+        /* CASE B'nin aynası: her referans KENDİ yetkisini ister ve biri
+           diğerini karşılamaz. */
+        await using var fixture = Fixture.Create(canViewTransport: false);
+        var route = await fixture.AddRouteAsync();
+        var stop = await fixture.AddStopAsync(route, "A", 30, 40, sequence: 1);
+        var poi = await fixture.AddPoiAsync("POI", 31, 41);
+
+        var request = Request(JourneyContractNames.Waypoints);
+        request.Waypoints =
+        [
+            Waypoint(JourneyContractNames.Poi, poi.Id),
+            Waypoint(JourneyContractNames.TransportStop, stop.Id)
         ];
 
         var result = await fixture.Service.PreviewAsync(request);
@@ -855,7 +966,12 @@ public sealed class JourneyPlanningFoundationTests
     {
         public const int UserId = 42;
 
-        private Fixture(AppDbContext db, int? userId, bool canViewPois, FakeJourneyRouter router)
+        private Fixture(
+            AppDbContext db,
+            int? userId,
+            bool canViewPois,
+            bool canViewTransport,
+            FakeJourneyRouter router)
         {
             Db = db;
             Router = router;
@@ -869,6 +985,13 @@ public sealed class JourneyPlanningFoundationTests
                 .HasPermissionAsync(Arg.Any<int>(), PermissionCodes.PoiView, Arg.Any<CancellationToken>())
                 .Returns(canViewPois);
 
+            /* Ürün kapısı (`journey.use`) UÇTADIR; servise gelen istek onu
+               çoktan geçmiştir. Serviste sorulan şey KAYNAK yetkisidir ve
+               ulaşım referansları için ayrıca istenir. */
+            permissions
+                .HasPermissionAsync(Arg.Any<int>(), PermissionCodes.TransportView, Arg.Any<CancellationToken>())
+                .Returns(canViewTransport);
+
             Service = new JourneyPlanningService(db, currentUser, permissions, router);
         }
 
@@ -881,13 +1004,19 @@ public sealed class JourneyPlanningFoundationTests
         public static Fixture Create(
             int? userId = UserId,
             bool canViewPois = true,
+            bool canViewTransport = true,
             FakeJourneyRouter? router = null)
         {
             var options = new DbContextOptionsBuilder<AppDbContext>()
                 .UseInMemoryDatabase($"journey-planning-{Guid.NewGuid():N}")
                 .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning))
                 .Options;
-            return new Fixture(new AppDbContext(options), userId, canViewPois, router ?? new FakeJourneyRouter());
+            return new Fixture(
+                new AppDbContext(options),
+                userId,
+                canViewPois,
+                canViewTransport,
+                router ?? new FakeJourneyRouter());
         }
 
         public async Task<TransportRoute> AddRouteAsync(

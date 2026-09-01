@@ -152,6 +152,23 @@ public static class PermissionCodes
     public const string PoiManage = "poi.manage";
     public const string PoiCategoriesManage = "poi.categories.manage";
 
+    /* --- Kişisel yolculuk ------------------------------------------------------
+
+       Kişisel yolculuk AYRI bir üründür ve `transport.view` altına GİZLENMEZ:
+       ulaşım ağını haritada okuyabilmek ile kendine ait, yalnızca kendisinin
+       görebildiği bir yolculuğu planlayıp canlandırabilmek farklı
+       yeteneklerdir. Ürünün eskiden `transport.view` ile korunması, iki ayrı
+       yeteneği tek bir koda bağlıyordu: hattı izleyebilen herkes kişisel
+       yolculuk da kullanabiliyor, kişisel yolculuk kullanabilmesi istenen
+       birine ise ulaşım ağının tamamı açılmak zorunda kalıyordu.
+
+       Kod bir ÜRÜN kapısıdır, bir kaynak anahtarı DEĞİLDİR: `journey.use`
+       taşımak ulaşım rotalarına, duraklarına ya da POI envanterine erişim
+       vermez — o referanslar kendi yetkilerini (`transport.view`, `poi.view`)
+       servis katmanında ayrıca ister. */
+
+    public const string JourneyUse = "journey.use";
+
     /* --- Akıllı ulaşım -------------------------------------------------------- */
 
     public const string TransportView = "transport.view";
@@ -175,6 +192,18 @@ public static class PermissionCodes
        Görüntüleme yetkisi de İMA ETMEZ: haritada aracın nerede olduğunu
        görmek `transport.view` ile olur, hattı çalıştırmak bu kodla. */
     public const string TransportSimulationStart = "transport.simulation.start";
+
+    /* Durdurmak, başlatmanın üzerine YÜKLENMEZ ve ayrı bir koddur: paylaşılan
+       bir hattı herkes için durdurmak, onu başlatmakla aynı yetenek değildir.
+       Bir kurulum hattı başlatabilen birine durdurma yetkisi vermeyebilir
+       (ya da tersi); tek kod olsaydı bu ayrım hiç kurulamazdı.
+
+       `transport.view` de İMA ETMEZ: yayını izlemek, herkesin izlediği yayını
+       kesmek değildir. Kod bu fazda yalnızca KİMLİK olarak tanımlanır — onu
+       tüketen açık durdurma komutu sonraki fazda gelir. Sistemin kendi iç
+       iptali (güzergah geçersizleşmesi) bir KULLANICI komutu değildir ve bu
+       kodla korunmaz. */
+    public const string TransportSimulationStop = "transport.simulation.stop";
 
     /// <summary>EF <c>HasMaxLength</c> ile aynı sınır.</summary>
     public const int MaxLength = 128;

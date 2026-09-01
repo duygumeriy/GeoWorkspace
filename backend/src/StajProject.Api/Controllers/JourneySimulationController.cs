@@ -19,19 +19,20 @@ namespace StajProject.Api.Controllers;
 /// <see cref="ServiceResult{T}"/>'i mevcut eşlemeyle HTTP'ye çevirir.
 /// </para>
 /// <para>
-/// <b>Yetki bilinçle <c>transport.view</c>'dır.</b> Bu KİŞİSEL ve salt okunur
-/// bir gösterimdir: kullanıcının zaten görebildiği ulaşım ağı ve POI'ler
-/// üzerinde kendi yolculuğunu oynatır, hiçbir kalıcı veriyi değiştirmez ve
-/// başkasının göreceği bir şey üretmez. Yönetim yetkisi olan
-/// <c>transport.simulation.start</c> ise PAYLAŞILAN hat simülasyonuna aittir
-/// ve DEĞİŞMEDEN kalır — bir kullanıcının kendi rotasını canlandırabilmesi,
-/// bir hattı herkes için işletebilmesiyle aynı şey değildir. Yeni bir yetki
-/// kodu da eklenmez: eklenseydi mevcut kurulumlarda ayrıca bir genişleme
-/// gerekir ve özellik kimseye ulaşmazdı.
+/// <b>Yetki <c>journey.use</c>'dur.</b> Bu KİŞİSEL bir üründür: kullanıcı
+/// kendi yolculuğunu oynatır, hiçbir kalıcı veriyi değiştirmez ve başkasının
+/// göreceği bir şey üretmez. Eskiden kapı <c>transport.view</c> idi; ürün artık
+/// kendi kimliğini taşır, böylece kişisel yolculuk verilmesi ulaşım ağının
+/// tamamını açmaz ve ulaşım ağını izleyebilmek kişisel yolculuk vermez.
+/// Yönetim yetkisi olan <c>transport.simulation.start</c> ise PAYLAŞILAN hat
+/// simülasyonuna aittir ve DEĞİŞMEDEN kalır — bir kullanıcının kendi rotasını
+/// canlandırabilmesi, bir hattı herkes için işletebilmesiyle aynı şey
+/// değildir.
 /// </para>
 /// <para>
-/// POI referansı taşıyan bir niyet için servis, planlama akışının aynısını
-/// çalıştırdığı için <c>poi.view</c> şartı kendiliğinden korunur.
+/// Servis planlama akışının aynısını çalıştırdığı için referans yetkileri
+/// (<c>transport.view</c> rota/durak için, <c>poi.view</c> POI için)
+/// kendiliğinden korunur.
 /// </para>
 /// </remarks>
 [ApiController]
@@ -58,7 +59,7 @@ public sealed class JourneySimulationController : ApiControllerBase
     /// YOKTUR — sunucu yolculuğu kendi verisinden yeniden kurar.
     /// </remarks>
     [HttpPost]
-    [RequirePermission(PermissionCodes.TransportView)]
+    [RequirePermission(PermissionCodes.JourneyUse)]
     public Task<ActionResult<JourneySimulationResponse>> Start(
         [FromBody] JourneyPlanRequest intent,
         CancellationToken cancellationToken) =>
@@ -72,7 +73,7 @@ public sealed class JourneySimulationController : ApiControllerBase
 
     /// <summary>Çağıranın KENDİ aktif yolculuğu; yenileme sonrası kurtarma yolu.</summary>
     [HttpGet("current")]
-    [RequirePermission(PermissionCodes.TransportView)]
+    [RequirePermission(PermissionCodes.JourneyUse)]
     public Task<ActionResult<JourneySimulationResponse>> Current(CancellationToken cancellationToken) =>
         Guard(nameof(Current), async () => Respond(await _simulations.GetCurrentAsync(cancellationToken)));
 
@@ -84,7 +85,7 @@ public sealed class JourneySimulationController : ApiControllerBase
     /// tahmin eden birine o kimliğin var olduğunu doğrulardı.
     /// </remarks>
     [HttpPost("{simulationId:guid}/stop")]
-    [RequirePermission(PermissionCodes.TransportView)]
+    [RequirePermission(PermissionCodes.JourneyUse)]
     public Task<ActionResult<JourneySimulationSnapshotResponse>> Stop(
         Guid simulationId,
         CancellationToken cancellationToken) =>

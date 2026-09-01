@@ -41,7 +41,22 @@ public static class RolePermissionDefaults
 
            inventory.analysis ve heatmap.view'a DOKUNULMAZ: onlar ayrı
            yeteneklerdir ve Viewer'da hâlâ yoktur. */
-        PermissionCodes.LocationAnalysis
+        PermissionCodes.LocationAnalysis,
+
+        /* Ulaşım ağını GÖRÜNTÜLEME de temel bir harita yeteneğidir: ana
+           haritanın hat/durak katmanları ve çalışan bir hat simülasyonunun
+           izlenmesi bu koda bağlıdır. Yazma yetkisi YOKTUR — güzergah/durak
+           yönetimi ve simülasyon başlatma/durdurma hâlâ bu profilin
+           DIŞINDADIR ve ayrı kodlardır. */
+        PermissionCodes.TransportView,
+
+        /* Kişisel yolculuk, kullanıcının KENDİNE ait ürünüdür ve paylaşılan
+           hiçbir şeyi değiştirmez: sıradan harita kullanıcısı planlayabilir,
+           önizleyebilir, başlatabilir ve durdurabilir. Kod ayrı tutulur —
+           `transport.view` taşımak kişisel yolculuk kullanabilmek DEMEK
+           DEĞİLDİR ve tersi de doğrudur; ikisi burada birlikte verilir ama
+           birbirini İMA ETMEZ. */
+        PermissionCodes.JourneyUse
     ];
 
     private static readonly string[] GisEditorPermissions =
@@ -122,7 +137,11 @@ public static class RolePermissionDefaults
            güzergah/durak yazma yetkileri hâlâ DIŞARIDADIR. */
         PermissionCodes.MapView,
         PermissionCodes.TransportView,
-        PermissionCodes.PoiView
+        PermissionCodes.PoiView,
+
+        /* Kişisel yolculuk salt okuyan kullanıcının da yeteneğidir: kendi
+           yolculuğunu canlandırmak, hattı herkes için işletmek değildir. */
+        PermissionCodes.JourneyUse
     ];
 
     private static readonly string[] TransportOperatorPermissions =
@@ -137,7 +156,13 @@ public static class RolePermissionDefaults
            duraklarının bakımıyla aynı görev profiline aittir. Rota
            yetkileri hâlâ DIŞARIDADIR — operatör hattı çalıştırır, güzergahı
            yeniden tanımlamaz. Ulaşım Kullanıcısı ise yalnızca izler. */
-        PermissionCodes.TransportSimulationStart
+        PermissionCodes.TransportSimulationStart,
+
+        /* Durdurmak da operatörün işidir ve başlatmanın DOĞAL tamamlayıcısıdır:
+           çalıştırdığı hattı durduramayan bir operatör, yalnızca başlatabilir.
+           Kod yine de AYRI kalır — bir kurulum isterse yalnızca başlatma
+           verebilir. Ulaşım Kullanıcısı ikisini de ALMAZ; o yalnızca izler. */
+        PermissionCodes.TransportSimulationStop
     ];
 
     /// <summary>

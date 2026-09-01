@@ -94,6 +94,8 @@ public sealed class JourneyPlanningService : IJourneyPlanningService
         "Seçilen ilgi noktalarından biri bulunamadı veya kullanımda değil.";
     private const string PoiPermissionMessage =
         "İlgi noktası seçebilmek için POI görüntüleme yetkisi gerekiyor.";
+    private const string TransportPermissionMessage =
+        "Ulaşım rotası ve durağı seçebilmek için ulaşım ağını görüntüleme yetkisi gerekiyor.";
 
     private const string ReverseDirectionAssumption =
         "Bölüm, hattın kalıcı durak sırasına göre TERS yönde planlandı; duraklar seçime uygun biçimde sıralandı.";
@@ -201,8 +203,8 @@ public sealed class JourneyPlanningService : IJourneyPlanningService
 
         var resolved = mode switch
         {
-            JourneyMode.RouteFull => await ResolveRouteFullAsync(request, cancellationToken),
-            JourneyMode.RouteSegment => await ResolveRouteSegmentAsync(request, assumptions, cancellationToken),
+            JourneyMode.RouteFull => await ResolveRouteFullAsync(request, userId, cancellationToken),
+            JourneyMode.RouteSegment => await ResolveRouteSegmentAsync(request, userId, assumptions, cancellationToken),
             _ => await ResolveWaypointsAsync(request, userId, cancellationToken)
         };
 
@@ -363,6 +365,7 @@ public sealed class JourneyPlanningService : IJourneyPlanningService
 
     private async Task<ServiceResult<ResolvedJourney>> ResolveRouteFullAsync(
         JourneyPlanRequest request,
+        int userId,
         CancellationToken cancellationToken)
     {
         if (request.Waypoints is { Count: > 0 })
@@ -373,6 +376,12 @@ public sealed class JourneyPlanningService : IJourneyPlanningService
         if (request.FromStopId is not null || request.ToStopId is not null)
         {
             return ServiceResult<ResolvedJourney>.Failure(SegmentStopsNotAllowedMessage);
+        }
+
+        var transport = await EnsureTransportAccessAsync(userId, cancellationToken);
+        if (!transport.IsSuccess)
+        {
+            return Propagate<ResolvedJourney, bool>(transport);
         }
 
         var route = await FindRouteAsync(request.RouteId, cancellationToken);
@@ -393,6 +402,7 @@ public sealed class JourneyPlanningService : IJourneyPlanningService
 
     private async Task<ServiceResult<ResolvedJourney>> ResolveRouteSegmentAsync(
         JourneyPlanRequest request,
+        int userId,
         List<string> assumptions,
         CancellationToken cancellationToken)
     {
@@ -409,6 +419,12 @@ public sealed class JourneyPlanningService : IJourneyPlanningService
         if (fromStopId == toStopId)
         {
             return ServiceResult<ResolvedJourney>.Failure(SegmentStopsIdenticalMessage);
+        }
+
+        var transport = await EnsureTransportAccessAsync(userId, cancellationToken);
+        if (!transport.IsSuccess)
+        {
+            return Propagate<ResolvedJourney, bool>(transport);
         }
 
         var route = await FindRouteAsync(request.RouteId, cancellationToken);
@@ -545,7 +561,22 @@ public sealed class JourneyPlanningService : IJourneyPlanningService
             .Distinct()
             .ToArray();
 
-        /* POI seçmek AYRI bir yetkidir: ulaşım ağını görebilmek, ortak POI
+        /* Durak seçmek AYRI bir yetkidir: kişisel yolculuk kullanabilmek
+           (`journey.use`), ulaşım ağını okuyabilmek anlamına GELMEZ. Denetim
+           kayıtlar OKUNMADAN ÖNCE yapılır — sonrasında yapılsaydı "bulunamadı"
+           ile "yetkin yok" arasındaki fark, yetkisiz birine durağın gerçekten
+           var olduğunu söylerdi. Yetki yalnızca istek gerçekten durak
+           referansı taşıyorsa sorgulanır. */
+        if (stopIds.Length > 0)
+        {
+            var transport = await EnsureTransportAccessAsync(userId, cancellationToken);
+            if (!transport.IsSuccess)
+            {
+                return Propagate<ResolvedJourney, bool>(transport);
+            }
+        }
+
+        /* POI seçmek de AYRI bir yetkidir: ulaşım ağını görebilmek, ortak POI
            envanterini okuyabilmek anlamına gelmez. Yetki yalnızca istek
            gerçekten POI referansı taşıyorsa sorgulanır. */
         if (poiIds.Length > 0
@@ -585,6 +616,33 @@ public sealed class JourneyPlanningService : IJourneyPlanningService
 
         return ServiceResult<ResolvedJourney>.Success(new ResolvedJourney(Route: null, waypoints));
     }
+
+    /* --- Kaynak yetkileri -------------------------------------------------------- */
+
+    /// <summary>
+    /// Ulaşım rotası/durağı REFERANSI için <c>transport.view</c> şartı.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Ürün kapısı (<c>journey.use</c>) uçtadır ve "kişisel yolculuk
+    /// kullanabilir mi" sorusunu yanıtlar. Bu denetim ise ikinci ve AYRI bir
+    /// soruyu yanıtlar: "bu kullanıcı ulaşım ağını okuyabilir mi". Ürün kapısı
+    /// eskiden <c>transport.view</c> olduğu için bu şart örtük biçimde
+    /// sağlanıyordu; kapı kendi kimliğine taşınınca örtük koruma da ortadan
+    /// kalkar ve şart burada AÇIKÇA yazılır.
+    /// </para>
+    /// <para>
+    /// Denetim kayıtlar okunmadan ÖNCE çağrılır: fail-closed davranış, yetkisiz
+    /// bir isteğe hiçbir rota/durak verisi (varlık bilgisi dâhil) sızdırmamayı
+    /// gerektirir.
+    /// </para>
+    /// </remarks>
+    private async Task<ServiceResult<bool>> EnsureTransportAccessAsync(
+        int userId,
+        CancellationToken cancellationToken) =>
+        await _permissions.HasPermissionAsync(userId, PermissionCodes.TransportView, cancellationToken)
+            ? ServiceResult<bool>.Success(true)
+            : ServiceResult<bool>.Forbidden(TransportPermissionMessage);
 
     /* --- Veri erişimi ------------------------------------------------------------ */
 

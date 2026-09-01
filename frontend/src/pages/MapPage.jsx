@@ -267,7 +267,13 @@ export default function MapPage() {
      Haritaya dokunan yolculuk kancaları (önizleme katmanı, nokta seçimi, canlı
      simülasyon) yerlerinde, aşağıda kalır. */
   const journey = useJourneyPlanner({
-    permitted: allowed.canViewTransport,
+    /* ÜRÜN kapısı: kişisel yolculuk kendi yetkisini okur. `transport.view`
+       DEĞİLDİR — ulaşım ağını izleyebilen herkesin kişisel yolculuk da
+       kullanabildiği varsayımı bilinçli olarak kaldırıldı. */
+    permitted: allowed.canUseJourney,
+    /* Hat tabanlı kipler ulaşım ağına erişim ister ve bu AYRI bir yetkidir;
+       yetkisi olmayana yalnızca serbest nokta kipi sunulur. */
+    canUseTransport: allowed.canViewTransport,
     workspaceAtRest,
   })
 
@@ -906,7 +912,7 @@ export default function MapPage() {
      kancası, kendi katmanı ve kendi takip durumu vardır. `simulation`
      (Faz 1-4) ve `simulation.followingRouteId` bu koddan HİÇ etkilenmez —
      bir yolculuk başlatmak/durdurmak bir hat grubuna katılmaz. */
-  const journeySimulation = useJourneySimulation({ permitted: allowed.canViewTransport })
+  const journeySimulation = useJourneySimulation({ permitted: allowed.canUseJourney })
 
   const journeyVehicle = useMemo(() => {
     const snapshot = journeySimulation.snapshot
@@ -3332,7 +3338,7 @@ export default function MapPage() {
                    panelinin üstüne oturuyordu. Durum özeti sunucudan türetilir
                    ve panel kapalıyken de yolculuğun sürdüğünü söyler. */
                 journey={{
-                  permitted: allowed.canViewTransport,
+                  permitted: allowed.canUseJourney,
                   open: journey.state.panel !== 'closed',
                   onToggle: toggleJourneyPanel,
                   status: journeyStatus,
@@ -3418,11 +3424,11 @@ export default function MapPage() {
                 scopeRestricted={analysisCatalog.isRestricted}
               />
 
-              {/* Yolculuk planlayıcısı YALNIZCA `transport.view` ile sunulur:
+              {/* Yolculuk planlayıcısı YALNIZCA `journey.use` ile sunulur:
                   yetkisi olmayana, backend'in 403 döndüreceği bir akış
                   gösterilmez. Rol adı, kullanıcı adı ya da yönetici bayrağı
                   hiçbir biçimde okunmaz. */}
-              {allowed.canViewTransport && (
+              {allowed.canUseJourney && (
                 <JourneyPlannerPanel
                   state={journey.state}
                   routes={transport.activeRoutes}
@@ -3440,6 +3446,10 @@ export default function MapPage() {
                      gerçekten beklediği durumu anlatır. */
                   picking={journey.isPicking}
                   canUsePois={allowed.canViewPoi}
+                  /* Ürün kapısı bir KAYNAK anahtarı değildir: hat ve durak
+                     seçimleri kendi yetkisini ister. Bu yalnızca GÖRÜNÜRLÜK
+                     kararıdır; bağlayıcı denetim backend'dedir. */
+                  canUseTransport={allowed.canViewTransport}
                   poiSearch={journeyPickerSearch}
                   onModeChange={journey.setMode}
                   onProfileChange={journey.setProfile}

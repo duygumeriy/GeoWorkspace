@@ -41,13 +41,30 @@ import { formatRouteDistance, formatRouteDuration } from '../../map/transportPat
    işaretçi de aynı üç sembolü kullanır. İkinci bir tablo, panelle harita
    arasında zamanla ayrışan iki görünüm demekti. */
 
+/* Hat ve Hat Bölümü kipleri ulaşım ağı REFERANSI kullanır; Serbest kip
+   kullanmayabilir. `transport` bayrağı bu ayrımı taşır ve kipin hangi
+   yetkiyi gerektirdiğini tek yerde saklar. */
 const MODE_TABS = [
-  { id: JOURNEY_MODES.ROUTE_FULL, label: 'Hat' },
-  { id: JOURNEY_MODES.ROUTE_SEGMENT, label: 'Hat Bölümü' },
-  { id: JOURNEY_MODES.WAYPOINTS, label: 'Serbest' },
+  { id: JOURNEY_MODES.ROUTE_FULL, label: 'Hat', transport: true },
+  { id: JOURNEY_MODES.ROUTE_SEGMENT, label: 'Hat Bölümü', transport: true },
+  { id: JOURNEY_MODES.WAYPOINTS, label: 'Serbest', transport: false },
 ]
 
 const ROLE_LABELS = { origin: 'Başlangıç', via: 'Ara nokta', destination: 'Varış' }
+
+/**
+ * Seçilebilen nokta türlerinin ADI.
+ *
+ * Metin YETKİYE göre kurulur: durak seçemeyen birine "bir durak ya da yer
+ * seçin" demek, seçemeyeceği bir şeye davet etmektir. İki yetki de yoksa metin
+ * hiçbir tür vaat etmez.
+ */
+function pickableLabelOf({ canUseStops, canUsePois }) {
+  if (canUseStops && canUsePois) return 'durak ya da yer'
+  if (canUseStops) return 'durak'
+  if (canUsePois) return 'yer'
+  return 'nokta'
+}
 
 function formatStepMetric(step) {
   if (!Number.isFinite(step.distanceMeters)) return ''
@@ -80,6 +97,11 @@ export default function JourneyPlannerPanel({
   canRequest = false,
   picking = false,
   canUsePois = false,
+  /* Ulaşım rotası/durağı seçimi AYRI bir yetkidir (`transport.view`) ve ürün
+     kapısı (`journey.use`) onu İMA ETMEZ. Burada yalnızca GÖRÜNÜRLÜK kararı
+     verilir: yetkisi olmayana, backend'in kesin olarak 403 döndüreceği hat
+     seçimleri sunulmaz. Bağlayıcı denetim sunucudadır ve burada TEKRARLANMAZ. */
+  canUseTransport = false,
   poiSearch = null,
   onModeChange,
   onProfileChange,
@@ -140,6 +162,8 @@ export default function JourneyPlannerPanel({
 
   /* Önizlemede güncel adım KAVRAMI yoktur: henüz yola çıkılmamıştır. */
   const previewSteps = useMemo(() => journeyStepList(preview?.steps), [preview?.steps])
+  const pickableLabel = pickableLabelOf({ canUseStops: canUseTransport, canUsePois })
+
   const routeStops = useMemo(
     () => stops.filter((stop) => stop.routeId === state.routeId)
       .slice()
@@ -364,7 +388,7 @@ export default function JourneyPlannerPanel({
               zaten çalışır; söylenmesi gereken tek şey hangisinin AÇIK
               olduğudur. */}
           <div className="journey-tabs" role="group" aria-label="Planlama türü">
-            {MODE_TABS.map((tab) => (
+            {MODE_TABS.filter((tab) => canUseTransport || !tab.transport).map((tab) => (
               <button
                 key={tab.id}
                 type="button"
@@ -400,7 +424,7 @@ export default function JourneyPlannerPanel({
             })}
           </div>
 
-          {state.mode !== JOURNEY_MODES.WAYPOINTS && (
+          {canUseTransport && state.mode !== JOURNEY_MODES.WAYPOINTS && (
             <label className="journey-field">
               <span>Hat</span>
               <select
@@ -415,7 +439,7 @@ export default function JourneyPlannerPanel({
             </label>
           )}
 
-          {state.mode === JOURNEY_MODES.ROUTE_SEGMENT && (
+          {canUseTransport && state.mode === JOURNEY_MODES.ROUTE_SEGMENT && (
             <div className="journey-segment">
               <label className="journey-field">
                 <span>Başlangıç durağı</span>
@@ -521,14 +545,17 @@ export default function JourneyPlannerPanel({
                   değil, sürmekte olan bir kiptir. */}
               {picking && (
                 <p className="journey-picking-status" role="status">
-                  Haritadan bir durak{canUsePois ? ' ya da yer' : ''} seçin · Vazgeçmek için Esc
+                  Haritadan bir {pickableLabel} seçin · Vazgeçmek için Esc
                 </p>
               )}
 
               {/* Silahlı yuva için arama: sınırlı sonuç, mevcut arama yolu. */}
               {state.activeSlotKey && (
                 <WaypointPicker
-                  routeStops={stops}
+                  /* Duraklar yetkisi olmayana HİÇ sunulmaz: liste haritadan
+                     gelse de, seçilemeyecek bir kaydı öneriye koymak
+                     kullanıcıyı garanti 403'e davet etmek olurdu. */
+                  routeStops={canUseTransport ? stops : []}
                   canUsePois={canUsePois}
                   poiSearch={poiSearch}
                   onAssign={(reference) => onAssignWaypoint?.(state.activeSlotKey, reference)}
@@ -632,6 +659,7 @@ export default function JourneyPlannerPanel({
  * uğruna tüm POI envanterini indirmek güvenli bir yol değildir.
  */
 function WaypointPicker({ routeStops, canUsePois, poiSearch, onAssign }) {
+  const canUseStops = routeStops.length > 0
   const term = poiSearch?.query ?? ''
   const normalized = term.trim().toLocaleLowerCase('tr')
 
@@ -652,7 +680,9 @@ function WaypointPicker({ routeStops, canUsePois, poiSearch, onAssign }) {
         onChange={(event) => poiSearch?.onQueryChange?.(event.target.value)}
         aria-label="Nokta ara"
       />
-      <p className="journey-picker-hint">Haritadan bir durak{canUsePois ? ' ya da yer' : ''} seçebilirsiniz.</p>
+      <p className="journey-picker-hint">
+        Haritadan bir {pickableLabelOf({ canUseStops, canUsePois })} seçebilirsiniz.
+      </p>
 
       <ul className="journey-picker-list">
         {stopMatches.map((stop) => (

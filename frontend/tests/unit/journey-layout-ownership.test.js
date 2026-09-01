@@ -326,7 +326,9 @@ test('the trigger lives in the existing control stack and reads that status', ()
   assert.match(MAP_PAGE, /const journeyStatus = useMemo\(\s*\(\) => journeyStatusIndicator\(\{/)
   assert.match(MAP_PAGE, /status: journeyStatus,/)
   assert.match(MAP_PAGE, /onToggle: toggleJourneyPanel,/)
-  assert.match(MAP_PAGE, /permitted: allowed\.canViewTransport,/)
+  /* Kısayolun kapısı, ürünün KENDİ yetkisidir (`journey.use`); ulaşım ağını
+     görebilmek kişisel yolculuğu ima ETMEZ. */
+  assert.match(MAP_PAGE, /permitted: allowed\.canUseJourney,/)
 })
 
 test('a collapsed panel keeps showing the phase it is in', () => {

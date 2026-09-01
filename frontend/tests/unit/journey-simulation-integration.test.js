@@ -530,7 +530,7 @@ test('the shared route simulation wiring is untouched', () => {
   assert.ok(MAP_PAGE.includes('TransportTrackingControls'))
 
   // Ve yeni ürün onlardan ayrı çağrılır.
-  assert.ok(MAP_PAGE.includes('useJourneySimulation({ permitted: allowed.canViewTransport })'))
+  assert.ok(MAP_PAGE.includes('useJourneySimulation({ permitted: allowed.canUseJourney })'))
   assert.ok(MAP_PAGE.includes('useJourneyVehicleLayer(mapInstance, {'))
 })
 
@@ -556,8 +556,8 @@ test('no role-name or admin shortcut gates the live journey', () => {
     }
   }
 
-  // Gate mevcut etkin yetki modelidir.
-  assert.ok(MAP_PAGE.includes('permitted: allowed.canViewTransport'))
+  // Gate mevcut etkin yetki modelidir; kişisel yolculuk kendi kodunu okur.
+  assert.ok(MAP_PAGE.includes('permitted: allowed.canUseJourney'))
 })
 
 test('no second OpenLayers map and no client-side duration estimate', () => {

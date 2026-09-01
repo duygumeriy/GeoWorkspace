@@ -861,13 +861,18 @@ public sealed class JourneyRoutingTests
     }
 
     [Fact]
-    public void Permissions_are_unchanged_by_this_phase()
+    public void Routing_introduces_no_permission_code_of_its_own()
     {
-        // Faz 5B yeni bir yetki kodu getirmez; uç hâlâ transport.view ister.
+        /* YÖNLENDİRME bir yetki ekseni DEĞİLDİR: motor seçimi, profil ya da
+           güzergah hesabı için ayrı bir kod yoktur ve olmamalıdır.
+
+           Kişisel yolculuk ÜRÜNÜNÜN kendi kodu (`journey.use`) sonradan
+           eklendi; onu ölçen yer JourneyPlanningFoundationTests'tir. Buradaki
+           iddia dar tutulur: "routing" adlı bir kod yoktur ve referans
+           yetkileri yerinde durur. */
         Assert.DoesNotContain(
             PermissionCatalog.AllCodes,
-            code => code.Contains("journey", StringComparison.OrdinalIgnoreCase)
-                || code.Contains("routing", StringComparison.OrdinalIgnoreCase));
+            code => code.Contains("routing", StringComparison.OrdinalIgnoreCase));
 
         Assert.Contains(PermissionCodes.TransportView, PermissionCatalog.AllCodes);
         Assert.Contains(PermissionCodes.PoiView, PermissionCatalog.AllCodes);
@@ -965,6 +970,12 @@ public sealed class JourneyRoutingTests
             var permissions = Substitute.For<IEffectivePermissionService>();
             permissions
                 .HasPermissionAsync(Arg.Any<int>(), PermissionCodes.PoiView, Arg.Any<CancellationToken>())
+                .Returns(true);
+
+            /* Ulaşım referansları KAYNAK yetkisi ister; bu senaryolar hat
+               tabanlı yolculuklar kurar. */
+            permissions
+                .HasPermissionAsync(Arg.Any<int>(), PermissionCodes.TransportView, Arg.Any<CancellationToken>())
                 .Returns(true);
 
             Service = new JourneyPlanningService(db, currentUser, permissions, router);

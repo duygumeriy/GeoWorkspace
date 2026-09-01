@@ -25,6 +25,7 @@ public static class PermissionCategories
     public const string Audit = "Audit";
     public const string Poi = "Poi";
     public const string Transport = "Transport";
+    public const string Journey = "Journey";
 
     /// <summary>EF <c>HasMaxLength</c> ile aynı sınır.</summary>
     public const int MaxLength = 64;
