@@ -162,6 +162,86 @@ public sealed class TransportSimulationController : ApiControllerBase
         Guard(nameof(Resume), async () =>
             Respond(await _simulations.ResumeAsync(routeId, simulationId, cancellationToken)));
 
+    /* --- TOPLU YAŞAM DÖNGÜSÜ (Faz 4B) --------------------------------------------
+       Dört uç, TEK gövde sözleşmesi ve TEK servis metodu. İşlem YOLDA
+       bildirilir, gövdede değil: gövdeye konsaydı bir `restart` gövdesi
+       `pause` ucuna gönderilebilir ve uçtaki yetki bildirimi anlamını
+       yitirirdi.
+
+       Uçlar rota öneki TAŞIMAZ çünkü komut tek bir rotaya ait değildir; her
+       hedef kendi rota VE çalıştırma kimliğini gövdede taşır.
+
+       CONTROLLER İNCE KALIR: döngü, doğrulama, kimlik denetimi ve kısmi
+       sonuç muhasebesi servistedir. Burada hiçbir uç başka bir ucu
+       ÇAĞIRMAZ. */
+
+    /// <summary>Seçili çalıştırmaları DURAKLATIR.</summary>
+    [HttpPost("batch/pause")]
+    [RequirePermission(PermissionCodes.TransportSimulationStop)]
+    public Task<ActionResult<TransportSimulationBatchResponse>> BatchPause(
+        [FromBody] TransportSimulationBatchRequest request,
+        CancellationToken cancellationToken) =>
+        Batch(nameof(BatchPause), TransportSimulationBatchOperation.Pause, request, cancellationToken);
+
+    /// <summary>Seçili çalıştırmaları KALDIKLARI YERDEN sürdürür.</summary>
+    [HttpPost("batch/resume")]
+    [RequirePermission(PermissionCodes.TransportSimulationStop)]
+    public Task<ActionResult<TransportSimulationBatchResponse>> BatchResume(
+        [FromBody] TransportSimulationBatchRequest request,
+        CancellationToken cancellationToken) =>
+        Batch(nameof(BatchResume), TransportSimulationBatchOperation.Resume, request, cancellationToken);
+
+    /// <summary>Seçili çalıştırmaları SONLANDIRIR. Yerine yenisi konmaz.</summary>
+    [HttpPost("batch/reset")]
+    [RequirePermission(PermissionCodes.TransportSimulationStop)]
+    public Task<ActionResult<TransportSimulationBatchResponse>> BatchReset(
+        [FromBody] TransportSimulationBatchRequest request,
+        CancellationToken cancellationToken) =>
+        Batch(nameof(BatchReset), TransportSimulationBatchOperation.Reset, request, cancellationToken);
+
+    /// <summary>
+    /// Seçili çalıştırmaları SONLANDIRIR ve her biri için %0'dan YENİ bir
+    /// çalıştırma kurar.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>İKİ yetki birden aranır ve bu bir tercih değildir.</b> Yeniden
+    /// başlatmak gerçekten iki şey yapar: çok kullanıcılı canlı bir yayını
+    /// herkes için BİTİRİR (<c>transport.simulation.stop</c>) ve yerine YENİ
+    /// bir çalıştırma KURAR (<c>transport.simulation.start</c>). Yalnızca
+    /// birini aramak, o yeteneğe sahip olmayan birine diğerini bedava vermek
+    /// olurdu — üstelik bu faz üçüncü bir yetki kodu (<c>...restart</c>)
+    /// UYDURMAZ: sözleşme "durdurma + başlatma yeteneği"dir.
+    /// </para>
+    /// <para>
+    /// <b>İki <c>[RequirePermission]</c> mantıksal VE'dir.</b> Öznitelik
+    /// <c>AllowMultiple</c>'dır ve ASP.NET Core aynı endpoint'teki tüm
+    /// authorization verilerini TEK bir politikada birleştirir; politikadaki
+    /// requirement'ların TAMAMI sağlanmadan istek geçmez. Yalnızca durdurma ya
+    /// da yalnızca başlatma yetkisi olan kullanıcı 403 alır.
+    /// </para>
+    /// <para>
+    /// <b>Denetim SUNUCUDADIR.</b> Arayüzde düğmeyi gizlemek yetkilendirme
+    /// değildir; bu uç, düğmeyi hiç görmemiş bir istemcinin isteğine de aynı
+    /// cevabı verir.
+    /// </para>
+    /// </remarks>
+    [HttpPost("batch/restart")]
+    [RequirePermission(PermissionCodes.TransportSimulationStop)]
+    [RequirePermission(PermissionCodes.TransportSimulationStart)]
+    public Task<ActionResult<TransportSimulationBatchResponse>> BatchRestart(
+        [FromBody] TransportSimulationBatchRequest request,
+        CancellationToken cancellationToken) =>
+        Batch(nameof(BatchRestart), TransportSimulationBatchOperation.Restart, request, cancellationToken);
+
+    private Task<ActionResult<TransportSimulationBatchResponse>> Batch(
+        string endpoint,
+        TransportSimulationBatchOperation operation,
+        TransportSimulationBatchRequest request,
+        CancellationToken cancellationToken) =>
+        Guard(endpoint, async () =>
+            Respond(await _simulations.ExecuteBatchAsync(operation, request, cancellationToken)));
+
     private ActionResult<T> Respond<T>(ServiceResult<T> result) =>
         result.IsSuccess ? Ok(result.Value!) : Error<T>(result);
 

@@ -121,7 +121,15 @@ import {
   transportVehiclePopupModel,
   transportWatchedVehiclePresentations,
 } from '../map/transportVehicle.js'
-import { activeSimulationsPresentation } from '../map/activeSimulations.js'
+import {
+  LIFECYCLE_OPERATIONS,
+  activeSimulationsPresentation,
+  lifecycleIntent,
+} from '../map/activeSimulations.js'
+
+/** Yıkıcı yaşam döngüsü işlemleri ONAY ister; duraklat/sürdür istemez. */
+const isDestructiveLifecycleOperation = (operation) =>
+  operation === LIFECYCLE_OPERATIONS.RESET || operation === LIFECYCLE_OPERATIONS.RESTART
 import {
   journeyDisplayGeometryWkt,
   journeyStatusIndicator,
@@ -827,12 +835,17 @@ export default function MapPage() {
      (yetkiler oturum içinde `refreshPermissions` ile değişebilir). */
   const canStopSharedSimulation = can(PERMISSIONS.TRANSPORT_SIMULATION_STOP)
 
+  /* Başlatma AYRI bir yetkidir ve durdurmayı İMA ETMEZ. Faz 4B'de ikinci bir
+     tüketicisi oldu: YENİDEN BAŞLATMA gerçekten iki şey yapar (canlı bir yayını
+     herkes için bitirir ve yenisini kurar), bu yüzden İKİ kodu birden ister ve
+     üçüncü bir kod uydurulmaz. */
+  const canStartSharedSimulation = can(PERMISSIONS.TRANSPORT_SIMULATION_START)
+
   const simulationControls = useMemo(() => transportSimulationControls({
     routeId: selectedTransportRouteId,
     simulation: simulation.simulation,
     followingRouteId: simulation.followingRouteId,
-    // Başlatma AYRI bir yetkidir; yalnızca izleyen kullanıcı bu düğmeyi görmez.
-    canStart: can(PERMISSIONS.TRANSPORT_SIMULATION_START),
+    canStart: canStartSharedSimulation,
     /* DURDURMA da AYRI bir yetkidir ve başlatmayı İMA ETMEZ: bir kurulum
        hattı işletebilen birine durdurma vermeyebilir, ya da tersi. İki kod
        burada ayrı ayrı okunur ve biri diğerinin yerine geçmez. */
@@ -852,7 +865,7 @@ export default function MapPage() {
     simulation.resuming,
     simulation.following,
     canStopSharedSimulation,
-    can,
+    canStartSharedSimulation,
   ])
 
   const startSharedSimulation = useCallback(async () => {
@@ -1081,29 +1094,110 @@ export default function MapPage() {
     byRoute: simulation.byRoute,
     routes: transport.activeRoutes,
     watchedRuns: simulation.watchedRuns,
+    /* YÖNETİM SEÇİMİ İZLEMEDEN AYRI bir girdidir: biri haritada ne çizileceğine,
+       diğeri hangi çalıştırmaya komut gideceğine karar verir. */
+    managedRuns: simulation.managedRuns,
     selectedRouteId: selectedTransportRouteId,
     followedRouteId: simulation.followingRouteId,
     search: activeSimulationSearch,
     loading: simulation.activeLoading,
     loaded: simulation.activeLoaded,
     error: simulation.activeError,
+    /* Yetenekler TEK yerden okunur ve İKİ yerde tüketilir: görünürlük ve KOMUT
+       yolu. Yeniden başlatma İKİSİNİ birden ister — başlatabilmek, başkalarının
+       yayınlarını bitirme yetkisi değildir. */
+    canStart: canStartSharedSimulation,
+    canStop: canStopSharedSimulation,
+    pending: simulation.lifecyclePending,
+    batchError: simulation.batchError,
+    batchSummary: simulation.batchSummary,
   }), [
     simulation.byRoute,
     simulation.watchedRuns,
+    simulation.managedRuns,
     simulation.followingRouteId,
     simulation.activeLoading,
     simulation.activeLoaded,
     simulation.activeError,
+    simulation.lifecyclePending,
+    simulation.batchError,
+    simulation.batchSummary,
     selectedTransportRouteId,
     transport.activeRoutes,
     activeSimulationSearch,
+    canStartSharedSimulation,
+    canStopSharedSimulation,
   ])
 
-  /* Satır SEÇİMİ yalnızca ayrıntı bağlamını taşır: izlemeyi DEĞİŞTİRMEZ ve
-     takibi ele GEÇİRMEZ. */
+  /* Satır SEÇİMİ yalnızca ayrıntı bağlamını taşır: izlemeyi DEĞİŞTİRMEZ,
+     takibi ele GEÇİRMEZ ve yönetim seçimi YAPMAZ. */
   const selectActiveSimulationRow = useCallback((rowRouteId) => {
     setSelectedTransportRouteId(rowRouteId)
   }, [])
+
+  /* --- TOPLU YAŞAM DÖNGÜSÜ (Faz 4B) --------------------------------------------
+     BEKLEYEN DURUM BİR BAYRAK DEĞİL, DONDURULMUŞ BİR NİYETTİR: işlem + her
+     hedefin TAM kimliği. Paylaşılan Sıfırla akışındaki ilkenin aynısıdır,
+     yalnızca çoğul hâli — onay kutusu açıkken A bitip yerine B geçebilir ve
+     onay anında o anki kimliği okumak, kullanıcının hiç vermediği bir kararı
+     uygulamak olurdu. Sunucu bunu yakalayamazdı: kendisine B için geçerli,
+     yetkili ve kimliği tutan bir istek ulaşırdı. */
+  const [pendingBatchCommand, setPendingBatchCommand] = useState(null)
+
+  /**
+   * Bir işlemi ÇALIŞTIRIR ya da onayını açar.
+   *
+   * <b>Yetenek KOMUT YOLUNDA yeniden denetlenir</b> — görünürlük bir denetim
+   * değildir ve yetkiler oturum içinde tazelenebilir.
+   */
+  const runLifecycleOperation = useCallback((operation, overrideTargets = null) => {
+    if (!canStopSharedSimulation) return
+    if (operation === LIFECYCLE_OPERATIONS.RESTART && !canStartSharedSimulation) return
+
+    /* Satır komutu ile toplu komut AYNI yoldan geçer; satır yalnızca TEK
+       hedefli bir yönetim seçimi gibi davranır. İkinci bir komut uygulaması
+       YOKTUR. */
+    const intent = overrideTargets
+      ? lifecycleIntent(operation, {
+        managedRuns: { [overrideTargets.routeId]: overrideTargets.simulationId },
+        byRoute: simulation.byRoute,
+      })
+      : lifecycleIntent(operation, {
+        managedRuns: simulation.managedRuns,
+        byRoute: simulation.byRoute,
+      })
+
+    // Uygun hedef yoksa hiçbir istek yola çıkmaz.
+    if (!intent) return
+
+    /* YIKICI işlemler ONAYIN arkasındadır ve tıklama komut GÖNDERMEZ: yalnızca
+       niyeti dondurur. Duraklat/Devam Ettir yıkıcı DEĞİLDİR — aynı çalıştırma
+       sürer, yalnızca saati durur — bu yüzden onay istemezler. */
+    if (isDestructiveLifecycleOperation(operation)) {
+      setPendingBatchCommand(intent)
+      return
+    }
+
+    simulation.runLifecycleBatch(intent)
+  }, [canStopSharedSimulation, canStartSharedSimulation, simulation])
+
+  const confirmBatchCommand = useCallback(async () => {
+    const intent = pendingBatchCommand
+
+    /* KOMUT ANINDA yeniden denetim — FAIL-CLOSED: onay kutusu açıkken yetki
+       geri alınmış olabilir. Hedefler ise YENİDEN HESAPLANMAZ; niyetin
+       içindeki kimlikler olduğu gibi gönderilir ve bayat olanı sunucu
+       reddeder. */
+    if (!intent
+      || !canStopSharedSimulation
+      || (intent.operation === LIFECYCLE_OPERATIONS.RESTART && !canStartSharedSimulation)) {
+      setPendingBatchCommand(null)
+      return
+    }
+
+    setPendingBatchCommand(null)
+    await simulation.runLifecycleBatch(intent)
+  }, [pendingBatchCommand, canStopSharedSimulation, canStartSharedSimulation, simulation])
 
   const toggleTransportRoute = useCallback((routeId) => {
     setHiddenTransportRouteIds((current) => {
@@ -3784,6 +3878,10 @@ export default function MapPage() {
                   onWatchAll={simulation.watchAll}
                   onClearWatch={simulation.clearWatch}
                   onRetryActive={simulation.reloadActive}
+                  onToggleManaged={simulation.toggleManaged}
+                  onSelectAllActive={simulation.manageAllActive}
+                  onClearSelection={simulation.clearManaged}
+                  onRunBatchAction={runLifecycleOperation}
                   poiSearch={journeyPickerSearch}
                   onModeChange={journey.setMode}
                   onProfileChange={journey.setProfile}
@@ -4316,6 +4414,35 @@ export default function MapPage() {
                 onConfirm={confirmSharedStop}
                 /* Vazgeçmek HİÇBİR ŞEY yapmaz: sunucuya istek gitmez. */
                 onCancel={() => setPendingSharedStop(null)}
+              />
+
+              {/* TOPLU yaşam döngüsü onayı (Faz 4B). Aynı diyalog bileşeni,
+                  AYRI bir durum ve işleme göre AYRI bir metin.
+
+                  METİN ÜRÜN ANLAMINI OLDUĞU GİBİ SÖYLER. Sıfırlama hat
+                  TANIMINI silmez ve yerine yeni bir çalıştırma koymaz; yeniden
+                  başlatma ise mevcut çalıştırmaları bitirip her hat için %0'dan
+                  YENİ bir simülasyon kurar — izleme, takip ve yönetim seçimi
+                  yeni çalıştırmaya GEÇMEZ. GUID gösterilmez: kullanıcıya
+                  anlatılan şey kaç çalıştırmanın etkileneceğidir. */}
+              <ConfirmDialog
+                open={pendingBatchCommand != null && canStopSharedSimulation}
+                title={pendingBatchCommand?.operation === LIFECYCLE_OPERATIONS.RESTART
+                  ? 'Seçili simülasyonları yeniden başlat'
+                  : 'Seçili simülasyonları sıfırla'}
+                message={pendingBatchCommand?.operation === LIFECYCLE_OPERATIONS.RESTART
+                  ? `Seçili ${pendingBatchCommand?.targets.length ?? 0} simülasyon yeniden başlatılsın mı?`
+                  : `Seçili ${pendingBatchCommand?.targets.length ?? 0} simülasyon sıfırlansın mı?`}
+                description={pendingBatchCommand?.operation === LIFECYCLE_OPERATIONS.RESTART
+                  ? 'Şu anki çalıştırmalar sona erer ve başarılı olan her hat için %0’dan YENİ bir simülasyon oluşturulur. Yeni simülasyonlar otomatik olarak izlenmez, takip edilmez ve yönetim seçiminde yer almaz. Hat tanımları silinmez.'
+                  : 'Seçili simülasyonlar sona erdirilecek ve bu hatlar başlangıç durumuna dönecek; onları izleyen diğer kullanıcılar da aracı görmeyi bırakır. Yerlerine yeni bir simülasyon oluşturulmaz ve hat tanımları silinmez.'}
+                confirmLabel={pendingBatchCommand?.operation === LIFECYCLE_OPERATIONS.RESTART
+                  ? 'Yeniden Başlat'
+                  : 'Sıfırla'}
+                cancelLabel="Vazgeç"
+                onConfirm={confirmBatchCommand}
+                /* Vazgeçmek HİÇBİR ŞEY yapmaz: sunucuya istek gitmez. */
+                onCancel={() => setPendingBatchCommand(null)}
               />
 
               <ConfirmDialog

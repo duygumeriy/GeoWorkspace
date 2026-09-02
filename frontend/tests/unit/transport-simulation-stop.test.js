@@ -119,7 +119,8 @@ test('the feature consumes the canonical shared stop permission code', () => {
 
   /* BAŞLATMA ayrı kalır: durdurma yeteneği başlatma kodundan türetilmez. */
   assert.ok(!new RegExp(`${mapCapability}[^\\n]*TRANSPORT_SIMULATION_START`).test(MAP_PAGE))
-  assert.ok(MAP_PAGE.includes('canStart: can(PERMISSIONS.TRANSPORT_SIMULATION_START)'))
+  assert.match(MAP_PAGE, /const canStartSharedSimulation = can\(PERMISSIONS\.TRANSPORT_SIMULATION_START\)/)
+  assert.match(MAP_PAGE, /canStart: canStartSharedSimulation\b/)
 
   /* Karar SAYFADA verilir; çizen, kural üreten ve gönderen katmanlar yetki
      kodunu HİÇ okumaz — yoksa arayüzde ikinci bir yetkilendirme sahibi

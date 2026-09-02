@@ -828,7 +828,7 @@ public class TransportSimulationActiveDiscoveryTests
                 _time,
                 Discovery);
 
-            Service = new TransportSimulationService(db, currentUser, Store, Runner, Runner, Discovery);
+            Service = new TransportSimulationService(db, currentUser, Store, Runner, Runner, Runner, Discovery);
         }
 
         public AppDbContext Db { get; }

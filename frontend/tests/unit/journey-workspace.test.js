@@ -288,7 +288,8 @@ test('an inactive route offers start only to a user holding the start permission
   assert.equal(presentFor({ canStart: false }).showStart, false)
 
   // Yetki kodu MapPage'de tek yerden okunur; panel kendi kararını vermez.
-  assert.ok(MAP_PAGE.includes('canStart: can(PERMISSIONS.TRANSPORT_SIMULATION_START)'))
+  assert.match(MAP_PAGE, /const canStartSharedSimulation = can\(PERMISSIONS\.TRANSPORT_SIMULATION_START\)/)
+  assert.match(MAP_PAGE, /canStart: canStartSharedSimulation\b/)
   assert.ok(!SHARED.includes('PERMISSIONS.'))
 })
 

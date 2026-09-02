@@ -136,6 +136,65 @@ public interface ITransportSimulationService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Bir çalıştırmayı SONLANDIRIR ve yerine %0'dan YENİ bir çalıştırma
+    /// kurar.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Aynı çalıştırma GERİ SARILMAZ.</b> Sonuç daima YENİ bir
+    /// <c>SimulationId</c>'dir: eski kimliği %0'a döndürmek, o kimliği izleyen
+    /// herkes için "aynı yolculuk devam ediyor" anlamına gelirdi — oysa bu
+    /// başka bir yolculuktur ve izleme/takip kararları onu devralmamalıdır.
+    /// </para>
+    /// <para>
+    /// <b>Sunucu tarafında ORKESTRE edilir.</b> Tarayıcının "önce sıfırla,
+    /// sonra başlat" demesi, iki istek arasında hattı boş bırakır ve başka bir
+    /// kullanıcının başlatması yuvayı kapabilir; o pencere burada hiç
+    /// oluşmaz.
+    /// </para>
+    /// <para>
+    /// <b>İKİ yetenek birden gerektirir</b> (<c>transport.simulation.stop</c>
+    /// VE <c>transport.simulation.start</c>) çünkü gerçekten iki şey yapar:
+    /// çalışan bir yayını herkes için bitirir ve yenisini kurar. Yetki denetimi
+    /// uçtadır; burada kimlik ve durum denetlenir.
+    /// </para>
+    /// </remarks>
+    /// <returns>
+    /// Başarılıysa YENİ çalıştırmanın kanonik anlık görüntüsü (%0, yeni
+    /// kimlik); kimlik tutmuyorsa çakışma.
+    /// </returns>
+    Task<ServiceResult<TransportSimulationResponse>> RestartAsync(
+        int routeId,
+        Guid simulationId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// AYNI yaşam döngüsü komutunu birden çok ÇALIŞTIRMAYA uygular.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Tekil komutların çekirdeği YENİDEN KULLANILIR.</b> Toplu yol kendi
+    /// kimlik/durum/yarış kurallarını yazmaz; tekil uçlarla aynı ilkellerden
+    /// geçer. İkinci bir yaşam döngüsü motoru, zamanla tekil uçlardan sapan
+    /// bir davranış demekti.
+    /// </para>
+    /// <para>
+    /// <b>Kısmi başarı NORMALDİR.</b> Rotalar bağımsızdır; biri bayat çıktı
+    /// diye diğerlerinin uygulanmış komutu geri alınmaz. Sonuçlar hedef başına
+    /// ve İSTEK SIRASINDA döner — görev tamamlanma sırası arayüze sızmaz.
+    /// </para>
+    /// <para>
+    /// <b>Rota başına atomiklik depodadır</b> (CAS); rotalar arasında küresel
+    /// bir kilit YOKTUR ve olmamalıdır — bir hattın komutu, ilgisiz bir hattın
+    /// komutunu bekletmez.
+    /// </para>
+    /// </remarks>
+    Task<ServiceResult<TransportSimulationBatchResponse>> ExecuteBatchAsync(
+        TransportSimulationBatchOperation operation,
+        TransportSimulationBatchRequest? request,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Rotada çalışan simülasyonun CANLI yayın biçimindeki anlık görüntüsü;
     /// çalışan yoksa <c>null</c>.
     /// </summary>

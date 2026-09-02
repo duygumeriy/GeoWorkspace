@@ -173,6 +173,60 @@ export function stopTransportSimulation(routeId, simulationId, { signal } = {}) 
   )
 }
 
+/* --- Toplu yaşam döngüsü (Faz 4B) ---------------------------------------------
+   Ayrı bir API katmanı, ikinci bir fetch sarmalayıcı ya da ikinci bir hata
+   okuyucu AÇILMAZ: aynı authFetch, aynı Authorization başlığı, aynı 401/403
+   davranışı.
+
+   HEDEFLER İKİ KİMLİĞİ BİRDEN TAŞIR. Yalnızca rota göndermek "şu hatlarda ne
+   çalışıyorsa onlara uygula" demek olurdu; toplu olmak bu zorunluluğu
+   gevşetmez — tersine, tek bir istekle birden çok yayını etkilediği için daha
+   da bağlayıcı kılar.
+
+   Komutlar HTTP'dir; sonuç ve ilerleme mevcut SignalR akışından gelir. Yeni
+   bir hub, yeni bir bağlantı ya da yoklama YOKTUR. */
+
+function batchLifecycle(action, targets, { signal } = {}) {
+  return authFetch(`/api/transport/simulations/batch/${action}`, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    /* Gövde YALNIZCA seçimi taşır: durum, ilerleme ya da "hangi komut geçerli"
+       kararı GÖNDERİLMEZ — sunucu onları kendi otoriter durumundan çözer. */
+    body: JSON.stringify({ targets }),
+    signal,
+  })
+}
+
+/** Seçili çalıştırmaları duraklatır. Yetki: `transport.simulation.stop`. */
+export function pauseTransportSimulations(targets, options) {
+  return batchLifecycle('pause', targets, options)
+}
+
+/** Seçili çalıştırmaları kaldıkları yerden sürdürür. */
+export function resumeTransportSimulations(targets, options) {
+  return batchLifecycle('resume', targets, options)
+}
+
+/** Seçili çalıştırmaları sonlandırır; yerlerine yenisi KONMAZ. */
+export function resetTransportSimulations(targets, options) {
+  return batchLifecycle('reset', targets, options)
+}
+
+/**
+ * Seçili çalıştırmaları sonlandırır ve her biri için %0'dan YENİ bir
+ * çalıştırma başlatır.
+ *
+ * <b>Tarayıcı "önce sıfırla, sonra başlat" YAPMAZ.</b> İki istek arasında hat
+ * bir an boş kalır ve başka bir kullanıcının başlatması yuvayı kapabilirdi;
+ * değiştirme sunucuda TEK atomik adımdır.
+ *
+ * Yetki İKİ koddur: `transport.simulation.stop` VE
+ * `transport.simulation.start`.
+ */
+export function restartTransportSimulations(targets, options) {
+  return batchLifecycle('restart', targets, options)
+}
+
 /* --- Yolculuk planlama (Faz 5B önizleme ucu) ----------------------------------
    Ayrı bir API katmanı ya da ikinci bir token deposu AÇILMAZ: aynı authFetch,
    aynı Authorization başlığı, aynı 401/403 davranışı ve aynı hata okuma

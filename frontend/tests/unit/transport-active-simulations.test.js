@@ -909,28 +909,37 @@ test('a plain viewer gets the list and the watch controls but no lifecycle butto
   assert.equal(operator.showStop, true)
 })
 
-test('the active list is not a management surface and carries no role-name checks', () => {
+test('the active list carries no role-name checks and keeps batch controls in their own component', () => {
   for (const [label, source] of [
     ['liste bileşeni', LIST],
     ['paylaşılan bölüm', SHARED],
     ['saf modül', read('../../src/map/activeSimulations.js')],
+    ['yönetim çubuğu', read('../../src/components/map/ActiveSimulationManagementBar.jsx')],
   ]) {
     for (const forbidden of ['isAdmin', 'isOperator', 'roleName', 'userName', "'Admin'"]) {
       assert.ok(!source.includes(forbidden), `${label} rol adına dayanıyor: ${forbidden}`)
     }
   }
 
-  // Faz 4B yüzeyi BURADA DEĞİLDİR.
+  /* Faz 4B TOPLU yüzeyi listede DEĞİL, kendi bileşenindedir. Ayrım görsel bir
+     tercih değil: liste satır satır bir OKUMA yüzeyidir, toplu komutlar ise
+     SEÇİMİN tamamına uygulanır ve kendi onayını taşır.
+
+     Satır hiçbir yaşam döngüsü etiketi taşımaz: dar harita panelinde ad,
+     durum, ilerleme, izleme ve üç komut aynı genişliği paylaşamıyordu. */
   for (const forbidden of [
-    'Seçilileri Duraklat',
-    'Seçilileri Devam Ettir',
-    'Seçilileri Sıfırla',
-    'Seçilileri Yeniden Başlat',
-    'managedSelectedRouteIds',
+    'Duraklat',
+    'Devam Ettir',
+    'Sıfırla',
     'Yeniden Başlat',
+    'managedSelectedRouteIds',
   ]) {
-    assert.ok(!LIST.includes(forbidden), `Faz 4B sızıntısı: ${forbidden}`)
+    assert.ok(!LIST.includes(forbidden), `yaşam döngüsü komutu listeye sızmış: ${forbidden}`)
   }
+
+  // Ve komutların gerçek yeri yönetim çubuğudur.
+  const bar = read('../../src/components/map/ActiveSimulationManagementBar.jsx')
+  assert.match(bar, /management\.actions\.map\(/)
 
   // Satır: seçim ve izleme AYRI düğmelerdir.
   assert.match(LIST, /className="journey-active-select"/)

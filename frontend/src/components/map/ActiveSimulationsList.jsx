@@ -1,25 +1,40 @@
+import ActiveSimulationManagementBar from './ActiveSimulationManagementBar.jsx'
+
 /**
- * AKTİF SİMÜLASYONLAR listesi (Faz 4A).
+ * AKTİF SİMÜLASYONLAR listesi (Faz 4A + 4B).
  *
  * <b>Yalnızca çizer.</b> Hangi satırların görüneceğine, sıralarına ve izleme
  * etiketlerine saf <code>activeSimulationsPresentation</code> karar verir; bu
  * bileşen ikinci bir kural kitabı tutmaz. Rol adı, kullanıcı adı ya da
  * yönetici bayrağı hiçbir biçimde okunmaz.
  *
- * <b>Bu bir YÖNETİM yüzeyi DEĞİLDİR.</b> Satırlar Duraklat / Devam Ettir /
- * Sıfırla taşımaz ve toplu yaşam döngüsü seçimi sunmaz: mevcut yaşam döngüsü
- * denetimleri SEÇİLİ hattın bağlamında kalır. Çoklu hat yönetimi ayrı bir
- * fazın konusudur ve buraya sızdırılmaz.
+ * <b>SATIR BİR ARAÇ ÇUBUĞU DEĞİLDİR.</b> Her satıra üç yaşam döngüsü komutu
+ * koymak, dar harita panelinde ad, durum, ilerleme, izleme ve o komutları aynı
+ * genişlikte yarıştırıyor ve etiketleri üst üste bindiriyordu. Satır artık TEK
+ * bir eylem taşır — İzle — ve yetkili kullanıcı için bir de yönetim onay
+ * kutusu. Yaşam döngüsü komutları SEÇİMİN üzerinde çalışır; tek bir çalıştırma
+ * için de aynı yol kullanılır, böylece ikinci bir komut yüzeyi doğmaz.
  *
- * <b>Üç eylem üç ayrı kavramdır:</b>
+ * <b>Sıradan izleyici için hiçbir şey değişmedi.</b> Yönetim alanları sunum
+ * modelinde yetkisiz kullanıcı için HİÇ VAR OLMAZ; liste onun gözünde Faz
+ * 4A'daki gibi salt okuma yüzeyidir.
+ *
+ * <b>DÖRT eylem dört ayrı kavramdır:</b>
  * <ul>
  *   <li><b>Satıra tıklamak</b> hattı SEÇER — ayrıntı/denetim bağlamını açar.
- *       İzlemeyi değiştirmez, takibi ele geçirmez.</li>
+ *       İzlemeyi değiştirmez, takibi ele geçirmez, yönetim seçimi yapmaz.</li>
  *   <li><b>İzle / İzlemeyi Bırak</b> yalnızca haritadaki ARACI açıp kapatır.
  *       Simülasyona dokunmaz ve satırı seçmez.</li>
+ *   <li><b>Yönetim seçimi</b> (onay kutusu) yalnızca TOPLU KOMUT HEDEFİ
+ *       belirler: araç çizdirmez, hattı seçmez, kamerayı almaz ve sunucuya
+ *       hiçbir istek göndermez.</li>
  *   <li><b>Arama</b> yalnızca NE ÇİZİLECEĞİNİ süzer: aktif kümeyi, izleme
- *       seçimini ve canlı abonelikleri hiç etkilemez.</li>
+ *       seçimini, yönetim seçimini ve canlı abonelikleri hiç etkilemez.</li>
  * </ul>
+ *
+ * <b>Onay kutusu ile İzle düğmesi AYRI hedeflerdir</b> ve iç içe geçmez:
+ * kutuya tıklamak satırı SEÇMEZ. Bunun için olayın yayılması durdurulur —
+ * kullanıcının vermediği bir kararı uygulamamak, kod kısalığından önce gelir.
  */
 export default function ActiveSimulationsList({
   active = null,
@@ -29,6 +44,12 @@ export default function ActiveSimulationsList({
   onWatchAll,
   onClearWatch,
   onRetry,
+  /* YÖNETİM (Faz 4B). Hepsi isteğe bağlıdır: yetkisiz kullanıcıda sunum modeli
+     zaten `canManage: false` der ve hiçbiri çağrılmaz. */
+  onToggleManaged,
+  onSelectAllActive,
+  onClearSelection,
+  onRunBatchAction,
 }) {
   if (!active) return null
 
@@ -67,6 +88,23 @@ export default function ActiveSimulationsList({
         </div>
       </div>
 
+      {/* YÖNETİM araç çubuğu İZLEME araç çubuğundan AYRI bir bloktur. */}
+      <ActiveSimulationManagementBar
+        management={active.management}
+        onSelectAllActive={onSelectAllActive}
+        onClearSelection={onClearSelection}
+        onRunAction={onRunBatchAction}
+      />
+
+      {/* Toplu komutun sonucu DÜRÜSTÇE gösterilir: kısmen uygulanmış bir yığın
+          "tamamlandı" diye sunulmaz. Ham JSON ya da iç hata metni ÇIKMAZ. */}
+      {active.batchError && (
+        <p className="journey-error" role="alert">{active.batchError}</p>
+      )}
+      {!active.batchError && active.batchSummary && (
+        <p className="journey-note" role="status">{active.batchSummary}</p>
+      )}
+
       {active.loading && (
         <p className="journey-note" role="status">Aktif simülasyonlar yükleniyor…</p>
       )}
@@ -102,6 +140,34 @@ export default function ActiveSimulationsList({
               key={`${row.routeId}:${row.simulationId}`}
               className={`journey-active-row ${row.isSelected ? 'is-selected' : ''}`.trim()}
             >
+              {/* YÖNETİM SEÇİMİ. Bir onay kutusudur ve İZLE düğmesiyle
+                  karıştırılmasın diye AÇIKÇA etiketlenir: "İzle" haritada
+                  araç açar, bu ise komut hedefi belirler. Tıklama satırı
+                  SEÇMEZ — olay yayılımı burada durur. */}
+              {row.canManage && (
+                <label
+                  className="journey-active-manage"
+                  /* Görünür metin YOKTUR ama anlam kaybolmaz: kutu, seçim
+                     sayacını ve seçim kısa yollarını taşıyan yönetim
+                     çubuğuyla aynı bağlamda durur, üstüne gelince adını söyler
+                     ve ekran okuyucuya tam cümleyi verir. Her satıra bir
+                     etiket basmak, dar panelde hat adının yerini yerdi. */
+                  title="Yönetim seçimi"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <input
+                    type="checkbox"
+                    checked={row.isManaged}
+                    /* Uçuş hâlindeki bir komutun hedefini seçimden çıkarmak,
+                       kullanıcıya iptal ettiği izlenimini verirdi — oysa istek
+                       çoktan yola çıkmıştır. Kilit YALNIZCA o satırdadır. */
+                    disabled={row.isBusy}
+                    aria-label={`${row.routeName} hattını yönetim seçimine ekle`}
+                    onChange={() => onToggleManaged?.(row.routeId)}
+                  />
+                </label>
+              )}
+
               {/* Satır SEÇİMİ ile İZLEME denetimi ayrı düğmelerdir: iç içe
                   geçmiş tıklama alanları, kullanıcının vermediği bir kararı
                   uygulamaya davettir. */}

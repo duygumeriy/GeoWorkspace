@@ -138,6 +138,11 @@ export default function JourneyPlannerPanel({
   onWatchAll,
   onClearWatch,
   onRetryActive,
+  /* YÖNETİM (Faz 4B). Panel hiçbirini YORUMLAMAZ; yalnızca aktarır. */
+  onToggleManaged,
+  onSelectAllActive,
+  onClearSelection,
+  onRunBatchAction,
   poiSearch = null,
   onModeChange,
   onProfileChange,
@@ -306,6 +311,10 @@ export default function JourneyPlannerPanel({
           onWatchAll={onWatchAll}
           onClearWatch={onClearWatch}
           onRetryActive={onRetryActive}
+          onToggleManaged={onToggleManaged}
+          onSelectAllActive={onSelectAllActive}
+          onClearSelection={onClearSelection}
+          onRunBatchAction={onRunBatchAction}
         />
       )}
 

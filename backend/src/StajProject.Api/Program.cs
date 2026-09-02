@@ -449,6 +449,13 @@ builder.Services.AddSingleton<ITransportSimulationTerminator>(
    (duraklama muhasebesi) ve yayının tek bir sahibi olmalıdır. */
 builder.Services.AddSingleton<ITransportSimulationLifecycle>(
     provider => provider.GetRequiredService<TransportSimulationRunner>());
+
+/* YENİDEN BAŞLATMA da AYNI çalışma zamanı sahibinden geçer. Ayrı bir uygulama,
+   "eskisini kaldır + yenisini kur" adımlarını iz temizliği ve yayın sırasından
+   habersiz biçimde tekrarlardı; oysa hattın yuvasının bir an bile boşalmaması
+   tam olarak o sahibin atomik değiştirme işlemine bağlıdır. */
+builder.Services.AddSingleton<ITransportSimulationReplacer>(
+    provider => provider.GetRequiredService<TransportSimulationRunner>());
 builder.Services.AddHostedService<TransportSimulationBackgroundService>();
 
 /* POI sahiplik/yetki kararının TEK yeri. Çizim tarafındaki

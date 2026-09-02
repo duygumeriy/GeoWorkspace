@@ -710,7 +710,7 @@ public class TransportSimulationPauseResumeTests
                 Substitute.For<ILogger<TransportSimulationRunner>>(),
                 _time);
 
-            Service = new TransportSimulationService(db, currentUser, Store, Runner, Runner);
+            Service = new TransportSimulationService(db, currentUser, Store, Runner, Runner, Runner);
         }
 
         public AppDbContext Db { get; }

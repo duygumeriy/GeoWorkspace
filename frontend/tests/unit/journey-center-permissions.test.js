@@ -133,8 +133,12 @@ test('shared observation stays on transport.view and start stays on its own code
   assert.ok(/useTransportSimulation\(\{[^}]*canView:\s*allowed\.canViewTransport/s.test(code))
   assert.ok(/useTransportLayer\([^,]+,\s*\{[^}]*permitted:\s*allowed\.canViewTransport/s.test(code))
 
-  // Başlatma AYRI bir yetkidir ve değişmedi.
-  assert.ok(code.includes('canStart: can(PERMISSIONS.TRANSPORT_SIMULATION_START)'))
+  /* Başlatma AYRI bir yetkidir. Faz 4B'de ikinci bir tüketicisi oldu (yeniden
+     başlatma İKİ kodu birden ister), bu yüzden kod TEK bir yetenek adına
+     bağlanır — iki ayrı okuma, zamanla sapabilen iki kural kitabı demekti. */
+  assert.match(code, /const canStartSharedSimulation = can\(PERMISSIONS\.TRANSPORT_SIMULATION_START\)/)
+  assert.match(code, /canStart: canStartSharedSimulation\b/)
+  assert.equal((code.match(/PERMISSIONS\.TRANSPORT_SIMULATION_START/g) ?? []).length, 1)
 })
 
 test('the shared stop code is read only where the decision is made', () => {

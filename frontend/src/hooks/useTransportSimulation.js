@@ -5,7 +5,11 @@ import {
   fetchActiveTransportSimulations,
   fetchTransportSimulation,
   pauseTransportSimulation,
+  pauseTransportSimulations,
+  resetTransportSimulations,
+  restartTransportSimulations,
   resumeTransportSimulation,
+  resumeTransportSimulations,
   startTransportSimulation,
   stopTransportSimulation,
 } from '../services/transportApi.js'
@@ -17,15 +21,43 @@ import {
   normalizeStatusSnapshot,
 } from '../map/transportSimulationState.js'
 import {
+  LIFECYCLE_OPERATIONS,
   activeRouteIdsOf,
   applyActiveSimulationList,
+  batchResultSummary,
+  clearManagedRuns,
   clearWatchedRuns,
   ensureWatchedRun,
+  isLifecyclePending,
+  lifecycleRequestTargets,
+  manageAllActiveRuns,
+  managedRouteIdsOf,
+  reconcileManagedRuns,
   reconcileWatchedRuns,
+  toggleManagedRun,
   toggleWatchedRun,
   watchAllActiveRuns,
   watchedRouteIdsOf,
+  withLifecyclePending,
 } from '../map/activeSimulations.js'
+
+/**
+ * İŞLEM → UÇ eşlemesi. Tek yerde durur ki satır komutu ile toplu komut AYNI
+ * otoriter sözleşmeyi kullansın; satır için ikinci bir uygulama YOKTUR.
+ */
+const BATCH_REQUESTS = Object.freeze({
+  [LIFECYCLE_OPERATIONS.PAUSE]: pauseTransportSimulations,
+  [LIFECYCLE_OPERATIONS.RESUME]: resumeTransportSimulations,
+  [LIFECYCLE_OPERATIONS.RESET]: resetTransportSimulations,
+  [LIFECYCLE_OPERATIONS.RESTART]: restartTransportSimulations,
+})
+
+const BATCH_FAILURE_MESSAGES = Object.freeze({
+  [LIFECYCLE_OPERATIONS.PAUSE]: 'Seçili simülasyonlar duraklatılamadı.',
+  [LIFECYCLE_OPERATIONS.RESUME]: 'Seçili simülasyonlar sürdürülemedi.',
+  [LIFECYCLE_OPERATIONS.RESET]: 'Seçili simülasyonlar sıfırlanamadı.',
+  [LIFECYCLE_OPERATIONS.RESTART]: 'Seçili simülasyonlar yeniden başlatılamadı.',
+})
 
 /**
  * Seçili güzergahın simülasyon durumu ve canlı takip yaşam döngüsü.
@@ -83,6 +115,24 @@ export default function useTransportSimulation({
      olarak engeller. Bu durum tamamen İSTEMCİYE aittir: sunucuya yazılmaz ve
      başka kullanıcılara yayınlanmaz. */
   const [watchedRuns, setWatchedRuns] = useState({})
+
+  /* --- YÖNETİM SEÇİMİ (Faz 4B) -------------------------------------------------
+     İZLEME ile AYNI biçim, AYRI kutu. Biri haritada ne çizileceğine, diğeri
+     hangi çalıştırmaya KOMUT gideceğine karar verir; tek kutuda toplamak
+     "gördüğüm her aracı yönetiyorum" demek olurdu. Değer yine ÇALIŞTIRMA
+     kimliğidir: A bitip yerine B geçtiğinde B, A için verilmiş yönetim
+     kararını DEVRALMAZ. */
+  const [managedRuns, setManagedRuns] = useState({})
+
+  /* UÇUŞ HALİ ÇALIŞTIRMA + İŞLEM KIRILIMINDADIR. Küresel tek bir bayrak, bir
+     hattın komutu yoldayken ilgisiz hatların denetimlerini de kilitler ve
+     canlı ilerlemeyi izleyen kullanıcıyı sebepsiz dondururdu. Ref, state
+     güncellemesini beklemeden çift gönderimi kapatır. */
+  const [lifecyclePending, setLifecyclePending] = useState({})
+  const lifecyclePendingRef = useRef({})
+  const [batchError, setBatchError] = useState('')
+  const [batchSummary, setBatchSummary] = useState('')
+
   const [activeLoading, setActiveLoading] = useState(false)
   const [activeLoaded, setActiveLoaded] = useState(false)
   const [activeError, setActiveError] = useState('')
@@ -652,6 +702,13 @@ export default function useTransportSimulation({
     /* Keşif sonuçları da bırakılır: yetkisi olmayan birinin ekranında hangi
        hatların çalıştığı bilgisi ASILI KALMAZ. */
     setWatchedRuns(clearWatchedRuns())
+    /* Yönetim seçimi de bırakılır: görüntüleme yetkisi düşen birinin ekranında
+       asılı kalmış bir komut hedefi listesi kalmamalıdır. */
+    setManagedRuns(clearManagedRuns())
+    lifecyclePendingRef.current = {}
+    setLifecyclePending({})
+    setBatchError('')
+    setBatchSummary('')
     setActiveLoaded(false)
     setActiveError('')
   }, [canView])
@@ -724,6 +781,113 @@ export default function useTransportSimulation({
 
   const watchedRouteIds = useMemo(() => watchedRouteIdsOf(watchedRuns), [watchedRuns])
 
+  /* YÖNETİM SEÇİMİ de SUNUCU GERÇEĞİYLE uzlaştırılır ve kural İZLEMEYLE
+     AYNIDIR: biten çalıştırma seçimden düşer, yerine geçen B eski kararı
+     DEVRALMAZ. İki kutu ayrı ama uzlaştırma ilkesi tektir — ikinci bir
+     "hangi çalıştırma hâlâ geçerli" tanımı yazılmaz. */
+  useEffect(() => {
+    setManagedRuns((current) => reconcileManagedRuns(current, byRoute))
+  }, [byRoute])
+
+  /** YÖNETİM SEÇİMİ. İzlemeye, seçime, kameraya ve sunucuya DOKUNMAZ. */
+  const toggleManaged = useCallback((targetRouteId) => {
+    setManagedRuns((current) => {
+      const state = byRoute[targetRouteId] ?? null
+      return toggleManagedRun(current, {
+        routeId: targetRouteId,
+        // Niyet TETİKLEME anındaki çalıştırmaya bağlanır.
+        simulationId: state?.simulationId ?? null,
+      })
+    })
+  }, [byRoute])
+
+  /** AKTİFLERİ SEÇ: yalnızca O ANDA aktif olanlar; sonrakiler otomatik gelmez. */
+  const manageAllActive = useCallback(() => {
+    setManagedRuns(manageAllActiveRuns(byRoute))
+  }, [byRoute])
+
+  /** SEÇİMİ TEMİZLE: yalnızca yönetim seçimi düşer; hiçbir simülasyon durmaz. */
+  const clearManaged = useCallback(() => {
+    setManagedRuns(clearManagedRuns())
+  }, [])
+
+  /**
+   * TOPLU yaşam döngüsü komutu.
+   *
+   * <b>Niyet DONDURULMUŞ gelir.</b> Hedefler burada yeniden hesaplanmaz: onay
+   * kutusu açıkken A bitip yerine B geçmiş olabilir ve o anki kimliği okumak,
+   * kullanıcının hiç vermediği bir kararı uygulamak olurdu. Sunucu da aynı
+   * kimlikleri arar ve tutmayanı BAYAT sayar.
+   *
+   * <b>Terminal ya da yeni durum UYDURULMAZ.</b> Ekran yalnızca sunucunun
+   * döndürdüğü otoriter güncellemelerle değişir; bunlar gözlemcilerin
+   * SignalR'dan aldığının aynısıdır. Yeni bir bağlantı, hub ya da yoklama
+   * kurulmaz.
+   *
+   * <b>Kısmi başarı DÜRÜSTÇE bildirilir:</b> başarılı kardeşler geri alınmaz,
+   * başarısızlar da "tamamlandı" diye gösterilmez.
+   */
+  const runLifecycleBatch = useCallback(async (intent) => {
+    const request = intent ? BATCH_REQUESTS[intent.operation] : null
+    if (!request) return null
+
+    const targets = lifecycleRequestTargets(intent)
+
+    /* ÇİFT GÖNDERİM KORUMASI: aynı çalıştırma + aynı işlem uçuştaysa o hedef
+       yeniden gönderilmez. İlgisiz hedefler etkilenmez. */
+    const fresh = targets.filter(
+      (target) => !isLifecyclePending(lifecyclePendingRef.current, target, intent.operation),
+    )
+
+    if (fresh.length === 0) return null
+
+    lifecyclePendingRef.current = withLifecyclePending(
+      lifecyclePendingRef.current,
+      intent.operation,
+      fresh,
+      true,
+    )
+    setLifecyclePending(lifecyclePendingRef.current)
+    setBatchError('')
+    setBatchSummary('')
+
+    try {
+      const response = await request(fresh)
+
+      if (!response.ok) {
+        throw new Error(await readApiError(response, BATCH_FAILURE_MESSAGES[intent.operation]))
+      }
+
+      const payload = await response.json()
+
+      /* OTORİTER güncellemeler TEK birleştirme kuralından geçer. Sıra
+         anlamlıdır: yeniden başlatmada önce ESKİ çalıştırmanın terminali,
+         sonra YENİ çalıştırma — ters sıra, biten çalıştırmanın yerine geçeni
+         ezmesine kapı aralardı. */
+      for (const result of payload?.results ?? []) {
+        if (result?.update) applyState(normalizeLiveUpdate(result.update))
+        if (result?.simulation) applyState(normalizeStatusSnapshot(result.simulation))
+      }
+
+      const summary = batchResultSummary(intent.operation, payload)
+      setBatchSummary(summary.message)
+      return summary
+    } catch (batchFailure) {
+      setBatchError(liveConnectionMessage(batchFailure, BATCH_FAILURE_MESSAGES[intent.operation]))
+      return null
+    } finally {
+      lifecyclePendingRef.current = withLifecyclePending(
+        lifecyclePendingRef.current,
+        intent.operation,
+        fresh,
+        false,
+      )
+      setLifecyclePending(lifecyclePendingRef.current)
+    }
+  }, [applyState])
+
+  const managedRouteIds = useMemo(() => managedRouteIdsOf(managedRuns), [managedRuns])
+
   /* Seçili rotanın durumu Faz 3 denetimlerini besler; takip edilen rotanınki
      canlı aracın sahibidir. İkisi AYNI olmak zorunda değildir. */
   const simulation = routeId == null ? null : byRoute[routeId] ?? null
@@ -787,6 +951,20 @@ export default function useTransportSimulation({
     toggleWatch,
     watchAll,
     clearWatch,
+    /* YÖNETİM SEÇİMİ ayrı bir daldır ve izleme daliyle karıştırılmaz. */
+    managedRuns,
+    managedRouteIds,
+    toggleManaged,
+    manageAllActive,
+    clearManaged,
+    lifecyclePending,
+    runLifecycleBatch,
+    batchError,
+    batchSummary,
+    clearBatchFeedback: () => {
+      setBatchError('')
+      setBatchSummary('')
+    },
     activeLoading,
     activeLoaded,
     activeError,

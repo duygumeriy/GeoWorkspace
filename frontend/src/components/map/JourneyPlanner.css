@@ -669,10 +669,15 @@
   overflow-y: auto;
 }
 
+/* SATIR TEK BİR KARTTIR ve üç bölgeye ayrılır: [kutu] [ad/durum] [İzle].
+   Orta bölge esner ve TAŞMAZ (`min-width: 0`), yan bölgeler kendi ölçüsünde
+   kalır. Eskiden satırda ayrıca üç yaşam döngüsü düğmesi vardı ve dar harita
+   panelinde hepsi aynı genişliği paylaşmaya çalışıyordu: ad kısalıyor,
+   etiketler düğmelerin üstüne biniyordu. Komutlar artık SEÇİM çubuğundadır. */
 .journey-active-row {
   display: flex;
-  align-items: stretch;
-  gap: 0.3rem;
+  align-items: center;
+  gap: 0.25rem;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   background: var(--surface-soft);
@@ -685,13 +690,14 @@
 }
 
 .journey-active-select {
-  flex: 1;
+  flex: 1 1 auto;
+  /* Uzun hat adı satırı GENİŞLETEMEZ; kendi bölgesinde kısalır. */
   min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 0.15rem;
-  padding: 0.4rem 0.5rem;
+  gap: 0.1rem;
+  padding: 0.4rem 0.35rem;
   border: none;
   background: transparent;
   color: var(--text-primary);
@@ -704,6 +710,7 @@
   align-items: center;
   gap: 0.35rem;
   min-width: 0;
+  max-width: 100%;
 }
 
 .journey-active-name strong {
@@ -712,13 +719,20 @@
   white-space: nowrap;
 }
 
+/* Durum ve ilerleme TEK satırdır ve sarmaz: iki satıra inen bir meta,
+   kartların yüksekliğini çalıştırma durumuna göre zıplatırdı. */
 .journey-active-meta {
   font-size: var(--font-small);
   color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
 }
 
+/* TEK satır eylemi. Kısalmaz ve ezilmez. */
 .journey-active-watch {
-  flex: none;
+  flex: 0 0 auto;
   align-self: center;
   margin-right: 0.35rem;
   padding: 0.3rem 0.5rem;
@@ -728,6 +742,7 @@
   color: var(--text-secondary);
   font-size: var(--font-small);
   font-weight: 600;
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -736,10 +751,142 @@
   color: var(--journey-accent);
 }
 
+/* --- YÖNETİM YÜZEYİ (Faz 4B) --------------------------------------------------
+   İZLEME araç çubuğundan GÖRSEL OLARAK da ayrılır: kendi kutusu, kendi sayacı
+   ve kendi eylem sırası vardır. Aynı satıra karışsalardı kullanıcı bir
+   düğmenin haritayı mı yoksa sunucudaki simülasyonu mu etkilediğini tahmin
+   etmek zorunda kalırdı.
+
+   İKİ HÂL, İKİ AĞIRLIK. Seçim yokken yüzey neredeyse görünmezdir (tek bir
+   sessiz kısa yol); seçim varken kompakt bir eylem çubuğuna dönüşür. Panelin
+   dar olduğu yerde sürekli duran dört yıkıcı düğme, kullanıcının basamayacağı
+   şeylerle ekranı doldurmak demekti. */
+
+.journey-manage {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--journey-accent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--journey-accent) 8%, transparent);
+}
+
+/* SEÇİM YOK: çerçeve, dolgu ve vurgu yok — yalnızca bir bağlantı gibi duran
+   kısa yol. Boş bir seçim, panelde yer kaplamayı hak etmez. */
+.journey-manage.is-idle {
+  padding: 0;
+  border: none;
+  background: none;
+  align-items: flex-start;
+}
+
+.journey-manage-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  justify-content: space-between;
+}
+
+.journey-manage-count {
+  font-size: var(--font-small);
+  font-weight: 700;
+  color: var(--journey-accent);
+}
+
+.journey-manage-select {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+/* Seçim kısa yolları KOMUT DEĞİLDİR: düğme gibi değil, bağlantı gibi
+   görünürler. Bu, gerçek yaşam döngüsü komutlarının tek "düğme" olmasını
+   sağlar ve göz onları ilk fark eder. */
+.journey-manage-hint {
+  padding: 0.15rem 0;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font-size: var(--font-small);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 0.15rem;
+  cursor: pointer;
+}
+
+.journey-manage-hint:hover { color: var(--journey-accent); }
+
+/* Eylemler DAİMA sarılabilir bir ızgaradır: dar panelde iki sütuna iner ve
+   hiçbir etiket kırpılmaz ya da komşusunun üstüne binmez. */
+.journey-manage-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+  gap: 0.3rem;
+}
+
+.journey-manage-action {
+  padding: 0.4rem 0.5rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--surface-soft);
+  background: var(--surface-soft);
+  color: var(--text-secondary);
+  font-size: var(--font-small);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.journey-manage-action:disabled { opacity: 0.55; cursor: default; }
+
+/* YIKICI OLAN YALNIZCA GERÇEKTEN YIKICI OLANDIR. Duraklat/Devam Ettir aynı
+   çalıştırmayı sürdürür ve nötr kalır; her düğmeyi kırmızıya boyamak uyarıyı
+   anlamsızlaştırırdı. */
+.journey-manage-action.is-destructive {
+  border-color: var(--danger, #ef4444);
+  background: none;
+  color: var(--danger, #ef4444);
+}
+
+/* Yeniden başlatma sıfırlamadan DAHA ağırdır (bitirir VE yenisini kurar):
+   dolu zemin onu sıfırlamadan ayırır ve kazara tıklanmasını zorlaştırır. */
+.journey-manage-action.is-restart {
+  background: color-mix(in srgb, var(--danger, #ef4444) 12%, transparent);
+}
+
+/* Yönetim onay kutusu İZLE düğmesinden AÇIKÇA farklı görünür: kutu, düğme
+   değil. Görünür metin taşımaz — dar panelde hat adının yerini yerdi — ama
+   dokunmatik hedefi kutunun kendisinden büyüktür. */
+.journey-active-manage {
+  flex: 0 0 auto;
+  align-self: center;
+  display: flex;
+  align-items: center;
+  padding: 0.4rem 0.15rem 0.4rem 0.45rem;
+  cursor: pointer;
+}
+
+.journey-active-manage input {
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  cursor: pointer;
+}
+
+.journey-active-manage input:disabled { cursor: default; }
+
 /* Dar ekranda araç çubuğu iki satıra iner ve toplu eylemler tam genişliği
-   paylaşır; liste daha kısa bir pencereye sığar. */
+   paylaşır; liste daha kısa bir pencereye sığar.
+
+   Panele SABİT BİR MİNİMUM GENİŞLİK VERİLMEZ: sorun genişlik değil, bilgi
+   hiyerarşisiydi ve orada çözüldü. */
 @media (max-width: 640px) {
   .journey-active-bulk { flex: 1 1 100%; }
   .journey-active-bulk > button { flex: 1; }
   .journey-active-list { max-height: 11rem; }
+
+  /* Seçim eylem çubuğu İKİ SÜTUNLU ızgaraya iner. */
+  .journey-manage-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .journey-manage-head { flex-direction: column; align-items: flex-start; }
+  .journey-manage-select { width: 100%; }
 }

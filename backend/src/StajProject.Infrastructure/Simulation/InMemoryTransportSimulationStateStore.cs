@@ -125,6 +125,44 @@ public sealed class InMemoryTransportSimulationStateStore : ITransportSimulation
         return null;
     }
 
+    /* YENİDEN BAŞLATMANIN ÇEKİRDEĞİ. Kaldır-sonra-ekle YERİNE tek bir
+       TryUpdate: hattın yuvası bir an bile boşalmaz, dolayısıyla araya giren
+       bir TryStart onu kapamaz. Kalıp diğer geçişlerle aynıdır — okunan sürüm
+       hâlâ yerindeyse yazılır. */
+    public bool TryReplace(int routeId, Guid expectedSimulationId, ActiveTransportSimulation replacement)
+    {
+        /* Yerine konan kayıt BAŞKA bir hattın çalıştırması olamaz: sözlük
+           anahtarı ile kaydın kendi rotası ayrışırsa, hat üzerinde kendi
+           rotasını inkâr eden bir çalıştırma dururdu. */
+        if (replacement.RouteId != routeId)
+        {
+            return false;
+        }
+
+        /* Aynı kimliği "yerine koymak" bir DEĞİŞTİRME değil, gizli bir geri
+           sarma olurdu: aynı çalıştırma %0'a döndürülmüş olurdu. Yeniden
+           başlatma daima YENİ bir kimlik üretir. */
+        if (replacement.SimulationId == expectedSimulationId)
+        {
+            return false;
+        }
+
+        while (_active.TryGetValue(routeId, out var current))
+        {
+            if (current.SimulationId != expectedSimulationId)
+            {
+                return false;
+            }
+
+            if (_active.TryUpdate(routeId, replacement, current))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public bool TryStop(int routeId, Guid simulationId)
     {
         while (_active.TryGetValue(routeId, out var current))

@@ -512,7 +512,7 @@ public sealed class TransportSimulationFoundationTests
                 },
                 Substitute.For<ILogger<TransportSimulationRunner>>());
 
-            Service = new TransportSimulationService(db, currentUser, state, Runner, Runner);
+            Service = new TransportSimulationService(db, currentUser, state, Runner, Runner, Runner);
         }
 
         public AppDbContext Db { get; }

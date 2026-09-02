@@ -63,6 +63,12 @@ export default function SharedTransportJourneyContent({
   onWatchAll,
   onClearWatch,
   onRetryActive,
+  /* YÖNETİM (Faz 4B). Bu bölüm hiçbirini YORUMLAMAZ; yalnızca aktarır.
+     Görünürlük kararı saf sunum modelindedir ve etkin yetki kodundan türer. */
+  onToggleManaged,
+  onSelectAllActive,
+  onClearSelection,
+  onRunBatchAction,
 }) {
   /* Görünüm tercihi tamamen SUNUMDUR ve bu yüzden burada yaşar: yukarı
      taşımak, MapPage'e hiçbir karar taşımayan bir durum daha eklerdi. */
@@ -103,6 +109,10 @@ export default function SharedTransportJourneyContent({
       onWatchAll={onWatchAll}
       onClearWatch={onClearWatch}
       onRetry={onRetryActive}
+      onToggleManaged={onToggleManaged}
+      onSelectAllActive={onSelectAllActive}
+      onClearSelection={onClearSelection}
+      onRunBatchAction={onRunBatchAction}
     />
   )
 

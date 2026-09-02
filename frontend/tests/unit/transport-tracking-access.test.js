@@ -125,8 +125,52 @@ test('start stays bound to transport.simulation.start for the viewer surface', (
   assert.equal(starter.showStart, true)
 
   // Haritadaki kart yetkiyi yalnızca kanonik KOD üzerinden sorar.
-  assert.match(mapPage, /canStart: can\(PERMISSIONS\.TRANSPORT_SIMULATION_START\)/)
   assert.equal(PERMISSIONS.TRANSPORT_SIMULATION_START, 'transport.simulation.start')
+
+  /* KOD TEK BİR KEZ OKUNUR ve TEK bir yeteneğe bağlanır.
+
+     Ölçü eskiden `canStart: can(PERMISSIONS.TRANSPORT_SIMULATION_START)`
+     LİTERALİYDİ ve o gün doğruydu: kodun tek tüketicisi vardı. Faz 4B ikinci
+     bir tüketici getirdi — YENİDEN BAŞLATMA aynı başlatma yeteneğini durdurma
+     yeteneğiyle BİRLİKTE arar. Literali korumak, kodu iki ayrı yerde okumaya
+     zorlardı; iki okuma ise zamanla birbirinden sapabilen iki kural kitabı
+     demektir. İddia bu yüzden zayıflamadı, KONUMLANDI: ölçülen şey artık
+     sözdizimi değil, "tek okuma → tek ad → her tüketici o adı kullanır"
+     OLGUSUDUR. */
+  assert.equal(
+    (mapPage.match(/can\(PERMISSIONS\.TRANSPORT_SIMULATION_START\)/g) ?? []).length,
+    1,
+    'başlatma yetkisi birden çok yerden okunuyor',
+  )
+
+  const startCapability = mapPage.match(
+    /const\s+([A-Za-z0-9_]+)\s*=\s*can\(\s*PERMISSIONS\.TRANSPORT_SIMULATION_START\s*\)/,
+  )
+  assert.ok(startCapability, 'başlatma yeteneği etkin yetki kodundan türetilmiyor')
+
+  const startName = startCapability[1]
+
+  /* SIRADAN BAŞLATMA yalnızca bu yetenekten gelir: görünürlük kuralına
+     `canStart` olarak verilir ve başka hiçbir koddan türetilmez. */
+  assert.ok(
+    new RegExp(`canStart:\\s*${startName}\\b`).test(mapPage),
+    'görünürlük kuralı adlandırılmış başlatma yeteneğini almıyor',
+  )
+
+  /* YENİDEN BAŞLATMA da AYNI adı kullanır — ikinci bir okuma ya da yeni bir
+     yetki kodu (transport.simulation.restart) UYDURULMADAN. */
+  assert.ok(
+    new RegExp(`RESTART && !${startName}\\b`).test(mapPage),
+    'yeniden başlatma aynı adlandırılmış başlatma yeteneğini kullanmıyor',
+  )
+  assert.ok(!/simulation\.restart/.test(mapPage), 'üçüncü bir yetki kodu uydurulmuş')
+
+  /* Ve başlatma DURDURMADAN türetilmez (ya da tersi): iki kod ayrıdır ve biri
+     diğerinin yerine geçmez. */
+  assert.ok(!new RegExp(`${startName}[^\\n]*TRANSPORT_SIMULATION_STOP`).test(mapPage))
+
+  // Karar yalnızca etkin yetkidendir; rol adı kestirmesi YOKTUR.
+  assert.ok(!/canStart:\s*[^\n]*(isAdmin|roleName|userName|'Admin')/.test(mapPage))
 })
 
 /** Ana haritanın YALNIZCA takip ile ilgili bölümleri. */

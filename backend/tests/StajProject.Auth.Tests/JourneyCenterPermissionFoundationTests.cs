@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using StajProject.Api.Authorization;
 using StajProject.Api.Controllers;
 using StajProject.Api.Hubs;
+using StajProject.Application.DTOs;
 using StajProject.Application.Interfaces;
 using StajProject.Domain.Common;
 using StajProject.Domain.Entities;
@@ -412,10 +413,14 @@ public class JourneyCenterPermissionFoundationTests
            de MEVCUT bir çalıştırmanın mutasyonudur ve bu yüzden ÜÇ yeni yetki
            kodu uydurmak yerine aynı yaşam döngüsü otoritesini paylaşırlar.
 
-           Ölçü bu yüzden artık "TAM OLARAK ŞU ÜÇ uç"tur. Zayıflama DEĞİLDİR:
-           sayı da kimlikler de çivilenir, dolayısıyla kodun dördüncü bir
-           yüzeye sessizce yayılması ya da yanlış bir eyleme takılması hâlâ
-           burada düşer. Tarama tüm API yüzeyini gezer. */
+           Ölçü bu yüzden artık "TAM OLARAK ŞU YEDİ uç"tur. Faz 4B aynı üç
+           mutasyonun TOPLU biçimlerini ve bir de YENİDEN BAŞLATMAYI ekledi:
+           dördü de mevcut bir çalıştırmayı sonlandıran/mutasyona uğratan
+           komutlardır ve yine ÜÇ yeni yetki kodu uydurulmaz — aynı yaşam
+           döngüsü otoritesi paylaşılır. Zayıflama DEĞİLDİR: sayı da kimlikler
+           de çivilenir, dolayısıyla kodun sekizinci bir yüzeye sessizce
+           yayılması ya da yanlış bir eyleme takılması hâlâ burada düşer.
+           Tarama tüm API yüzeyini gezer. */
         var gated = typeof(TransportSimulationController).Assembly
             .GetTypes()
             .Where(type => typeof(ControllerBase).IsAssignableFrom(type))
@@ -431,6 +436,10 @@ public class JourneyCenterPermissionFoundationTests
         Assert.Equal(
             new[]
             {
+                nameof(TransportSimulationController.BatchPause),
+                nameof(TransportSimulationController.BatchReset),
+                nameof(TransportSimulationController.BatchRestart),
+                nameof(TransportSimulationController.BatchResume),
                 nameof(TransportSimulationController.Pause),
                 nameof(TransportSimulationController.Resume),
                 nameof(TransportSimulationController.Stop)
@@ -440,21 +449,62 @@ public class JourneyCenterPermissionFoundationTests
         // Ve hepsi TEK bir controller'dadır; başka bir yüzeye sızmamıştır.
         Assert.All(gated, entry => Assert.Equal(typeof(TransportSimulationController), entry.Type));
 
-        /* HER ÜÇ komut da İKİ kimliği birden taşır. Yalnızca rota alan bir
-           yaşam döngüsü komutu, eski bir sekmenin yerine geçmiş YENİ
-           çalıştırmayı duraklatmasına/sürdürmesine/sıfırlamasına açık kapı
-           bırakırdı. */
-        Assert.All(gated, entry =>
+        /* HER komut ÇALIŞTIRMA KİMLİĞİ taşır. Yalnızca rota taşıyan bir yaşam
+           döngüsü komutu, eski bir sekmenin yerine geçmiş YENİ çalıştırmayı
+           duraklatmasına/sürdürmesine/sıfırlamasına açık kapı bırakırdı.
+
+           TEKİL uçlarda kimlikler YOLDA (int + Guid), TOPLU uçlarda ise
+           GÖVDEDE taşınır — hedef başına rota VE çalıştırma kimliği. Toplu
+           olmak kimlik zorunluluğunu gevşetmez; yalnızca onu nereye
+           koyduğumuzu değiştirir. */
+        var batch = gated
+            .Where(entry => entry.Method.Name.StartsWith("Batch", StringComparison.Ordinal))
+            .ToArray();
+        var single = gated.Except(batch).ToArray();
+
+        Assert.All(single, entry =>
         {
             Assert.Contains(entry.Method.GetParameters(), parameter => parameter.ParameterType == typeof(int));
             Assert.Contains(entry.Method.GetParameters(), parameter => parameter.ParameterType == typeof(Guid));
         });
 
-        /* BAŞLATMA AYRI KALIR ve iki yönlü: yaşam döngüsü kodu başlatmayı
-           açmaz, başlatma kodu da bu üçünü açmaz. */
-        Assert.All(gated, entry => Assert.DoesNotContain(
-            entry.Method.GetCustomAttributes<RequirePermissionAttribute>(true),
-            attribute => attribute.PermissionCode == PermissionCodes.TransportSimulationStart));
+        Assert.All(batch, entry => Assert.Contains(
+            entry.Method.GetParameters(),
+            parameter => parameter.ParameterType == typeof(TransportSimulationBatchRequest)));
+
+        // Hedef sözleşmesi İKİ kimliği birden taşır ve rota tek başına yetmez.
+        Assert.NotNull(typeof(TransportSimulationTargetRequest).GetProperty(
+            nameof(TransportSimulationTargetRequest.RouteId)));
+        Assert.NotNull(typeof(TransportSimulationTargetRequest).GetProperty(
+            nameof(TransportSimulationTargetRequest.SimulationId)));
+
+        /* BAŞLATMA AYRI KALIR: yaşam döngüsü kodu tek başına başlatmayı AÇMAZ.
+           TEK istisna YENİDEN BAŞLATMADIR ve o da bir istisna değil, iki
+           yeteneğin BİRLİKTE aranmasıdır: komut gerçekten hem bitirir hem
+           kurar, bu yüzden İKİ kodu birden ister ve hiçbirinin yerine
+           geçmez. */
+        Assert.All(
+            gated.Where(entry => entry.Method.Name != nameof(TransportSimulationController.BatchRestart)),
+            entry => Assert.DoesNotContain(
+                entry.Method.GetCustomAttributes<RequirePermissionAttribute>(true),
+                attribute => attribute.PermissionCode == PermissionCodes.TransportSimulationStart));
+
+        var restart = typeof(TransportSimulationController)
+            .GetMethod(nameof(TransportSimulationController.BatchRestart))!
+            .GetCustomAttributes<RequirePermissionAttribute>(true)
+            .Select(attribute => attribute.PermissionCode)
+            .OrderBy(code => code, StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(
+            new[] { PermissionCodes.TransportSimulationStart, PermissionCodes.TransportSimulationStop }
+                .OrderBy(code => code, StringComparer.Ordinal),
+            restart);
+
+        // Üçüncü bir yetki kodu UYDURULMADI.
+        Assert.DoesNotContain(
+            PermissionCatalog.AllCodes,
+            code => code.Contains("restart", StringComparison.OrdinalIgnoreCase));
 
         var start = Assert.Single(
             typeof(TransportSimulationController)
@@ -462,13 +512,16 @@ public class JourneyCenterPermissionFoundationTests
                 .GetCustomAttributes<RequirePermissionAttribute>(true));
         Assert.Equal(PermissionCodes.TransportSimulationStart, start.PermissionCode);
 
-        /* Servis sözleşmesindeki yaşam döngüsü yüzeyi de tam olarak bu üçüdür.
-           İÇ İPTAL (güzergah geçersizleşmesi) hâlâ AYRI bir porttadır, bu
-           servisten geçmez ve hiçbir kullanıcı yetkisi İSTEMEZ. */
+        /* Servis sözleşmesindeki KULLANICI KOMUTU yüzeyi: üç tekil mutasyon,
+           yeniden başlatma ve toplu uygulayıcı. İÇ İPTAL (güzergah
+           geçersizleşmesi) hâlâ AYRI bir porttadır, bu servisten geçmez ve
+           hiçbir kullanıcı yetkisi İSTEMEZ. */
         Assert.Equal(
             new[]
             {
+                nameof(ITransportSimulationService.ExecuteBatchAsync),
                 nameof(ITransportSimulationService.PauseAsync),
+                nameof(ITransportSimulationService.RestartAsync),
                 nameof(ITransportSimulationService.ResumeAsync),
                 nameof(ITransportSimulationService.StopAsync)
             },
@@ -476,7 +529,9 @@ public class JourneyCenterPermissionFoundationTests
                 .GetMethods()
                 .Where(method => method.Name is nameof(ITransportSimulationService.StopAsync)
                     or nameof(ITransportSimulationService.PauseAsync)
-                    or nameof(ITransportSimulationService.ResumeAsync))
+                    or nameof(ITransportSimulationService.ResumeAsync)
+                    or nameof(ITransportSimulationService.RestartAsync)
+                    or nameof(ITransportSimulationService.ExecuteBatchAsync))
                 .Select(method => method.Name)
                 .OrderBy(name => name, StringComparer.Ordinal));
 

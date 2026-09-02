@@ -34,7 +34,10 @@ namespace StajProject.Infrastructure.Simulation;
 /// </para>
 /// </remarks>
 public sealed class TransportSimulationRunner
-    : ITransportSimulationCanceller, ITransportSimulationTerminator, ITransportSimulationLifecycle
+    : ITransportSimulationCanceller,
+      ITransportSimulationTerminator,
+      ITransportSimulationLifecycle,
+      ITransportSimulationReplacer
 {
     private readonly ITransportSimulationStateStore _state;
     private readonly ITransportSimulationBroadcaster _broadcaster;
@@ -267,6 +270,78 @@ public sealed class TransportSimulationRunner
         return update;
     }
 
+    /// <summary>
+    /// YENİDEN BAŞLAT: eski çalıştırmayı bitirir ve yerine YENİ çalıştırmayı
+    /// TEK adımda koyar.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Hattın yuvası bir an bile boşalmaz.</b> "Sıfırla sonra başlat"
+    /// biçimindeki iki adımlı bir uygulama, aradaki pencerede başka bir
+    /// kullanıcının başlatma isteğine yuvayı kaptırırdı; devamında bu metot
+    /// kendi ürettiği B'yi kuramaz, üstelik yabancı bir çalıştırmayı vurmuş
+    /// olurdu. Bağlayıcı karar deponun atomik <c>TryReplace</c>'idir.
+    /// </para>
+    /// <para>
+    /// <b>Eski çalıştırma KİMLİĞİYLE emekliye ayrılır.</b> İz kaydı
+    /// (<c>_tracks</c>) yalnızca ESKİ kimlikle silinir; B'nin izine
+    /// dokunulmaz. Ayrı bir "bu rotayı iptal et" yolu ÇAĞRILMAZ — rota
+    /// tabanlı bir iptal, tam da yerine yeni konmuş B'yi kaldırırdı.
+    /// </para>
+    /// <para>
+    /// <b>Eski çalıştırmanın yolda kalmış tick'i B'yi EZEMEZ:</b> her yazma
+    /// <c>(routeId, simulationId)</c> denetimlidir ve A artık hattın güncel
+    /// çalıştırması değildir. Ayrıca ilerletme döngüsü depodan okuduğu için
+    /// A bir daha hiç ilerletilmez.
+    /// </para>
+    /// <para>
+    /// <b>Olay sırası anlamlıdır:</b> önce A'nın terminal yayını ve keşif
+    /// çıkışı, sonra B'nin başlangıç yayını ve keşif girişi. Ters sıra,
+    /// listeyi izleyen bir istemcinin B'yi görüp hemen ardından A'nın çıkışını
+    /// işlemesi ve hattı bir an "aktif değil" sanması demekti.
+    /// </para>
+    /// </remarks>
+    public async Task<TransportSimulationReplacement?> ReplaceAsync(
+        int routeId,
+        Guid expectedSimulationId,
+        ActiveTransportSimulation replacement,
+        CancellationToken cancellationToken = default)
+    {
+        /* Ön okuma yalnızca eski kaydın son bilinen OTORİTER konumunu terminal
+           yayına koyabilmek içindir; bağlayıcı denetim aşağıdaki CAS'tır. */
+        var previous = _state.Find(routeId);
+
+        if (previous is null || previous.SimulationId != expectedSimulationId)
+        {
+            return null;
+        }
+
+        if (!_state.TryReplace(routeId, expectedSimulationId, replacement))
+        {
+            // Ön okuma ile değiştirme arasında çalıştırma değişti: dokunulmadı.
+            return null;
+        }
+
+        // YALNIZCA eski kimliğin izi silinir.
+        _tracks.TryRemove(expectedSimulationId, out _);
+
+        var terminated = TransportSimulationLiveUpdate.From(previous, TransportSimulationStatus.Cancelled);
+        var started = TransportSimulationLiveUpdate.From(replacement, TransportSimulationStatus.Running);
+
+        await PublishAsync(previous, TransportSimulationStatus.Cancelled, cancellationToken);
+        await AnnounceEndedAsync(previous, cancellationToken);
+
+        await PublishAsync(replacement, TransportSimulationStatus.Running, cancellationToken);
+
+        /* AKTİF KÜMEYE GİRİŞ de duyurulur. Hat genel olarak aktif kalsa da
+           aktif ÇALIŞTIRMA kimliği değişmiştir; keşif listesini izleyen
+           istemci yeni kimliği ancak bu sinyalden sonra yaptığı okumayla
+           öğrenir. */
+        await AnnounceStartedAsync(replacement, cancellationToken);
+
+        return new TransportSimulationReplacement(terminated, started);
+    }
+
     private async Task AdvanceOneAsync(
         ActiveTransportSimulation simulation,
         DateTime utcNow,
@@ -358,6 +433,25 @@ public sealed class TransportSimulationRunner
             ? Task.CompletedTask
             : _discovery.PublishActiveSetChangedAsync(
                 TransportActiveSimulationSetChanged.Ended(simulation, UtcNow),
+                cancellationToken);
+
+    /// <summary>
+    /// "Bu çalıştırma aktif kümeye girdi" sinyali.
+    /// </summary>
+    /// <remarks>
+    /// Runner bunu YALNIZCA yeniden başlatmada duyurur: sıradan bir başlatmanın
+    /// girişini servis duyurur (aktif kümeye giriş orada olur) ve bu ayrım
+    /// korunur. Yeniden başlatmada giriş de çıkış da AYNI atomik adımda olur;
+    /// ikisini iki ayrı sahibe bölmek, aradaki pencerede listenin hattı hiç
+    /// aktif değilmiş gibi göstermesi demekti.
+    /// </remarks>
+    private Task AnnounceStartedAsync(
+        ActiveTransportSimulation simulation,
+        CancellationToken cancellationToken) =>
+        _discovery is null
+            ? Task.CompletedTask
+            : _discovery.PublishActiveSetChangedAsync(
+                TransportActiveSimulationSetChanged.Started(simulation, UtcNow),
                 cancellationToken);
 
     private async Task PublishAsync(

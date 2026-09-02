@@ -421,7 +421,7 @@ public class TransportSimulationStopTests
                 },
                 Substitute.For<ILogger<TransportSimulationRunner>>());
 
-            Service = new TransportSimulationService(db, currentUser, Store, Runner, Runner);
+            Service = new TransportSimulationService(db, currentUser, Store, Runner, Runner, Runner);
         }
 
         public AppDbContext Db { get; }

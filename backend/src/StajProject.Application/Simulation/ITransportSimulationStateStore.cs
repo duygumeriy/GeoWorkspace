@@ -76,6 +76,39 @@ public interface ITransportSimulationStateStore
     bool TryStop(int routeId, Guid simulationId);
 
     /// <summary>
+    /// Hattın aktif yuvasındaki çalıştırmayı, YALNIZCA hâlâ
+    /// <paramref name="expectedSimulationId"/> ise, tek adımda
+    /// <paramref name="replacement"/> ile DEĞİŞTİRİR.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Neden ayrı bir ilkel; neden "durdur sonra başlat" değil.</b> Yeniden
+    /// başlatmayı iki adımda yapmak (önce <see cref="TryStop"/>, sonra
+    /// <see cref="TryStart"/>) hattın aktif yuvasını bir an için BOŞ bırakır.
+    /// O aralıkta başka bir kullanıcının başlatma isteği yuvayı kapabilir ve
+    /// yeniden başlatma, kendi ürettiği çalıştırmayı kuramadığı gibi yabancı
+    /// bir çalıştırmayı da vurmuş olurdu. Yuva burada hiç boşalmaz.
+    /// </para>
+    /// <para>
+    /// <b>Karşılaştır-ve-değiştir (CAS) BAĞLAYICI karardır.</b> Beklenen
+    /// kimlik tutmuyorsa hiçbir şeye dokunulmaz ve <c>false</c> döner: bayat
+    /// bir yeniden başlatma komutu, yerine geçmiş YENİ bir çalıştırmayı ne
+    /// sonlandırabilir ne de üzerine yazabilir.
+    /// </para>
+    /// <para>
+    /// <b>Durum önkoşulu YOKTUR:</b> hem çalışan hem duraklatılmış bir
+    /// çalıştırma yenisiyle değiştirilebilir — ikisi de canlı bir
+    /// çalıştırmadır.
+    /// </para>
+    /// </remarks>
+    /// <returns>
+    /// Değiştirme yapıldıysa <c>true</c>; beklenen çalıştırma artık hattın
+    /// güncel çalıştırması değilse <c>false</c> — bu durumda hiçbir şeye
+    /// dokunulmamıştır.
+    /// </returns>
+    bool TryReplace(int routeId, Guid expectedSimulationId, ActiveTransportSimulation replacement);
+
+    /// <summary>
     /// Çalışan çalıştırmayı DURAKLATIR (atomik, kimlik ve durum denetimli).
     /// </summary>
     /// <remarks>
