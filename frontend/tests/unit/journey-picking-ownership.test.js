@@ -196,7 +196,7 @@ test('the vehicle layer keeps rendering, moving and following while its click is
 
   // Katman ve eşitleme yolu duruyor: araç gizlenmiyor.
   assert.match(VEHICLE_HOOK, /createTransportVehicleLayer\(\)/)
-  assert.match(VEHICLE_HOOK, /syncTransportVehicleFeature\(sourceRef\.current, presentation\)/)
+  assert.match(VEHICLE_HOOK, /syncTransportVehicleFeatures\(sourceRef\.current, presentations\)/)
 
   // Varsayılan açıktır: mevcut çağıranların davranışı değişmez.
   assert.match(VEHICLE_HOOK, /clickEnabled = true/)

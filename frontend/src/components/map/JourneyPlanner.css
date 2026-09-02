@@ -609,3 +609,137 @@
 .journey-popup-step p { margin: 0; font-size: var(--font-small); font-weight: 600; }
 .journey-popup-step span { font-size: 0.72rem; color: var(--text-secondary); }
 .journey-popup-step em { font-size: 0.7rem; color: var(--text-secondary); font-style: normal; }
+
+/* --- Aktif Simülasyonlar (Faz 4A) ---------------------------------------------
+   Paylaşılan bölümün İKİNCİ görünümü. Ürün sekmelerinden (`.journey-products`)
+   ayrı bir çubukta durur çünkü farklı bir eksendir: orası hangi ÜRÜNE
+   bakıldığı, burası aynı ürünün hangi BAKIŞI.
+
+   Liste MASAÜSTÜNDE de kaydırılır ve sabit bir genişlik varsaymaz: panel
+   mobilde alt sayfaya dönüştüğünde aynı işaretleme, aynı satırlar geçerlidir.
+   Yükseklik panelin kendi ölçüsüne göre esner; ikinci bir yerleşim sistemi
+   kurulmaz. */
+
+.journey-shared-views {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 0.1rem;
+}
+
+.journey-active {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-height: 0;
+}
+
+.journey-active-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.journey-active-search {
+  flex: 1 1 8rem;
+  min-width: 0;
+  padding: 0.35rem 0.5rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--surface-soft);
+  background: var(--surface-soft);
+  color: var(--text-primary);
+  font-size: var(--font-small);
+}
+
+.journey-active-bulk {
+  display: flex;
+  gap: 0.3rem;
+  flex: 0 1 auto;
+}
+
+.journey-active-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  /* Uzun liste paneli taşırmaz; kaydırma LİSTENİN kendisindedir. */
+  max-height: 15rem;
+  overflow-y: auto;
+}
+
+.journey-active-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0.3rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+}
+
+/* SEÇİLİ satır vurgulanır ama diğerleri okunur kalır: seçim bir görünürlük
+   kararı değildir. */
+.journey-active-row.is-selected {
+  border-color: var(--journey-accent);
+}
+
+.journey-active-select {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  padding: 0.4rem 0.5rem;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.journey-active-name {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.journey-active-name strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.journey-active-meta {
+  font-size: var(--font-small);
+  color: var(--text-secondary);
+}
+
+.journey-active-watch {
+  flex: none;
+  align-self: center;
+  margin-right: 0.35rem;
+  padding: 0.3rem 0.5rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--surface-soft);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--font-small);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.journey-active-watch.is-watched {
+  border-color: var(--journey-accent);
+  color: var(--journey-accent);
+}
+
+/* Dar ekranda araç çubuğu iki satıra iner ve toplu eylemler tam genişliği
+   paylaşır; liste daha kısa bir pencereye sığar. */
+@media (max-width: 640px) {
+  .journey-active-bulk { flex: 1 1 100%; }
+  .journey-active-bulk > button { flex: 1; }
+  .journey-active-list { max-height: 11rem; }
+}

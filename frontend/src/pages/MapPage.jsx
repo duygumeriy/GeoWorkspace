@@ -115,7 +115,13 @@ import {
   resolveJourneyProduct,
   sharedJourneyPresentation,
 } from '../map/journeyWorkspace.js'
-import { transportVehiclePopupModel, transportVehiclePresentation } from '../map/transportVehicle.js'
+import {
+  mergeVehiclePresentations,
+  transportStarterTerminalPresentation,
+  transportVehiclePopupModel,
+  transportWatchedVehiclePresentations,
+} from '../map/transportVehicle.js'
+import { activeSimulationsPresentation } from '../map/activeSimulations.js'
 import {
   journeyDisplayGeometryWkt,
   journeyStatusIndicator,
@@ -800,11 +806,19 @@ export default function MapPage() {
      hattı izleyebilmek buradan mümkün olur. İkinci bir SignalR istemcisi,
      ikinci bir araç uygulaması ya da ikinci bir harita KURULMAZ. */
   const [startedSimulationId, setStartedSimulationId] = useState(null)
-  const [vehiclePopupSimulationId, setVehiclePopupSimulationId] = useState(null)
+  /* Balon KİMLİĞİ rota + çalıştırmadır. Tek bir "seçili araç" kimliği, birden
+     fazla işaretçi varken hangisine tıklanırsa tıklansın aynı balonu açardı. */
+  const [vehiclePopupTarget, setVehiclePopupTarget] = useState(null)
+  const [activeSimulationSearch, setActiveSimulationSearch] = useState('')
 
   const simulation = useTransportSimulation({
     routeId: selectedTransportRouteId,
     canView: allowed.canViewTransport,
+    /* AKTİF KEŞİF yalnızca bu yüzeyde açılır: çalışma alanı "Aktif
+       Simülasyonlar" bölümünün sahibidir. Yönetim ekranı tek bir seçili hatla
+       ilgilenir ve orada tüm hatların yayınına abone olmak gereksiz bir trafik
+       demekti. */
+    discoverActive: allowed.canViewTransport,
   })
 
   /* Yetenek TEK yerde okunur ve İKİ yerde tüketilir: görünürlük kararı ve
@@ -973,40 +987,123 @@ export default function MapPage() {
     simulation.error,
   ])
 
-  const transportVehicle = useMemo(() => transportVehiclePresentation({
-    simulation: simulation.followedSimulation ?? simulation.observedSimulation ?? simulation.simulation,
-    followingRouteId: simulation.followingRouteId,
-    observedRouteId: simulation.observedRouteId,
+  /* --- ÇOKLU İZLEME (Faz 4A) --------------------------------------------------
+     AKTİF bir aracın haritada görünmesinin TEK sahibi kullanıcının İZLEME
+     seçimidir.
+
+     SEÇİM görünürlük sahibi DEĞİLDİR: seçili ama izlenmeyen bir hattın
+     ayrıntıları panelde canlı akmaya devam eder, işaretçisi çizilmez.
+     GÖZLEM (observe) yalnızca VERİ sahipliğidir — o abonelik olmasaydı panel
+     donardı; ama abone olmak "çiz" demek değildir. AKTİF KÜME üyeliği de
+     yalnızca listenin tazeliğini sahiplenir. BAŞLATMA sahipliği ise hiçbir
+     aktif çalıştırmayı görünür kılmaz.
+
+     Bu ayrım SUNUM DÜZEYİNDE kurulur: aktif çizim listesi yalnızca izleme
+     sunumundan doğar, sonradan bir sahiplik dizesine göre süzülmez. */
+  const watchedVehicles = useMemo(() => transportWatchedVehiclePresentations({
+    byRoute: simulation.byRoute,
+    watchedRuns: simulation.watchedRuns,
     selectedRouteId: selectedTransportRouteId,
-    startedSimulationId,
+    followingRouteId: simulation.followingRouteId,
+    subscribedRouteIds: simulation.subscribedRouteIds,
     routes: transport.activeRoutes,
   }), [
-    simulation.followedSimulation,
-    simulation.observedSimulation,
-    simulation.simulation,
+    simulation.byRoute,
+    simulation.watchedRuns,
     simulation.followingRouteId,
-    simulation.observedRouteId,
+    simulation.subscribedRouteIds,
     selectedTransportRouteId,
-    startedSimulationId,
     transport.activeRoutes,
   ])
 
+  /* ESKİ, DAR ve TERMİNAL sunum: çalıştırmayı BAŞLATAN kullanıcı, o
+     çalıştırma bittikten sonra son konumunu görmeye devam eder.
+
+     Bu sunum AKTİF koleksiyonun DIŞINDADIR ve öyle kalmalıdır: fonksiyon
+     terminal olmayan bir çalıştırma için ASLA bir sunum üretmez, dolayısıyla
+     başlatma sahipliği aktif bir aracı görünür kılamaz. Canlı değildir ve
+     kamera talep etmez. */
+  const starterTerminalVehicle = useMemo(() => transportStarterTerminalPresentation({
+    simulation: simulation.simulation,
+    startedSimulationId,
+    selectedRouteId: selectedTransportRouteId,
+    routes: transport.activeRoutes,
+  }), [
+    simulation.simulation,
+    startedSimulationId,
+    selectedTransportRouteId,
+    transport.activeRoutes,
+  ])
+
+  /* Çizim listesi: AKTİF izlenen araçlar + isteğe bağlı TERMİNAL başlatıcı
+     sunumu. İkisi ayrı kavramdır; kimlik (rota + çalıştırma) çakışmayı
+     tekilleştirir. */
+  const vehiclePresentations = useMemo(
+    () => mergeVehiclePresentations(watchedVehicles, starterTerminalVehicle),
+    [watchedVehicles, starterTerminalVehicle],
+  )
+
+  /* Tıklama, TIKLANAN aracın kimliğini yakalar: hiçbir simülasyon
+     değiştirilmez, takip ele geçirilmez ve diğer işaretçiler etkilenmez. */
   const openVehiclePopup = useCallback((vehicle) => {
-    setVehiclePopupSimulationId(vehicle?.simulationId ?? null)
+    setVehiclePopupTarget(
+      vehicle ? { routeId: vehicle.routeId, simulationId: vehicle.simulationId } : null,
+    )
   }, [])
 
   useTransportVehicleLayer(mapInstance, {
-    presentation: transportVehicle,
+    presentations: vehiclePresentations,
     onVehicleClick: openVehiclePopup,
-    /* Yolculuk noktası seçimi silahlıyken YALNIZCA balon çekilir. Araç çizilmeye,
-       canlı konumunu almaya ve takip kamerasını sürdürmeye devam eder — sabit
-       hat simülasyonu ürünü bu koddan hiç etkilenmez. */
+    /* Yolculuk noktası seçimi silahlıyken YALNIZCA balon çekilir. Araçlar
+       çizilmeye, canlı konumlarını almaya ve takip kamerasını sürdürmeye devam
+       eder — sabit hat simülasyonu ürünü bu koddan hiç etkilenmez. */
     clickEnabled: !journey.isPicking,
   })
 
-  const vehiclePopup = transportVehicle && vehiclePopupSimulationId === transportVehicle.simulationId
-    ? transportVehiclePopupModel(transportVehicle)
-    : null
+  /* Balon TIKLANAN çalıştırmanın kanonik durumunu okur; küresel bir "seçili
+     araç" modeli DEĞİL. Çalıştırma listeden düştüğünde (bitti, izlemeden
+     çıkarıldı) balon da kendiliğinden kapanır. */
+  const vehiclePopup = useMemo(() => {
+    if (!vehiclePopupTarget) return null
+    const target = vehiclePresentations.find(
+      (item) => item.routeId === vehiclePopupTarget.routeId
+        && item.simulationId === vehiclePopupTarget.simulationId,
+    )
+    return target ? transportVehiclePopupModel(target) : null
+  }, [vehiclePopupTarget, vehiclePresentations])
+
+  /* --- AKTİF SİMÜLASYONLAR bölümünün sunum modeli ------------------------------
+     Hiçbir değer burada üretilmez: durum/ilerleme sunucunun anlık
+     görüntüsünden, ad/renk mevcut rota katalogundan gelir. Arama YALNIZCA
+     sunum süzgecidir — aktif kümeye, izleme seçimine ve aboneliklere hiç
+     dokunmaz. */
+  const activeSimulations = useMemo(() => activeSimulationsPresentation({
+    byRoute: simulation.byRoute,
+    routes: transport.activeRoutes,
+    watchedRuns: simulation.watchedRuns,
+    selectedRouteId: selectedTransportRouteId,
+    followedRouteId: simulation.followingRouteId,
+    search: activeSimulationSearch,
+    loading: simulation.activeLoading,
+    loaded: simulation.activeLoaded,
+    error: simulation.activeError,
+  }), [
+    simulation.byRoute,
+    simulation.watchedRuns,
+    simulation.followingRouteId,
+    simulation.activeLoading,
+    simulation.activeLoaded,
+    simulation.activeError,
+    selectedTransportRouteId,
+    transport.activeRoutes,
+    activeSimulationSearch,
+  ])
+
+  /* Satır SEÇİMİ yalnızca ayrıntı bağlamını taşır: izlemeyi DEĞİŞTİRMEZ ve
+     takibi ele GEÇİRMEZ. */
+  const selectActiveSimulationRow = useCallback((rowRouteId) => {
+    setSelectedTransportRouteId(rowRouteId)
+  }, [])
 
   const toggleTransportRoute = useCallback((routeId) => {
     setHiddenTransportRouteIds((current) => {
@@ -1139,7 +1236,7 @@ export default function MapPage() {
     setJourneyPopupSimulationId(simulationId)
     /* Aynı anda tek araç balonu: paylaşılan hattınki koordinasyonla kapanır.
        İki ürün birbirini TANIMAZ; sıralamayı sayfa kurar. */
-    setVehiclePopupSimulationId(null)
+    setVehiclePopupTarget(null)
   }, [])
 
   useJourneyVehicleLayer(mapInstance, {
@@ -1168,9 +1265,9 @@ export default function MapPage() {
      balonu çekilir. İki ürün birbirini tanımaz; sıra yalnızca burada,
      sayfanın kendi düzeyinde kurulur. */
   useEffect(() => {
-    if (vehiclePopupSimulationId == null) return
+    if (vehiclePopupTarget == null) return
     setJourneyPopupSimulationId(null)
-  }, [vehiclePopupSimulationId])
+  }, [vehiclePopupTarget])
 
   /* Başlatma niyeti PLANLAYICININ mevcut seçiminden türetilir; önizlemenin
      planId'si, geometrisi ya da ölçümleri GÖNDERİLMEZ. */
@@ -3677,6 +3774,16 @@ export default function MapPage() {
                   onStopShared={requestSharedStop}
                   onFollowShared={followSharedSimulation}
                   onUnfollowShared={unfollowSharedSimulation}
+                  /* AKTİF SİMÜLASYONLAR (Faz 4A). Liste bir YÖNETİM yüzeyi
+                     değildir: satırlar yaşam döngüsü düğmesi taşımaz ve
+                     izleme/seçim/takip birbirinden bağımsız kalır. */
+                  activeSimulations={activeSimulations}
+                  onActiveSearchChange={setActiveSimulationSearch}
+                  onSelectActiveRoute={selectActiveSimulationRow}
+                  onToggleWatch={simulation.toggleWatch}
+                  onWatchAll={simulation.watchAll}
+                  onClearWatch={simulation.clearWatch}
+                  onRetryActive={simulation.reloadActive}
                   poiSearch={journeyPickerSearch}
                   onModeChange={journey.setMode}
                   onProfileChange={journey.setProfile}
@@ -3970,7 +4077,7 @@ export default function MapPage() {
               <TransportVehiclePopup
                 map={mapInstance}
                 vehicle={vehiclePopup}
-                onClose={() => setVehiclePopupSimulationId(null)}
+                onClose={() => setVehiclePopupTarget(null)}
               />
 
               {/* Kişisel yolculuk balonu AYRI bir üründür; paylaşılan hat

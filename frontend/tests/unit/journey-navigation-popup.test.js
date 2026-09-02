@@ -442,8 +442,8 @@ test('the fixed-route vehicle popup remains a separate, untouched product', () =
   assert.ok(!POPUP.includes('routeName'))
 
   // İkisi aynı anda açık kalmaz; sıra yalnızca sayfa düzeyinde kurulur.
-  assert.match(callbackBody(MAP_PAGE, 'openJourneyVehiclePopup'), /setVehiclePopupSimulationId\(null\)/)
-  assert.match(MAP_PAGE, /if \(vehiclePopupSimulationId == null\) return\s*setJourneyPopupSimulationId\(null\)/)
+  assert.match(callbackBody(MAP_PAGE, 'openJourneyVehiclePopup'), /setVehiclePopupTarget\(null\)/)
+  assert.match(MAP_PAGE, /if \(vehiclePopupTarget == null\) return\s*setJourneyPopupSimulationId\(null\)/)
 
   // Ve paylaşılan hat balonu hâlâ kendi durumundan çizilir.
   assert.match(MAP_PAGE, /vehicle=\{vehiclePopup\}/)

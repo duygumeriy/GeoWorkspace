@@ -420,6 +420,13 @@ builder.Services.AddSingleton(transportSimulationOptions);
    Application'daki arayüzü tanır. IHubContext singleton'dır, adaptör de öyle. */
 builder.Services.AddSingleton<ITransportSimulationBroadcaster, SignalRTransportSimulationBroadcaster>();
 
+/* AKTİF KEŞİF sinyali AYNI hub üzerinden, AYRI bir gruba gider. İkinci bir hub
+   açılmadı: aynı ürünün aynı canlı gerçeği için ikinci bir yol, ikinci bir
+   kimlik hattı ve istemcide ikinci bir bağlantı demekti. Ayrılan tek şey
+   yayının HEDEFİDİR — ve o gruba yalnızca etkin transport.view yetkisi olan
+   bağlantılar alınır. */
+builder.Services.AddSingleton<ITransportSimulationDiscoveryBroadcaster, SignalRTransportSimulationDiscoveryBroadcaster>();
+
 /* Runner singleton'dır: aktif durum gibi o da istek ömrünü aşar ve hiçbir
    DbContext tutmaz. Aynı örnek İKİ rolü üstlenir — arka plan ilerletici ve
    güzergah geçersizleştiğinde çağrılan iptal portu; "durdur + yayınla"

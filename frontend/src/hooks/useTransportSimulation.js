@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { readApiError } from '../services/api.js'
 import { liveConnectionMessage } from '../map/liveConnectionMessage.js'
 import {
+  fetchActiveTransportSimulations,
   fetchTransportSimulation,
   pauseTransportSimulation,
   resumeTransportSimulation,
@@ -15,6 +16,16 @@ import {
   normalizeLiveUpdate,
   normalizeStatusSnapshot,
 } from '../map/transportSimulationState.js'
+import {
+  activeRouteIdsOf,
+  applyActiveSimulationList,
+  clearWatchedRuns,
+  ensureWatchedRun,
+  reconcileWatchedRuns,
+  toggleWatchedRun,
+  watchAllActiveRuns,
+  watchedRouteIdsOf,
+} from '../map/activeSimulations.js'
 
 /**
  * Seçili güzergahın simülasyon durumu ve canlı takip yaşam döngüsü.
@@ -28,7 +39,21 @@ import {
  * kurulur; her render'da yeni bir HubConnection üretilmez. Sökülmede ya da
  * kullanıcı değiştiğinde bağlantı kapatılır ve grup üyeliği bırakılır.
  */
-export default function useTransportSimulation({ routeId = null, canView = false } = {}) {
+export default function useTransportSimulation({
+  routeId = null,
+  canView = false,
+  /**
+   * AKTİF KEŞİF açık mı? (Faz 4A)
+   *
+   * <b>İsteğe bağlıdır ve varsayılanı KAPALIDIR.</b> Aktif liste ürünü ana
+   * harita çalışma alanına aittir; güzergah yönetimi ekranı tek bir seçili
+   * hatla ilgilenir ve orada tüm hatların yayınına abone olmak, o ekranın hiç
+   * kullanmadığı bir trafiği açmak demekti. Bayrak yalnızca DAVRANIŞI açar —
+   * yetkiyi değil: keşif yine `transport.view` ister ve bağlayıcı denetim
+   * sunucudadır.
+   */
+  discoverActive = false,
+} = {}) {
   /* Durum ROTA BAŞINA tutulur. Kullanıcı A rotasını takip ederken B'yi
      inceleyebilir; tek bir kutuda tutulsaydı B'nin durumu A'nınkini ezer ve
      takip edilen aracın canlı akışı sessizce kaybolurdu. */
@@ -51,8 +76,42 @@ export default function useTransportSimulation({ routeId = null, canView = false
   const [following, setFollowing] = useState(false)
   const [error, setError] = useState('')
 
+  /* --- AKTİF KEŞİF (Faz 4A) ---------------------------------------------------
+     İZLEME kaydı ROTA anahtarlı, ÇALIŞTIRMA değerlidir. Yalnızca rota
+     tutulsaydı, A bitip aynı hatta B başladığında B kullanıcının hiç vermediği
+     bir kararla izleniyor sayılırdı; kimlik eşleşmesi bu devralmayı yapısal
+     olarak engeller. Bu durum tamamen İSTEMCİYE aittir: sunucuya yazılmaz ve
+     başka kullanıcılara yayınlanmaz. */
+  const [watchedRuns, setWatchedRuns] = useState({})
+  const [activeLoading, setActiveLoading] = useState(false)
+  const [activeLoaded, setActiveLoaded] = useState(false)
+  const [activeError, setActiveError] = useState('')
+  const [subscribedRouteIds, setSubscribedRouteIds] = useState([])
+
   const clientRef = useRef(null)
   const statusRequestId = useRef(0)
+  const activeRequestId = useRef(0)
+
+  /* CANLI OLAY SAYACI — bootstrap yarışının kapatıldığı yer.
+
+     Aktif liste okuması bir ANIN gerçeğidir: yanıtta olmayan bir rota artık
+     aktif değildir ve temizlenmelidir. Ama istek YOLDAYKEN yepyeni bir hat (D)
+     başlamış ve keşif kanalından öğrenilmiş olabilir; yanıt onu içermez çünkü
+     sunucu tarafında henüz yoktu. Körü körüne temizlemek D'nin sessizce
+     kaybolması demekti.
+
+     Bu yüzden her canlı olay bir sıra numarası alır; okuma, isteği gönderdiği
+     andaki numarayı hatırlar ve o numaradan SONRA olay almış rotaları
+     KORUNMUŞ sayar. */
+  const liveSeq = useRef(0)
+  const liveSeenRouteSeq = useRef(new Map())
+
+  /* Tazeleme BİRLEŞTİRİLİR: uçuş hâlindeki bir okuma varken gelen sinyaller
+     tek bir ek okumaya indirgenir. Zamanlayıcı, aralık ya da özyinelemeli
+     yenileme YOKTUR — bu yoklama olurdu. */
+  const activeRefreshInFlight = useRef(false)
+  const activeRefreshPending = useRef(false)
+  const requestActiveRefreshRef = useRef(null)
 
   /* Gelen her durum TEK kural üzerinden yazılır; kanca kendi sıralama
      mantığını yazmaz. */
@@ -71,7 +130,20 @@ export default function useTransportSimulation({ routeId = null, canView = false
   const client = useCallback(() => {
     if (!clientRef.current) {
       clientRef.current = createTransportSimulationHubClient({
-        onUpdate: (payload) => applyState(normalizeLiveUpdate(payload)),
+        onUpdate: (payload) => {
+          const next = normalizeLiveUpdate(payload)
+          if (next) {
+            /* Bu rota hakkında CANLI kanaldan bilgi alındı: yolda olan bir
+               aktif liste okuması onu "artık yok" diye temizleyemesin. */
+            liveSeq.current += 1
+            liveSeenRouteSeq.current.set(next.routeId, liveSeq.current)
+          }
+          applyState(next)
+        },
+        /* KEŞİF SİNYALİ: "aktif küme değişmiş olabilir". İkinci bir otorite
+           değildir — tek bir liste okuması tetikler ve gerçeği o okuma
+           söyler. Yoklama değildir: sinyal gelmezse hiçbir istek yapılmaz. */
+        onActiveSetChanged: () => requestActiveRefreshRef.current?.(),
         onError: () => {
           /* Bağlantı arızaları takip durumunu düşürmez: otomatik yeniden
              bağlanma devrededir ve yeniden katılım anlık görüntüyü kurtarır. */
@@ -86,6 +158,9 @@ export default function useTransportSimulation({ routeId = null, canView = false
   const syncSubscriptions = useCallback(() => {
     setFollowingRouteId(clientRef.current?.followingRouteId ?? null)
     setObservedRouteId(clientRef.current?.observedRouteId ?? null)
+    /* FİZİKSEL üyelik de istemciden okunur: "canlı mı" sorusunun cevabı,
+       kancanın tahmini değil gerçekten katılınmış grupların listesidir. */
+    setSubscribedRouteIds(clientRef.current?.subscribedRouteIds ?? [])
   }, [])
 
   /** Seçili güzergahın durumu REST'ten okunur: rota ZATEN çalışıyor olabilir. */
@@ -137,6 +212,124 @@ export default function useTransportSimulation({ routeId = null, canView = false
     setError('')
     loadStatus(routeId)
   }, [routeId, loadStatus])
+
+  /* --- AKTİF KEŞİF OKUMASI -----------------------------------------------------
+     TEK otoriter kaynak: `GET /api/transport/simulations/active`. İstemci aktif
+     kümeyi her rotayı tek tek sorarak KURMAZ. */
+  const loadActiveSimulations = useCallback(async () => {
+    if (!canView || !discoverActive) return
+
+    const requestId = ++activeRequestId.current
+    /* İstek gönderilmeden ÖNCEKİ canlı olay numarası: yanıt döndüğünde bundan
+       sonra olay almış rotalar korunacak. */
+    const seqAtRequest = liveSeq.current
+
+    setActiveLoading(true)
+    try {
+      const response = await fetchActiveTransportSimulations()
+      if (requestId !== activeRequestId.current) return
+
+      if (!response.ok) {
+        throw new Error(await readApiError(response, 'Aktif simülasyonlar okunamadı.'))
+      }
+
+      const payload = await response.json()
+      if (requestId !== activeRequestId.current) return
+
+      const protectedRouteIds = [...liveSeenRouteSeq.current.entries()]
+        .filter(([, seq]) => seq > seqAtRequest)
+        .map(([protectedRouteId]) => protectedRouteId)
+
+      /* Yanıt, aktif liste için AYRI bir birleştirme yazılmadan mevcut TEK
+         kuraldan geçer; yolda kalmış bir okuma canlı kanaldan gelmiş daha yeni
+         bir durumu geri saramaz. */
+      setByRoute((current) => applyActiveSimulationList({
+        byRoute: current,
+        list: payload,
+        protectedRouteIds,
+      }).byRoute)
+
+      setActiveError('')
+      setActiveLoaded(true)
+    } catch (loadError) {
+      if (requestId !== activeRequestId.current) return
+      /* Başarısız bir keşif okumasından sonra elde kalan veri GÜNCEL diye
+         sunulmaz: hata açıkça bildirilir ve liste "yükleniyor"dan çıkar. */
+      setActiveError(liveConnectionMessage(loadError, 'Aktif simülasyonlar okunamadı.'))
+      setActiveLoaded(true)
+    } finally {
+      if (requestId === activeRequestId.current) setActiveLoading(false)
+    }
+  }, [canView, discoverActive])
+
+  /**
+   * Keşif sinyalinin tetiklediği TEK tazeleme.
+   *
+   * <b>Yoklama DEĞİLDİR.</b> Zamanlayıcı yoktur; istek yalnızca sunucu "küme
+   * değişmiş olabilir" dediğinde yapılır. Uçuş hâlindeki bir okuma varken
+   * gelen sinyaller TEK bir ek okumaya indirgenir: aksi hâlde beş hattın aynı
+   * anda başlaması beş ardışık isteğe dönerdi.
+   */
+  const requestActiveRefresh = useCallback(async () => {
+    if (!canView || !discoverActive) return
+
+    if (activeRefreshInFlight.current) {
+      activeRefreshPending.current = true
+      return
+    }
+
+    activeRefreshInFlight.current = true
+    try {
+      do {
+        activeRefreshPending.current = false
+        await loadActiveSimulations()
+      } while (activeRefreshPending.current)
+    } finally {
+      activeRefreshInFlight.current = false
+    }
+  }, [canView, discoverActive, loadActiveSimulations])
+
+  /* Sinyal işleyicisi istemci kurulurken bağlanır ve o an oluşturulan kapanış
+     eskiyebilir; en güncel tazeleyici bir ref'te tutulur. */
+  useEffect(() => {
+    requestActiveRefreshRef.current = requestActiveRefresh
+  }, [requestActiveRefresh])
+
+  /* --- BOOTSTRAP SIRASI ---------------------------------------------------------
+     ÖNCE keşif kanalına katılınır, SONRA liste okunur. Sıra kritiktir:
+
+     - D, katılımdan ÖNCE başlamışsa listede gelir;
+     - D, katılımdan SONRA başlamışsa sinyali yakalanır ve tek bir tazeleme
+       yapılır;
+     - D, katılım ile yanıt arasında başlamışsa İKİSİ de olur ve birleştirme
+       kuralı tekrarı zaten eler.
+
+     Ters sıra (önce oku, sonra katıl) tam ortada bir KÖR PENCERE bırakırdı: o
+     aralıkta başlayan hat ne yanıtta olurdu ne de sinyali duyulurdu. */
+  useEffect(() => {
+    if (!canView || !discoverActive) return undefined
+
+    let cancelled = false
+
+    ;(async () => {
+      try {
+        await client().joinDiscovery()
+      } catch {
+        /* Keşif üyeliği kurulamadıysa liste yine de okunur: kullanıcı en
+           azından o anki gerçeği görür ve otomatik yeniden bağlanma üyeliği
+           tazeler. */
+        setActiveError('Canlı keşif kanalı kurulamadı. Yeniden bağlanılıyor…')
+      } finally {
+        syncSubscriptions()
+      }
+
+      if (!cancelled) await requestActiveRefresh()
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [canView, discoverActive, client, requestActiveRefresh, syncSubscriptions])
 
   const start = useCallback(async (targetRouteId) => {
     if (!targetRouteId || starting) return null
@@ -276,8 +469,31 @@ export default function useTransportSimulation({ routeId = null, canView = false
     failureMessage: 'Simülasyon sürdürülemedi.',
   }), [runTransition, resuming])
 
+  /**
+   * TAKİP ET. Kamera sahipliğini alır ve — gerekiyorsa — aracı GÖRÜNÜR KILAR.
+   *
+   * <b>Takip izlemeyi İMA EDER.</b> Faz 4A'da aktif bir aracın haritada
+   * görünmesinin TEK sahibi izleme seçimidir; kamera ise görünür bir araç
+   * ister. İkisini bağlamasaydık "Takip Et" izlenmeyen bir hatta basıldığında
+   * kullanıcıyı boş bir haritayı takip ederken bırakırdı.
+   *
+   * <b>Tersi DOĞRU DEĞİLDİR:</b> izlemek takip ettirmez, seçmek ne izletir ne
+   * takip ettirir.
+   *
+   * <b>Kimlik TETİKLEME anında dondurulur:</b> izleme kaydına o an ekranda
+   * duran çalıştırmanın kimliği yazılır, "bu hatta ne varsa" değil.
+   */
   const follow = useCallback(async (targetRouteId) => {
     if (!targetRouteId || !canView) return null
+
+    const target = byRoute[targetRouteId] ?? null
+    if (target && !isTerminalSimulationStatus(target.status)) {
+      setWatchedRuns((current) => ensureWatchedRun(current, {
+        routeId: targetRouteId,
+        simulationId: target.simulationId,
+      }))
+    }
+
     setFollowing(true)
     setError('')
     try {
@@ -294,7 +510,7 @@ export default function useTransportSimulation({ routeId = null, canView = false
     } finally {
       setFollowing(false)
     }
-  }, [applyState, canView, client, syncSubscriptions])
+  }, [applyState, byRoute, canView, client, syncSubscriptions])
 
   /* Takibi bırakmak yalnızca KAMERA sahipliğini geri verir; varsa pasif
      izleme aboneliği olduğu gibi kalır (istemci grup üyeliğini iki yuvanın
@@ -383,6 +599,47 @@ export default function useTransportSimulation({ routeId = null, canView = false
     })()
   }, [followingRouteId, byRoute, client, syncSubscriptions])
 
+  /* KAMERA YALNIZCA GÖRÜNÜR BİR ARACI TAKİP EDEBİLİR.
+     — İzlemeyi Bırak / İzlemeyi Temizle ile takip arasındaki TEK bağ budur.
+
+     Takip, izlemeyi İMA EDER (bkz. `follow`). Tersi yönde de bir tutarlılık
+     borcu doğar: kullanıcı takip ettiği aracı AÇIKÇA gizlerse — tek tek
+     "İzlemeyi Bırak" ya da toplu "İzlemeyi Temizle" ile — ekranda takip
+     edilecek hiçbir şey kalmaz. Kamera sahipliğini o durumda korumak,
+     "Takibi Bırak" düğmesinin görünmeye devam ettiği ama görünür aracın
+     olmadığı bir durum yaratır; harita da bir sonraki tick'te GÖRÜNMEYEN bir
+     aracın peşinde kaymaya devam ederdi.
+
+     Kural DEKLARATİFTİR ve TEK yerdedir: "İzlemeyi Bırak" ile "İzlemeyi
+     Temizle" düğmelerine ayrı ayrı takip bırakma kodu yazmak, ikisinin
+     zamanla ayrışması demekti. İzleme kaydı ne şekilde düşerse düşsün kural
+     aynı yerden işler.
+
+     İKİ ŞEYE DOKUNMAZ:
+     - ABONELİKLERE: çalıştırma hâlâ aktifse `activeLive` onu istemeye devam
+       eder, dolayısıyla gruptan ÇIKILMAZ ve liste canlı kalır.
+     - İZLEME KAYDINA: bu kural izleme yazmaz, yalnızca kamerayı okur.
+
+     TERMİNAL durum bu kuralın KONUSU DEĞİLDİR ve bilinçle dışarıda bırakılır:
+     onun kendi devir kuralı yukarıdadır ve gruptan çıkmamak için ÖNCE pasif
+     gözleme geçer. İkisi aynı anda çalışsaydı, terminal devir yarıda kalır ve
+     yerine geçecek B'nin ilk yayını kaçabilirdi. */
+  useEffect(() => {
+    if (followingRouteId == null) return
+
+    const followed = byRoute[followingRouteId] ?? null
+
+    // Terminal devir AYRI kuralın işidir; burada ona karışılmaz.
+    if (followed && isTerminalSimulationStatus(followed.status)) return
+
+    /* Takip edilen çalıştırma HÂLÂ izleniyorsa yapacak bir şey yok. Eşleşme
+       KİMLİK üzerindendir: aynı hatta yerine geçmiş bir çalıştırma, eskisi
+       için verilmiş takip kararını devralamaz. */
+    if (followed && watchedRuns[followingRouteId] === followed.simulationId) return
+
+    unfollow()
+  }, [followingRouteId, watchedRuns, byRoute, unfollow])
+
   /* Görüntüleme yetkisi düşerse canlı kanal da kapanır: arayüz, backend'in
      artık reddedeceği bir aboneliği sürdürmez. */
   useEffect(() => {
@@ -391,7 +648,81 @@ export default function useTransportSimulation({ routeId = null, canView = false
     clientRef.current = null
     setFollowingRouteId(null)
     setObservedRouteId(null)
+    setSubscribedRouteIds([])
+    /* Keşif sonuçları da bırakılır: yetkisi olmayan birinin ekranında hangi
+       hatların çalıştığı bilgisi ASILI KALMAZ. */
+    setWatchedRuns(clearWatchedRuns())
+    setActiveLoaded(false)
+    setActiveError('')
   }, [canView])
+
+  /* --- AKTİF KÜME: TÜRETİLİR, İKİNCİ BİR DEPO TUTULMAZ -------------------------
+     "Hangi hatlar aktif" sorusunun cevabı kanonik sözlükten OKUNUR. Ayrı bir
+     aktif liste durumu tutmak, aynı gerçeğin iki sahibi demekti: canlı bir
+     terminal olay birini güncelleyip diğerini güncellemeyebilirdi. */
+  const activeRouteIds = useMemo(() => activeRouteIdsOf(byRoute), [byRoute])
+
+  /* Fiziksel abonelik anahtarı: küme AYNI kaldığı sürece tek bir JoinRoute
+     bile üretilmez. */
+  const activeRouteKey = activeRouteIds.join(',')
+
+  /* AKTİF KÜME, ABONELİĞİN SAHİBİDİR — İZLEME DEĞİL.
+
+     Kullanıcının haritada hangi araçları çizdiği bir SUNUM kararıdır. İzleme
+     abonelik sahibi olsaydı, izlenmeyen aktif satırlar donar ve listede bayat
+     bir ilerleme gösterirdi; oysa liste TÜM aktif çalıştırmalar için otoriter
+     durum ve ilerleme göstermelidir.
+
+     Fiziksel üyelik takip + gözlem + aktif küme BİRLEŞİMİDİR; istemci bunu
+     zaten tekilleştirir, bu yüzden burada ikinci bir kayıt tutulmaz. */
+  useEffect(() => {
+    if (!canView || !discoverActive) return
+
+    ;(async () => {
+      try {
+        await client().setActiveLiveRoutes(activeRouteIds)
+      } catch {
+        setActiveError('Canlı bağlantı kurulamadı. Yeniden bağlanılıyor…')
+      } finally {
+        syncSubscriptions()
+      }
+    })()
+    // Küme kimliği bir dizeye indirgenir: aynı küme yeniden abone edilmez.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canView, discoverActive, activeRouteKey, client, syncSubscriptions])
+
+  /* İZLEME SEÇİMİ SUNUCU GERÇEĞİYLE UZLAŞTIRILIR.
+
+     Biten çalıştırma izleme listesinden düşer (ölü işaretçi haritada
+     kalmaz) ve yerine geçen B eski kararı DEVRALMAZ — kullanıcı onu ayrıca
+     izlemeye almalıdır. */
+  useEffect(() => {
+    setWatchedRuns((current) => reconcileWatchedRuns(current, byRoute))
+  }, [byRoute])
+
+  /** İZLE / İZLEMEYİ BIRAK. Simülasyona DOKUNMAZ; yalnızca sunum. */
+  const toggleWatch = useCallback((targetRouteId) => {
+    setWatchedRuns((current) => {
+      const state = byRoute[targetRouteId] ?? null
+      return toggleWatchedRun(current, {
+        routeId: targetRouteId,
+        // Niyet TETİKLEME anındaki çalıştırmaya bağlanır.
+        simulationId: state?.simulationId ?? null,
+      })
+    })
+  }, [byRoute])
+
+  /** TÜMÜNÜ İZLE: yalnızca O ANDA aktif olanlar; sonrakiler otomatik gelmez. */
+  const watchAll = useCallback(() => {
+    setWatchedRuns(watchAllActiveRuns(byRoute))
+  }, [byRoute])
+
+  /** İZLEMEYİ TEMİZLE: işaretçiler gider, simülasyonlar ÇALIŞMAYA DEVAM EDER. */
+  const clearWatch = useCallback(() => {
+    setWatchedRuns(clearWatchedRuns())
+  }, [])
+
+  const watchedRouteIds = useMemo(() => watchedRouteIdsOf(watchedRuns), [watchedRuns])
 
   /* Seçili rotanın durumu Faz 3 denetimlerini besler; takip edilen rotanınki
      canlı aracın sahibidir. İkisi AYNI olmak zorunda değildir. */
@@ -446,6 +777,21 @@ export default function useTransportSimulation({ routeId = null, canView = false
     observedSimulation,
     followingRouteId,
     observedRouteId,
+    /* KANONİK sözlük dışarı verilir: aktif liste, işaretçiler ve seçili hat
+       AYNI durumu okur; ikinci bir simülasyon deposu yoktur. */
+    byRoute,
+    activeRouteIds,
+    subscribedRouteIds,
+    watchedRuns,
+    watchedRouteIds,
+    toggleWatch,
+    watchAll,
+    clearWatch,
+    activeLoading,
+    activeLoaded,
+    activeError,
+    /** Keşif okumasının ELLE tetiklenmesi (hata sonrası "Yeniden dene"). */
+    reloadActive: requestActiveRefresh,
     statusLoading,
     starting,
     stopping,

@@ -127,6 +127,17 @@ export default function JourneyPlannerPanel({
   onStopShared,
   onFollowShared,
   onUnfollowShared,
+  /* AKTİF SİMÜLASYONLAR (Faz 4A). Sunum modelini saf `activeSimulations`
+     modülü üretir; panel yalnızca aktarır ve içinde ikinci bir durum makinesi
+     kurmaz. Liste bir YÖNETİM yüzeyi değildir — satırlarda yaşam döngüsü
+     düğmesi yoktur. */
+  activeSimulations = null,
+  onActiveSearchChange,
+  onSelectActiveRoute,
+  onToggleWatch,
+  onWatchAll,
+  onClearWatch,
+  onRetryActive,
   poiSearch = null,
   onModeChange,
   onProfileChange,
@@ -288,6 +299,13 @@ export default function JourneyPlannerPanel({
           onStop={onStopShared}
           onFollow={onFollowShared}
           onUnfollow={onUnfollowShared}
+          active={activeSimulations}
+          onActiveSearchChange={onActiveSearchChange}
+          onSelectActiveRoute={onSelectActiveRoute}
+          onToggleWatch={onToggleWatch}
+          onWatchAll={onWatchAll}
+          onClearWatch={onClearWatch}
+          onRetryActive={onRetryActive}
         />
       )}
 

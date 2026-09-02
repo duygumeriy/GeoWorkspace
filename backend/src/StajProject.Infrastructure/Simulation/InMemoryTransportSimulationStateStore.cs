@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Collections.ObjectModel;
 using StajProject.Application.Simulation;
 
 namespace StajProject.Infrastructure.Simulation;
@@ -38,8 +39,14 @@ public sealed class InMemoryTransportSimulationStateStore : ITransportSimulation
 
     /* ConcurrentDictionary'nin değer görüntüsü kilit almadan alınır ve
        gezinirken değişebilir; runner zaten her yazmada kimlik denetimi
-       yaptığı için tutarlı bir "an" gerekmez. */
-    public IReadOnlyList<ActiveTransportSimulation> Active() => [.. _active.Values];
+       yaptığı için tutarlı bir "an" gerekmez.
+
+       Dönen liste SALT OKUNUR bir sarmalayıcıdır ve iç sözlüğün kendisi
+       DEĞİLDİR. Aktif keşif ucu bu görüntüyü doğrudan okuyacağı için önemi
+       arttı: çağıran bir liste alıp ona ekleme/çıkarma yapabilseydi, "aktif
+       küme" kavramının depo dışında ikinci bir sahibi doğardı. */
+    public IReadOnlyList<ActiveTransportSimulation> Active() =>
+        new ReadOnlyCollection<ActiveTransportSimulation>([.. _active.Values]);
 
     public bool TryUpdateSnapshot(int routeId, Guid simulationId, TransportSimulationSnapshot snapshot)
     {

@@ -1,31 +1,42 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import {
   createTransportVehicleLayer,
   findTransportVehicleAtPixel,
-  syncTransportVehicleFeature,
+  syncTransportVehicleFeatures,
   vehicleCameraTarget,
+  vehicleFeatureId,
 } from '../map/transportVehicle.js'
 
 /**
- * Canlı aracı MEVCUT haritaya ekler ve kamerayı yönetir.
+ * Canlı araçları MEVCUT haritaya ekler ve kamerayı yönetir.
  *
  * <b>İkinci bir harita ya da paralel bir ulaşım katman sistemi kurulmaz:</b>
  * kanca, <code>useTransportLayer</code> ile aynı <code>map</code> örneğine tek
  * bir vektör katmanı ekler ve söküldüğünde geri alır. Kararların tamamı saf
  * <code>transportVehicle.js</code> fonksiyonlarındadır; burada yalnızca
  * OpenLayers yan etkileri var.
+ *
+ * <b>Araç ÇOĞULDUR (Faz 4A).</b> Kullanıcı aynı anda birçok hattı izleyebilir;
+ * kanca "tek bir global araç" varsayımını taşımaz. Feature yaşam döngüsü
+ * ANAHTARLI uzlaştırmayla yürür (rota + çalıştırma): eklenen eklenir,
+ * güncellenen taşınır, istenmeyen kaldırılır — biriktirme de her karede
+ * yeniden yaratma da yoktur.
+ *
+ * <b>Kamera EN FAZLA bir araçtadır.</b> Görünürlük ile kamera sahipliği ayrı
+ * sorulardır: <code>followCamera</code> taşımayan araçlar tam olarak aynı
+ * canlılıkla çizilmeye devam eder.
  */
 export default function useTransportVehicleLayer(map, {
-  presentation = null,
+  presentations = [],
   cameraDuration = 400,
   onVehicleClick = null,
   /**
    * Tıklama/balon sahipliği.
    *
-   * Yalnızca İSABET DENETİMİNİ kapatır: katman, aracın çizimi, canlı
+   * Yalnızca İSABET DENETİMİNİ kapatır: katman, araçların çizimi, canlı
    * güncellemeler ve takip kamerası bu bayraktan HİÇ etkilenmez. Harita
-   * tıklamasının sahibi başka bir kipken (yolculuk noktası seçimi) aracı
-   * gizlemek ya da akışını durdurmak, tıklamayı susturmaktan tamamen farklı
+   * tıklamasının sahibi başka bir kipken (yolculuk noktası seçimi) araçları
+   * gizlemek ya da akışlarını durdurmak, tıklamayı susturmaktan tamamen farklı
    * bir şey olurdu.
    */
   clickEnabled = true,
@@ -51,28 +62,38 @@ export default function useTransportVehicleLayer(map, {
     }
   }, [map])
 
-  /* Feature yaşam döngüsü: tek kural, tek yazma yolu. Sunum null olduğunda
-     (takip bırakıldı, rota değişti, sahiplik düştü) kaynak temizlenir —
-     hayalet araç kalmaz. */
+  /* Feature yaşam döngüsü: tek kural, tek yazma yolu. Liste boşaldığında
+     (izleme temizlendi, hepsi terminal oldu) kaynak da boşalır — hayalet araç
+     kalmaz. */
   useEffect(() => {
-    syncTransportVehicleFeature(sourceRef.current, presentation)
+    syncTransportVehicleFeatures(sourceRef.current, presentations)
     layerRef.current?.changed()
-  }, [presentation])
+  }, [presentations])
+
+  /* KAMERA sahibi EN FAZLA bir araçtır. Diğer araçların varlığı, hareketi ve
+     canlılığı bu seçimden HİÇ etkilenmez. */
+  const followed = useMemo(
+    () => (Array.isArray(presentations) ? presentations : [])
+      .find((presentation) => presentation?.followCamera) ?? null,
+    [presentations],
+  )
 
   useEffect(() => {
-    if (!map || !presentation?.followCamera) {
-      // Takip bırakıldığında kamera ANINDA serbest kalır.
+    if (!map || !followed) {
+      // Takip bırakıldığında kamera ANINDA serbest kalır; araçlar kalır.
       followedSimulationRef.current = null
       return
     }
 
     const view = map.getView()
-    const feature = sourceRef.current?.getFeatures()[0]
+    const feature = sourceRef.current?.getFeatureById(
+      vehicleFeatureId(followed.routeId, followed.simulationId),
+    )
     const coordinate = feature?.getGeometry?.()?.getCoordinates?.()
     if (!coordinate) return
 
-    const firstFrame = followedSimulationRef.current !== presentation.simulationId
-    followedSimulationRef.current = presentation.simulationId
+    const firstFrame = followedSimulationRef.current !== followed.simulationId
+    followedSimulationRef.current = followed.simulationId
 
     /* İlk karede araç merkeze alınır (kullanıcı takibe yeni başladı);
        sonrasında yalnızca güvenli kutunun DIŞINA çıktığında kaydırılır.
@@ -93,11 +114,15 @@ export default function useTransportVehicleLayer(map, {
     view.animate({ center: target, duration: cameraDuration }, () => {
       animatingRef.current = false
     })
-  }, [map, presentation, cameraDuration])
+  }, [map, followed, cameraDuration])
 
   /* İsteğe bağlı isabet denetimi: yalnızca bir işleyici verilirse kaydedilir,
      böylece yönetim haritasının KENDİ mevcut tıklama dalı olduğu gibi kalır ve
-     hiçbir ekranda ikinci bir dinleyici oluşmaz. */
+     hiçbir ekranda ikinci bir dinleyici oluşmaz.
+
+     Tıklanan feature'ın KENDİ sunumu verilir — küresel bir "seçili araç"
+     DEĞİL. Birden fazla işaretçi varken küresel bir model, hangisine
+     tıklanırsa tıklansın aynı balonu açardı. */
   useEffect(() => {
     if (!map || !clickEnabled || typeof onVehicleClick !== 'function') return undefined
     const handleClick = (event) => {

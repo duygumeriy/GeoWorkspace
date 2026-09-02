@@ -63,6 +63,37 @@ public sealed class TransportSimulationController : ApiControllerBase
         Guard(nameof(GetActive), async () => Respond(await _simulations.GetActiveAsync(routeId, cancellationToken)));
 
     /// <summary>
+    /// O anda AKTİF olan TÜM paylaşılan çalıştırmalar (Çalışıyor + Duraklatıldı).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Yetki OKUMA yetkisidir: <c>transport.view</c>.</b> Çalışan hatları
+    /// GÖRMEK, onları başlatabilmek ya da durdurabilmekle aynı yetenek
+    /// değildir. Buraya <c>transport.simulation.start</c> ya da
+    /// <c>transport.simulation.stop</c> koymak, sıradan bir izleyicinin
+    /// haritada canlı hatları hiç görememesi demek olurdu — üstelik komşu okuma
+    /// ucu (<see cref="GetActive"/>) zaten <c>transport.view</c> istiyor.
+    /// </para>
+    /// <para>
+    /// <b>Yol rota öneki TAŞIMAZ</b> çünkü bu okuma tek bir rotaya ait
+    /// değildir. Süzgeç, sayfalama ve arama parametresi de YOKTUR: aktif küme
+    /// süreç içi ve doğası gereği küçüktür; arama bir SUNUM kararıdır ve
+    /// istemcide yapılır — ikinci bir arama ucu, aynı listenin iki farklı
+    /// tanımına açık kapı bırakırdı.
+    /// </para>
+    /// <para>
+    /// <b>İş kuralı burada YOKTUR:</b> aktiflik tanımı ve sıralama servistedir.
+    /// </para>
+    /// </remarks>
+    [HttpGet("active")]
+    [RequirePermission(PermissionCodes.TransportView)]
+    public Task<ActionResult<IReadOnlyList<TransportSimulationResponse>>> GetActiveSimulations() =>
+        Guard<IReadOnlyList<TransportSimulationResponse>>(
+            nameof(GetActiveSimulations),
+            () => Task.FromResult<ActionResult<IReadOnlyList<TransportSimulationResponse>>>(
+                Ok(_simulations.GetActiveSimulations())));
+
+    /// <summary>
     /// Hattaki BELİRLİ bir çalıştırmayı herkes için durdurur.
     /// </summary>
     /// <remarks>

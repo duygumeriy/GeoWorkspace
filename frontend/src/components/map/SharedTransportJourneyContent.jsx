@@ -1,4 +1,19 @@
+import { useState } from 'react'
 import { formatRouteDistance, formatRouteDuration } from '../../map/transportPathPresentation.js'
+import ActiveSimulationsList from './ActiveSimulationsList.jsx'
+
+/**
+ * Paylaşılan bölümün İKİ görünümü.
+ *
+ * Bunlar ürün sekmesi DEĞİLDİR (o eksen "Kendi Yolculuğum / Hat Simülasyonu"
+ * ayrımıdır): aynı ürünün iki bakışıdır — seçili hattın ayrıntısı ve o anda
+ * çalışan tüm hatların listesi. Görünüm değiştirmek hiçbir simülasyona,
+ * izleme seçimine ya da aboneliğe dokunmaz.
+ */
+const SHARED_VIEWS = Object.freeze({
+  SELECTED: 'selected',
+  ACTIVE: 'active',
+})
 
 /**
  * Çalışma alanının PAYLAŞILAN HAT bölümü.
@@ -39,10 +54,71 @@ export default function SharedTransportJourneyContent({
   onStop,
   onFollow,
   onUnfollow,
+  /* AKTİF SİMÜLASYONLAR (Faz 4A). Bölüm seçili hattan BAĞIMSIZDIR: hiç hat
+     seçilmemişken bile çalışan hatlar listelenebilmelidir. */
+  active = null,
+  onActiveSearchChange,
+  onSelectActiveRoute,
+  onToggleWatch,
+  onWatchAll,
+  onClearWatch,
+  onRetryActive,
 }) {
+  /* Görünüm tercihi tamamen SUNUMDUR ve bu yüzden burada yaşar: yukarı
+     taşımak, MapPage'e hiçbir karar taşımayan bir durum daha eklerdi. */
+  const [view, setView] = useState(SHARED_VIEWS.SELECTED)
+  const showingActive = Boolean(active) && view === SHARED_VIEWS.ACTIVE
+
+  const tabs = active
+    ? (
+      <div className="journey-shared-views" role="group" aria-label="Paylaşılan hat görünümü">
+        <button
+          type="button"
+          aria-pressed={!showingActive}
+          className={`journey-product-tab ${!showingActive ? 'is-active' : ''}`.trim()}
+          onClick={() => setView(SHARED_VIEWS.SELECTED)}
+        >
+          Seçili Hat
+        </button>
+        <button
+          type="button"
+          aria-pressed={showingActive}
+          className={`journey-product-tab ${showingActive ? 'is-active' : ''}`.trim()}
+          onClick={() => setView(SHARED_VIEWS.ACTIVE)}
+        >
+          {/* Sayaç bir ROZET değil, listenin büyüklüğüdür; sıfırken de
+              doğrudur ve sahte bir "yeni" vaadi taşımaz. */}
+          Aktif Simülasyonlar ({active.totalCount})
+        </button>
+      </div>
+    )
+    : null
+
+  const activeSection = (
+    <ActiveSimulationsList
+      active={active}
+      onSearchChange={onActiveSearchChange}
+      onSelectRoute={onSelectActiveRoute}
+      onToggleWatch={onToggleWatch}
+      onWatchAll={onWatchAll}
+      onClearWatch={onClearWatch}
+      onRetry={onRetryActive}
+    />
+  )
+
+  if (showingActive) {
+    return (
+      <div className="journey-body journey-shared">
+        {tabs}
+        {activeSection}
+      </div>
+    )
+  }
+
   if (!shared) {
     return (
       <div className="journey-body journey-shared">
+        {tabs}
         <p className="journey-note" role="status">
           Canlı durumunu görmek için haritadan bir hat seçin.
         </p>
@@ -52,6 +128,7 @@ export default function SharedTransportJourneyContent({
 
   return (
     <div className="journey-body journey-shared">
+      {tabs}
       <div className="journey-shared-route">
         {shared.routeColor && (
           <span

@@ -482,11 +482,88 @@ test('terminal follow is transferred to passive observation, never left', () => 
   assert.ok(transfer.includes('releasedFollowRef.current === followed.simulationId'))
 })
 
-test('the client only leaves a group when no slot still wants it', () => {
+test('the client only leaves a group when no owner still wants it', async () => {
   /* Devrin gruptan çıkmadan çalışabilmesinin YAPISAL nedeni: istemci
-     "diğer yuva da istiyorsa ayrılma" kuralını uygular. */
+     "başka bir sahip de istiyorsa ayrılma" kuralını uygular.
+
+     İddia artık KAYNAK METİNDEN değil DAVRANIŞTAN okunur: kural hangi satırla
+     yazıldığından bağımsız olarak doğru kalmalıdır. */
+  const { client, calls } = fakeClient()
+
+  // İKİ sahip (aktif küme + gözlem) AYNI rotayı ister → TEK fiziksel üyelik.
+  await client.setActiveLiveRoutes([ROUTE_R])
+  await client.observe(ROUTE_R)
+
+  assert.deepEqual(calls, [`${JOIN_ROUTE_METHOD}(${ROUTE_R})`], 'çift üyelik üretildi')
+  assert.deepEqual(client.joinedRouteIds, [ROUTE_R])
+  assert.deepEqual(client.subscribedRouteIds, [ROUTE_R])
+
+  /* Aktif küme rotayı bırakır (çalıştırma bitti) ama SEÇİLİ GÖZLEM hâlâ
+     istiyor → gruptan ÇIKILMAZ. Çıkılsaydı aynı hatta başlayacak yeni
+     çalıştırmanın ilk yayını sayfaya hiç ulaşmazdı. */
+  calls.length = 0
+  await client.setActiveLiveRoutes([])
+
+  assert.deepEqual(calls, [], `sahip varken ${LEAVE_ROUTE_METHOD} çağrıldı`)
+  assert.deepEqual(client.joinedRouteIds, [ROUTE_R], 'üyelik sahibi varken düşürüldü')
+  assert.deepEqual(client.subscribedRouteIds, [ROUTE_R])
+
+  // SON sahip de bırakınca TAM OLARAK bir kez çıkılır.
+  await client.stopObserving()
+
+  assert.deepEqual(calls, [`${LEAVE_ROUTE_METHOD}(${ROUTE_R})`])
+  assert.deepEqual(client.joinedRouteIds, [])
+  assert.deepEqual(client.subscribedRouteIds, [])
+
+  // Ve ikinci bir bırakma boş bir çağrı üretmez: geçişler idempotenttir.
+  calls.length = 0
+  await client.stopObserving()
+  assert.deepEqual(calls, [])
+})
+
+test('logical ownership decides WANT; a separate ledger proves the JOIN', () => {
+  /* Bu ayrım GERÇEK bir tarayıcı arızasından doğdu: bir sahibin "R'yi
+     istiyorum" İDDİASI, başka bir sahibin katılım KANITI sayılıyordu. Katılım
+     başarısız olduğunda (ya da yeniden bağlanmada kaybolduğunda) iddia
+     yerinde kalıyor, sonraki her katılım "zaten katıldım" diye atlanıyor ve
+     hat sessizce donuyordu — ekranı yalnızca REST yanıtları güncelliyordu. */
+
+  // AYRILMA kararı hâlâ MANTIKSAL sahipliğe bakar: "başka isteyen var mı?"
   assert.ok(CLIENT.includes('if (!isSubscribed(previous)) await leaveQuietly(previous)'))
-  assert.ok(CLIENT.includes('if (isSubscribed(target))'))
+
+  // KATILMA kararı ise FİZİKSEL deftere bakar: "gerçekten girdik mi?"
+  assert.ok(CLIENT.includes('const joinedRoutes = new Set()'), 'fiziksel üyelik defteri yok')
+  assert.match(CLIENT, /if \(joinedRoutes\.has\(target\)\) \{/)
+  assert.match(CLIENT, /const alreadyJoined = joinedRoutes\.has\(routeId\)/)
+
+  // Defter ANCAK sunucu onayladıktan SONRA yazılır.
+  assert.ok(CLIENT.includes('const joinRouteOnce'), 'katılım ilkeli yok')
+  assert.ok(CLIENT.includes('const reconcileMemberships'), 'uzlaştırma yok')
+  const joinOnce = CLIENT.slice(
+    CLIENT.indexOf('const joinRouteOnce'),
+    CLIENT.indexOf('const reconcileMemberships'),
+  )
+  assert.ok(
+    joinOnce.indexOf('await connection.invoke(JOIN_ROUTE_METHOD, routeId)')
+      < joinOnce.indexOf('joinedRoutes.add(routeId)'),
+    'üyelik, katılım çözülmeden deftere yazılıyor',
+  )
+
+  /* GERİLEME KORUMASI: bir İDDİA bir daha katılım kanıtı sayılamaz. */
+  assert.ok(!CLIENT.includes('if (isSubscribed(target))'), 'iddia yeniden katılım kanıtı olmuş')
+  assert.ok(!CLIENT.includes('const alreadyJoined = isSubscribed(routeId)'))
+
+  /* Yeniden bağlanmada sunucu tüm grupları düşürür: defter ÖNCE sıfırlanır,
+     SONRA istenen her rota yeniden kurulur. Ters sıra, artık var olmayan
+     üyelikleri doğru sanmak olurdu. */
+  const reconnect = CLIENT.slice(
+    CLIENT.indexOf('connection.onreconnected'),
+    CLIENT.indexOf('if (!startPromise)'),
+  )
+  assert.ok(
+    reconnect.indexOf('joinedRoutes.clear()') < reconnect.indexOf('reconcileMemberships()'),
+    'yeniden bağlanmada defter sıfırlanmadan yeniden katılınıyor',
+  )
 })
 
 /* --- 16/17/18. Gerçek gözlem olayları hâlâ grubu bırakır ---------------------- */

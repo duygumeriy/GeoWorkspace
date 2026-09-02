@@ -23,6 +23,10 @@ export const TRANSPORT_VEHICLE_LAYER_CLASSNAME = 'transport-vehicle-layer'
 export const VEHICLE_OWNERSHIP = Object.freeze({
   FOLLOW: 'follow',
   START: 'start',
+  /* KULLANICININ AÇIK İZLEME SEÇİMİ (Faz 4A). Aynı anda BİRÇOK araç bu
+     sahiplikle ekranda olabilir; kamera talep etmez ve seçimden bağımsızdır.
+     "Seçili hattın aracı" ile karıştırılmamalıdır. */
+  WATCH: 'watch',
   /* SEÇİLİ rotanın PASİF gözlemi. Kamera talep etmez ama aracı ekranda
      tutar: "Takibi Bırak" yalnızca kamerayı bırakır — aracı haritadan
      silmez. Bu sahiplik olmasaydı, takibi bırakan kullanıcı hâlâ seçili ve
@@ -32,6 +36,36 @@ export const VEHICLE_OWNERSHIP = Object.freeze({
 
 const FALLBACK_COLOR = '#2563EB'
 const vehicleStyles = new Map()
+
+/**
+ * Araç VURGUSU: aynı anda birçok araç görünürken hangisinin bağlamda olduğunu
+ * anlatır.
+ *
+ * <b>Vurgu GÖRÜNÜRLÜK değildir.</b> Seçim değiştiğinde hiçbir izlenen araç
+ * kaybolmaz; yalnızca hangisinin öne çıktığı değişir. Bu yüzden kısık vurgu
+ * "neredeyse görünmez" değil, okunabilir biçimde geri çekilmiş demektir.
+ */
+export const VEHICLE_EMPHASIS = Object.freeze({
+  FULL: 'full',
+  MUTED: 'muted',
+})
+
+/* Kısık vurgunun ölçüleri. Görsel kimlik BU FAZDA değişmez: aynı halka, aynı
+   çekirdek, yalnızca saydamlık ve ölçek geri çekilir.
+
+   Saydamlık RENGE yazılır, ayrı bir opaklık özelliğine değil: OpenLayers'ta
+   `Style` bir opaklık seçeneği taşımaz ve daire sembolünde opaklığı ayrıca
+   ayarlamak, stilin önbelleklenebilir saf bir değer olmaktan çıkması demekti.
+   Sekiz haneli renk gösterimi (#RRGGBBAA) projenin zaten kullandığı biçimdir
+   (bkz. halkanın #FFFFFFEE dolgusu). */
+const MUTED_ALPHA = 'A6'
+const MUTED_HALO_FILL = '#FFFFFF99'
+const MUTED_CORE_STROKE = '#FFFFFFB3'
+const MUTED_SCALE = 0.8
+
+function withMutedAlpha(color) {
+  return `${color}${MUTED_ALPHA}`
+}
 
 function safeColor(value) {
   return /^#[0-9A-F]{6}$/i.test(value ?? '') ? value.toUpperCase() : FALLBACK_COLOR
@@ -45,26 +79,35 @@ function safeColor(value) {
  * Yeni bir ikon kütüphanesi EKLENMEZ — projenin OpenLayers stil primitifleri
  * kullanılır (bkz. transport.js).
  */
-function vehicleStyle(colorHex, live = true) {
+function vehicleStyle(colorHex, live = true, emphasis = VEHICLE_EMPHASIS.FULL) {
   const color = safeColor(colorHex)
-  const key = `${color}:${live ? 'live' : 'idle'}`
+  const muted = emphasis === VEHICLE_EMPHASIS.MUTED
+  const key = `${color}:${live ? 'live' : 'idle'}:${muted ? 'muted' : 'full'}`
+
   if (!vehicleStyles.has(key)) {
+    /* Kısık araçlar SEÇİLİ olanın ALTINDA çizilir: üst üste gelen iki araçta
+       kullanıcının bağlamdaki olanı görmesi gerekir. */
+    const zBase = muted ? 56 : 60
+    const scale = muted ? MUTED_SCALE : 1
+    const ring = muted ? withMutedAlpha(color) : color
+    const core = muted ? withMutedAlpha(color) : color
+
     vehicleStyles.set(key, [
       new Style({
         image: new CircleStyle({
-          radius: 15,
-          fill: new Fill({ color: '#FFFFFFEE' }),
-          stroke: new Stroke({ color, width: 3, lineDash: live ? undefined : [3, 3] }),
+          radius: 15 * scale,
+          fill: new Fill({ color: muted ? MUTED_HALO_FILL : '#FFFFFFEE' }),
+          stroke: new Stroke({ color: ring, width: 3, lineDash: live ? undefined : [3, 3] }),
         }),
-        zIndex: 60,
+        zIndex: zBase,
       }),
       new Style({
         image: new CircleStyle({
-          radius: 7,
-          fill: new Fill({ color }),
-          stroke: new Stroke({ color: '#FFFFFF', width: 2 }),
+          radius: 7 * scale,
+          fill: new Fill({ color: core }),
+          stroke: new Stroke({ color: muted ? MUTED_CORE_STROKE : '#FFFFFF', width: 2 }),
         }),
-        zIndex: 61,
+        zIndex: zBase + 1,
       }),
     ])
   }
@@ -84,13 +127,26 @@ export function createTransportVehicleLayer() {
     className: TRANSPORT_VEHICLE_LAYER_CLASSNAME,
     // Durak (5-30) ve rota (0-22) zIndex aralıklarının ÜSTÜNDE.
     zIndex: 60,
-    style: (feature) => vehicleStyle(feature.get('colorHex'), feature.get('isLive') !== false),
+    style: (feature) => vehicleStyle(
+      feature.get('colorHex'),
+      feature.get('isLive') !== false,
+      feature.get('emphasis') ?? VEHICLE_EMPHASIS.FULL,
+    ),
   })
   return { source, layer }
 }
 
-export function vehicleFeatureId(simulationId) {
-  return `transport-vehicle-${simulationId}`
+/**
+ * Araç feature'ının KİMLİĞİ: rota VE çalıştırma.
+ *
+ * <b>Yalnızca rota anahtarlamak yetmez</b> — A biter, aynı hatta B başlarsa
+ * eski feature yeni çalıştırmanın kimliğini devralır ve haritada "hayalet"
+ * bir süreklilik doğardı. <b>Yalnızca çalıştırma anahtarlamak da eksiktir:</b>
+ * kimliğin hangi hatta ait olduğu feature'ın kendisinden okunabilmelidir;
+ * uzlaştırma, tıklama ve balon aynı çifti kullanır.
+ */
+export function vehicleFeatureId(routeId, simulationId) {
+  return `transport-vehicle-${routeId}-${simulationId}`
 }
 
 function finiteNumber(value) {
@@ -195,6 +251,10 @@ export function transportVehiclePresentation({
     updatedAtUtc: simulation.updatedAtUtc ?? null,
     ownership,
     isTerminal: terminal,
+    /* Tek araçlı sunumda vurgu her zaman TAMDIR: kısık vurgu ancak birden
+       fazla izlenen araç varken bir şey anlatır. */
+    isSelected: selected !== null && selected === routeId,
+    emphasis: VEHICLE_EMPHASIS.FULL,
     /* Canlı = rotanın yayınına ABONE olunuyor (takip ya da pasif izleme) VE
        çalıştırma henüz bitmemiş. Aboneliksiz bir REST anlık görüntüsünü
        canlıymış gibi göstermek kullanıcıyı yanıltırdı. */
@@ -206,57 +266,258 @@ export function transportVehiclePresentation({
 }
 
 /**
- * Kaynakta HER ZAMAN en fazla bir araç feature'ı bırakır.
+ * İZLENEN aktif çalıştırmaların araç sunumları (Faz 4A).
  *
- * Aynı çalıştırma sürerken feature yeniden YARATILMAZ, yalnızca geometrisi
- * güncellenir: her tick'te silip eklemek hem seçim/isabet durumunu hem de
- * olası bir açık popup'ın bağlandığı nesneyi koparırdı. Çalıştırma kimliği ya
- * da rota değişirse eski feature kaldırılır — hayalet araç kalmaz.
+ * <b>Görünürlüğün sahibi İZLEME SEÇİMİDİR</b> — seçim, takip ya da "en son ben
+ * başlattım" değil. Kullanıcı aynı anda birçok hattı izleyebilir; hepsi
+ * ekranda durur.
  *
- * @returns {import('ol/Feature.js').default|null} güncel feature
+ * <b>Kimlik eşleşmesi ZORUNLUDUR.</b> İzleme kaydı rota anahtarlıdır ama
+ * DEĞERİ çalıştırma kimliğidir: A biter ve aynı hatta B başlarsa, B kullanıcının
+ * hiç vermediği bir kararla izleniyor sayılamaz.
+ *
+ * <b>Canlılık ABONELİĞE bağlıdır.</b> Aktif küme sahipliği tüm aktif rotalara
+ * abone olduğu için izlenen her araç normalde canlıdır; abonelik kurulamamışsa
+ * araç canlı DİYE sunulmaz.
+ *
+ * <b>Vurgu SEÇİMDEN gelir</b> ve yalnızca vurgudur: seçim değiştiğinde hiçbir
+ * araç kaybolmaz.
+ *
+ * <b>Kamera EN FAZLA bir araçtadır</b> ve yalnızca açık <i>Takip Et</i> ile
+ * gelir. Takibi bırakmak hiçbir aracı silmez ve hiçbir veriyi dondurmaz.
  */
-export function syncTransportVehicleFeature(source, presentation) {
-  if (!source) return null
+export function transportWatchedVehiclePresentations({
+  byRoute = {},
+  watchedRuns = {},
+  selectedRouteId = null,
+  followingRouteId = null,
+  subscribedRouteIds = [],
+  routes = [],
+} = {}) {
+  const selected = finiteNumber(selectedRouteId)
+  const following = finiteNumber(followingRouteId)
+  const subscribed = new Set(
+    (Array.isArray(subscribedRouteIds) ? subscribedRouteIds : [])
+      .map(finiteNumber)
+      .filter((routeId) => routeId !== null),
+  )
 
-  if (!presentation) {
-    source.clear()
-    return null
+  const result = []
+
+  for (const key of Object.keys(watchedRuns)) {
+    const routeId = finiteNumber(key)
+    if (routeId === null) continue
+
+    const simulation = byRoute[routeId] ?? null
+    if (!simulation) continue
+
+    // Yerine geçen çalıştırma eski izleme niyetini DEVRALMAZ.
+    if (simulation.simulationId !== watchedRuns[key]) continue
+
+    // Biten çalıştırmanın aracı haritada BIRAKILMAZ.
+    if (isTerminalSimulationStatus(simulation.status)) continue
+
+    const longitude = finiteNumber(simulation.longitude)
+    const latitude = finiteNumber(simulation.latitude)
+    if (longitude === null || latitude === null) continue
+
+    const route = routes.find((candidate) => finiteNumber(candidate?.id) === routeId) ?? null
+    const isSelected = selected !== null && selected === routeId
+    const isFollowed = following !== null && following === routeId
+
+    result.push(Object.freeze({
+      simulationId: simulation.simulationId,
+      routeId,
+      routeName: route?.name ?? null,
+      colorHex: safeColor(route?.colorHex),
+      status: simulation.status,
+      statusLabel: simulationStatusLabel(simulation.status),
+      progressPercent: simulation.progressPercent,
+      longitude,
+      latitude,
+      updatedAtUtc: simulation.updatedAtUtc ?? null,
+      ownership: VEHICLE_OWNERSHIP.WATCH,
+      isTerminal: false,
+      isSelected,
+      /* Duraklatılmış araç GÖRÜNÜR ve donmuş koordinatında durur: duraklatma
+         terminal değildir ve "kayboldu" ile karıştırılmamalıdır. */
+      isLive: subscribed.has(routeId),
+      emphasis: isSelected ? VEHICLE_EMPHASIS.FULL : VEHICLE_EMPHASIS.MUTED,
+      followCamera: isFollowed,
+    }))
   }
 
-  const coordinate = fromLonLat([presentation.longitude, presentation.latitude])
-  const existing = source.getFeatureById(vehicleFeatureId(presentation.simulationId))
+  /* Sıra deterministiktir: aynı kümenin her render'da aynı dizilimi, feature
+     uzlaştırmasında gereksiz farkları önler. */
+  return result.sort((left, right) => left.routeId - right.routeId)
+}
 
-  // Kimliği eşleşmeyen her şey (eski çalıştırma, eski rota) gider.
+/**
+ * BAŞLATANIN son konumu: yalnızca BİTMİŞ bir çalıştırma için (eski, kabul
+ * edilmiş dar davranış).
+ *
+ * <b>Neden AYRI bir fonksiyon.</b> Bu sunum AKTİF araç koleksiyonuna AİT
+ * DEĞİLDİR ve ona karışmamalıdır. Aynı fonksiyon hem "başlatanın bitmiş
+ * çalıştırması" hem de "seçili hattın canlı aracı" üretmeye devam etseydi,
+ * çizim listesi son satırda bir sahiplik dizesine göre süzülmek zorunda
+ * kalırdı — yani sınır kodda değil, temizlikte kurulurdu. Sınır burada,
+ * SUNUM DÜZEYİNDE kurulur.
+ *
+ * <b>ÇEKİRDEK KISIT: terminal olmayan çalıştırma ASLA döndürülmez.</b> Aktif
+ * bir çalıştırmanın haritada görünmesinin TEK yolu İZLEME seçimidir; başlatma
+ * sahipliği o kararın otoritesi değildir. Bu kısıt olmasaydı, kullanıcının az
+ * önce başlattığı ama izlemediği hat sessizce çizilirdi.
+ *
+ * <b>Canlı DEĞİLDİR ve kamera TALEP ETMEZ.</b> Bitmiş bir çalıştırmanın
+ * konumu bir kayıttır, bir yayın değil.
+ */
+export function transportStarterTerminalPresentation({
+  simulation = null,
+  startedSimulationId = null,
+  selectedRouteId = null,
+  routes = [],
+} = {}) {
+  if (!simulation) return null
+
+  // Sahiplik ÇALIŞTIRMA kimliğindedir; rota kimliği tek başına yeterli değildir.
+  if (!startedSimulationId || startedSimulationId !== simulation.simulationId) return null
+
+  const routeId = finiteNumber(simulation.routeId)
+  const selected = finiteNumber(selectedRouteId)
+  if (routeId === null || selected === null || selected !== routeId) return null
+
+  // AKTİF çalıştırma buradan ASLA çıkmaz.
+  if (!isTerminalSimulationStatus(simulation.status)) return null
+
+  const longitude = finiteNumber(simulation.longitude)
+  const latitude = finiteNumber(simulation.latitude)
+  if (longitude === null || latitude === null) return null
+
+  const route = routes.find((candidate) => finiteNumber(candidate?.id) === routeId) ?? null
+
+  return Object.freeze({
+    simulationId: simulation.simulationId,
+    routeId,
+    routeName: route?.name ?? null,
+    colorHex: safeColor(route?.colorHex),
+    status: simulation.status,
+    statusLabel: simulationStatusLabel(simulation.status),
+    progressPercent: simulation.progressPercent,
+    longitude,
+    latitude,
+    updatedAtUtc: simulation.updatedAtUtc ?? null,
+    ownership: VEHICLE_OWNERSHIP.START,
+    isTerminal: true,
+    isSelected: true,
+    emphasis: VEHICLE_EMPHASIS.FULL,
+    isLive: false,
+    followCamera: false,
+  })
+}
+
+/**
+ * Kaynaktaki araç feature'larını İSTENEN kümeyle uzlaştırır.
+ *
+ * <b>Ekle / güncelle / kaldır — hepsi ANAHTAR üzerinden.</b> Feature'lar
+ * biriktirilmez ve her karede silinip yeniden yaratılmaz: silip eklemek hem
+ * isabet/seçim durumunu hem de açık bir balonun bağlandığı nesneyi koparır,
+ * biriktirmek ise haritada ölü araçlar bırakırdı.
+ *
+ * <b>Anahtar rota + çalıştırmadır</b> (<code>vehicleFeatureId</code>): A biter
+ * ve aynı hatta B başlarsa iki farklı anahtar oluşur, dolayısıyla eski
+ * feature YAŞAYAMAZ.
+ *
+ * @returns {import('ol/Feature.js').default[]} güncel feature'lar
+ */
+export function syncTransportVehicleFeatures(source, presentations = []) {
+  if (!source) return []
+
+  const wanted = Array.isArray(presentations)
+    ? presentations.filter(Boolean)
+    : []
+
+  const wantedIds = new Set(wanted.map((item) => vehicleFeatureId(item.routeId, item.simulationId)))
+
+  // İstenmeyen her şey (biten çalıştırma, izlemeden çıkarılan hat) gider.
   for (const feature of [...source.getFeatures()]) {
-    if (feature !== existing) source.removeFeature(feature)
+    if (!wantedIds.has(feature.getId())) source.removeFeature(feature)
   }
 
-  if (existing) {
-    existing.getGeometry().setCoordinates(coordinate)
-    existing.setProperties({
+  return wanted.map((presentation) => {
+    const featureId = vehicleFeatureId(presentation.routeId, presentation.simulationId)
+    const coordinate = fromLonLat([presentation.longitude, presentation.latitude])
+    const existing = source.getFeatureById(featureId)
+
+    const properties = {
       routeId: presentation.routeId,
       routeName: presentation.routeName,
       colorHex: presentation.colorHex,
       isLive: presentation.isLive,
+      emphasis: presentation.emphasis ?? VEHICLE_EMPHASIS.FULL,
       transportVehicle: presentation,
-    })
-    return existing
-  }
+    }
 
-  const feature = new Feature({
-    geometry: new Point(coordinate),
-    featureKind: TRANSPORT_VEHICLE_KIND,
-    type: TRANSPORT_VEHICLE_KIND,
-    simulationId: presentation.simulationId,
-    routeId: presentation.routeId,
-    routeName: presentation.routeName,
-    colorHex: presentation.colorHex,
-    isLive: presentation.isLive,
-    transportVehicle: presentation,
+    if (existing) {
+      // AYNI çalıştırma sürüyor: feature yeniden YARATILMAZ, taşınır.
+      existing.getGeometry().setCoordinates(coordinate)
+      existing.setProperties(properties)
+      return existing
+    }
+
+    const feature = new Feature({
+      geometry: new Point(coordinate),
+      featureKind: TRANSPORT_VEHICLE_KIND,
+      type: TRANSPORT_VEHICLE_KIND,
+      simulationId: presentation.simulationId,
+      ...properties,
+    })
+    feature.setId(featureId)
+    source.addFeature(feature)
+    return feature
   })
-  feature.setId(vehicleFeatureId(presentation.simulationId))
-  source.addFeature(feature)
-  return feature
+}
+
+/**
+ * TEK araç için uzlaştırma. Çoklu yolun bir kısaltmasıdır; ikinci bir
+ * uygulama DEĞİLDİR.
+ *
+ * Yönetim ekranı (güzergah sayfası) hâlâ tek bir araç sunar; oradaki davranış
+ * bu fazda değişmedi.
+ *
+ * @returns {import('ol/Feature.js').default|null} güncel feature
+ */
+export function syncTransportVehicleFeature(source, presentation) {
+  const features = syncTransportVehicleFeatures(source, presentation ? [presentation] : [])
+  return features[0] ?? null
+}
+
+/**
+ * İki SUNUM kavramını tek bir çizim listesinde birleştirir.
+ *
+ * <b>Kavramlar AYRI kalır ve bu bilinçlidir.</b>
+ * <ul>
+ *   <li><code>watched</code> — AKTİF çalıştırmaların araçları. Görünürlüğün
+ *       TEK sahibi kullanıcının İZLEME seçimidir.</li>
+ *   <li><code>owned</code> — yalnızca TERMİNAL, canlı olmayan eski sunum
+ *       (başlatanın son konumu). Buraya AKTİF bir çalıştırma giremez;
+ *       <code>transportStarterTerminalPresentation</code> onu zaten üretmez.</li>
+ * </ul>
+ *
+ * <b>Seçim, gözlem, aktif küme üyeliği ve başlatma sahipliği görünürlük
+ * otoritesi DEĞİLDİR.</b> Bu fonksiyon bir süzgeç değil, iki AYRI kavramın
+ * birleşimidir: sınır, sunumu üreten fonksiyonlarda kurulur, burada bir
+ * sahiplik dizesine bakarak DEĞİL. Aynı çalıştırma ikisinde birden görünüyorsa
+ * TEK feature üretilir; kimlik (rota + çalıştırma) tekilleştirmeyi yapar.
+ */
+export function mergeVehiclePresentations(watched = [], owned = null) {
+  const list = Array.isArray(watched) ? watched.filter(Boolean) : []
+  if (!owned) return list
+
+  const duplicate = list.some(
+    (item) => item.routeId === owned.routeId && item.simulationId === owned.simulationId,
+  )
+
+  return duplicate ? list : [...list, owned]
 }
 
 /**

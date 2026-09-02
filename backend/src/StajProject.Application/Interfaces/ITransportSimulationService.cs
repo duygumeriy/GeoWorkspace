@@ -40,6 +40,35 @@ public interface ITransportSimulationService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// O anda AKTİF olan TÜM paylaşılan çalıştırmalar; deterministik sırada.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Neden tek bir uç.</b> İstemcinin aktif kümeyi her rotayı tek tek
+    /// sorarak çıkarması, hat sayısıyla doğru orantılı bir istek yağmuru ve
+    /// "hangi hat vardı" bilgisinin tarayıcıda kurulması demekti. Aktif küme
+    /// sunucunun bildiği bir OLGUDUR ve tek bir okumayla verilir.
+    /// </para>
+    /// <para>
+    /// <b>Aktif = terminal olmayan.</b> Depoda yalnızca <c>Running</c> ve
+    /// <c>Paused</c> çalıştırmalar durur (sonlandırma kaydı kaldırır), bu
+    /// yüzden burada ayrıca bir durum süzgeci UYDURULMAZ: terminal
+    /// çalıştırmalar zaten yoktur. Duraklatılmış çalıştırma AKTİFTİR.
+    /// </para>
+    /// <para>
+    /// <b>Sıra deterministiktir</b> ve sözlük gezinme sırası arayüze SIZMAZ:
+    /// hat adına (kültürden bağımsız), eşitlikte rota kimliğine göre. İlerleme
+    /// bir sıralama ölçütü DEĞİLDİR — liste her tick'te yeniden dizilirdi.
+    /// </para>
+    /// <para>
+    /// Bilinçli olarak <b>senkron ve veritabanına dokunmaz</b>: yanıt tamamen
+    /// süreç içi durumdan gelir. Ad/renk gibi alanlar çalıştırma başlatılırken
+    /// zaten kopyalanmıştır.
+    /// </para>
+    /// </remarks>
+    IReadOnlyList<TransportSimulationResponse> GetActiveSimulations();
+
+    /// <summary>
     /// PAYLAŞILAN bir hattın çalıştırmasını AÇIKÇA durdurur.
     /// </summary>
     /// <remarks>

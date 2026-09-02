@@ -76,6 +76,57 @@ public sealed record TransportSimulationLiveUpdate(
             simulation.Snapshot.CapturedAt);
 }
 
+/// <summary>Aktif kümedeki DEĞİŞİKLİĞİN yönü.</summary>
+/// <remarks>
+/// Yalnızca ÜYELİK değişimini anlatır. Duraklat/Sürdür burada YOKTUR ve
+/// olmamalıdır: duraklatılmış çalıştırma hattın aktif yuvasını işgal etmeye
+/// devam eder, yani aktif küme değişmez. Onları buraya koymak, her duraklatma
+/// tıklamasında tüm istemcilerin aktif listeyi yeniden okuması demekti.
+/// </remarks>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum TransportActiveSetChange
+{
+    /// <summary>Yeni bir çalıştırma aktif kümeye GİRDİ.</summary>
+    Started,
+
+    /// <summary>Bir çalıştırma aktif kümeden ÇIKTI (tamamlandı ya da iptal edildi).</summary>
+    Ended
+}
+
+/// <summary>
+/// "Aktif paylaşılan simülasyon kümesi DEĞİŞMİŞ OLABİLİR" sinyali.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <b>Bu bir KEŞİF sinyalidir, ikinci bir simülasyon otoritesi DEĞİL.</b>
+/// Konum, ilerleme ve yaşam döngüsü <see cref="TransportSimulationLiveUpdate"/>
+/// ile taşınmaya devam eder. Buraya tüm yükü kopyalamak, aynı gerçeğin iki
+/// kanaldan farklı sıralarla gelmesi ve istemcinin hangisine inanacağını
+/// bilememesi demekti.
+/// </para>
+/// <para>
+/// Rota ve çalıştırma kimliği yine de taşınır: istemci "ne değişti" sorusunu
+/// loglayabilsin ve gerektiğinde kendi bekleyen niyetiyle karşılaştırabilsin
+/// diye. Bağlayıcı cevap her zaman aktif liste okumasıdır.
+/// </para>
+/// </remarks>
+public sealed record TransportActiveSimulationSetChanged(
+    int RouteId,
+    Guid SimulationId,
+    TransportActiveSetChange Change,
+    DateTime ChangedAtUtc)
+{
+    public static TransportActiveSimulationSetChanged Started(
+        ActiveTransportSimulation simulation,
+        DateTime utcNow) =>
+        new(simulation.RouteId, simulation.SimulationId, TransportActiveSetChange.Started, utcNow);
+
+    public static TransportActiveSimulationSetChanged Ended(
+        ActiveTransportSimulation simulation,
+        DateTime utcNow) =>
+        new(simulation.RouteId, simulation.SimulationId, TransportActiveSetChange.Ended, utcNow);
+}
+
 /// <summary>
 /// Canlı kanalın adlandırma SÖZLEŞMESİ: hub yolu, istemci metodu ve grup adı.
 /// </summary>
@@ -99,6 +150,33 @@ public static class TransportSimulationHubContract
 
     /// <summary>İstemcide çağrılan metot adı.</summary>
     public const string UpdateMethod = "SimulationUpdated";
+
+    /// <summary>
+    /// KEŞİF sinyalinin istemci metot adı.
+    /// </summary>
+    /// <remarks>
+    /// AYNI hub üzerinde durur. İkinci bir hub, ikinci bir bağlantı, ikinci
+    /// bir kimlik doğrulama hattı ve ikinci bir yeniden bağlanma davranışı
+    /// demekti; oysa taşınan şey aynı ürünün aynı canlı gerçeğidir.
+    /// </remarks>
+    public const string ActiveSetChangedMethod = "ActiveSimulationSetChanged";
+
+    /// <summary>Keşif üyeliğine katılma metodu (hub'da çağrılır).</summary>
+    public const string JoinDiscoveryMethod = "JoinActiveSimulationDiscovery";
+
+    /// <summary>Keşif üyeliğinden ayrılma metodu (hub'da çağrılır).</summary>
+    public const string LeaveDiscoveryMethod = "LeaveActiveSimulationDiscovery";
+
+    /// <summary>
+    /// Aktif küme değişikliklerini dinleyenlerin grubu.
+    /// </summary>
+    /// <remarks>
+    /// <b>Herkese yayın YAPILMAZ.</b> Sinyal, hangi hatların çalıştığını
+    /// açığa vurur; bu yüzden ayrı bir gruba gider ve gruba yalnızca etkin
+    /// <c>transport.view</c> yetkisi olanlar alınır. Rota grupları gibi bu
+    /// grup da bir yetki DEĞİLDİR — yayının hedefidir.
+    /// </remarks>
+    public const string DiscoveryGroup = "transport-simulation-active-discovery";
 
     private const string GroupPrefix = "transport-simulation-route-";
 

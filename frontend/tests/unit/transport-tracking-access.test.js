@@ -246,8 +246,19 @@ test('the two live products keep separate hubs, events and group methods', () =>
 
 test('the map reuses the Phase 4 vehicle layer, presentation and popup', () => {
   assert.match(mapPage, /import useTransportVehicleLayer from '\.\.\/hooks\/useTransportVehicleLayer\.js'/)
-  assert.match(mapPage, /transportVehiclePresentation\(\{/)
-  assert.match(mapPage, /transportVehiclePopupModel\(transportVehicle\)/)
+  /* Faz 4A: ana haritanın AKTİF çizim listesi artık tek araçlı sunumdan
+     değil, İZLEME sunumundan doğar. Ölçülen şey aynı kalır — sayfa kendi
+     araç kuralını yazmaz, saf modülü çağırır. Tek araçlı sunum yönetim
+     ekranında olduğu gibi durur. */
+  assert.match(mapPage, /transportWatchedVehiclePresentations\(\{/)
+  assert.match(
+    read('../../src/pages/admin/TransportRoutePage.jsx'),
+    /transportVehiclePresentation\(\{/,
+  )
+  /* Balon TIKLANAN aracın sunumundan çizilir (Faz 4A): birden fazla işaretçi
+     varken küresel bir "seçili araç" modeli, hangisine tıklanırsa tıklansın
+     aynı balonu açardı. */
+  assert.match(mapPage, /transportVehiclePopupModel\(target\)/)
   assert.match(mapPage, /<TransportVehiclePopup/)
 
   /* İkinci bir araç katmanı kurulmadı: katman yalnızca paylaşılan kancanın

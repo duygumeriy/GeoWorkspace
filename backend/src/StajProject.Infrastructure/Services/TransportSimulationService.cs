@@ -62,18 +62,31 @@ public sealed class TransportSimulationService : ITransportSimulationService
     private readonly ITransportSimulationTerminator _terminator;
     private readonly ITransportSimulationLifecycle _lifecycle;
 
+    /* KEŞİF sinyali BAŞLATMADA buradan çıkar; sonlandırma/tamamlanma
+       sinyalleri ise çalışma zamanı sahibinin (runner) işidir. Ayrım
+       bilinçlidir: aktif kümeye GİRİŞ yalnızca bu servisin başarılı
+       TryStart'ıyla olur, ÇIKIŞ ise runner'ın tek terminal yolundan.
+
+       Bağımlılık İSTEĞE BAĞLIDIR ve varsayılanı yoktur: sinyal kanalı
+       kurulmamış bir bileşimde (dar kapsamlı testler) simülasyon yine
+       DOĞRU çalışır — keşif bir SUNUM kolaylığıdır, yaşam döngüsünün
+       koşulu değil. Üretim bileşimi onu her zaman kaydeder. */
+    private readonly ITransportSimulationDiscoveryBroadcaster? _discovery;
+
     public TransportSimulationService(
         AppDbContext dbContext,
         ICurrentUserService currentUser,
         ITransportSimulationStateStore state,
         ITransportSimulationTerminator terminator,
-        ITransportSimulationLifecycle lifecycle)
+        ITransportSimulationLifecycle lifecycle,
+        ITransportSimulationDiscoveryBroadcaster? discovery = null)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
         _state = state;
         _terminator = terminator;
         _lifecycle = lifecycle;
+        _discovery = discovery;
     }
 
     public async Task<ServiceResult<TransportSimulationResponse>> StartAsync(
@@ -166,8 +179,56 @@ public sealed class TransportSimulationService : ITransportSimulationService
             return ServiceResult<TransportSimulationResponse>.Conflict(AlreadyRunningMessage);
         }
 
+        /* AKTİF KÜME BÜYÜDÜ: sinyal ANCAK kayıt gerçekten yapıldıktan sonra
+           çıkar. Ters sıra, reddedilen bir başlatmanın da tüm gözlemcilere
+           gereksiz bir liste okuması yaptırması demekti. */
+        await AnnounceAsync(
+            TransportActiveSimulationSetChanged.Started(simulation, now),
+            cancellationToken);
+
         return ServiceResult<TransportSimulationResponse>.Success(ToResponse(simulation));
     }
+
+    /// <summary>
+    /// AKTİF KEŞİF okuması. Veritabanına dokunmaz; yanıt tamamen süreç içi
+    /// durumdan gelir.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Süzgeç YOKTUR ve gerekmez.</b> Depo yalnızca terminal OLMAYAN
+    /// çalıştırmaları tutar — sonlandırma kaydı kaldırır — bu yüzden
+    /// "Completed/Cancelled hariç" kuralı burada ikinci kez yazılmaz. İkinci
+    /// bir süzgeç, iki yerin zamanla ayrışabildiği bir aktiflik tanımı
+    /// üretirdi.
+    /// </para>
+    /// <para>
+    /// <b>Sıra deterministiktir:</b> hat adı (kültürden bağımsız, büyük/küçük
+    /// harf duyarsız), eşitlikte rota kimliği. Sözlük gezinme sırası arayüze
+    /// ASLA sızmaz. İlerlemeye göre sıralamak, listeyi her tick'te yeniden
+    /// dizerdi.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<TransportSimulationResponse> GetActiveSimulations() =>
+    [
+        .. _state.Active()
+            .OrderBy(simulation => simulation.RouteName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(simulation => simulation.RouteId)
+            .Select(ToResponse)
+    ];
+
+    /// <summary>Keşif sinyalini duyurur; kanal yoksa hiçbir şey olmaz.</summary>
+    /// <remarks>
+    /// Duyuru hatasının YUTULDUĞU yer burası DEĞİLDİR: port sözleşmesi gereği
+    /// uygulama (Api adaptörü) taşıma arızasını kendi loglar ve dışarı
+    /// sızdırmaz. Sorumluluğu orada tutmak, her çağıranın aynı try/catch'i
+    /// kopyalamasını önler.
+    /// </remarks>
+    private Task AnnounceAsync(
+        TransportActiveSimulationSetChanged change,
+        CancellationToken cancellationToken) =>
+        _discovery is null
+            ? Task.CompletedTask
+            : _discovery.PublishActiveSetChangedAsync(change, cancellationToken);
 
     public async Task<ServiceResult<TransportSimulationResponse>> GetActiveAsync(
         int routeId,

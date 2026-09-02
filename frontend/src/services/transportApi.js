@@ -115,6 +115,25 @@ export function fetchTransportSimulation(routeId) {
 }
 
 /**
+ * O anda AKTİF olan TÜM paylaşılan çalıştırmalar. Yetki: `transport.view`.
+ *
+ * <b>Neden tek bir uç.</b> Aktif kümeyi her rotayı tek tek sorarak çıkarmak,
+ * hat sayısıyla doğru orantılı bir istek yağmuru ve "hangi hat vardı"
+ * bilgisinin tarayıcıda kurulması demekti. Küme sunucunun bildiği bir OLGUDUR
+ * ve tek okumayla gelir.
+ *
+ * <b>OKUMA yetkisidir.</b> Çalışan hatları görmek, onları başlatabilmek ya da
+ * durdurabilmekle aynı yetenek değildir; bu uç yaşam döngüsü yetkisi İSTEMEZ.
+ *
+ * <b>Yoklama YOKTUR.</b> Bu uç yalnızca İKİ nedenle çağrılır: açılışta bir kez
+ * ve keşif sinyali "aktif küme değişmiş olabilir" dediğinde. Zamanlayıcıyla
+ * tekrar çağrılmaz — ilerleme ve durum mevcut SignalR akışından gelir.
+ */
+export function fetchActiveTransportSimulations({ signal } = {}) {
+  return authFetch('/api/transport/simulations/active', { signal })
+}
+
+/**
  * PAYLAŞILAN bir hattın BELİRLİ çalıştırmasını herkes için durdurur.
  * Yetki: `transport.simulation.stop`.
  *

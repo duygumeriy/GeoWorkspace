@@ -261,8 +261,8 @@ test('a new simulationId replaces the feature instead of adding a second one', (
 
   assert.equal(source.getFeatures().length, 1)
   assert.notEqual(first, second)
-  assert.equal(second.getId(), vehicleFeatureId(RUN_2))
-  assert.equal(source.getFeatureById(vehicleFeatureId(RUN_1)), null)
+  assert.equal(second.getId(), vehicleFeatureId(ROUTE_A, RUN_2))
+  assert.equal(source.getFeatureById(vehicleFeatureId(ROUTE_A, RUN_1)), null)
 })
 
 test('switching the followed route leaves no stale vehicle behind', () => {
@@ -336,7 +336,7 @@ test('the vehicle feature carries its own kind and identity for hit detection', 
   assert.equal(feature.get('featureKind'), TRANSPORT_VEHICLE_KIND)
   assert.equal(feature.get('simulationId'), RUN_1)
   assert.equal(feature.get('routeId'), ROUTE_A)
-  assert.equal(feature.getId(), vehicleFeatureId(RUN_1))
+  assert.equal(feature.getId(), vehicleFeatureId(ROUTE_A, RUN_1))
 
   // Durak ve rota türlerinden AYRIDIR; mevcut isabet dalları etkilenmez.
   assert.notEqual(TRANSPORT_VEHICLE_KIND, TRANSPORT_STOP_KIND)

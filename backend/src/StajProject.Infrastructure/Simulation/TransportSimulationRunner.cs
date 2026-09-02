@@ -41,6 +41,17 @@ public sealed class TransportSimulationRunner
     private readonly TransportSimulationOptions _options;
     private readonly ILogger<TransportSimulationRunner> _logger;
 
+    /* AKTİF KÜMEDEN ÇIKIŞIN tek sahibi burasıdır: doğal tamamlanma, kullanıcı
+       sıfırlaması ve iç iptal aynı iki terminal yoldan geçer. Girişi (başlatma)
+       servis duyurur.
+
+       DURAKLAT/SÜRDÜR burada BİLİNÇLİ OLARAK duyurulmaz: duraklatılmış
+       çalıştırma hattın aktif yuvasını işgal etmeye devam eder, yani üyelik
+       değişmez. Her duraklatmada sinyal üretmek, tüm gözlemcilere gereksiz bir
+       aktif liste okuması yaptırırdı — o geçişler zaten rota bazlı
+       SimulationUpdated akışında görünür. */
+    private readonly ITransportSimulationDiscoveryBroadcaster? _discovery;
+
     /* ZAMAN DIŞARIDAN GELİR — ilerletmede olduğu gibi geçişlerde de.
        `AdvanceAsync` saati parametre olarak alır; duraklat/sürdür ise
        doğrudan `DateTime.UtcNow` okuyordu ve bu, sınıfın kendi ilkesini
@@ -62,13 +73,15 @@ public sealed class TransportSimulationRunner
         ITransportSimulationBroadcaster broadcaster,
         TransportSimulationOptions options,
         ILogger<TransportSimulationRunner> logger,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        ITransportSimulationDiscoveryBroadcaster? discovery = null)
     {
         _state = state;
         _broadcaster = broadcaster;
         _options = options;
         _logger = logger;
         _time = timeProvider ?? TimeProvider.System;
+        _discovery = discovery;
     }
 
     /// <summary>Geçişlerin okuduğu AN. İlerletme saatiyle aynı eksendedir.</summary>
@@ -194,6 +207,11 @@ public sealed class TransportSimulationRunner
 
         await PublishAsync(simulation, TransportSimulationStatus.Cancelled, cancellationToken);
 
+        /* AKTİF KÜME KÜÇÜLDÜ. Sinyal, terminal yayından SONRA çıkar: rotayı
+           zaten izleyen istemci gerçeği önce otoriter olaydan öğrenir, aktif
+           listeyi izleyen ise hemen ardından tazeler. */
+        await AnnounceEndedAsync(simulation, cancellationToken);
+
         return update;
     }
 
@@ -301,6 +319,11 @@ public sealed class TransportSimulationRunner
             {
                 _tracks.TryRemove(simulation.SimulationId, out _);
                 await PublishAsync(advanced, TransportSimulationStatus.Completed, cancellationToken);
+
+                /* Doğal tamamlanma da bir ÜYELİK değişimidir: hat aktif
+                   kümeden çıkar ve listeyi izleyen istemciler bunu bir tıklama
+                   ya da yenileme beklemeden görmelidir. */
+                await AnnounceEndedAsync(advanced, cancellationToken);
             }
             else
             {
@@ -319,6 +342,23 @@ public sealed class TransportSimulationRunner
 
         await PublishAsync(advanced, TransportSimulationStatus.Running, cancellationToken);
     }
+
+    /// <summary>
+    /// "Bu çalıştırma aktif kümeden çıktı" sinyali. Kanal yoksa hiçbir şey
+    /// olmaz.
+    /// </summary>
+    /// <remarks>
+    /// Duyuru hatası burada YAKALANMAZ: port sözleşmesi gereği uygulama
+    /// (Api adaptörü) taşıma arızasını kendi loglar ve dışarı sızdırmaz.
+    /// </remarks>
+    private Task AnnounceEndedAsync(
+        ActiveTransportSimulation simulation,
+        CancellationToken cancellationToken) =>
+        _discovery is null
+            ? Task.CompletedTask
+            : _discovery.PublishActiveSetChangedAsync(
+                TransportActiveSimulationSetChanged.Ended(simulation, UtcNow),
+                cancellationToken);
 
     private async Task PublishAsync(
         ActiveTransportSimulation simulation,
