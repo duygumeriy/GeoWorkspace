@@ -66,6 +66,16 @@ public class AppDbContext : IdentityDbContext<User, IdentityRole<int>, int>
 
     public DbSet<SavedJourneyPoint> SavedJourneyPoints => Set<SavedJourneyPoint>();
 
+    /* --- Kişisel yolculuk geçmişi (Faz 8) ------------------------------------
+       SONA ERMİŞ çalıştırmaların değişmez tutanağı. Kaydedilmiş yolculuklarla
+       (Faz 7) karıştırılmamalıdır: orası yeniden kullanılabilir NİYET, burası
+       olmuş bir şeyin kaydıdır. Satır yalnızca terminal geçişte yazılır ve
+       çalışma zamanı durumu (anlık konum, ilerleme, kanal üyeliği) SAKLANMAZ. */
+
+    public DbSet<JourneyHistory> JourneyHistories => Set<JourneyHistory>();
+
+    public DbSet<JourneyHistoryPoint> JourneyHistoryPoints => Set<JourneyHistoryPoint>();
+
     /* --- Dinamik yetkilendirme ---------------------------------------------
        Yetki kataloğu ve grant tabloları. Identity'nin rol/kullanıcı tabloları
        ile aynı context'te durur: bir rolün yetkilendirilmesi ile o rolün

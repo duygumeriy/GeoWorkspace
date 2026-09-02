@@ -54,18 +54,26 @@ public sealed class JourneySimulationService : IJourneySimulationService
     private readonly IJourneySimulationBroadcaster _broadcaster;
     private readonly IJourneyActivityRecorder _activity;
 
+    /* GEÇMİŞ, denetim kaydından AYRI bir sorumluluktur ve ayrı bir bileşene
+       aittir: biri "kim neyi değiştirdi" defteri, diğeri kullanıcının kendi
+       yolculuk tutanağıdır. İkisi de terminal geçişi KAZANAN yolda, yalnızca
+       bir kez çağrılır. */
+    private readonly IJourneyHistoryWriter _history;
+
     public JourneySimulationService(
         IJourneyPlanningService planning,
         ICurrentUserService currentUser,
         IJourneySimulationStateStore state,
         IJourneySimulationBroadcaster broadcaster,
-        IJourneyActivityRecorder activity)
+        IJourneyActivityRecorder activity,
+        IJourneyHistoryWriter history)
     {
         _planning = planning;
         _currentUser = currentUser;
         _state = state;
         _broadcaster = broadcaster;
         _activity = activity;
+        _history = history;
     }
 
     public async Task<ServiceResult<JourneySimulationResponse>> StartAsync(
@@ -214,6 +222,20 @@ public sealed class JourneySimulationService : IJourneySimulationService
 
         var cancelled = simulation.With(simulation.Snapshot with { CapturedAt = DateTime.UtcNow });
         var update = JourneySimulationLiveUpdate.From(cancelled, JourneySimulationStatus.Cancelled);
+
+        /* GEÇMİŞ önce yazılır: kullanıcının göreceği tutanak, denetim
+           defterinden daha görünür bir üründür ve ikisi de bu isteğin kazandığı
+           geçişe aittir. Terminal an, çalıştırmanın kendi son anlık
+           görüntüsünün damgasıdır — ikinci bir saat okuması, aynı olay için iki
+           farklı zaman üretirdi.
+
+           Yazma başarısız olsa bile durdurma BAŞARILIDIR: geçiş zaten
+           kazanılmıştır ve geri alınamaz. */
+        await _history.RecordAsync(
+            cancelled,
+            JourneySimulationStatus.Cancelled,
+            cancelled.Snapshot.CapturedAt,
+            cancellationToken);
 
         /* Terminal geçişi BU istek kazandı (`TryStop` yukarıda true döndü);
            mükerrer ya da bayat bir durdurma isteği buraya ulaşamaz ve ikinci

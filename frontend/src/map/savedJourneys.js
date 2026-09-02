@@ -13,26 +13,24 @@
 
 import { formatDateTime } from './datetime.js'
 import {
-  DEFAULT_JOURNEY_PROFILE,
-  JOURNEY_MODES,
   JOURNEY_PROFILE_IDS,
-  WAYPOINT_SOURCES,
-  createWaypointSlot,
-  waypointReference,
+  journeyDraftFromDefinition,
+  journeyModeLabel,
 } from './journeyPlanning.js'
 import { journeyProfileLabel } from './journeyPresentation.js'
 
 /** Backend `SavedJourney.MaxNameLength` ile aynı sınır. */
 export const MAX_SAVED_JOURNEY_NAME_LENGTH = 120
 
-const MODE_LABELS = Object.freeze({
-  [JOURNEY_MODES.ROUTE_FULL]: 'Hat',
-  [JOURNEY_MODES.ROUTE_SEGMENT]: 'Hat Bölümü',
-  [JOURNEY_MODES.WAYPOINTS]: 'Serbest',
-})
-
+/**
+ * Kipin adı — kural PLANLAYICIDADIR ve burada tekrarlanmaz.
+ *
+ * Kip, kaydedilmiş yolculuğa ait bir kavram değildir: aynı üç kip planlayıcıda
+ * kurulur, geçmişte okunur. İkinci bir sözlük, bir gün aynı kipin iki farklı
+ * isimle görünmesi demekti.
+ */
 export function savedJourneyModeLabel(mode) {
-  return MODE_LABELS[mode] ?? '—'
+  return journeyModeLabel(mode)
 }
 
 export const SAVED_JOURNEY_MESSAGES = Object.freeze({
@@ -155,48 +153,13 @@ export function savedJourneyTarget(items, savedJourneyId) {
  * kurulmaz, hiçbir kanal açılmaz ve harita takibi değişmez. Kullanıcı yüklenen
  * yolculuğu inceleyip sonra açıkça başlatır.
  *
- * Yuvalar YENİ anahtarlarla kurulur: eski taslağın anahtarlarını devralmak,
- * silahlı bir yuvanın kazara yeni listede yaşamaya devam etmesi demekti.
+ * <b>Taslak kuralı burada TEKRARLANMAZ.</b> "Bir tanım nasıl taslağa döner"
+ * sorusunun sahibi planlayıcının kendisidir (`journeyDraftFromDefinition`);
+ * geçmiş (Faz 8) de aynı kuralı kullanır. Burada yalnızca KAYDIN kimliği
+ * doğrulanır — kimliksiz bir gövde bir kayıt değildir.
  */
 export function savedJourneyDraft(saved) {
   if (!saved || saved.id == null) return null
 
-  const mode = Object.values(JOURNEY_MODES).includes(saved.mode) ? saved.mode : null
-  if (!mode) return null
-
-  const profile = JOURNEY_PROFILE_IDS.includes(saved.profile) ? saved.profile : DEFAULT_JOURNEY_PROFILE
-  const points = Array.isArray(saved.points) ? [...saved.points].sort((a, b) => a.sequence - b.sequence) : []
-
-  if (mode === JOURNEY_MODES.ROUTE_FULL) {
-    return { mode, profile, routeId: saved.routeId ?? null, fromStopId: null, toStopId: null, waypoints: null }
-  }
-
-  if (mode === JOURNEY_MODES.ROUTE_SEGMENT) {
-    if (points.length !== 2) return null
-    return {
-      mode,
-      profile,
-      routeId: saved.routeId ?? null,
-      fromStopId: Number(points[0].referenceId),
-      toStopId: Number(points[1].referenceId),
-      waypoints: null,
-    }
-  }
-
-  if (points.length < 2) return null
-
-  return {
-    mode,
-    profile,
-    routeId: null,
-    fromStopId: null,
-    toStopId: null,
-    waypoints: points.map((point) => createWaypointSlot(waypointReference({
-      source: point.source === WAYPOINT_SOURCES.POI ? WAYPOINT_SOURCES.POI : WAYPOINT_SOURCES.STOP,
-      id: point.referenceId,
-      /* Etiket YALNIZCA ekranda gösterilir ve isteğe hiç girmez; sunucu
-         noktayı kimliğinden çözer. */
-      label: point.displayName ?? '',
-    }))),
-  }
+  return journeyDraftFromDefinition(saved)
 }

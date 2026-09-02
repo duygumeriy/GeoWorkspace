@@ -401,6 +401,22 @@ builder.Services.AddScoped<IJourneySimulationService, JourneySimulationService>(
    dokunmaz. */
 builder.Services.AddScoped<ISavedJourneyService, SavedJourneyService>();
 
+/* --- Kişisel yolculuk geçmişi (Faz 8) ----------------------------------------
+   SONA ERMİŞ çalıştırmaların değişmez tutanağı.
+
+   YAZICI ile SORGU servisi bilinçli olarak AYRIDIR. Yazıcının istemciye açık
+   bir ucu yoktur ve onu yalnızca sunucunun terminal geçişi çağırır — durdurma
+   isteği (scoped servis) ve arka plan runner'ı (kendi kapsamını açar). İkisini
+   tek arayüzde toplamak, bir gün bir controller'ın "geçmiş oluştur" ucunu
+   açmasını kolaylaştırırdı; oysa tutanağın istemciden gelen bir kaynağı
+   olmamalıdır.
+
+   Kaydedilmiş yolculuklarla (Faz 7) KARIŞTIRILMAMALIDIR: orası yeniden
+   kullanılabilir niyet, burası olmuş bir şeyin kaydıdır. Paylaşılan hat
+   simülasyonuna hiç dokunulmaz. */
+builder.Services.AddScoped<IJourneyHistoryWriter, JourneyHistoryWriter>();
+builder.Services.AddScoped<IJourneyHistoryService, JourneyHistoryService>();
+
 var journeySimulationOptions = builder.Configuration
     .GetSection(JourneySimulationOptions.SectionName)
     .Get<JourneySimulationOptions>() ?? new JourneySimulationOptions();

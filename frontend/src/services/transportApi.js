@@ -369,3 +369,54 @@ export function reuseSavedJourney(savedJourneyId, { signal } = {}) {
     signal,
   })
 }
+
+/* --- Kişisel yolculuk geçmişi (Faz 8) -----------------------------------------
+   SONA ERMİŞ çalıştırmaların değişmez tutanağı. Aynı authFetch, aynı
+   Authorization başlığı, aynı 401/403 davranışı.
+
+   OLUŞTURMA UCU YOKTUR ve olmamalıdır: "bu yolculuğu yaptım" iddiası
+   tarayıcıdan kabul edilmez. Tutanağın tek kaynağı sunucunun kendi terminal
+   geçişidir; istemci onu yalnızca OKUR.
+
+   DEĞİŞTİRME ve SİLME de yoktur: geçmiş adlandırılamaz, düzenlenemez,
+   favorilenemez. Kullanıcının kendi tanımlarını adlandırdığı ürün ayrıdır
+   (`/saved`) ve iki kavram bilinçle karıştırılmaz.
+
+   Burada SignalR yoktur ve hiçbir zamanlayıcı kurulmaz: kaydedilmiş bir
+   tutanak canlı bir simülasyon DEĞİLDİR. */
+
+/**
+ * Çağıranın KENDİ geçmişinin bir sayfası; en son biten en üstte.
+ *
+ * Sayfalama isteğe bağlı değildir: kullanıcı sınırlı sayıda tanım saklar ama
+ * sınırsız sayıda yolculuk yapar.
+ */
+export function fetchJourneyHistory({ page, pageSize, status } = {}, { signal } = {}) {
+  const query = new URLSearchParams()
+  if (page != null) query.set('page', String(page))
+  if (pageSize != null) query.set('pageSize', String(pageSize))
+  // Boş süzgeç GÖNDERİLMEZ: sunucu bilinmeyen bir durumu reddeder.
+  if (status) query.set('status', status)
+
+  const suffix = query.toString()
+  return authFetch(`/api/transport/journeys/history${suffix ? `?${suffix}` : ''}`, { signal })
+}
+
+/** Tek bir kaydın değişmez ayrıntısı; başkasınınki için 404. */
+export function fetchJourneyHistoryDetail(journeyHistoryId, { signal } = {}) {
+  return authFetch(`/api/transport/journeys/history/${journeyHistoryId}`, { signal })
+}
+
+/**
+ * Geçmişteki yolculuğu YENİDEN yapar: yeni bir kişisel simülasyon başlatır.
+ *
+ * Eski çalıştırma DİRİLTİLMEZ: istek yalnızca KAYDIN kimliğini taşır, tarihsel
+ * `simulationId` gönderilmez ve yanıt her çağrıda yeni bir kimlik döndürür.
+ * Güzergah da kayıtlı bir geometriden okunmaz, sunucuda yeniden hesaplanır.
+ */
+export function reuseJourneyHistory(journeyHistoryId, { signal } = {}) {
+  return authFetch(`/api/transport/journeys/history/${journeyHistoryId}/reuse`, {
+    method: 'POST',
+    signal,
+  })
+}

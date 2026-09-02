@@ -144,8 +144,10 @@ import useJourneyPreviewLayer from '../hooks/useJourneyPreviewLayer.js'
 import useJourneyWaypointPicking from '../hooks/useJourneyWaypointPicking.js'
 import useJourneySimulation from '../hooks/useJourneySimulation.js'
 import useSavedJourneys from '../hooks/useSavedJourneys.js'
+import useJourneyHistory from '../hooks/useJourneyHistory.js'
 import JourneyNameDialog from '../components/map/JourneyNameDialog.jsx'
 import { savedJourneyDraft, savedJourneyTarget } from '../map/savedJourneys.js'
+import { journeyHistoryDraft } from '../map/journeyHistory.js'
 import { PANEL_STATES, PERSONAL_SECTIONS } from '../map/journeyPlanning.js'
 import useJourneyVehicleLayer from '../hooks/useJourneyVehicleLayer.js'
 import useJourneyWaypointLayer from '../hooks/useJourneyWaypointLayer.js'
@@ -1612,6 +1614,62 @@ export default function MapPage() {
     await journeySimulation.adopt(started)
     openJourneyPanel()
   }, [savedJourneys, journeySimulation, openJourneyPanel])
+
+  /* --- Kişisel yolculuk geçmişi (Faz 8) --------------------------------------
+     SONA ERMİŞ çalıştırmaların değişmez tutanağı. Kaydedilmiş yolculuklardan
+     (Faz 7) ve canlı simülasyondan AYRI bir durumdur: burada SignalR yoktur,
+     ikinci bir kişisel kanal açılmaz, hiçbir zamanlayıcı kurulmaz ve
+     LocalStorage otorite olarak kullanılmaz.
+
+     Liste yalnızca kullanıcı o bölümü AÇTIĞINDA okunur; geçmiş yalnızca bir
+     yolculuk sona erdiğinde değişir.
+
+     Paylaşılan hat bu koddan HİÇ etkilenmez. */
+
+  const journeyHistorySectionOpen = journey.state.panel === PANEL_STATES.OPEN
+    && journeyProduct === JOURNEY_PRODUCTS.PERSONAL
+    && journey.state.section === PERSONAL_SECTIONS.HISTORY
+
+  const journeyHistory = useJourneyHistory({
+    permitted: allowed.canUseJourney,
+    enabled: journeyHistorySectionOpen,
+  })
+
+  /* --- Yeniden yapma (AÇIK başlatma) -----------------------------------------
+     Sunucu kanonik referansları yeniden çözer, güzergahı yeniden hesaplar ve
+     YENİ bir çalıştırma kimliği üretir; tarihsel kimlik isteğe hiç girmez ve
+     tutanak değişmez. Yanıt mevcut kişisel kancaya benimsetilir: ikinci bir
+     canlı durum ya da ikinci bir SignalR bağlantısı açılmaz.
+
+     Bu yol KAYDEDİLMİŞ YOLCULUK OLUŞTURMAZ: geçmişi yeniden yapmak onu
+     saklamak değildir ve saklamak isteyen kullanıcının kendi "Kaydet" eylemi
+     zaten vardır. */
+  const reuseJourneyFromHistory = useCallback(async (journeyHistoryId) => {
+    const started = await journeyHistory.reuse(journeyHistoryId)
+    if (!started) return
+
+    await journeySimulation.adopt(started)
+    openJourneyPanel()
+  }, [journeyHistory, journeySimulation, openJourneyPanel])
+
+  /* --- Planlayıcıya yükleme (BAŞLATMA DEĞİL) ---------------------------------
+     Tutanağı planlayıcıya koymak yalnızca TASLAĞI değiştirir: hiçbir simülasyon
+     kurulmaz ve tarihsel çalıştırma diriltilmez — taslakta bir çalıştırma
+     kimliği yoktur. Kullanıcı yüklenen yolculuğu inceleyip başlatmayı AYRICA
+     seçer. */
+  const loadJourneyFromHistory = useCallback(async (journeyHistoryId) => {
+    /* Ayrıntı AÇIK olsa bile kimlikle yeniden istenir. Ekrandaki modeli
+       okumak bir tık daha ucuz olurdu ama hangi kaydın açık olduğuna bakan
+       bir kod, geç gelen bir ayrıntı cevabından sonra YANLIŞ yolculuğu
+       taslağa koyabilirdi. Kimlik dondurulur; dönen kayıt istenen kayıttır. */
+    const detail = await journeyHistory.openDetail(journeyHistoryId)
+    if (!detail) return
+
+    const draft = journeyHistoryDraft(detail)
+    if (!draft) return
+
+    journey.loadSaved(draft)
+  }, [journey, journeyHistory])
 
   /* Çağrı BURADADIR: gösterilecek geometri canlı simülasyona da bağlı olduğu
      için planlayıcıdan SONRA gelmesi gerekir. Katman ve uyum davranışı
@@ -4076,6 +4134,29 @@ export default function MapPage() {
                   onDeleteSavedJourney={requestSavedJourneyDelete}
                   onToggleSavedFavorite={toggleSavedJourneyFavorite}
                   onRetrySavedJourneys={savedJourneys.refresh}
+                  /* GEÇMİŞ (Faz 8). Tutanak DEĞİŞTİRİLEMEZ: ad, favori ya da
+                     silme eylemi geçirilmez çünkü böyle bir eylem yoktur. */
+                  history={{
+                    items: journeyHistory.items,
+                    filterId: journeyHistory.filterId,
+                    loading: journeyHistory.loading,
+                    loadingMore: journeyHistory.loadingMore,
+                    loaded: journeyHistory.loaded,
+                    hasMore: journeyHistory.hasMore,
+                    error: journeyHistory.error,
+                    detail: journeyHistory.detail,
+                    detailId: journeyHistory.detailId,
+                    busyId: journeyHistory.busyId,
+                  }}
+                  onHistoryFilterChange={journeyHistory.setFilter}
+                  /* Ayrıntıyı AÇMAK bir simülasyon başlatmaz. */
+                  onOpenHistoryDetail={journeyHistory.openDetail}
+                  onCloseHistoryDetail={journeyHistory.closeDetail}
+                  /* YÜKLEMEK de başlatmak değildir; başlatma ayrı eylemdir. */
+                  onLoadHistoryIntoPlanner={loadJourneyFromHistory}
+                  onReuseHistory={reuseJourneyFromHistory}
+                  onLoadMoreHistory={journeyHistory.loadMore}
+                  onRetryHistory={journeyHistory.refresh}
                   onCollapse={journey.collapsePanel}
                   onClose={closeJourneyPanel}
                   onOpen={openJourneyPanel}

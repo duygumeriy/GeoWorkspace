@@ -1193,7 +1193,14 @@ public sealed class JourneySimulationTests
                 : new RecordingJourneyActivityRecorder();
 
             Activity = Recorder as RecordingJourneyActivityRecorder ?? new RecordingJourneyActivityRecorder();
-            Simulations = new JourneySimulationService(Planning, currentUser, Store, Broadcaster, Recorder);
+
+            /* GEÇMİŞ yazıcısı Faz 8'de servisin bağımlılığı oldu. Bu dosyanın
+               senaryoları geçmişi ölçmez; kalıcılık ve mükerrerlik kanıtları
+               kendi test dosyasında, GERÇEK yazıcı ve süreç içi veritabanıyla
+               yapılır. */
+            History = new RecordingJourneyHistoryWriter();
+            Simulations = new JourneySimulationService(
+                Planning, currentUser, Store, Broadcaster, Recorder, History);
         }
 
         private Fixture(Fixture origin, int? userId)
@@ -1224,7 +1231,9 @@ public sealed class JourneySimulationTests
             Planning = new JourneyPlanningService(Db, currentUser, permissions, Router);
             Activity = origin.Activity;
             Recorder = origin.Recorder;
-            Simulations = new JourneySimulationService(Planning, currentUser, Store, Broadcaster, Recorder);
+            History = origin.History;
+            Simulations = new JourneySimulationService(
+                Planning, currentUser, Store, Broadcaster, Recorder, History);
         }
 
         public AppDbContext Db { get; }
@@ -1237,6 +1246,9 @@ public sealed class JourneySimulationTests
 
         /// <summary>Servise/runner'a verilen kaydedici (arızalı senaryoda GERÇEK olanı).</summary>
         public IJourneyActivityRecorder Recorder { get; }
+
+        /// <summary>Yazılan geçmiş çağrıları; bu dosyada yalnızca bağımlılık olarak durur.</summary>
+        public RecordingJourneyHistoryWriter History { get; }
         public JourneyPlanningService Planning { get; }
         public JourneySimulationService Simulations { get; }
         public int RouteId { get; private set; }

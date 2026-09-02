@@ -776,7 +776,11 @@ public sealed class SavedJourneyTests
                 .Returns(true);
 
             Planning = new JourneyPlanningService(db, currentUser, permissions, router);
-            Simulations = new JourneySimulationService(Planning, currentUser, store, broadcaster, activity);
+            /* Faz 8: geçmiş yazıcısı servisin bağımlılığıdır. Kaydedilmiş
+               yolculuk senaryoları geçmişi ölçmez — "kaydetmek geçmiş
+               oluşturmaz" kanıtı geçmişin kendi test dosyasındadır. */
+            Simulations = new JourneySimulationService(
+                Planning, currentUser, store, broadcaster, activity, new RecordingJourneyHistoryWriter());
             SavedJourneys = new SavedJourneyService(db, currentUser, Planning, Simulations);
         }
 

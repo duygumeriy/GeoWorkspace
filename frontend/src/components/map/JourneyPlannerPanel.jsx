@@ -25,6 +25,7 @@ import {
   PANEL_STATES,
   PERSONAL_SECTIONS,
   WAYPOINT_SOURCES,
+  resolvePersonalSection,
   waypointRoleAt,
 } from '../../map/journeyPlanning.js'
 import { journeyPreviewSummary, journeyProfileLabel as journeyProfileLabelOf } from '../../map/journeyPresentation.js'
@@ -40,6 +41,7 @@ import { journeyPanelStyle } from '../../map/journeyLayout.js'
 import { JOURNEY_PRODUCTS, journeyProductLabel } from '../../map/journeyWorkspace.js'
 import SharedTransportJourneyContent from './SharedTransportJourneyContent.jsx'
 import SavedJourneysSection from './SavedJourneysSection.jsx'
+import JourneyHistorySection from './JourneyHistorySection.jsx'
 import { formatRouteDistance, formatRouteDuration } from '../../map/transportPathPresentation.js'
 
 /* Profil ikonları TEK sözlükten gelir (`journeyProfileIcons`): haritadaki canlı
@@ -63,6 +65,7 @@ const ROLE_LABELS = { origin: 'Başlangıç', via: 'Ara nokta', destination: 'Va
 const SECTION_TABS = [
   { id: PERSONAL_SECTIONS.PLAN, label: 'Planla' },
   { id: PERSONAL_SECTIONS.SAVED, label: 'Kaydedilenler' },
+  { id: PERSONAL_SECTIONS.HISTORY, label: 'Geçmiş' },
 ]
 
 /**
@@ -182,6 +185,17 @@ export default function JourneyPlannerPanel({
   onDeleteSavedJourney,
   onToggleSavedFavorite,
   onRetrySavedJourneys,
+  /* GEÇMİŞ (Faz 8). Panel hiçbirini YORUMLAMAZ; sunum modelini saf
+     `journeyHistory` modülü üretir ve her eylem KAYIT KİMLİĞİ taşır. Tutanak
+     DEĞİŞTİRİLEMEZ: burada ad, favori ya da silme eylemi yoktur. */
+  history = null,
+  onHistoryFilterChange,
+  onOpenHistoryDetail,
+  onCloseHistoryDetail,
+  onReuseHistory,
+  onLoadHistoryIntoPlanner,
+  onLoadMoreHistory,
+  onRetryHistory,
   /* Kaydetme YALNIZCA geçerli bir kanonik tanım varken sunulur; eksik bir
      seçim kaydedilemez. */
   canSaveJourney = false,
@@ -258,12 +272,13 @@ export default function JourneyPlannerPanel({
   const showingPersonal = !showingShared
 
   /* Bölüm YALNIZCA kişisel üründe anlamlıdır ve paylaşılan hattın sekmesine
-     hiç dokunmaz. Bilinmeyen bir değer planlamaya düşer (fail-safe). */
-  const section = state.section === PERSONAL_SECTIONS.SAVED
-    ? PERSONAL_SECTIONS.SAVED
-    : PERSONAL_SECTIONS.PLAN
+     hiç dokunmaz. Kural SAF modüldedir ve burada yalnızca uygulanır: panel
+     bölümleri tek tek sayarsa, eklenen her yeni bölüm sessizce planlamaya
+     düşer — Geçmiş sekmesi tam olarak böyle çalışmıyordu. */
+  const section = resolvePersonalSection(state.section)
   const showingSaved = section === PERSONAL_SECTIONS.SAVED
-  const showingPlanner = !showingSaved
+  const showingHistory = section === PERSONAL_SECTIONS.HISTORY
+  const showingPlanner = !showingSaved && !showingHistory
 
   /* MEVCUT bayraklar okunur; ikinci bir "meşgul" durumu ya da sahte bir
      ilerleme sayacı üretilmez. */
@@ -563,6 +578,32 @@ export default function JourneyPlannerPanel({
               onDelete={onDeleteSavedJourney}
               onToggleFavorite={onToggleSavedFavorite}
               onRetry={onRetrySavedJourneys}
+            />
+          )}
+
+          {/* GEÇMİŞ: sona ermiş çalıştırmaların değişmez tutanağı. Burada
+              canlı durum, SignalR ya da zamanlayıcı YOKTUR ve hiçbir canlı
+              POI/durak/hat kaydı okunmaz — adlar tutanağın kendi
+              kopyalarındandır. */}
+          {showingHistory && (
+            <JourneyHistorySection
+              items={history?.items ?? []}
+              filterId={history?.filterId ?? 'all'}
+              loading={Boolean(history?.loading)}
+              loadingMore={Boolean(history?.loadingMore)}
+              loaded={Boolean(history?.loaded)}
+              hasMore={Boolean(history?.hasMore)}
+              error={history?.error ?? ''}
+              detail={history?.detail ?? null}
+              detailId={history?.detailId ?? null}
+              busyId={history?.busyId ?? null}
+              onFilterChange={onHistoryFilterChange}
+              onOpenDetail={onOpenHistoryDetail}
+              onCloseDetail={onCloseHistoryDetail}
+              onReuse={onReuseHistory}
+              onLoadIntoPlanner={onLoadHistoryIntoPlanner}
+              onLoadMore={onLoadMoreHistory}
+              onRetry={onRetryHistory}
             />
           )}
 

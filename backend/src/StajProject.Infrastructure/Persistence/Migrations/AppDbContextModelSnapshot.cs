@@ -386,6 +386,149 @@ namespace StajProject.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("StajProject.Domain.Entities.JourneyHistory", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<double>("CoveredDistanceMeters")
+                        .HasColumnType("double precision")
+                        .HasColumnName("covered_distance_meters");
+
+                    b.Property<DateTime>("CreatedDate")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_date");
+
+                    b.Property<double>("DistanceMeters")
+                        .HasColumnType("double precision")
+                        .HasColumnName("distance_meters");
+
+                    b.Property<double>("DurationSeconds")
+                        .HasColumnType("double precision")
+                        .HasColumnName("duration_seconds");
+
+                    b.Property<DateTime>("EndedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ended_at");
+
+                    b.Property<string>("Mode")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("mode");
+
+                    b.Property<string>("Profile")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("profile");
+
+                    b.Property<string>("RouteDisplayName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("route_display_name");
+
+                    b.Property<int?>("RouteId")
+                        .HasColumnType("integer")
+                        .HasColumnName("route_id");
+
+                    b.Property<Guid>("SimulationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("simulation_id");
+
+                    b.Property<DateTime>("StartedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("started_at");
+
+                    b.Property<string>("TerminalStatus")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("terminal_status");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("integer")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SimulationId")
+                        .IsUnique();
+
+                    b.HasIndex("UserId", "EndedAt");
+
+                    b.ToTable("journey_history", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_journey_history_mode_supported", "mode IN ('routeFull', 'routeSegment', 'waypoints')");
+
+                            t.HasCheckConstraint("ck_journey_history_profile_supported", "profile IN ('driving', 'walking', 'cycling')");
+
+                            t.HasCheckConstraint("ck_journey_history_terminal_status_supported", "terminal_status IN ('Completed', 'Cancelled')");
+
+                            t.HasCheckConstraint("ck_journey_history_ends_after_it_starts", "ended_at >= started_at");
+
+                            t.HasCheckConstraint("ck_journey_history_distance_nonnegative", "distance_meters >= 0");
+
+                            t.HasCheckConstraint("ck_journey_history_duration_nonnegative", "duration_seconds >= 0");
+
+                            t.HasCheckConstraint("ck_journey_history_covered_distance_nonnegative", "covered_distance_meters >= 0");
+
+                            t.HasCheckConstraint("ck_journey_history_route_id_positive", "route_id IS NULL OR route_id > 0");
+                        });
+                });
+
+            modelBuilder.Entity("StajProject.Domain.Entities.JourneyHistoryPoint", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("display_name");
+
+                    b.Property<int>("JourneyHistoryId")
+                        .HasColumnType("integer")
+                        .HasColumnName("journey_history_id");
+
+                    b.Property<int>("ReferenceId")
+                        .HasColumnType("integer")
+                        .HasColumnName("reference_id");
+
+                    b.Property<int>("Sequence")
+                        .HasColumnType("integer")
+                        .HasColumnName("sequence");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("source");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("JourneyHistoryId", "Sequence")
+                        .IsUnique();
+
+                    b.ToTable("journey_history_point", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_journey_history_point_sequence_nonnegative", "sequence >= 0");
+
+                            t.HasCheckConstraint("ck_journey_history_point_source_supported", "source IN ('transportStop', 'poi')");
+
+                            t.HasCheckConstraint("ck_journey_history_point_reference_positive", "reference_id > 0");
+                        });
+                });
+
             modelBuilder.Entity("StajProject.Domain.Entities.LineFeature", b =>
                 {
                     b.Property<int>("Id")
@@ -1504,6 +1647,28 @@ namespace StajProject.Infrastructure.Persistence.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("StajProject.Domain.Entities.JourneyHistory", b =>
+                {
+                    b.HasOne("StajProject.Domain.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("StajProject.Domain.Entities.JourneyHistoryPoint", b =>
+                {
+                    b.HasOne("StajProject.Domain.Entities.JourneyHistory", "JourneyHistory")
+                        .WithMany("Points")
+                        .HasForeignKey("JourneyHistoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("JourneyHistory");
+                });
+
             modelBuilder.Entity("StajProject.Domain.Entities.LineFeature", b =>
                 {
                     b.HasOne("StajProject.Domain.Entities.User", "CreatedByUser")
@@ -1697,6 +1862,11 @@ namespace StajProject.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("StajProject.Domain.Entities.PoiCategory", b =>
                 {
                     b.Navigation("Children");
+                });
+
+            modelBuilder.Entity("StajProject.Domain.Entities.JourneyHistory", b =>
+                {
+                    b.Navigation("Points");
                 });
 
             modelBuilder.Entity("StajProject.Domain.Entities.SavedJourney", b =>
