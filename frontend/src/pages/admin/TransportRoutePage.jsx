@@ -150,6 +150,8 @@ export default function TransportRoutePage() {
     canStop: canStopSimulation,
     starting: simulation.starting,
     stopping: simulation.stopping,
+    pausing: simulation.pausing,
+    resuming: simulation.resuming,
     following: simulation.following,
   })
   const visibleRoutes = useMemo(
@@ -645,6 +647,8 @@ export default function TransportRoutePage() {
                 statusLoading={simulation.statusLoading}
                 starting={simulation.starting}
                 stopping={simulation.stopping}
+                pausing={simulation.pausing}
+                resuming={simulation.resuming}
                 error={simulation.error}
                 onStart={async () => {
                   const snapshot = await simulation.start(selectedRoute.id)
@@ -655,6 +659,18 @@ export default function TransportRoutePage() {
                    durdurulmak İSTENEN çalıştırmanın kimliğini YAKALAR. Çok
                    kullanıcılı canlı bir çalıştırma yanlış bir tıklamayla
                    kesilmemelidir. */
+                /* Duraklat/Devam Ettir yıkıcı DEĞİLDİR: onay istemezler ve
+                   ana haritayla AYNI kanca komutlarını çağırırlar. Yetenek
+                   yine de burada denetlenir — yönetim ekranında olmak bir
+                   yetki kaynağı değildir. */
+                onPause={() => {
+                  if (!canStopSimulation) return
+                  simulation.pause(selectedId, simulationControls.stoppableSimulationId)
+                }}
+                onResume={() => {
+                  if (!canStopSimulation) return
+                  simulation.resume(selectedId, simulationControls.stoppableSimulationId)
+                }}
                 onStop={() => {
                   if (!canStopSimulation) return
                   const intent = sharedStopIntent({
@@ -764,8 +780,8 @@ export default function TransportRoutePage() {
       {pendingSimulationStop && canStopSimulation && (
         <div className="admin-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !simulation.stopping) setPendingSimulationStop(null) }}>
           <div className="admin-dialog" role="alertdialog" aria-modal="true" aria-labelledby="transport-simulation-stop-title" aria-describedby="transport-simulation-stop-copy">
-            <h2 id="transport-simulation-stop-title">Hat simülasyonu durdurulsun mu?</h2>
-            <p id="transport-simulation-stop-copy">Simülasyon herkes için sona erer; hattı izleyen diğer kullanıcılar da aracı görmeyi bırakır. Hat daha sonra yeniden başlatılabilir.</p>
+            <h2 id="transport-simulation-stop-title">Hat simülasyonu sıfırlansın mı?</h2>
+            <p id="transport-simulation-stop-copy">Bu simülasyon sona erdirilecek ve hat başlangıç durumuna dönecek; onu izleyen diğer kullanıcılar da aracı görmeyi bırakır. Yeniden başlatıldığında %0'dan yeni bir simülasyon oluşturulur.</p>
             <div className="admin-dialog-actions">
               {/* Vazgeçmek HİÇBİR ŞEY yapmaz: sunucuya istek gitmez. */}
               <button type="button" className="admin-button secondary" onClick={() => setPendingSimulationStop(null)} disabled={simulation.stopping}>İptal</button>
@@ -794,7 +810,7 @@ export default function TransportRoutePage() {
                   setPendingSimulationStop(null)
                 }}
               >
-                {simulation.stopping ? 'Durduruluyor…' : 'Simülasyonu Durdur'}
+                {simulation.stopping ? 'Sıfırlanıyor…' : 'Sıfırla'}
               </button>
             </div>
           </div>

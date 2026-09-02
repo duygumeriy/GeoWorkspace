@@ -45,6 +45,11 @@ public sealed class TransportSimulationService : ITransportSimulationService
        o anki durumuyla çelişir. Çakışma (409), istemciye "durumu tazele ve
        gerekiyorsa aynı komutu yeni kimlikle tekrarla" diyebilen tek
        kategoridir — başlatmadaki AlreadyRunning ile aynı gerekçe. */
+    private const string NotRunningMessage =
+        "Bu çalıştırma şu anda çalışmıyor; yalnızca çalışan bir simülasyon duraklatılabilir.";
+    private const string NotPausedMessage =
+        "Bu çalıştırma duraklatılmış değil; yalnızca duraklatılmış bir simülasyon sürdürülebilir.";
+
     private const string StaleSimulationMessage =
         "Bu çalıştırma artık aktif değil; hattaki güncel simülasyon farklı. Durumu yenileyip tekrar deneyin.";
 
@@ -55,17 +60,20 @@ public sealed class TransportSimulationService : ITransportSimulationService
     private readonly ICurrentUserService _currentUser;
     private readonly ITransportSimulationStateStore _state;
     private readonly ITransportSimulationTerminator _terminator;
+    private readonly ITransportSimulationLifecycle _lifecycle;
 
     public TransportSimulationService(
         AppDbContext dbContext,
         ICurrentUserService currentUser,
         ITransportSimulationStateStore state,
-        ITransportSimulationTerminator terminator)
+        ITransportSimulationTerminator terminator,
+        ITransportSimulationLifecycle lifecycle)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
         _state = state;
         _terminator = terminator;
+        _lifecycle = lifecycle;
     }
 
     public async Task<ServiceResult<TransportSimulationResponse>> StartAsync(
@@ -236,13 +244,92 @@ public sealed class TransportSimulationService : ITransportSimulationService
             : ServiceResult<TransportSimulationLiveUpdate>.Success(terminated);
     }
 
+    /// <summary>DURAKLAT. Yetki (<c>transport.simulation.stop</c>) uçtadır.</summary>
+    public Task<ServiceResult<TransportSimulationLiveUpdate>> PauseAsync(
+        int routeId,
+        Guid simulationId,
+        CancellationToken cancellationToken = default) =>
+        TransitionAsync(
+            routeId,
+            simulationId,
+            TransportSimulationStatus.Running,
+            NotRunningMessage,
+            () => _lifecycle.PauseAsync(routeId, simulationId, cancellationToken),
+            cancellationToken);
+
+    /// <summary>DEVAM ETTİR. Yetki (<c>transport.simulation.stop</c>) uçtadır.</summary>
+    public Task<ServiceResult<TransportSimulationLiveUpdate>> ResumeAsync(
+        int routeId,
+        Guid simulationId,
+        CancellationToken cancellationToken = default) =>
+        TransitionAsync(
+            routeId,
+            simulationId,
+            TransportSimulationStatus.Paused,
+            NotPausedMessage,
+            () => _lifecycle.ResumeAsync(routeId, simulationId, cancellationToken),
+            cancellationToken);
+
+    /// <summary>
+    /// Duraklat/Sürdür için ORTAK kapı: rota, kimlik ve durum önkoşulu.
+    /// </summary>
+    /// <remarks>
+    /// <b>Ön okumalar yalnızca DOĞRU HATA MESAJI içindir.</b> Bağlayıcı karar
+    /// deponun atomik geçişidir (<c>TryPause</c>/<c>TryResume</c>): ön okuma
+    /// ile geçiş arasında çalıştırma değişirse ilkel <c>null</c> döner ve komut
+    /// yine reddedilir. "Her ihtimale karşı güncel olanı duraklat" yolu YOKTUR.
+    /// </remarks>
+    private async Task<ServiceResult<TransportSimulationLiveUpdate>> TransitionAsync(
+        int routeId,
+        Guid simulationId,
+        TransportSimulationStatus requiredStatus,
+        string wrongStatusMessage,
+        Func<Task<TransportSimulationLiveUpdate?>> transition,
+        CancellationToken cancellationToken)
+    {
+        if (!await _dbContext.TransportRoutes
+                .IgnoreQueryFilters()
+                .AnyAsync(item => item.Id == routeId && !item.IsDeleted, cancellationToken))
+        {
+            return ServiceResult<TransportSimulationLiveUpdate>.NotFound(RouteNotFoundMessage);
+        }
+
+        var active = _state.Find(routeId);
+
+        if (active is null)
+        {
+            return ServiceResult<TransportSimulationLiveUpdate>.NotFound(NoActiveSimulationMessage);
+        }
+
+        if (active.SimulationId != simulationId)
+        {
+            /* YARIŞ KORUMASI: hatta bir çalıştırma var ama istenen O DEĞİL.
+               Eski bir sekme, yerine geçmiş yeni çalıştırmayı duraklatamaz. */
+            return ServiceResult<TransportSimulationLiveUpdate>.Conflict(StaleSimulationMessage);
+        }
+
+        if (active.Status != requiredStatus)
+        {
+            return ServiceResult<TransportSimulationLiveUpdate>.Conflict(wrongStatusMessage);
+        }
+
+        var applied = await transition();
+
+        return applied is null
+            ? ServiceResult<TransportSimulationLiveUpdate>.Conflict(StaleSimulationMessage)
+            : ServiceResult<TransportSimulationLiveUpdate>.Success(applied);
+    }
+
     public TransportSimulationLiveUpdate? FindActiveLiveUpdate(int routeId)
     {
         var simulation = _state.Find(routeId);
 
+        /* Durum çalıştırmanın KENDİSİNDEN okunur; sabit `Running` varsaymak,
+           gruba geç katılan bir gözlemciye duraklatılmış aracı çalışıyormuş
+           gibi gösterirdi. */
         return simulation is null
             ? null
-            : TransportSimulationLiveUpdate.From(simulation, TransportSimulationStatus.Running);
+            : TransportSimulationLiveUpdate.From(simulation, simulation.Status);
     }
 
     private static TransportSimulationResponse ToResponse(ActiveTransportSimulation simulation) =>
@@ -250,6 +337,9 @@ public sealed class TransportSimulationService : ITransportSimulationService
         {
             SimulationId = simulation.SimulationId,
             RouteId = simulation.RouteId,
+            /* Durum ÇALIŞMA ZAMANI kaydından olduğu gibi alınır; ilerlemeden
+               ya da PausedAt'in dolu olmasından TÜRETİLMEZ. */
+            Status = simulation.Status,
             RouteName = simulation.RouteName,
             RouteColorHex = simulation.RouteColorHex,
             StartedByUserId = simulation.StartedByUserId,

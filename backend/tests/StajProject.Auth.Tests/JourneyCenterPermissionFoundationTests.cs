@@ -402,13 +402,20 @@ public class JourneyCenterPermissionFoundationTests
     }
 
     [Fact]
-    public void The_shared_stop_code_gates_exactly_one_endpoint_across_the_whole_api()
+    public void The_shared_stop_code_gates_exactly_the_shared_lifecycle_mutation_endpoints()
     {
-        /* Faz 1'de bu test bir OLUMSUZLUKTU: kod yalnızca KİMLİK olarak
-           tanımlanmıştı ve onu tüketen hiçbir uç yoktu. Faz 3 o komutu
-           bilinçli olarak ekledi; iddia bu yüzden "hiç uç yok"tan "TAM OLARAK
-           BİR uç" ölçüsüne taşındı. Zayıflama değildir — kodun sessizce ikinci
-           bir yüzeye yayılması hâlâ burada düşer. */
+        /* Bu iddia FAZLA FAZLA GENİŞLEDİ ve her seferinde bilinçli olarak:
+
+           Faz 1'de bir OLUMSUZLUKTU — kod yalnızca KİMLİK olarak tanımlıydı ve
+           onu tüketen hiçbir uç yoktu. Faz 3 sıfırlama komutunu ekledi ve ölçü
+           "TAM OLARAK BİR uç" oldu. Faz 3B ise duraklat/sürdürü ekledi: ikisi
+           de MEVCUT bir çalıştırmanın mutasyonudur ve bu yüzden ÜÇ yeni yetki
+           kodu uydurmak yerine aynı yaşam döngüsü otoritesini paylaşırlar.
+
+           Ölçü bu yüzden artık "TAM OLARAK ŞU ÜÇ uç"tur. Zayıflama DEĞİLDİR:
+           sayı da kimlikler de çivilenir, dolayısıyla kodun dördüncü bir
+           yüzeye sessizce yayılması ya da yanlış bir eyleme takılması hâlâ
+           burada düşer. Tarama tüm API yüzeyini gezer. */
         var gated = typeof(TransportSimulationController).Assembly
             .GetTypes()
             .Where(type => typeof(ControllerBase).IsAssignableFrom(type))
@@ -420,26 +427,62 @@ public class JourneyCenterPermissionFoundationTests
                 .Any(attribute => attribute.PermissionCode == PermissionCodes.TransportSimulationStop))
             .ToArray();
 
-        var only = Assert.Single(gated);
+        // KİMLİKLER: yalnızca paylaşılan hattın yaşam döngüsü mutasyonları.
+        Assert.Equal(
+            new[]
+            {
+                nameof(TransportSimulationController.Pause),
+                nameof(TransportSimulationController.Resume),
+                nameof(TransportSimulationController.Stop)
+            },
+            gated.Select(entry => entry.Method.Name).OrderBy(name => name, StringComparer.Ordinal));
 
-        Assert.Equal(typeof(TransportSimulationController), only.Type);
-        Assert.Equal(nameof(TransportSimulationController.Stop), only.Method.Name);
+        // Ve hepsi TEK bir controller'dadır; başka bir yüzeye sızmamıştır.
+        Assert.All(gated, entry => Assert.Equal(typeof(TransportSimulationController), entry.Type));
 
-        /* Komut İKİ kimliği birden taşır: yalnızca rota alan bir durdurma,
-           eski bir sekmenin yerine geçmiş YENİ çalıştırmayı durdurmasına açık
-           kapı bırakırdı. */
-        Assert.Contains(only.Method.GetParameters(), parameter => parameter.ParameterType == typeof(Guid));
-        Assert.Contains(only.Method.GetParameters(), parameter => parameter.ParameterType == typeof(int));
+        /* HER ÜÇ komut da İKİ kimliği birden taşır. Yalnızca rota alan bir
+           yaşam döngüsü komutu, eski bir sekmenin yerine geçmiş YENİ
+           çalıştırmayı duraklatmasına/sürdürmesine/sıfırlamasına açık kapı
+           bırakırdı. */
+        Assert.All(gated, entry =>
+        {
+            Assert.Contains(entry.Method.GetParameters(), parameter => parameter.ParameterType == typeof(int));
+            Assert.Contains(entry.Method.GetParameters(), parameter => parameter.ParameterType == typeof(Guid));
+        });
 
-        /* Ve servis sözleşmesinde durdurma TEKTİR: iç iptal (rota
-           geçersizleşmesi) hâlâ AYRI bir porttadır ve bu servisten geçmez. */
-        var stops = typeof(ITransportSimulationService)
-            .GetMethods()
-            .Where(method => method.Name.Contains("Stop", StringComparison.Ordinal)
-                || method.Name.Contains("Cancel", StringComparison.Ordinal))
-            .ToArray();
+        /* BAŞLATMA AYRI KALIR ve iki yönlü: yaşam döngüsü kodu başlatmayı
+           açmaz, başlatma kodu da bu üçünü açmaz. */
+        Assert.All(gated, entry => Assert.DoesNotContain(
+            entry.Method.GetCustomAttributes<RequirePermissionAttribute>(true),
+            attribute => attribute.PermissionCode == PermissionCodes.TransportSimulationStart));
 
-        Assert.Equal(nameof(ITransportSimulationService.StopAsync), Assert.Single(stops).Name);
+        var start = Assert.Single(
+            typeof(TransportSimulationController)
+                .GetMethod(nameof(TransportSimulationController.Start))!
+                .GetCustomAttributes<RequirePermissionAttribute>(true));
+        Assert.Equal(PermissionCodes.TransportSimulationStart, start.PermissionCode);
+
+        /* Servis sözleşmesindeki yaşam döngüsü yüzeyi de tam olarak bu üçüdür.
+           İÇ İPTAL (güzergah geçersizleşmesi) hâlâ AYRI bir porttadır, bu
+           servisten geçmez ve hiçbir kullanıcı yetkisi İSTEMEZ. */
+        Assert.Equal(
+            new[]
+            {
+                nameof(ITransportSimulationService.PauseAsync),
+                nameof(ITransportSimulationService.ResumeAsync),
+                nameof(ITransportSimulationService.StopAsync)
+            },
+            typeof(ITransportSimulationService)
+                .GetMethods()
+                .Where(method => method.Name is nameof(ITransportSimulationService.StopAsync)
+                    or nameof(ITransportSimulationService.PauseAsync)
+                    or nameof(ITransportSimulationService.ResumeAsync))
+                .Select(method => method.Name)
+                .OrderBy(name => name, StringComparer.Ordinal));
+
+        Assert.DoesNotContain(
+            typeof(ITransportSimulationService).GetMethods(),
+            method => method.Name.Contains("Cancel", StringComparison.Ordinal));
     }
 
     [Fact]

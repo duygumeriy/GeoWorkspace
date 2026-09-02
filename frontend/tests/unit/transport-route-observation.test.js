@@ -7,7 +7,12 @@ import {
   normalizeLiveUpdate,
   transportSimulationControls,
 } from '../../src/map/transportSimulationState.js'
-import { transportVehiclePresentation } from '../../src/map/transportVehicle.js'
+import { VEHICLE_OWNERSHIP, transportVehiclePresentation } from '../../src/map/transportVehicle.js'
+import {
+  JOIN_ROUTE_METHOD,
+  LEAVE_ROUTE_METHOD,
+  createTransportSimulationClient,
+} from '../../src/services/transportSimulationClient.js'
 
 const read = (relative) => readFileSync(new URL(relative, import.meta.url), 'utf8')
 
@@ -36,6 +41,283 @@ const update = ({
 })
 
 const controlsFor = (options) => transportSimulationControls({ routeId: ROUTE_R, ...options })
+
+/**
+ * Gerçek istemciyi SAHTE bir bağlantıyla sürer.
+ *
+ * Grup üyeliği kararı (`JoinRoute`/`LeaveRoute`) istemcinin KENDİ kuralıdır;
+ * onu kaynak metinden okumak yerine gerçekten çalıştırmak, "takibi bırakmak
+ * gruptan çıkarmaz" iddiasını DAVRANIŞ olarak kanıtlar.
+ */
+function fakeClient() {
+  const calls = []
+  const connection = {
+    on() {},
+    onreconnected() {},
+    start: () => Promise.resolve(),
+    stop: () => Promise.resolve(),
+    invoke: (method, routeId) => {
+      calls.push(`${method}(${routeId})`)
+      // JoinRoute canlı anlık görüntü döner; burada gerekmiyor.
+      return Promise.resolve(null)
+    },
+  }
+
+  const client = createTransportSimulationClient({
+    createConnection: () => connection,
+    onUpdate: () => {},
+    onError: () => {},
+  })
+
+  return { client, calls }
+}
+
+/* --- 1/2/3/4. SEÇİLİ ROTA gözlemin sahibidir --------------------------------- */
+
+test('the selected route owns passive observation and Follow may coexist with it', async () => {
+  const { client, calls } = fakeClient()
+
+  // 1. Rota seçilir: PASİF gözlem kurulur, kamera talep edilmez.
+  await client.observe(ROUTE_R)
+  assert.equal(client.observedRouteId, ROUTE_R)
+  assert.equal(client.followingRouteId, null)
+  assert.deepEqual(calls, [`${JOIN_ROUTE_METHOD}(${ROUTE_R})`])
+
+  /* 2. Takip Et: İKİ yuva da AYNI rotayı gösterebilir ve fiziksel üyelik
+     TEKİLLEŞTİRİLİR — ikinci bir JoinRoute oluşmaz. */
+  await client.follow(ROUTE_R)
+  assert.equal(client.followingRouteId, ROUTE_R)
+  assert.equal(client.observedRouteId, ROUTE_R)
+  assert.deepEqual(calls, [`${JOIN_ROUTE_METHOD}(${ROUTE_R})`])
+  assert.deepEqual(client.subscribedRouteIds, [ROUTE_R])
+})
+
+test('manual Unfollow releases only the camera and never leaves the route group', async () => {
+  const { client, calls } = fakeClient()
+
+  await client.observe(ROUTE_R)
+  await client.follow(ROUTE_R)
+  calls.length = 0
+
+  // 3/4. Takibi Bırak: gözlem yuvası hâlâ rotayı istiyor → ayrılma YOK.
+  await client.unfollow()
+
+  assert.equal(client.followingRouteId, null, 'kamera sahipliği bırakılmadı')
+  assert.equal(client.observedRouteId, ROUTE_R, 'gözlem yuvası da boşaltılmış')
+  assert.deepEqual(client.subscribedRouteIds, [ROUTE_R], 'rota grubundan çıkılmış')
+  assert.deepEqual(calls, [], `Takibi Bırak ${LEAVE_ROUTE_METHOD} çağırdı`)
+})
+
+test('the hook establishes observation from the SELECTED route, not from Follow', () => {
+  /* ASIL KUSUR BUYDU: gözlem yuvası yalnızca kullanıcı simülasyonu KENDİ
+     başlattığında ya da terminal devrinde doluyordu. Sıradan bir gözlemci
+     için gruba katılmanın tek yolu "Takip Et"ti, dolayısıyla "Takibi Bırak"
+     son isteyen yuvayı boşaltıyor ve istemci gruptan çıkıyordu. */
+  const effect = HOOK.slice(
+    HOOK.indexOf('if (!canView || routeId == null) return'),
+    HOOK.length,
+  )
+  assert.ok(effect.length > 0, 'seçili rota gözlem etkisi bulunamadı')
+  assert.ok(effect.includes('observe(routeId)'), 'seçili rota gözlemi kurmuyor')
+
+  // Gözlem takibin YOKLUĞUNA bağlanmaz: iki yuva aynı rotayı gösterebilir.
+  assert.ok(!effect.includes('!isFollowing'))
+  assert.ok(!effect.includes('followingRouteId !== routeId'))
+
+  // Ve elle bırakma yolunda gözlem yuvasına DOKUNULMAZ.
+  const unfollow = HOOK.slice(HOOK.indexOf('const unfollow = useCallback'), HOOK.indexOf('const observe = useCallback'))
+  assert.ok(unfollow.includes('clientRef.current.unfollow()'))
+  assert.ok(!unfollow.includes('stopObserving'))
+})
+
+/* --- 5/6/7. Bırakma sonrası canlı akış SÜRER --------------------------------- */
+
+test('after manual Unfollow a later same-run update is still accepted', () => {
+  /* Bağlantı korunduğu için sonraki tick'ler gelir ve birleştirme kuralı
+     onları kabul eder: ilerleme İLERLER, donmaz. */
+  const at42 = update({ progressPercent: 42, updatedAtUtc: '2026-09-02T10:00:00Z' })
+  const at43 = update({ progressPercent: 43, updatedAtUtc: '2026-09-02T10:00:01Z' })
+  const at44 = update({ progressPercent: 44, updatedAtUtc: '2026-09-02T10:00:02Z' })
+
+  const merged = mergeSimulationState(mergeSimulationState(at42, at43), at44)
+  assert.equal(merged.progressPercent, 44)
+  assert.equal(merged.simulationId, RUN_A)
+})
+
+test('the vehicle keeps moving after manual Unfollow, only the camera stops', () => {
+  const base = {
+    followingRouteId: null,      // kamera BIRAKILDI
+    observedRouteId: ROUTE_R,    // ama rota HÂLÂ izleniyor
+    selectedRouteId: ROUTE_R,
+    startedSimulationId: null,
+    routes: [{ id: ROUTE_R, name: 'R', colorHex: '#123456' }],
+  }
+
+  const first = transportVehiclePresentation({ ...base, simulation: update({ progressPercent: 42, longitude: 30 }) })
+
+  // 6. Araç EKRANDA kalır ve pasif gözlem sahipliğini taşır.
+  assert.notEqual(first, null, 'takibi bırakınca araç haritadan silindi')
+  assert.equal(first.ownership, VEHICLE_OWNERSHIP.OBSERVE)
+  assert.equal(first.isLive, true)
+
+  // 7. Kamera artık onu izlemez.
+  assert.equal(first.followCamera, false)
+
+  // Ve sonraki anlık görüntüyle HAREKET etmeye devam eder.
+  const later = transportVehiclePresentation({
+    ...base,
+    simulation: update({ progressPercent: 60, longitude: 31, updatedAtUtc: '2026-09-02T10:00:30Z' }),
+  })
+  assert.equal(later.progressPercent, 60)
+  assert.equal(later.longitude, 31)
+  assert.equal(later.followCamera, false)
+})
+
+test('passive observation renders only a LIVE run and retires a finished one', () => {
+  /* GÖZLEM ÖMRÜ ile ARAÇ ÖMRÜ aynı şey DEĞİLDİR. Rota seçili kaldığı sürece
+     abonelik sürer (yerine geçecek B'yi almak için), ama biten bir
+     çalıştırmanın aracı sonsuza dek haritada durmamalıdır. */
+  const observing = (status) => transportVehiclePresentation({
+    simulation: update({ status }),
+    followingRouteId: null,       // kamera bırakılmış
+    observedRouteId: ROUTE_R,     // rota hâlâ izleniyor
+    selectedRouteId: ROUTE_R,
+    startedSimulationId: null,
+    routes: [{ id: ROUTE_R, name: 'R', colorHex: '#123456' }],
+  })
+
+  // CANLI çalıştırmalar çizilir…
+  assert.equal(observing(SIMULATION_STATUS.RUNNING).ownership, VEHICLE_OWNERSHIP.OBSERVE)
+  // …DURAKLATMA TERMİNAL DEĞİLDİR: donmuş koordinatında görünmeye devam eder.
+  assert.equal(observing(SIMULATION_STATUS.PAUSED).ownership, VEHICLE_OWNERSHIP.OBSERVE)
+
+  // …BİTEN çalıştırmalar çizilmez.
+  assert.equal(observing(SIMULATION_STATUS.CANCELLED), null)
+  assert.equal(observing(SIMULATION_STATUS.COMPLETED), null)
+})
+
+test('the START owner keeps its accepted terminal final-position behaviour', () => {
+  /* Yeni GÖZLEM kısıtı yalnızca gözlem sahipliğine uygulanır: genel bir
+     "terminal ise gizle" kuralı YOKTUR. Çalıştırmayı BAŞLATAN kullanıcının
+     son konumu görmesi mevcut ve kabul edilmiş davranıştır. */
+  for (const status of [SIMULATION_STATUS.COMPLETED, SIMULATION_STATUS.CANCELLED]) {
+    const started = transportVehiclePresentation({
+      simulation: update({ status }),
+      followingRouteId: null,
+      observedRouteId: null,
+      selectedRouteId: ROUTE_R,
+      startedSimulationId: RUN_A,
+      routes: [{ id: ROUTE_R, name: 'R' }],
+    })
+
+    assert.notEqual(started, null, `${status} durumunda başlatanın aracı kayboldu`)
+    assert.equal(started.ownership, VEHICLE_OWNERSHIP.START)
+    assert.equal(started.isTerminal, true)
+    assert.equal(started.followCamera, false)
+  }
+})
+
+test('a replacement run is renderable through observation and inherits no Follow', () => {
+  const replacement = transportVehiclePresentation({
+    simulation: update({ simulationId: RUN_B, progressPercent: 3 }),
+    followingRouteId: null,
+    observedRouteId: ROUTE_R,
+    selectedRouteId: ROUTE_R,
+    startedSimulationId: null,
+    routes: [{ id: ROUTE_R, name: 'R' }],
+  })
+
+  assert.equal(replacement.simulationId, RUN_B)
+  assert.equal(replacement.ownership, VEHICLE_OWNERSHIP.OBSERVE)
+  assert.equal(replacement.isLive, true)
+  // Takip DEVRALINMAZ: kamera sahipliği yoktur.
+  assert.equal(replacement.followCamera, false)
+})
+
+test('a passively observed vehicle needs the route to still be selected', () => {
+  /* Bakılmayan bir hattın aracını haritada bırakmak yanıltıcı olurdu. */
+  assert.equal(
+    transportVehiclePresentation({
+      simulation: update(),
+      followingRouteId: null,
+      observedRouteId: ROUTE_R,
+      selectedRouteId: ROUTE_S,
+      routes: [{ id: ROUTE_R, name: 'R' }],
+    }),
+    null,
+  )
+})
+
+/* --- 8/9. Duraklat / Devam Ettir bırakma ile karışmaz ------------------------ */
+
+test('manual Unfollow while Paused keeps observation and Resume needs no re-Follow', async () => {
+  const { client, calls } = fakeClient()
+  await client.observe(ROUTE_R)
+  await client.follow(ROUTE_R)
+  calls.length = 0
+
+  // Duraklatılmışken takibi bırakmak da yalnızca kamerayı bırakır.
+  await client.unfollow()
+  assert.deepEqual(client.subscribedRouteIds, [ROUTE_R])
+  assert.deepEqual(calls, [])
+
+  /* İlerleme donuk görünür çünkü SUNUCU duraklattı — bağlantı koptuğu için
+     değil. Devam ettirme olayı, takip yeniden açılmadan kabul edilir. */
+  const paused = update({ status: SIMULATION_STATUS.PAUSED, progressPercent: 42, updatedAtUtc: '2026-09-02T10:00:05Z' })
+  const resumed = update({ status: SIMULATION_STATUS.RUNNING, progressPercent: 42, updatedAtUtc: '2026-09-02T10:00:09Z' })
+  const moving = update({ progressPercent: 45, updatedAtUtc: '2026-09-02T10:00:12Z' })
+
+  const afterResume = mergeSimulationState(paused, resumed)
+  assert.equal(afterResume.status, SIMULATION_STATUS.RUNNING)
+  assert.equal(mergeSimulationState(afterResume, moving).progressPercent, 45)
+})
+
+/* --- 10/11/12. Sıfırlama ve yerine geçen çalıştırma --------------------------- */
+
+test('Reset releases Follow but keeps observation, and B arrives without re-Follow', async () => {
+  const { client, calls } = fakeClient()
+  await client.observe(ROUTE_R)
+  await client.follow(ROUTE_R)
+  calls.length = 0
+
+  // Terminal devir: önce gözlem, sonra takip bırakılır — gruptan ÇIKILMAZ.
+  await client.observe(ROUTE_R)
+  await client.unfollow()
+  assert.deepEqual(client.subscribedRouteIds, [ROUTE_R])
+  assert.deepEqual(calls, [])
+
+  // Yerine geçen B kabul edilir ve takibi DEVRALMAZ.
+  const cancelledA = update({ status: SIMULATION_STATUS.CANCELLED, progressPercent: 42 })
+  const runningB = update({
+    simulationId: RUN_B,
+    progressPercent: 0,
+    updatedAtUtc: '2026-09-02T10:01:00Z',
+  })
+  assert.equal(mergeSimulationState(cancelledA, runningB).simulationId, RUN_B)
+
+  const controls = transportSimulationControls({
+    routeId: ROUTE_R,
+    simulation: runningB,
+    followingRouteId: null,
+  })
+  assert.equal(controls.showFollow, true)
+  assert.equal(controls.showUnfollow, false)
+})
+
+/* --- 13. Rota değişimi gözlemi TAŞIR ----------------------------------------- */
+
+test('changing the selected route releases the old group and joins the new one', async () => {
+  const { client, calls } = fakeClient()
+
+  await client.observe(ROUTE_R)
+  calls.length = 0
+
+  await client.observe(ROUTE_S)
+
+  assert.equal(client.observedRouteId, ROUTE_S)
+  assert.deepEqual(client.subscribedRouteIds, [ROUTE_S])
+  assert.deepEqual(calls, [`${LEAVE_ROUTE_METHOD}(${ROUTE_R})`, `${JOIN_ROUTE_METHOD}(${ROUTE_S})`])
+})
 
 /* --- 8/9/10. Terminal kilidi ÇALIŞTIRMAYA özeldir ----------------------------- */
 

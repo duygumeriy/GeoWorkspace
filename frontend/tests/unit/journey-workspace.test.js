@@ -381,7 +381,15 @@ test('the shared stop control stays a permission-gated, confirmed command', () =
      çağıran yüzey yönetir. */
   assert.ok(SHARED.includes('shared.showStop &&'))
   assert.ok(SHARED.includes('onClick={onStop}'))
-  assert.ok(SHARED.includes('Simülasyonu Durdur'))
+  /* Faz 3B: terminal eylemin KULLANICI SÖZCÜĞÜ "Sıfırla" oldu. Ürün anlamı
+     "çalıştırmayı bitir ve hattı yeniden başlatılabilir hâle getir"dir;
+     "Duraklat" ise aynı çalıştırmayı sürdürülebilir biçimde dondurur. Backend
+     sözleşmesi (Stop) DEĞİŞMEDİ. */
+  assert.ok(SHARED.includes('Sıfırla'))
+  assert.ok(!SHARED.includes('Simülasyonu Durdur'))
+
+  // KİŞİSEL yolculuk kendi sözcüğünü korur; iki ürün karışmaz.
+  assert.ok(PANEL.includes('Simülasyonu Durdur'))
 
   // Ve karar saf kuralın ürettiği bayraklardan okunur.
   assert.ok(WORKSPACE.includes('showStop: Boolean(controls?.showStop)'))

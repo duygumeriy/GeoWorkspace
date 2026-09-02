@@ -89,6 +89,48 @@ public sealed class TransportSimulationController : ApiControllerBase
         Guard(nameof(Stop), async () =>
             Respond(await _simulations.StopAsync(routeId, simulationId, cancellationToken)));
 
+    /// <summary>
+    /// Çalışan hattı DURAKLATIR. Terminal DEĞİLDİR.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Yetki bilinçle <c>transport.simulation.stop</c>'tur.</b> Duraklatma,
+    /// çok kullanıcılı MEVCUT bir çalıştırmanın mutasyonudur — başlatmakla
+    /// aynı yetenek değildir ve <c>transport.simulation.start</c> onu İMA
+    /// ETMEZ. Bu faz üç yeni yetki kodu UYDURMAZ: aynı yaşam döngüsü
+    /// otoritesi duraklat/sürdür/sıfırla için ortaktır.
+    /// </para>
+    /// <para>
+    /// Yol, sıfırlama ucuyla AYNI biçimi taşır: rota öneki + çalıştırma eki.
+    /// Yalnızca rota taşıyan bir yol, eski bir sekmenin yerine geçmiş YENİ bir
+    /// çalıştırmayı duraklatmasına açık kapı bırakırdı.
+    /// </para>
+    /// </remarks>
+    [HttpPost("routes/{routeId:int}/{simulationId:guid}/pause")]
+    [RequirePermission(PermissionCodes.TransportSimulationStop)]
+    public Task<ActionResult<TransportSimulationLiveUpdate>> Pause(
+        int routeId,
+        Guid simulationId,
+        CancellationToken cancellationToken) =>
+        Guard(nameof(Pause), async () =>
+            Respond(await _simulations.PauseAsync(routeId, simulationId, cancellationToken)));
+
+    /// <summary>
+    /// Duraklatılmış hattı KALDIĞI YERDEN sürdürür.
+    /// </summary>
+    /// <remarks>
+    /// Yeni bir çalıştırma başlatmaz; bu yüzden <c>transport.simulation.start</c>
+    /// İSTEMEZ. Kimlik, güzergah ve ilerleme aynı kalır.
+    /// </remarks>
+    [HttpPost("routes/{routeId:int}/{simulationId:guid}/resume")]
+    [RequirePermission(PermissionCodes.TransportSimulationStop)]
+    public Task<ActionResult<TransportSimulationLiveUpdate>> Resume(
+        int routeId,
+        Guid simulationId,
+        CancellationToken cancellationToken) =>
+        Guard(nameof(Resume), async () =>
+            Respond(await _simulations.ResumeAsync(routeId, simulationId, cancellationToken)));
+
     private ActionResult<T> Respond<T>(ServiceResult<T> result) =>
         result.IsSuccess ? Ok(result.Value!) : Error<T>(result);
 

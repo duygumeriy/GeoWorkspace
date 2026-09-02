@@ -122,6 +122,8 @@ export default function JourneyPlannerPanel({
      Panel onu yalnızca çizer ve içinde ikinci bir durum makinesi kurmaz. */
   shared = null,
   onStartShared,
+  onPauseShared,
+  onResumeShared,
   onStopShared,
   onFollowShared,
   onUnfollowShared,
@@ -281,6 +283,8 @@ export default function JourneyPlannerPanel({
         <SharedTransportJourneyContent
           shared={shared}
           onStart={onStartShared}
+          onPause={onPauseShared}
+          onResume={onResumeShared}
           onStop={onStopShared}
           onFollow={onFollowShared}
           onUnfollow={onUnfollowShared}

@@ -23,8 +23,12 @@ export default function TransportTrackingControls({
   statusLoading = false,
   starting = false,
   stopping = false,
+  pausing = false,
+  resuming = false,
   error = '',
   onStart,
+  onPause,
+  onResume,
   onStop,
   onFollow,
   onUnfollow,
@@ -68,8 +72,32 @@ export default function TransportTrackingControls({
             {starting ? 'Başlatılıyor…' : 'Simülasyonu Başlat'}
           </button>
         )}
-        {/* DURDURMA çok kullanıcılı canlı bir çalıştırmayı sonlandırır ve
-            AYRI bir yetkiye (`transport.simulation.stop`) bağlıdır: başlatma
+        {/* DURAKLAT / DEVAM ETTİR terminal DEĞİLDİR: aynı çalıştırma sürer.
+            Onay istemezler ve komutu doğrudan gönderirler. */}
+        {controls.showPause && (
+          <button
+            type="button"
+            className={secondaryButtonClassName}
+            disabled={controls.pauseDisabled}
+            aria-busy={pausing}
+            onClick={onPause}
+          >
+            {pausing ? 'Duraklatılıyor…' : 'Duraklat'}
+          </button>
+        )}
+        {controls.showResume && (
+          <button
+            type="button"
+            className={primaryButtonClassName}
+            disabled={controls.pauseDisabled}
+            aria-busy={resuming}
+            onClick={onResume}
+          >
+            {resuming ? 'Sürdürülüyor…' : 'Devam Ettir'}
+          </button>
+        )}
+        {/* SIFIRLA çok kullanıcılı canlı bir çalıştırmayı SONLANDIRIR ve AYRI
+            bir yetkiye (`transport.simulation.stop`) bağlıdır: başlatma
             yetkisi onu İMA ETMEZ. Tıklama komutu göndermez — çağıran yüzey
             onayı açar ve komutu ancak onaydan sonra gönderir. */}
         {controls.showStop && (
@@ -80,7 +108,7 @@ export default function TransportTrackingControls({
             aria-busy={stopping}
             onClick={onStop}
           >
-            {stopping ? 'Durduruluyor…' : 'Simülasyonu Durdur'}
+            {stopping ? 'Sıfırlanıyor…' : 'Sıfırla'}
           </button>
         )}
         {controls.showFollow && (

@@ -60,6 +60,22 @@ public sealed record TransportSimulationSnapshot(
 /// (durdur/başlat), güncellemeler bu değere göre eşlenir: geç kalmış bir
 /// runner, kendisinden sonra başlatılmış bir simülasyonun durumunu ezemez.
 /// </param>
+/// <param name="Status">
+/// Çalıştırmanın YAŞAM DÖNGÜSÜ durumu. Duraklatma bir SUNUM tercihi değil
+/// otoriter bir durumdur: runner duraklatılmış çalıştırmayı ilerletmez, aynı
+/// hatta ikinci bir başlatma reddedilir ve geç kalmış bir tick durumu geri
+/// alamaz. Terminal durumlar depoda TUTULMAZ — sonlandırma kaydı kaldırır —
+/// bu yüzden burada pratikte yalnızca <c>Running</c> ve <c>Paused</c> görülür.
+/// </param>
+/// <param name="PausedAt">
+/// Duraklatma anı; çalışırken <c>null</c>'dır. Simülasyon saatinin
+/// DONDURULMASINI sağlayan değer budur: duraklatılmışken geçen süre
+/// <c>utcNow</c> yerine bu ana göre ölçülür.
+/// </param>
+/// <param name="AccumulatedPausedDuration">
+/// Bu çalıştırmanın şimdiye kadar duraklatılmış olarak geçirdiği TOPLAM süre.
+/// Devam ettirmede eklenir ve geçen süreden düşülür.
+/// </param>
 public sealed record ActiveTransportSimulation(
     Guid SimulationId,
     int RouteId,
@@ -68,9 +84,76 @@ public sealed record ActiveTransportSimulation(
     int StartedByUserId,
     DateTime StartedAt,
     TransportSimulationPath Path,
-    TransportSimulationSnapshot Snapshot)
+    TransportSimulationSnapshot Snapshot,
+    TransportSimulationStatus Status = TransportSimulationStatus.Running,
+    DateTime? PausedAt = null,
+    TimeSpan AccumulatedPausedDuration = default)
 {
     /// <summary>Aynı çalıştırmanın yeni anlık görüntüsü.</summary>
     public ActiveTransportSimulation With(TransportSimulationSnapshot snapshot) =>
         this with { Snapshot = snapshot };
+
+    /// <summary>Duraklatılmış mı? Duraklatma TERMİNAL DEĞİLDİR.</summary>
+    public bool IsPaused => Status == TransportSimulationStatus.Paused;
+
+    /// <summary>
+    /// Çalıştırmanın GEÇEN SİMÜLASYON SÜRESİ (saniye), duraklamalar düşülmüş.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b><c>StartedAt</c> ASLA değiştirilmez.</b> Duraklama süresini gizlemek
+    /// için başlangıcı ileri kaydırmak en kısa yol olurdu ama <c>StartedAt</c>
+    /// o anda anlamını yitirirdi: "bu çalıştırma ne zaman başladı" sorusunun
+    /// cevabı, duraklatıldıkça sessizce değişen bir değere dönerdi — kayıtlar,
+    /// yanıtlar ve gelecekteki denetim izleri bundan etkilenirdi. Duraklama
+    /// AYRI ve AÇIK bir muhasebeyle tutulur.
+    /// </para>
+    /// <para>
+    /// <b>Duraklatılmışken saat DURUR:</b> ölçüm <c>utcNow</c> yerine
+    /// <c>PausedAt</c>'e göre yapılır. Bu olmasaydı devam ettirmede araç,
+    /// duraklamada geçen sürenin tamamı kadar ileri sıçrardı.
+    /// </para>
+    /// </remarks>
+    public double ElapsedSeconds(DateTime utcNow)
+    {
+        var reference = PausedAt ?? utcNow;
+        var elapsed = reference - StartedAt - AccumulatedPausedDuration;
+        return elapsed < TimeSpan.Zero ? 0 : elapsed.TotalSeconds;
+    }
+
+    /// <summary>
+    /// Çalışan çalıştırmayı duraklatır. KONUM ve İLERLEME değişmez; yalnızca
+    /// anlık görüntünün ZAMAN DAMGASI geçiş anına taşınır.
+    /// </summary>
+    /// <remarks>
+    /// Damganın tazelenmesi zorunludur: geçiş, kendisinden önceki son
+    /// <c>Running</c> tick'iyle aynı damgayı taşısaydı istemcideki sıralama
+    /// kuralı ikisini ayırt edemez ve yolda kalmış bir tick duraklatmayı geri
+    /// alabilirdi. Damga ilerler, ölçüm ilerlemez.
+    /// </remarks>
+    public ActiveTransportSimulation Pause(DateTime now) =>
+        this with
+        {
+            Status = TransportSimulationStatus.Paused,
+            PausedAt = now,
+            Snapshot = Snapshot with { CapturedAt = now }
+        };
+
+    /// <summary>
+    /// Duraklatılmış çalıştırmayı sürdürür ve duraklama süresini muhasebeye
+    /// ekler; böylece devam ettirme İLERİ SIÇRAMAZ.
+    /// </summary>
+    public ActiveTransportSimulation Resume(DateTime now)
+    {
+        var paused = PausedAt is { } pausedAt && now > pausedAt ? now - pausedAt : TimeSpan.Zero;
+
+        return this with
+        {
+            Status = TransportSimulationStatus.Running,
+            PausedAt = null,
+            AccumulatedPausedDuration = AccumulatedPausedDuration + paused,
+            // Aynı gerekçe: konum aynı kalır, damga geçiş anına taşınır.
+            Snapshot = Snapshot with { CapturedAt = now }
+        };
+    }
 }

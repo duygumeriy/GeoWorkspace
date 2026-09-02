@@ -119,6 +119,8 @@ export function sharedJourneyPresentation({
   statusLoading = false,
   starting = false,
   stopping = false,
+  pausing = false,
+  resuming = false,
   error = '',
 } = {}) {
   const id = finiteId(routeId)
@@ -155,12 +157,22 @@ export function sharedJourneyPresentation({
     showStop: Boolean(controls?.showStop),
     stopDisabled: Boolean(controls?.stopDisabled),
     stoppableSimulationId: controls?.stoppableSimulationId ?? null,
+
+    /* DURAKLATMA terminal DEĞİLDİR: `isActive` yine doğrudur ve panel hattı
+       boş sanmaz. Ayrım yalnızca hangi yaşam döngüsü düğmesinin sunulacağı
+       ve durumun nasıl adlandırılacağıdır. */
+    isPaused: Boolean(controls?.isPaused),
+    showPause: Boolean(controls?.showPause),
+    showResume: Boolean(controls?.showResume),
+    pauseDisabled: Boolean(controls?.pauseDisabled),
     showFollow: Boolean(controls?.showFollow),
     showUnfollow: Boolean(controls?.showUnfollow),
     followDisabled: Boolean(controls?.followDisabled),
     statusLoading: Boolean(statusLoading),
     starting: Boolean(starting),
     stopping: Boolean(stopping),
+    pausing: Boolean(pausing),
+    resuming: Boolean(resuming),
     error: error || '',
   })
 }

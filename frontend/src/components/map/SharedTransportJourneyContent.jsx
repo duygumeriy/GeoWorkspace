@@ -34,6 +34,8 @@ import { formatRouteDistance, formatRouteDuration } from '../../map/transportPat
 export default function SharedTransportJourneyContent({
   shared = null,
   onStart,
+  onPause,
+  onResume,
   onStop,
   onFollow,
   onUnfollow,
@@ -109,8 +111,33 @@ export default function SharedTransportJourneyContent({
             {shared.starting ? 'Başlatılıyor…' : 'Simülasyonu Başlat'}
           </button>
         )}
-        {/* Yıkıcı eylem, kendi görsel dilinde ve ONAYIN arkasında: tıklama
-            komutu göndermez, yalnızca onayı açar. */}
+        {/* DURAKLAT yıkıcı DEĞİLDİR: aynı çalıştırma sürer, yalnızca saati
+            donar. Bu yüzden onay istemez. */}
+        {shared.showPause && (
+          <button
+            type="button"
+            className="journey-secondary"
+            disabled={shared.pauseDisabled}
+            aria-busy={shared.pausing}
+            onClick={onPause}
+          >
+            {shared.pausing ? 'Duraklatılıyor…' : 'Duraklat'}
+          </button>
+        )}
+        {shared.showResume && (
+          <button
+            type="button"
+            className="journey-primary"
+            disabled={shared.pauseDisabled}
+            aria-busy={shared.resuming}
+            onClick={onResume}
+          >
+            {shared.resuming ? 'Sürdürülüyor…' : 'Devam Ettir'}
+          </button>
+        )}
+        {/* SIFIRLA yıkıcıdır ve ONAYIN arkasındadır: tıklama komutu
+            göndermez, yalnızca onayı açar. Ad ürün anlamını söyler —
+            çalıştırma sona erer ve hat yeniden başlatılabilir hâle gelir. */}
         {shared.showStop && (
           <button
             type="button"
@@ -119,7 +146,7 @@ export default function SharedTransportJourneyContent({
             aria-busy={shared.stopping}
             onClick={onStop}
           >
-            {shared.stopping ? 'Durduruluyor…' : 'Simülasyonu Durdur'}
+            {shared.stopping ? 'Sıfırlanıyor…' : 'Sıfırla'}
           </button>
         )}
         {shared.showFollow && (

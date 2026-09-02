@@ -14,10 +14,25 @@ public enum TransportSimulationStatus
     /// <summary>Araç yolda.</summary>
     Running,
 
+    /// <summary>
+    /// Çalıştırma DURAKLATILDI ve TERMİNAL DEĞİLDİR.
+    /// </summary>
+    /// <remarks>
+    /// Duraklatılmış bir çalıştırma hattın aktif yuvasını İŞGAL ETMEYE devam
+    /// eder: aynı hatta ikinci bir simülasyon başlatılamaz, gözlemciler onu
+    /// görmeye devam eder ve devam ettirildiğinde AYNI kimlikle kaldığı
+    /// yerden sürer. "Çalışmıyor" ile karıştırılmamalıdır.
+    /// </remarks>
+    Paused,
+
     /// <summary>Güzergahın sonuna ulaşıldı.</summary>
     Completed,
 
-    /// <summary>Çalıştırma sonlandırıldı (ör. güzergah geçersizleşti).</summary>
+    /// <summary>
+    /// Çalıştırma sonlandırıldı (kullanıcı sıfırladı ya da güzergah
+    /// geçersizleşti). TERMİNALDİR: hat yeniden başlatılabilir hâle gelir ve
+    /// sonraki başlatma YENİ bir kimlikle %0'dan başlar.
+    /// </summary>
     Cancelled
 }
 

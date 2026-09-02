@@ -54,6 +54,14 @@ public sealed class InMemoryTransportSimulationStateStore : ITransportSimulation
                 return false;
             }
 
+            /* DURAKLATILMIŞ çalıştırmaya YAZILMAZ. Duraklatma ile yarışan,
+               yolda olan bir tick aksi hâlde donmuş konumu ileri taşır ve
+               durumu sessizce Running'e çevirirdi. */
+            if (current.IsPaused)
+            {
+                return false;
+            }
+
             if (_active.TryUpdate(routeId, current.With(snapshot), current))
             {
                 return true;
@@ -61,6 +69,53 @@ public sealed class InMemoryTransportSimulationStateStore : ITransportSimulation
         }
 
         return false;
+    }
+
+    /* Duraklat/Sürdür de TAM OLARAK aynı CAS kalıbını izler: okunan sürüm hâlâ
+       yerindeyse yazılır. Önce okuyup sonra yazan bir servis kodu, iki
+       eşzamanlı komutun ikisinin de "çalışıyor" görüp ikisinin de duraklama
+       muhasebesine yazması demekti. */
+
+    public ActiveTransportSimulation? TryPause(int routeId, Guid simulationId, DateTime now)
+    {
+        while (_active.TryGetValue(routeId, out var current))
+        {
+            // Kimlik VE durum önkoşulu: yalnızca ÇALIŞAN o çalıştırma duraklar.
+            if (current.SimulationId != simulationId || current.Status != TransportSimulationStatus.Running)
+            {
+                return null;
+            }
+
+            var paused = current.Pause(now);
+
+            if (_active.TryUpdate(routeId, paused, current))
+            {
+                return paused;
+            }
+        }
+
+        return null;
+    }
+
+    public ActiveTransportSimulation? TryResume(int routeId, Guid simulationId, DateTime now)
+    {
+        while (_active.TryGetValue(routeId, out var current))
+        {
+            // Yalnızca DURAKLATILMIŞ o çalıştırma sürdürülür.
+            if (current.SimulationId != simulationId || current.Status != TransportSimulationStatus.Paused)
+            {
+                return null;
+            }
+
+            var resumed = current.Resume(now);
+
+            if (_active.TryUpdate(routeId, resumed, current))
+            {
+                return resumed;
+            }
+        }
+
+        return null;
     }
 
     public bool TryStop(int routeId, Guid simulationId)

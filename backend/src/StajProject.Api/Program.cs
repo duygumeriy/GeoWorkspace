@@ -424,6 +424,9 @@ builder.Services.AddSingleton<ITransportSimulationBroadcaster, SignalRTransportS
    DbContext tutmaz. Aynı örnek İKİ rolü üstlenir — arka plan ilerletici ve
    güzergah geçersizleştiğinde çağrılan iptal portu; "durdur + yayınla"
    mantığının iki kopyası olmasın diye tek sahiptir. */
+/* Saat AÇIKÇA kaydedilir: runner hem ilerletmede hem duraklat/sürdür
+   geçişlerinde aynı zaman eksenini kullanır. Üretimde bu sistem saatidir. */
+builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<TransportSimulationRunner>();
 builder.Services.AddSingleton<ITransportSimulationCanceller>(
     provider => provider.GetRequiredService<TransportSimulationRunner>());
@@ -433,6 +436,11 @@ builder.Services.AddSingleton<ITransportSimulationCanceller>(
    olmalıdır. İkinci bir uygulama, izleri sızdıran ya da terminal olayı hiç
    yayınlamayan sessizce farklı bir durdurma yolu doğururdu. */
 builder.Services.AddSingleton<ITransportSimulationTerminator>(
+    provider => provider.GetRequiredService<TransportSimulationRunner>());
+
+/* Duraklat/Sürdür de AYNI çalışma zamanı sahibinden geçer: simülasyon saatinin
+   (duraklama muhasebesi) ve yayının tek bir sahibi olmalıdır. */
+builder.Services.AddSingleton<ITransportSimulationLifecycle>(
     provider => provider.GetRequiredService<TransportSimulationRunner>());
 builder.Services.AddHostedService<TransportSimulationBackgroundService>();
 

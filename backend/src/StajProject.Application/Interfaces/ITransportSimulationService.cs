@@ -74,6 +74,39 @@ public interface ITransportSimulationService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Çalışan bir hattı DURAKLATIR. Terminal DEĞİLDİR.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Duraklatılmış çalıştırma hattın aktif yuvasını İŞGAL ETMEYE devam eder:
+    /// aynı hatta ikinci bir başlatma reddedilir, gözlemciler onu görmeye
+    /// devam eder ve devam ettirildiğinde AYNI kimlikle kaldığı yerden sürer.
+    /// </para>
+    /// <para>
+    /// <see cref="StopAsync"/> ile aynı yarış kuralı: komut rota VE çalıştırma
+    /// kimliğini birlikte taşır; eski bir tarayıcı, yerine geçmiş yeni bir
+    /// çalıştırmayı duraklatamaz.
+    /// </para>
+    /// </remarks>
+    Task<ServiceResult<TransportSimulationLiveUpdate>> PauseAsync(
+        int routeId,
+        Guid simulationId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Duraklatılmış bir hattı KALDIĞI YERDEN sürdürür.
+    /// </summary>
+    /// <remarks>
+    /// Yeni bir çalıştırma başlatmaz: kimlik, güzergah ve ilerleme aynı kalır.
+    /// Duraklamada geçen süre simülasyon saatinden düşülür, bu yüzden araç
+    /// ileri SIÇRAMAZ.
+    /// </remarks>
+    Task<ServiceResult<TransportSimulationLiveUpdate>> ResumeAsync(
+        int routeId,
+        Guid simulationId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Rotada çalışan simülasyonun CANLI yayın biçimindeki anlık görüntüsü;
     /// çalışan yoksa <c>null</c>.
     /// </summary>

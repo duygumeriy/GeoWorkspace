@@ -23,6 +23,11 @@ export const TRANSPORT_VEHICLE_LAYER_CLASSNAME = 'transport-vehicle-layer'
 export const VEHICLE_OWNERSHIP = Object.freeze({
   FOLLOW: 'follow',
   START: 'start',
+  /* SEÇİLİ rotanın PASİF gözlemi. Kamera talep etmez ama aracı ekranda
+     tutar: "Takibi Bırak" yalnızca kamerayı bırakır — aracı haritadan
+     silmez. Bu sahiplik olmasaydı, takibi bırakan kullanıcı hâlâ seçili ve
+     hâlâ çalışan bir hattın aracını kaybederdi. */
+  OBSERVE: 'observe',
 })
 
 const FALLBACK_COLOR = '#2563EB'
@@ -132,6 +137,13 @@ export function transportVehiclePresentation({
   const following = finiteNumber(followingRouteId)
   const selected = finiteNumber(selectedRouteId)
 
+  const observed = finiteNumber(observedRouteId)
+
+  /* Terminal olma durumu ownership'ten ÖNCE okunur: yalnızca PASİF GÖZLEM
+     sahipliği ona bakar (aşağıda). Takip ve başlatma sahiplikleri kendi
+     kabul edilmiş terminal davranışlarını KORUR. */
+  const terminal = isTerminalSimulationStatus(simulation.status)
+
   let ownership = null
   if (following !== null && following === routeId) {
     ownership = VEHICLE_OWNERSHIP.FOLLOW
@@ -142,6 +154,22 @@ export function transportVehiclePresentation({
     && selected === routeId
   ) {
     ownership = VEHICLE_OWNERSHIP.START
+  } else if (observed !== null && observed === routeId && selected === routeId && !terminal) {
+    /* PASİF GÖZLEM. Kullanıcı hattı seçmiş ve rotanın yayınına abone: araç
+       görünür ve sunucunun anlık görüntülerinden hareket etmeye devam eder;
+       yalnızca KAMERA onu izlemez. Sahiplik seçime de bağlıdır — bakılmayan
+       bir hattın aracını haritada bırakmak yanıltıcı olurdu.
+
+       YALNIZCA ÇALIŞAN (terminal olmayan) çalıştırma için geçerlidir ve bu
+       şart zorunludur: GÖZLEM ÖMRÜ ile ARAÇ ÖMRÜ aynı şey değildir. Rota
+       seçili kaldığı sürece abonelik sürer (yerine geçecek B'yi almak için),
+       ama biten bir çalıştırmanın aracı sonsuza dek haritada durmamalıdır.
+       Takip ve başlatma sahiplikleri kendi terminal kurallarını korur;
+       burada genel bir "terminal ise gizle" kuralı YOKTUR.
+
+       Duraklatma TERMİNAL DEĞİLDİR: duraklatılmış araç donmuş koordinatında
+       görünmeye devam eder. */
+    ownership = VEHICLE_OWNERSHIP.OBSERVE
   }
 
   if (!ownership) return null
@@ -151,8 +179,6 @@ export function transportVehiclePresentation({
   if (longitude === null || latitude === null) return null
 
   const route = routes.find((candidate) => candidate?.id === routeId) ?? null
-  const terminal = isTerminalSimulationStatus(simulation.status)
-  const observed = finiteNumber(observedRouteId)
   // Takip zaten bir aboneliktir; izleme onun kamerasız kardeşidir.
   const subscribed = ownership === VEHICLE_OWNERSHIP.FOLLOW || (observed !== null && observed === routeId)
 

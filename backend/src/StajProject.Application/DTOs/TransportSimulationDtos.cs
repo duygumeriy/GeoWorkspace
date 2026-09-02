@@ -1,3 +1,5 @@
+using StajProject.Application.Simulation;
+
 namespace StajProject.Application.DTOs;
 
 /// <summary>
@@ -17,6 +19,34 @@ public sealed class TransportSimulationResponse
     public string RouteColorHex { get; set; } = string.Empty;
     public int StartedByUserId { get; set; }
     public DateTime StartedAt { get; set; }
+
+    /// <summary>
+    /// Çalıştırmanın KANONİK yaşam döngüsü durumu.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Canlı yayınla AYNI vokabüler.</b> Tip
+    /// <see cref="TransportSimulationStatus"/>'tür ve enum'un kendisi
+    /// <c>JsonStringEnumConverter</c> taşıdığı için tel üzerinde AD olarak
+    /// gider ("Running" / "Paused"); istemci REST ile SignalR arasında iki
+    /// farklı temsil çözmek zorunda kalmaz.
+    /// </para>
+    /// <para>
+    /// <b>Neden sonradan eklendi.</b> Bu yanıt, tek canlı durumun
+    /// <c>Running</c> olduğu bir dünyada tasarlanmıştı: "aktif çalıştırma
+    /// döndüyse çalışıyordur" varsayımı o gün doğruydu. <c>Paused</c>
+    /// eklendiğinde varsayım yanlışa döndü ve sayfa yenilendiğinde
+    /// duraklatılmış bir hat, canlı kanal bağlanana kadar "çalışıyor" gibi
+    /// görünüyordu. Durum artık okuma yolunda da AÇIKÇA taşınır.
+    /// </para>
+    /// <para>
+    /// <b>Türetilmez.</b> Değer çalışma zamanı durumundan olduğu gibi
+    /// kopyalanır; ilerlemeye, <c>PausedAt</c>'in dolu olup olmadığına ya da
+    /// bir izin var olup olmadığına BAKILMAZ — o tür bir çıkarım, otoriteyi
+    /// sessizce ikinci bir yere taşırdı.
+    /// </para>
+    /// </remarks>
+    public TransportSimulationStatus Status { get; set; }
 
     /// <summary>İşletilen yolun ölçülen toplam uzunluğu.</summary>
     public double DistanceMeters { get; set; }

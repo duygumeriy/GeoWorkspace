@@ -55,13 +55,58 @@ public interface ITransportSimulationStateStore
     /// tek yazma yolu budur.
     /// </summary>
     /// <returns>
-    /// Rotada <paramref name="simulationId"/> kimlikli çalıştırma hâlâ aktifse
-    /// <c>true</c>; durdurulmuş ya da yerine yenisi başlatılmışsa <c>false</c>.
+    /// Rotada <paramref name="simulationId"/> kimlikli çalıştırma hâlâ
+    /// ÇALIŞIYORSA <c>true</c>; durdurulmuş, DURAKLATILMIŞ ya da yerine
+    /// yenisi başlatılmışsa <c>false</c>.
     /// </returns>
+    /// <remarks>
+    /// Duraklatılmış çalıştırmaya yazılmaz: duraklatma ile yarışan, yolda olan
+    /// bir tick aksi hâlde donmuş konumu ileri taşır ve durumu sessizce
+    /// <c>Running</c>'e geri çevirirdi.
+    /// </remarks>
     bool TryUpdateSnapshot(int routeId, Guid simulationId, TransportSimulationSnapshot snapshot);
 
     /// <summary>
     /// Yalnızca <paramref name="simulationId"/> kimlikli çalıştırmayı kaldırır.
     /// </summary>
+    /// <remarks>
+    /// Durum ÖNKOŞULU YOKTUR: hem çalışan hem duraklatılmış bir çalıştırma
+    /// sonlandırılabilir. Sıfırlama ve iç iptal aynı ilkeli kullanır.
+    /// </remarks>
     bool TryStop(int routeId, Guid simulationId);
+
+    /// <summary>
+    /// Çalışan çalıştırmayı DURAKLATIR (atomik, kimlik ve durum denetimli).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Duraklatma TERMİNAL DEĞİLDİR: kayıt hattın aktif yuvasında KALIR, bu
+    /// yüzden aynı hatta ikinci bir başlatma reddedilmeye devam eder.
+    /// </para>
+    /// <para>
+    /// Önkoşul <c>Running</c>'dir. Zaten duraklatılmış bir çalıştırmayı
+    /// yeniden duraklatmak duraklama muhasebesini bozardı (<c>PausedAt</c>
+    /// ileri kayar ve devam ettirmede süre eksik sayılırdı); bu yüzden
+    /// sessizce kabul edilmez.
+    /// </para>
+    /// </remarks>
+    /// <returns>
+    /// Duraklatılmış YENİ durum; kimlik tutmuyorsa ya da çalıştırma zaten
+    /// çalışmıyorsa <c>null</c> — bu durumda hiçbir şeye dokunulmamıştır.
+    /// </returns>
+    ActiveTransportSimulation? TryPause(int routeId, Guid simulationId, DateTime now);
+
+    /// <summary>
+    /// Duraklatılmış çalıştırmayı SÜRDÜRÜR (atomik, kimlik ve durum denetimli).
+    /// </summary>
+    /// <remarks>
+    /// Duraklama süresi burada muhasebeye eklenir; <c>StartedAt</c> ASLA
+    /// değişmez. Önkoşul <c>Paused</c>'dır: çalışan bir çalıştırmayı
+    /// "sürdürmek" duraklama muhasebesine sahte bir süre eklerdi.
+    /// </remarks>
+    /// <returns>
+    /// Sürdürülmüş YENİ durum; kimlik tutmuyorsa ya da çalıştırma duraklatılmış
+    /// değilse <c>null</c>.
+    /// </returns>
+    ActiveTransportSimulation? TryResume(int routeId, Guid simulationId, DateTime now);
 }

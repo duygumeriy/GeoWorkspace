@@ -128,6 +128,25 @@ export function fetchTransportSimulation(routeId) {
  * Yanıt, gözlemcilere yayınlanan OTORİTER terminal güncellemenin aynısıdır;
  * istemci terminal durumu yerel olarak UYDURMAZ.
  */
+/**
+ * Çalışan hattı DURAKLATIR. Terminal DEĞİLDİR; aynı çalıştırma sürdürülebilir.
+ * Yetki: `transport.simulation.stop` (yaşam döngüsü otoritesi).
+ */
+export function pauseTransportSimulation(routeId, simulationId, { signal } = {}) {
+  return authFetch(
+    `/api/transport/simulations/routes/${routeId}/${simulationId}/pause`,
+    { method: 'POST', signal },
+  )
+}
+
+/** Duraklatılmış hattı KALDIĞI YERDEN sürdürür. Yeni çalıştırma BAŞLATMAZ. */
+export function resumeTransportSimulation(routeId, simulationId, { signal } = {}) {
+  return authFetch(
+    `/api/transport/simulations/routes/${routeId}/${simulationId}/resume`,
+    { method: 'POST', signal },
+  )
+}
+
 export function stopTransportSimulation(routeId, simulationId, { signal } = {}) {
   return authFetch(
     `/api/transport/simulations/routes/${routeId}/${simulationId}/stop`,

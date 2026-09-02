@@ -33,12 +33,23 @@ namespace StajProject.Infrastructure.Simulation;
 /// YENİ bir çalıştırmayı ne günceller ne de durdurur.
 /// </para>
 /// </remarks>
-public sealed class TransportSimulationRunner : ITransportSimulationCanceller, ITransportSimulationTerminator
+public sealed class TransportSimulationRunner
+    : ITransportSimulationCanceller, ITransportSimulationTerminator, ITransportSimulationLifecycle
 {
     private readonly ITransportSimulationStateStore _state;
     private readonly ITransportSimulationBroadcaster _broadcaster;
     private readonly TransportSimulationOptions _options;
     private readonly ILogger<TransportSimulationRunner> _logger;
+
+    /* ZAMAN DIŞARIDAN GELİR — ilerletmede olduğu gibi geçişlerde de.
+       `AdvanceAsync` saati parametre olarak alır; duraklat/sürdür ise
+       doğrudan `DateTime.UtcNow` okuyordu ve bu, sınıfın kendi ilkesini
+       bozuyordu: iki bağımsız zaman kaynağı, duraklama muhasebesinin
+       ilerletme saatiyle aynı eksende olmasını imkânsız kılıyordu.
+       Üretimde ikisi zaten aynı duvar saatidir; ayrım YALNIZCA saatin
+       enjekte edilebilmesi içindir — fazın çekirdek garantisi (devam
+       ettirmede ışınlanma yok) ancak böyle deterministik kanıtlanabilir. */
+    private readonly TimeProvider _time;
 
     /* Kümülatif mesafeler çalıştırma başına BİR KEZ hesaplanır. Binlerce
        köşeli bir güzergahı her tick'te yeniden ölçmek boşuna iştir; anahtar
@@ -50,13 +61,18 @@ public sealed class TransportSimulationRunner : ITransportSimulationCanceller, I
         ITransportSimulationStateStore state,
         ITransportSimulationBroadcaster broadcaster,
         TransportSimulationOptions options,
-        ILogger<TransportSimulationRunner> logger)
+        ILogger<TransportSimulationRunner> logger,
+        TimeProvider? timeProvider = null)
     {
         _state = state;
         _broadcaster = broadcaster;
         _options = options;
         _logger = logger;
+        _time = timeProvider ?? TimeProvider.System;
     }
+
+    /// <summary>Geçişlerin okuduğu AN. İlerletme saatiyle aynı eksendedir.</summary>
+    private DateTime UtcNow => _time.GetUtcNow().UtcDateTime;
 
     /// <summary>
     /// Tek bir ilerleme adımı. Zaman DIŞARIDAN verilir; böylece davranış gerçek
@@ -69,6 +85,15 @@ public sealed class TransportSimulationRunner : ITransportSimulationCanceller, I
             if (cancellationToken.IsCancellationRequested)
             {
                 return;
+            }
+
+            /* DURAKLATILMIŞ çalıştırma İLERLETİLMEZ ve yayın ÜRETMEZ. Sahte
+               Running tick'leri, donmuş bir aracı canlıymış gibi gösterir ve
+               durumu istemcide geri çevirirdi. Kayıt yerinde kalır: hattın
+               aktif yuvasını işgal etmeye devam eder. */
+            if (simulation.IsPaused)
+            {
+                continue;
             }
 
             try
@@ -172,6 +197,58 @@ public sealed class TransportSimulationRunner : ITransportSimulationCanceller, I
         return update;
     }
 
+    /// <summary>
+    /// DURAKLAT: saati dondurur, kaydı yerinde bırakır ve terminal OLMAYAN
+    /// <c>Paused</c> yayınını yapar.
+    /// </summary>
+    /// <remarks>
+    /// İz (<c>_tracks</c>) TEMİZLENMEZ: çalıştırma sürdürülecektir ve aynı
+    /// güzergah ölçümü yeniden hesaplanmamalıdır.
+    /// </remarks>
+    public async Task<TransportSimulationLiveUpdate?> PauseAsync(
+        int routeId,
+        Guid simulationId,
+        CancellationToken cancellationToken = default)
+    {
+        var paused = _state.TryPause(routeId, simulationId, UtcNow);
+
+        if (paused is null)
+        {
+            return null;
+        }
+
+        var update = TransportSimulationLiveUpdate.From(paused, TransportSimulationStatus.Paused);
+        await PublishAsync(paused, TransportSimulationStatus.Paused, cancellationToken);
+
+        return update;
+    }
+
+    /// <summary>
+    /// DEVAM ETTİR: duraklama süresini muhasebeye ekler ve <c>Running</c>
+    /// yayınını ANINDA yapar.
+    /// </summary>
+    /// <remarks>
+    /// Yayın anlık görüntüyü DEĞİŞTİRMEZ: araç tam olarak duraklatıldığı
+    /// yerdedir ve hareket bir sonraki tick'ten itibaren oradan sürer.
+    /// </remarks>
+    public async Task<TransportSimulationLiveUpdate?> ResumeAsync(
+        int routeId,
+        Guid simulationId,
+        CancellationToken cancellationToken = default)
+    {
+        var resumed = _state.TryResume(routeId, simulationId, UtcNow);
+
+        if (resumed is null)
+        {
+            return null;
+        }
+
+        var update = TransportSimulationLiveUpdate.From(resumed, TransportSimulationStatus.Running);
+        await PublishAsync(resumed, TransportSimulationStatus.Running, cancellationToken);
+
+        return update;
+    }
+
     private async Task AdvanceOneAsync(
         ActiveTransportSimulation simulation,
         DateTime utcNow,
@@ -195,7 +272,13 @@ public sealed class TransportSimulationRunner : ITransportSimulationCanceller, I
         }
 
         var durationSeconds = _options.EffectiveDurationSeconds(simulation.Path.DurationSeconds);
-        var elapsedSeconds = (utcNow - simulation.StartedAt).TotalSeconds * _options.SpeedMultiplier;
+
+        /* GEÇEN SÜRE duraklamalar DÜŞÜLEREK ölçülür ve hesabın sahibi
+           çalıştırmanın kendisidir (`ElapsedSeconds`). Ham `utcNow -
+           StartedAt` kullanmak, devam ettirmede aracın duraklamada geçen
+           sürenin tamamı kadar ileri SIÇRAMASI demekti. `StartedAt` bu
+           yüzden hiç değiştirilmez. */
+        var elapsedSeconds = simulation.ElapsedSeconds(utcNow) * _options.SpeedMultiplier;
         var ratio = Math.Clamp(elapsedSeconds / durationSeconds, 0, 1);
 
         var position = track.At(ratio);

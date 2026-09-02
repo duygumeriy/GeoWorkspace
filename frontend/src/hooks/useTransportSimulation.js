@@ -3,6 +3,8 @@ import { readApiError } from '../services/api.js'
 import { liveConnectionMessage } from '../map/liveConnectionMessage.js'
 import {
   fetchTransportSimulation,
+  pauseTransportSimulation,
+  resumeTransportSimulation,
   startTransportSimulation,
   stopTransportSimulation,
 } from '../services/transportApi.js'
@@ -42,6 +44,10 @@ export default function useTransportSimulation({ routeId = null, canView = false
      404/409 alması ya da (kimlik olmasaydı) yerine geçmiş bir çalıştırmayı
      vurması demekti. */
   const [stopping, setStopping] = useState(false)
+  /* Duraklat/Devam Ettir de UÇUŞTAYKEN kilitlenir: hızlı iki tıklama ikinci
+     komutu yola çıkarır ve sunucu onu durum önkoşuluyla reddederdi. */
+  const [pausing, setPausing] = useState(false)
+  const [resuming, setResuming] = useState(false)
   const [following, setFollowing] = useState(false)
   const [error, setError] = useState('')
 
@@ -101,7 +107,21 @@ export default function useTransportSimulation({ routeId = null, canView = false
 
       const snapshot = normalizeStatusSnapshot(await response.json())
       if (requestId !== statusRequestId.current) return null
-      setRouteState(targetRouteId, snapshot)
+
+      if (!snapshot) {
+        setRouteState(targetRouteId, null)
+        return null
+      }
+
+      /* REST okuması TEK YAZMA KURALINDAN geçer; ham bir üzerine yazma
+         DEĞİLDİR. Eskiden `setRouteState` ile doğrudan yazılıyordu ve bu,
+         canlı kanaldan gelmiş DAHA YENİ bir durumu geri sarabiliyordu:
+         duraklatılmış bir hat seçildiğinde REST okuması onu "çalışıyor"
+         hâline döndürüyor ve panel "Devam Ettir" yerine "Duraklat"
+         gösteriyordu. Birleştirme kuralı bunu yapısal olarak engeller —
+         duraklatılmış bir çalıştırmayı KESİN OLARAK daha yeni olmayan bir
+         Running olayı geri alamaz. */
+      applyState(snapshot)
       return snapshot
     } catch (loadError) {
       if (requestId !== statusRequestId.current) return null
@@ -111,7 +131,7 @@ export default function useTransportSimulation({ routeId = null, canView = false
     } finally {
       if (requestId === statusRequestId.current) setStatusLoading(false)
     }
-  }, [canView, setRouteState])
+  }, [canView, setRouteState, applyState])
 
   useEffect(() => {
     setError('')
@@ -197,6 +217,65 @@ export default function useTransportSimulation({ routeId = null, canView = false
     }
   }, [applyState, stopping])
 
+  /**
+   * Yaşam döngüsü geçişleri için ORTAK yol: aynı kimlik kuralı, aynı
+   * uçuş-halinde kilidi, aynı otoriter yanıt işleme.
+   *
+   * <b>Terminal durum UYDURULMAZ.</b> Ekran yalnızca sunucunun döndürdüğü
+   * güncellemeyle değişir ve o güncelleme, gözlemcilerin SignalR'dan
+   * aldığının aynısıdır. İstemcide hiçbir yerel ilerleme ya da durum
+   * hesaplanmaz.
+   */
+  const runTransition = useCallback(async ({
+    targetRouteId,
+    simulationId,
+    inFlight,
+    setInFlight,
+    request,
+    failureMessage,
+  }) => {
+    // KİMLİK ZORUNLUDUR: "hatta ne varsa ona uygula" yolu YOKTUR.
+    if (!targetRouteId || !simulationId || inFlight) return null
+
+    setInFlight(true)
+    setError('')
+    try {
+      const response = await request(targetRouteId, simulationId)
+      if (!response.ok) {
+        throw new Error(await readApiError(response, failureMessage))
+      }
+
+      const next = normalizeLiveUpdate(await response.json())
+      applyState(next)
+      return next
+    } catch (transitionError) {
+      setError(liveConnectionMessage(transitionError, failureMessage))
+      return null
+    } finally {
+      setInFlight(false)
+    }
+  }, [applyState])
+
+  /** DURAKLAT: aynı çalıştırma, donmuş saat. Onay GEREKTİRMEZ. */
+  const pause = useCallback((targetRouteId, simulationId) => runTransition({
+    targetRouteId,
+    simulationId,
+    inFlight: pausing,
+    setInFlight: setPausing,
+    request: pauseTransportSimulation,
+    failureMessage: 'Simülasyon duraklatılamadı.',
+  }), [runTransition, pausing])
+
+  /** DEVAM ETTİR: aynı çalıştırma, kaldığı yerden. */
+  const resume = useCallback((targetRouteId, simulationId) => runTransition({
+    targetRouteId,
+    simulationId,
+    inFlight: resuming,
+    setInFlight: setResuming,
+    request: resumeTransportSimulation,
+    failureMessage: 'Simülasyon sürdürülemedi.',
+  }), [runTransition, resuming])
+
   const follow = useCallback(async (targetRouteId) => {
     if (!targetRouteId || !canView) return null
     setFollowing(true)
@@ -233,6 +312,20 @@ export default function useTransportSimulation({ routeId = null, canView = false
       setFollowing(false)
     }
   }, [syncSubscriptions])
+
+  /** Seçili rotayı PASİF olarak izlemeye alır (kamera talep etmeden). */
+  const observe = useCallback(async (targetRouteId) => {
+    if (!targetRouteId || !canView) return
+    try {
+      await client().observe(targetRouteId)
+    } catch {
+      /* Abonelik kurulamadıysa panel REST anlık görüntüsüyle çalışmaya devam
+         eder; otomatik yeniden bağlanma ve sonraki seçim yeniden dener. */
+      setError('Canlı bağlantı kurulamadı. Yeniden bağlanılıyor…')
+    } finally {
+      syncSubscriptions()
+    }
+  }, [canView, client, syncSubscriptions])
 
   const stopObserving = useCallback(async () => {
     if (!clientRef.current) return
@@ -327,6 +420,26 @@ export default function useTransportSimulation({ routeId = null, canView = false
     stopObserving()
   }, [observedRouteId, followingRouteId, routeId, stopObserving])
 
+  /* SEÇİLİ ROTA, PASİF GÖZLEMİN SAHİBİDİR — takip DEĞİL.
+
+     ESKİ DAVRANIŞ HATALIYDI: gözlem yuvası yalnızca kullanıcı simülasyonu
+     KENDİ başlattığında ya da terminal devrinde doluyordu. Sıradan bir
+     gözlemci için gruba katılmanın TEK yolu "Takip Et"ti; dolayısıyla
+     "Takibi Bırak" son isteyen yuvayı da boşaltıyor ve istemci
+     `LeaveRoute(R)` çağırıyordu. Simülasyon sunucuda sürerken panel donuyor,
+     yeniden takip edildiğinde `JoinRoute`'un döndürdüğü güncel anlık görüntü
+     ekranı bir anda ileri sıçratıyordu (%42 → %60).
+
+     Takip yalnızca KAMERA sahipliğidir ve bir rotanın izlenmesinin TEK
+     nedeni olamaz. İki yuvanın aynı rotayı göstermesi meşrudur: istemci
+     fiziksel grup üyeliğini zaten tekilleştirir (`isSubscribed`), bu yüzden
+     ikinci bir `JoinRoute` oluşmaz. */
+  useEffect(() => {
+    if (!canView || routeId == null) return
+    if (observedRouteId === routeId) return
+    observe(routeId)
+  }, [canView, routeId, observedRouteId, observe])
+
   return {
     simulation,
     followedSimulation,
@@ -336,11 +449,15 @@ export default function useTransportSimulation({ routeId = null, canView = false
     statusLoading,
     starting,
     stopping,
+    pausing,
+    resuming,
     following,
     error,
     clearError: () => setError(''),
     start,
     stop,
+    pause,
+    resume,
     follow,
     unfollow,
     reloadStatus: () => loadStatus(routeId),

@@ -825,6 +825,8 @@ export default function MapPage() {
     canStop: canStopSharedSimulation,
     starting: simulation.starting,
     stopping: simulation.stopping,
+    pausing: simulation.pausing,
+    resuming: simulation.resuming,
     following: simulation.following,
   }), [
     selectedTransportRouteId,
@@ -832,6 +834,8 @@ export default function MapPage() {
     simulation.followingRouteId,
     simulation.starting,
     simulation.stopping,
+    simulation.pausing,
+    simulation.resuming,
     simulation.following,
     canStopSharedSimulation,
     can,
@@ -918,6 +922,20 @@ export default function MapPage() {
     canStopSharedSimulation,
   ])
 
+  /* DURAKLAT / DEVAM ETTİR yıkıcı DEĞİLDİR: aynı çalıştırma sürer, yalnızca
+     saati durur. Bu yüzden onay istemezler ve o anda ekranda duran KANONİK
+     çalıştırma kimliğini doğrudan taşırlar. Yetenek yine de komut yolunda
+     yeniden denetlenir: görünürlük bir denetim değildir. */
+  const pauseSharedSimulation = useCallback(() => {
+    if (!canStopSharedSimulation) return
+    return simulation.pause(selectedTransportRouteId, simulationControls.stoppableSimulationId)
+  }, [canStopSharedSimulation, simulation, selectedTransportRouteId, simulationControls.stoppableSimulationId])
+
+  const resumeSharedSimulation = useCallback(() => {
+    if (!canStopSharedSimulation) return
+    return simulation.resume(selectedTransportRouteId, simulationControls.stoppableSimulationId)
+  }, [canStopSharedSimulation, simulation, selectedTransportRouteId, simulationControls.stoppableSimulationId])
+
   const followSharedSimulation = useCallback(
     () => simulation.follow(selectedTransportRouteId),
     [simulation, selectedTransportRouteId],
@@ -939,6 +957,8 @@ export default function MapPage() {
     statusLoading: simulation.statusLoading,
     starting: simulation.starting,
     stopping: simulation.stopping,
+    pausing: simulation.pausing,
+    resuming: simulation.resuming,
     error: simulation.error,
   }), [
     selectedTransportRouteId,
@@ -948,6 +968,8 @@ export default function MapPage() {
     simulation.statusLoading,
     simulation.starting,
     simulation.stopping,
+    simulation.pausing,
+    simulation.resuming,
     simulation.error,
   ])
 
@@ -3650,6 +3672,8 @@ export default function MapPage() {
                   onProductChange={journey.setProduct}
                   shared={sharedJourney}
                   onStartShared={startSharedSimulation}
+                  onPauseShared={pauseSharedSimulation}
+                  onResumeShared={resumeSharedSimulation}
                   onStopShared={requestSharedStop}
                   onFollowShared={followSharedSimulation}
                   onUnfollowShared={unfollowSharedSimulation}
@@ -4171,10 +4195,15 @@ export default function MapPage() {
                   izleyen HERKES kaybeder — metin bunu açıkça söyler. */}
               <ConfirmDialog
                 open={pendingSharedStop != null && canStopSharedSimulation}
-                title="Hat simülasyonunu durdur"
-                message="Bu hat simülasyonunu durdurmak istediğinize emin misiniz?"
-                description="Simülasyon herkes için sona erer; hattı izleyen diğer kullanıcılar da aracı görmeyi bırakır. Hat daha sonra yeniden başlatılabilir."
-                confirmLabel="Simülasyonu Durdur"
+                title="Hat simülasyonunu sıfırla"
+                message="Bu hat simülasyonunu sıfırlamak istediğinize emin misiniz?"
+                /* Metin ürün anlamını OLDUĞU GİBİ söyler: çalıştırma sona
+                   erer ve hat başlangıç durumuna döner. "Aynı simülasyon
+                   %0'a alınır" demek yanlış olurdu — sonraki başlatma YENİ
+                   bir çalıştırma üretir. Yalnızca duraklatmak isteyen
+                   kullanıcı için ayrı bir eylem (Duraklat) vardır. */
+                description="Bu simülasyon sona erdirilecek ve hat başlangıç durumuna dönecek; onu izleyen diğer kullanıcılar da aracı görmeyi bırakır. Yeniden başlatıldığında %0'dan yeni bir simülasyon oluşturulur."
+                confirmLabel="Sıfırla"
                 cancelLabel="Vazgeç"
                 busy={simulation.stopping}
                 onConfirm={confirmSharedStop}
