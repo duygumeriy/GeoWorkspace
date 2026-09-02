@@ -50,9 +50,6 @@
   z-index: 5;
   left: 7vw;
   top: 10vh;
-  display: flex;
-  align-items: center;
-  gap: 1.3rem;
   max-width: 46vw;
   opacity: 0;
   animation: login-brand-enter 480ms var(--ease-out-premium) 100ms both;
@@ -83,33 +80,24 @@
   }
 }
 
-.login-visual-brand-icon {
-  display: inline-flex;
-  flex-shrink: 0;
-  color: var(--primary-light);
-  filter: drop-shadow(0 0 16px rgba(139, 92, 246, 0.55));
-}
+/* --- Ürün markası -----------------------------------------------------------
+   Sağlanan Info&Motion çizimi. Ad ve slogan ÇİZİMİN İÇİNDEDİR; yanına metin
+   eklenmez ve çizimin kendisi değiştirilmez.
 
-.login-visual-brand-name {
-  margin: 0;
-  font-size: clamp(2.375rem, 3vw, 2.75rem);
-  font-weight: 700;
-  line-height: 1.1;
-  color: var(--text-primary);
-  white-space: nowrap;
-}
+   Ölçü oransaldır ve `height: auto` en/boy oranını korur: sabit bir piksel
+   genişliği küçük ekranlarda kırpılmaya yol açardı. Üst sınır, çizimin sol
+   yüzeyin dikey yarısını aşmamasını sağlar — marka görünür olmalı, sahneyi
+   ele geçirmemeli.
 
-.login-visual-brand-accent {
-  background: linear-gradient(90deg, #c9b3ff, #9256ff);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-
-.login-visual-brand-tagline {
-  margin: 0.45rem 0 0;
-  font-size: clamp(15px, 1vw, 18px);
-  color: rgba(255, 255, 255, 0.62);
+   Tek görsel işlem yumuşak bir aydınlanmadır: `drop-shadow` siluetin dışına
+   çalışır, dolayısıyla logonun mor/mavi/camgöbeği/beyaz ilişkisini DEĞİŞTİRMEZ.
+   Arkasına kart, kutu ya da parlak zemin konmaz. */
+.login-visual-brand-logo {
+  display: block;
+  width: clamp(320px, 30vw, 560px);
+  height: auto;
+  filter: drop-shadow(0 0 34px rgba(109, 74, 255, 0.32))
+    drop-shadow(0 10px 26px rgba(0, 0, 0, 0.45));
 }
 
 .login-visual-badge {
@@ -189,8 +177,8 @@
     max-width: 70vw;
   }
 
-  .login-visual-brand-name {
-    font-size: clamp(1.75rem, 5vw, 2.25rem);
+  .login-visual-brand-logo {
+    width: clamp(260px, 46vw, 420px);
   }
 
   .login-visual-badge {
@@ -206,21 +194,10 @@
     min-height: 220px;
   }
 
-  .login-visual-brand {
-    gap: 0.85rem;
-  }
-
-  .login-visual-brand-icon svg {
-    width: 40px;
-    height: 40px;
-  }
-
-  .login-visual-brand-name {
-    font-size: 1.5rem;
-  }
-
-  .login-visual-brand-tagline {
-    display: none;
+  /* Telefonda marka KALIR ama küçülür: ürün kimliği, süslemeden önce gelen
+     tek görsel öğedir. Rozet zaten gizlenir. */
+  .login-visual-brand-logo {
+    width: min(72vw, 300px);
   }
 
   .login-visual-badge {

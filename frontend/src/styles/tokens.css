@@ -80,6 +80,30 @@
   --field-disabled-bg: rgba(5, 8, 18, 0.22);
   --field-disabled-border: rgba(135, 145, 175, 0.14);
   --field-disabled-text: var(--text-tertiary);
+
+  /* --- Faz 6 · Marka ve yüzer panel --------------------------------------
+     İki yüzey burada MERKEZİLEŞİR: haritanın üstündeki "Araçlar" paneli ve üst
+     şeridin marka artalanı. İkisi de mevcut mor/mavi paletten türer; bileşenlere
+     dağılmış ham RGB değeri YOKTUR. Parıltı ÜÇ yerde toplanır — marka şeridi,
+     etkin kenar çubuğu öğesi ve panel — her denetimde değil. */
+  --transport-dock-bg: rgba(13, 18, 38, 0.82);
+  --transport-dock-border: rgba(139, 92, 246, 0.55);
+  --transport-dock-text: var(--text-primary);
+  --transport-dock-glow: 0 0 0 1px rgba(139, 92, 246, 0.12), 0 0 26px rgba(108, 60, 231, 0.4);
+  --transport-dock-glow-strong: 0 0 0 1px rgba(139, 92, 246, 0.22), 0 0 38px rgba(108, 60, 231, 0.6);
+
+  --brand-header-bg: linear-gradient(100deg, rgba(12, 17, 38, 0.95) 0%, rgba(23, 20, 61, 0.9) 55%, rgba(10, 14, 32, 0.95) 100%);
+  --brand-header-border: rgba(139, 92, 246, 0.32);
+  --brand-header-glow: 0 10px 30px -18px rgba(108, 60, 231, 0.85);
+  /* KOYU tema afişi: sağlanan PNG, yerel varlık. CSS ile taklit edilmez. */
+  --brand-header-artwork: url('../assets/brand/basarsoft-banner-dark.png');
+  /* Afiş kendi koyu zeminini taşır; soluk bir filigran DEĞİLDİR. */
+  --brand-header-artwork-opacity: 0.95;
+  --brand-banner-width: 720px;
+  /* Sağda tema/kullanıcı/sayaç/çıkış için afişin GİREMEYECEĞİ genişlik. */
+  --brand-header-safe-zone: 460px;
+  --brand-control-surface: rgba(9, 13, 30, 0.72);
+  --brand-control-border: rgba(139, 92, 246, 0.3);
 }
 
 /* System preference: light, only when the user hasn't made an explicit choice */
@@ -114,6 +138,24 @@
     --field-disabled-bg: #f1f1f7;
     --field-disabled-border: rgba(30, 27, 75, 0.1);
     --field-disabled-text: #9aa0b5;
+
+    /* Faz 6 · Marka ve yüzer panel — açık tema karşılıkları. */
+    --transport-dock-bg: rgba(255, 255, 255, 0.9);
+    --transport-dock-border: rgba(139, 92, 246, 0.42);
+    --transport-dock-text: var(--text-primary);
+    --transport-dock-glow: 0 0 0 1px rgba(139, 92, 246, 0.08), 0 6px 26px -8px rgba(108, 60, 231, 0.45);
+    --transport-dock-glow-strong: 0 0 0 1px rgba(139, 92, 246, 0.16), 0 8px 34px -6px rgba(108, 60, 231, 0.6);
+
+    --brand-header-bg: linear-gradient(100deg, rgba(255, 255, 255, 0.96) 0%, rgba(243, 240, 255, 0.92) 55%, rgba(255, 255, 255, 0.96) 100%);
+    --brand-header-border: rgba(108, 60, 231, 0.22);
+    --brand-header-glow: 0 10px 28px -20px rgba(108, 60, 231, 0.55);
+    /* AÇIK tema afişi: sağlanan PNG, yerel varlık. */
+    --brand-header-artwork: url('../assets/brand/basarsoft-banner-light.png');
+    --brand-header-artwork-opacity: 0.88;
+    --brand-banner-width: 720px;
+    --brand-header-safe-zone: 460px;
+    --brand-control-surface: rgba(255, 255, 255, 0.86);
+    --brand-control-border: rgba(108, 60, 231, 0.2);
   }
 }
 
@@ -148,6 +190,30 @@
   --field-disabled-bg: rgba(5, 8, 18, 0.22);
   --field-disabled-border: rgba(135, 145, 175, 0.14);
   --field-disabled-text: var(--text-tertiary);
+
+  /* --- Faz 6 · Marka ve yüzer panel --------------------------------------
+     İki yüzey burada MERKEZİLEŞİR: haritanın üstündeki "Araçlar" paneli ve üst
+     şeridin marka artalanı. İkisi de mevcut mor/mavi paletten türer; bileşenlere
+     dağılmış ham RGB değeri YOKTUR. Parıltı ÜÇ yerde toplanır — marka şeridi,
+     etkin kenar çubuğu öğesi ve panel — her denetimde değil. */
+  --transport-dock-bg: rgba(13, 18, 38, 0.82);
+  --transport-dock-border: rgba(139, 92, 246, 0.55);
+  --transport-dock-text: var(--text-primary);
+  --transport-dock-glow: 0 0 0 1px rgba(139, 92, 246, 0.12), 0 0 26px rgba(108, 60, 231, 0.4);
+  --transport-dock-glow-strong: 0 0 0 1px rgba(139, 92, 246, 0.22), 0 0 38px rgba(108, 60, 231, 0.6);
+
+  --brand-header-bg: linear-gradient(100deg, rgba(12, 17, 38, 0.95) 0%, rgba(23, 20, 61, 0.9) 55%, rgba(10, 14, 32, 0.95) 100%);
+  --brand-header-border: rgba(139, 92, 246, 0.32);
+  --brand-header-glow: 0 10px 30px -18px rgba(108, 60, 231, 0.85);
+  /* KOYU tema afişi: sağlanan PNG, yerel varlık. CSS ile taklit edilmez. */
+  --brand-header-artwork: url('../assets/brand/basarsoft-banner-dark.png');
+  /* Afiş kendi koyu zeminini taşır; soluk bir filigran DEĞİLDİR. */
+  --brand-header-artwork-opacity: 0.95;
+  --brand-banner-width: 720px;
+  /* Sağda tema/kullanıcı/sayaç/çıkış için afişin GİREMEYECEĞİ genişlik. */
+  --brand-header-safe-zone: 460px;
+  --brand-control-surface: rgba(9, 13, 30, 0.72);
+  --brand-control-border: rgba(139, 92, 246, 0.3);
 }
 
 /* Explicit light theme choice */
@@ -181,6 +247,24 @@
   --field-disabled-bg: #f1f1f7;
   --field-disabled-border: rgba(30, 27, 75, 0.1);
   --field-disabled-text: #9aa0b5;
+
+  /* Faz 6 · Marka ve yüzer panel — açık tema karşılıkları. */
+  --transport-dock-bg: rgba(255, 255, 255, 0.9);
+  --transport-dock-border: rgba(139, 92, 246, 0.42);
+  --transport-dock-text: var(--text-primary);
+  --transport-dock-glow: 0 0 0 1px rgba(139, 92, 246, 0.08), 0 6px 26px -8px rgba(108, 60, 231, 0.45);
+  --transport-dock-glow-strong: 0 0 0 1px rgba(139, 92, 246, 0.16), 0 8px 34px -6px rgba(108, 60, 231, 0.6);
+
+  --brand-header-bg: linear-gradient(100deg, rgba(255, 255, 255, 0.96) 0%, rgba(243, 240, 255, 0.92) 55%, rgba(255, 255, 255, 0.96) 100%);
+  --brand-header-border: rgba(108, 60, 231, 0.22);
+  --brand-header-glow: 0 10px 28px -20px rgba(108, 60, 231, 0.55);
+  /* AÇIK tema afişi: sağlanan PNG, yerel varlık. */
+  --brand-header-artwork: url('../assets/brand/basarsoft-banner-light.png');
+  --brand-header-artwork-opacity: 0.88;
+  --brand-banner-width: 720px;
+  --brand-header-safe-zone: 460px;
+  --brand-control-surface: rgba(255, 255, 255, 0.86);
+  --brand-control-border: rgba(108, 60, 231, 0.2);
 }
 
 @supports not (backdrop-filter: blur(1px)) {

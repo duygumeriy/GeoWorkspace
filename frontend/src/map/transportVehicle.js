@@ -2,8 +2,9 @@ import Feature from 'ol/Feature.js'
 import Point from 'ol/geom/Point.js'
 import VectorLayer from 'ol/layer/Vector.js'
 import VectorSource from 'ol/source/Vector.js'
-import { Circle as CircleStyle, Fill, Stroke, Style } from 'ol/style.js'
+import { Icon, Style } from 'ol/style.js'
 import { fromLonLat } from 'ol/proj.js'
+import { BASARSOFT_MARK_VIEW_BOX, basarsoftMarkPolygonMarkup } from '../brand/basarsoftMark.js'
 import { isTerminalSimulationStatus, simulationStatusLabel } from './transportSimulationState.js'
 
 /**
@@ -50,64 +51,116 @@ export const VEHICLE_EMPHASIS = Object.freeze({
   MUTED: 'muted',
 })
 
-/* Kısık vurgunun ölçüleri. Görsel kimlik BU FAZDA değişmez: aynı halka, aynı
-   çekirdek, yalnızca saydamlık ve ölçek geri çekilir.
+/* --- Marka işareti -----------------------------------------------------------
+   Paylaşılan hattın aracı artık GENEL bir daire değil, BAŞARSOFT işaretidir.
+   Yuvarlak rozet, renkli disk, emoji balonu ya da "araç" kılıfı YOKTUR: logo
+   silueti tanınabilir kalmalıdır, dolayısıyla arkasına bir zemin çizilmez.
 
-   Saydamlık RENGE yazılır, ayrı bir opaklık özelliğine değil: OpenLayers'ta
-   `Style` bir opaklık seçeneği taşımaz ve daire sembolünde opaklığı ayrıca
-   ayarlamak, stilin önbelleklenebilir saf bir değer olmaktan çıkması demekti.
-   Sekiz haneli renk gösterimi (#RRGGBBAA) projenin zaten kullandığı biçimdir
-   (bkz. halkanın #FFFFFFEE dolgusu). */
-const MUTED_ALPHA = 'A6'
-const MUTED_HALO_FILL = '#FFFFFF99'
-const MUTED_CORE_STROKE = '#FFFFFFB3'
-const MUTED_SCALE = 0.8
+   İşaretin geometrisi tek kaynaktan (`src/brand/basarsoftMark.js`, kendisi de
+   `src/assets/brand/basarsoft-symbol.svg` ile test edilir) gelir; burada
+   yalnızca haritaya uygun bir KILIF kurulur. OpenLayers bir React bileşeni
+   çizemediği için işaret bir KEZ durağan SVG'ye çevrilip `data:` URI olarak
+   önbelleklenir — kişisel yolculuk rozetinde ve POI rozetlerinde kurulmuş
+   olan yolun aynısı. Ağ yoktur, CDN yoktur, uzak simge adresi yoktur. */
 
-function withMutedAlpha(color) {
-  return `${color}${MUTED_ALPHA}`
-}
+/** İşaretin ekrandaki YÜKSEKLİĞİ (px). Tek ölçü: yakınlaştırmayla büyümez. */
+const MARKER_HEIGHT = 30
+
+/** Retina ekranda bulanıklaşmaması için SVG iki katı doğal boyutta üretilir. */
+const SOURCE_SCALE = 2
+
+/* Gölge/parıltı için viewBox'a ayrılan pay. Silueti DEĞİŞTİRMEZ; yalnızca
+   yumuşak gölgenin kırpılmasını önler. */
+const MARK_PADDING = 14
+
+/* Kısık vurgunun ölçüleri. Kimlik AYNI kalır — aynı logo, aynı yön — yalnızca
+   ölçek ve saydamlık geri çekilir. "Neredeyse görünmez" değil, okunabilir
+   biçimde geri çekilmiş demektir. */
+const MUTED_SCALE = 0.82
+const MUTED_OPACITY = 0.72
+
+/* Yayına abone OLMAYAN araç (son bilinen konum) daha soluk durur. Eskiden bu
+   ayrım kesikli bir halkayla anlatılıyordu; halka kalktığı için saydamlığa
+   taşındı. */
+const IDLE_OPACITY = 0.55
 
 function safeColor(value) {
   return /^#[0-9A-F]{6}$/i.test(value ?? '') ? value.toUpperCase() : FALLBACK_COLOR
 }
 
 /**
- * Duraklardan ve rota çizgilerinden GÖRSEL OLARAK ayrışan işaret: beyaz halka
- * içinde dolu bir çekirdek. Duraklar sıra numarası taşıyan daire/üçgen/kare,
- * rota ise çizgidir; araç hiçbirine benzemez ve en üstte durur.
+ * Marka işaretinin <code>data:</code> URI'si.
  *
- * Yeni bir ikon kütüphanesi EKLENMEZ — projenin OpenLayers stil primitifleri
- * kullanılır (bkz. transport.js).
+ * <b>Önbellek zorunludur:</b> stil fonksiyonu her karede çağrılabilir ve SVG
+ * metnini yeniden kurup yeniden kodlamak haritayı kilitlerdi. Tek anahtar
+ * vardır çünkü işaret rotaya göre DEĞİŞMEZ.
  */
-function vehicleStyle(colorHex, live = true, emphasis = VEHICLE_EMPHASIS.FULL) {
-  const color = safeColor(colorHex)
+let markDataUri = null
+
+export function transportVehicleMarkDataUri() {
+  if (markDataUri !== null) return markDataUri
+
+  const { width, height } = BASARSOFT_MARK_VIEW_BOX
+  const boxWidth = width + MARK_PADDING * 2
+  const boxHeight = height + MARK_PADDING * 2
+  const pixelHeight = MARKER_HEIGHT * SOURCE_SCALE
+  const pixelWidth = Math.round((boxWidth / boxHeight) * pixelHeight)
+
+  /* Açık ve koyu altlıkta da okunabilirlik için İKİ yumuşak gölge: koyu
+     harita üzerinde ayıran açık bir hâle, açık harita üzerinde oturtan
+     yumuşak bir gölge. İkisi de SİLUETİ değiştirmez — logonun kenarına ne
+     çizgi eklenir ne de arkasına zemin konur. */
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${pixelWidth}" height="${pixelHeight}"`
+    + ` viewBox="0 0 ${boxWidth} ${boxHeight}">`
+    + '<defs><filter id="bsg" x="-30%" y="-30%" width="160%" height="160%">'
+    + '<feDropShadow dx="0" dy="0" stdDeviation="5" flood-color="#FFFFFF" flood-opacity="0.9"/>'
+    + '<feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#0B1020" flood-opacity="0.35"/>'
+    + '</filter></defs>'
+    + `<g filter="url(#bsg)" transform="translate(${MARK_PADDING} ${MARK_PADDING})">`
+    + basarsoftMarkPolygonMarkup()
+    + '</g></svg>'
+
+  // base64 DEĞİL: okunabilir kalır ve kodlaması ucuzdur.
+  markDataUri = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+  return markDataUri
+}
+
+/**
+ * Aracın stili: TEK bir marka işareti.
+ *
+ * <b>Yön ÇIKARILMAZ.</b> Paylaşılan tarafta yetkili bir yön (heading)
+ * sözleşmesi yoktur; rota geometrisinden, önceki/sonraki koordinattan ya da
+ * çizgi açısından bir yön uydurmak, sunucunun söylemediği bir şeyi
+ * söylemekti. İşaret bu yüzden hiç döndürülmez ve harita döndüğünde de
+ * dik kalır.
+ *
+ * <b>Rota rengi işarete yazılmaz:</b> marka işareti kendi renkleriyle
+ * tanınır. Ayrım vurguyla (ölçek/saydamlık) ve balonla kurulur.
+ */
+function vehicleStyle(live = true, emphasis = VEHICLE_EMPHASIS.FULL) {
   const muted = emphasis === VEHICLE_EMPHASIS.MUTED
-  const key = `${color}:${live ? 'live' : 'idle'}:${muted ? 'muted' : 'full'}`
+  const key = `${live ? 'live' : 'idle'}:${muted ? 'muted' : 'full'}`
 
   if (!vehicleStyles.has(key)) {
     /* Kısık araçlar SEÇİLİ olanın ALTINDA çizilir: üst üste gelen iki araçta
        kullanıcının bağlamdaki olanı görmesi gerekir. */
-    const zBase = muted ? 56 : 60
+    const zIndex = muted ? 56 : 60
     const scale = muted ? MUTED_SCALE : 1
-    const ring = muted ? withMutedAlpha(color) : color
-    const core = muted ? withMutedAlpha(color) : color
+    const opacity = (muted ? MUTED_OPACITY : 1) * (live ? 1 : IDLE_OPACITY)
 
     vehicleStyles.set(key, [
       new Style({
-        image: new CircleStyle({
-          radius: 15 * scale,
-          fill: new Fill({ color: muted ? MUTED_HALO_FILL : '#FFFFFFEE' }),
-          stroke: new Stroke({ color: ring, width: 3, lineDash: live ? undefined : [3, 3] }),
+        image: new Icon({
+          src: transportVehicleMarkDataUri(),
+          /* Kaynak SVG iki katı boyutta üretildi; burada geri ölçeklenir. */
+          scale: (1 / SOURCE_SCALE) * scale,
+          opacity,
+          anchor: [0.5, 0.5],
+          // Harita döndürülse bile işaret dik kalır: yön iddiası YOKTUR.
+          rotateWithView: false,
+          rotation: 0,
         }),
-        zIndex: zBase,
-      }),
-      new Style({
-        image: new CircleStyle({
-          radius: 7 * scale,
-          fill: new Fill({ color: core }),
-          stroke: new Stroke({ color: muted ? MUTED_CORE_STROKE : '#FFFFFF', width: 2 }),
-        }),
-        zIndex: zBase + 1,
+        zIndex,
       }),
     ])
   }
@@ -128,7 +181,6 @@ export function createTransportVehicleLayer() {
     // Durak (5-30) ve rota (0-22) zIndex aralıklarının ÜSTÜNDE.
     zIndex: 60,
     style: (feature) => vehicleStyle(
-      feature.get('colorHex'),
       feature.get('isLive') !== false,
       feature.get('emphasis') ?? VEHICLE_EMPHASIS.FULL,
     ),

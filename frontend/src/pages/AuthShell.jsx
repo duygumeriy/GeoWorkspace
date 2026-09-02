@@ -14,8 +14,21 @@ import './AuthShell.css'
  * exactly rather than re-implementing it. The only addition is
  * `.auth-card--compact`, which drops the login card's fixed 740px min-height:
  * these forms are shorter and would otherwise float in an oversized card.
+ *
+ * <b>`showLanguageSelector`.</b> Dil hapı bu çerçevenin İSTEĞE BAĞLI bir
+ * parçasıdır. Varsayılan `true`'dur: kabuk hâlihazırda onu çizen ekranların
+ * (şifre sıfırlama, e-posta doğrulama, hesap etkinleştirme) görünümü bu
+ * eklemeyle DEĞİŞMEZ. Kayıt ekranı ise açıkça devre dışı bırakır — hap
+ * hiçbir şeyi değiştirmediği için orada tutulamayan bir söz veriyordu.
+ *
+ * Kapatıldığında sarmalayıcı `div` hiç ÇİZİLMEZ; boş bir kap bırakmak, ekran
+ * okuyucuda anlamsız bir düğüm ve kaynakta "burada bir şey olmalıydı" izlenimi
+ * bırakırdı. Rotaya göre CSS ile gizlemek de bilinçli olarak seçilmedi:
+ * görünürlük bir DÜZEN kararıdır ve bileşen sözleşmesinde durmalıdır.
+ *
+ * @param {boolean} [showLanguageSelector=true] dil hapı çizilsin mi
  */
-export default function AuthShell({ eyebrow, title, children }) {
+export default function AuthShell({ eyebrow, title, children, showLanguageSelector = true }) {
   // Same fixed presentation as the login screen this shell borrows its design
   // from; see LoginPage for why these screens are not themeable.
   useFixedThemePresentation('dark')
@@ -26,9 +39,11 @@ export default function AuthShell({ eyebrow, title, children }) {
 
       <LoginVisualPane />
 
-      <div className="login-page-top-controls">
-        <LanguagePill />
-      </div>
+      {showLanguageSelector && (
+        <div className="login-page-top-controls">
+          <LanguagePill />
+        </div>
+      )}
 
       <div className="login-form-wrap">
         <GlassPanel className="login-card auth-card--compact" as="div">

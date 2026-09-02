@@ -7,13 +7,88 @@
   justify-content: space-between;
   gap: 1rem;
   padding: 0 1.25rem;
-  background: var(--surface-soft);
-  border-bottom: 1px solid var(--border-soft);
+  /* Faz 6: markalı yüzey. Renkler tema belirteçlerinden gelir (tokens.css). */
+  background: var(--brand-header-bg);
+  border-bottom: 1px solid var(--brand-header-border);
+  box-shadow: var(--brand-header-glow);
   backdrop-filter: blur(var(--blur-glass));
   -webkit-backdrop-filter: blur(var(--blur-glass));
   color: var(--text-primary);
   box-sizing: border-box;
+  overflow: hidden;
   z-index: 20;
+}
+
+/* --- Marka afişi -------------------------------------------------------------
+   Sağlanan Başarsoft AFİŞİ (PNG), temaya göre açık ya da koyu varyantıyla.
+   Yerel varlıktır: ağ yoktur, CDN yoktur, CSS ile yeniden çizilmez.
+
+   <b>Neden ayrı bir katman.</b> Afiş `.map-topbar`'ın kendi arka planı
+   OLSAYDI, denetimlerin altına kadar uzanırdı — ilk denemede tam olarak bu
+   oldu ve "başarsoft" yazısı kullanıcı adının, sayacın ve çıkış düğmesinin
+   arkasında kaldı. Mutlak konumlu bir katman, genişliğini ve solmasını
+   denetimlerden BAĞIMSIZ ayarlamayı mümkün kılar.
+
+   <b>GÜVENLİ BÖLGE.</b> Katman şeridin yalnızca sol/orta bölgesini kaplar ve
+   sağ kenarına gelmeden maskeyle söner; sağ taraf denetimlere ait temiz bir
+   yüzey olarak kalır. `background-size: cover` burada tüm şeride değil, bu
+   SINIRLI katmana uygulanır — afişi denetimlerin üstüne taşımadan doldurur.
+
+   Dikey konum %44'tür: afiş 3:1, şerit ise ~11:1 olduğu için kırpma
+   kaçınılmazdır ve kırpma noktası, sözcük işareti ile sloganı tam ortalayacak
+   biçimde yukarı çekilir. Yalnızca dekoratif çizgilerin kaldığı bir kırpma
+   markayı tanınmaz yapardı. */
+.map-topbar-brand-artwork {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  /* Denetimler için ayrılan sağ güvenli bölgeye HİÇ girmez. */
+  width: min(var(--brand-banner-width), calc(100% - var(--brand-header-safe-zone)));
+  pointer-events: none;
+  background-image: var(--brand-header-artwork);
+  background-repeat: no-repeat;
+  background-position: left 44%;
+  background-size: cover;
+  opacity: var(--brand-header-artwork-opacity);
+  /* Afiş sert bir kenarla değil, yumuşayarak biter. */
+  -webkit-mask-image: linear-gradient(90deg, #000 0%, #000 68%, transparent 100%);
+  mask-image: linear-gradient(90deg, #000 0%, #000 68%, transparent 100%);
+}
+
+/* Denetimlerin daraldığı ölçülerde afiş geri çekilir: ÖNCE işlev, sonra
+   süsleme. Marka tamamen kaybolmaz, yalnızca daha az yer kaplar. */
+@media (max-width: 1024px) {
+  .map-topbar-brand-artwork {
+    width: min(420px, calc(100% - var(--brand-header-safe-zone)));
+    -webkit-mask-image: linear-gradient(90deg, #000 0%, #000 58%, transparent 100%);
+    mask-image: linear-gradient(90deg, #000 0%, #000 58%, transparent 100%);
+  }
+}
+
+/* Dar ekranda sözcük işareti zaten okunacak boyutta duramaz: afiş kurumsal
+   bir renk/doku izine iner ve şeridi denetimlere bırakır. */
+@media (max-width: 780px) {
+  .map-topbar-brand-artwork {
+    width: min(200px, 42%);
+    opacity: calc(var(--brand-header-artwork-opacity) * 0.55);
+    -webkit-mask-image: linear-gradient(90deg, #000 0%, transparent 100%);
+    mask-image: linear-gradient(90deg, #000 0%, transparent 100%);
+  }
+}
+
+/* Telefonda menü düğmesi, tema, sayaç ve çıkış tek satırı zaten doldurur. */
+@media (max-width: 560px) {
+  .map-topbar-brand-artwork {
+    display: none;
+  }
+}
+
+/* Artalanın ÜSTÜNDE: süsleme hiçbir zaman metnin önüne geçmez. */
+.map-topbar-left,
+.map-topbar-right {
+  position: relative;
+  z-index: 1;
 }
 
 .map-topbar-left {
@@ -31,15 +106,6 @@
   flex-shrink: 0;
 }
 
-.map-topbar-title {
-  margin: 0;
-  font-size: 1rem;
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 .map-topbar-right {
   display: flex;
   align-items: center;
@@ -55,8 +121,12 @@
   gap: 0.9rem;
   padding: 0.45rem 0.9rem;
   border-radius: var(--radius-full);
-  background: var(--surface);
-  border: 1px solid var(--border-soft);
+  /* Afişin üzerinde okunabilirlik için kendi yüzeyi: neon değil, yalnızca
+     net bir ayrım. */
+  background: var(--brand-control-surface);
+  border: 1px solid var(--brand-control-border);
+  backdrop-filter: blur(calc(var(--blur-glass) / 2));
+  -webkit-backdrop-filter: blur(calc(var(--blur-glass) / 2));
 }
 
 .map-topbar-username {
@@ -92,8 +162,8 @@
   color: var(--danger);
 }
 
-/* Tablet: the sidebar is a rail, so the topbar carries the identity again —
-   only the gaps tighten. */
+/* Tablet: yalnızca boşluklar sıkışır. Proje adı artık üst şeritte DEĞİL
+   kenar çubuğundadır; şerit burada denetimleri ve marka afişini taşır. */
 @media (max-width: 1024px) {
   .map-topbar {
     gap: 0.6rem;
@@ -120,13 +190,7 @@
 
   .map-topbar-left {
     gap: 0.4rem;
-    /* Title takes the leftover width and truncates instead of pushing. */
-    flex: 1;
     min-width: 0;
-  }
-
-  .map-topbar-title {
-    font-size: 0.85rem;
   }
 
   /* The username lives in the drawer footer on phones; the session countdown

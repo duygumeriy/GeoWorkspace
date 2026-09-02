@@ -144,6 +144,9 @@ export default function Sidebar({
         aria-hidden={isMobile && !mobileOpen ? 'true' : undefined}
       >
         <div className="map-sidebar-brand">
+          {/* UYGULAMA kimliği: konum iğnesi + projenin TAM adı.
+              Kurumsal marka (Başarsoft) bu alanda DEĞİL, üst şeritte durur;
+              ikisini tek yere koymak arayüzü aşırı markalı gösteriyordu. */}
           <span className="map-sidebar-brand-icon">
             <PinIcon size={22} />
           </span>

@@ -21,8 +21,10 @@
 
 .map-sidebar-brand {
   display: flex;
-  align-items: center;
-  gap: 0.6rem;
+  /* İki satıra taşan başlıkta simge ÜSTTE hizalanır; ortalanınca ikinci
+     satırın yanında asılı kalıyordu. */
+  align-items: flex-start;
+  gap: 0.55rem;
   padding: 0 0.35rem;
   min-height: 28px;
 }
@@ -31,15 +33,29 @@
   display: inline-flex;
   flex-shrink: 0;
   color: var(--primary-light);
+  /* Simge ilk satırın optik ortasına oturur. */
+  margin-top: 1px;
 }
 
+/* --- Uygulama adı ------------------------------------------------------------
+   Projenin adı TAM görünür. Eskiden tek satıra sıkıştırılıp `text-overflow`
+   ile kırpılıyordu ve "Staj Harita Uygulam…" diye okunuyordu; kenar çubuğunun
+   240px'lik genişliğinde 22 karakterlik ad kalın 0.95rem'de o satıra sığmaz.
+
+   Çözüm kırpmayı KALDIRMAKTIR: ad sarılır (en çok iki satır) ve tipografi
+   yalnızca bir tık geri çekilir. Kenar çubuğu genişletilmez, yazı okunmaz
+   hâle küçültülmez ve menü satırlarının kendi kırpma politikası DEĞİŞMEZ —
+   bu kural yalnızca başlık yuvasına aittir. */
 .map-sidebar-brand-name {
-  font-size: 0.95rem;
+  font-size: 0.88rem;
   font-weight: 700;
+  line-height: 1.25;
   color: var(--text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: break-word;
+  overflow: visible;
+  text-overflow: clip;
+  min-width: 0;
 }
 
 .map-sidebar-nav {
@@ -79,10 +95,13 @@
   padding: 0.7rem 0;
 }
 
+/* Etkin öğe: mor dolgu + hafif parıltı. (Faz 6) Parıltı UYGULAMANIN ÜÇ
+   odağından biridir — marka şeridi, etkin öğe, yüzer panel — her denetime
+   dağıtılmaz. Durum yalnızca renkle anlatılmaz: `aria-current` onu taşır. */
 .map-sidebar-nav-item.is-active {
   background: var(--gradient-primary);
   color: #fff;
-  box-shadow: var(--shadow-glow-soft);
+  box-shadow: var(--shadow-glow-soft), 0 0 0 1px var(--brand-header-border);
 }
 
 .map-sidebar-nav-item span {

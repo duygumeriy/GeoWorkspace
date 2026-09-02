@@ -8,7 +8,6 @@ import GlassPanel from '../components/ui/GlassPanel.jsx'
 import TextField from '../components/ui/TextField.jsx'
 import Button from '../components/ui/Button.jsx'
 import IconButton from '../components/ui/IconButton.jsx'
-import LanguagePill from '../components/ui/LanguagePill.jsx'
 import { useFixedThemePresentation } from '../styles/theme.jsx'
 import {
   UserIcon,
@@ -18,8 +17,6 @@ import {
   AlertIcon,
   CheckIcon,
   ArrowRightIcon,
-  ShieldIcon,
-  FingerprintIcon,
 } from '../components/ui/icons/index.js'
 import './LoginPage.css'
 import './AuthShell.css'
@@ -101,12 +98,9 @@ export default function LoginPage() {
 
       <LoginVisualPane />
 
-      {/* No theme control here: the theme belongs to the authenticated map
-          workspace, not to the sign-in screen. */}
-      <div className="login-page-top-controls">
-        <LanguagePill />
-      </div>
-
+      {/* Bu ekranda ne tema denetimi ne de dil seçici vardır: tema kimliği
+          doğrulanmış harita çalışma alanına aittir, dil değiştirme ise henüz
+          bir işlev taşımıyordu. */}
       <div className="login-form-wrap">
         <GlassPanel className="login-card" as="div">
           <p className="login-eyebrow">Hoş geldiniz</p>
@@ -189,31 +183,12 @@ export default function LoginPage() {
             </Button>
           </form>
 
-          <button type="button" className="login-sso">
-            <ShieldIcon size={18} />
-            Kurumsal SSO ile giriş yap
-          </button>
-
           <p className="auth-footer">
             Hesabınız yok mu?{' '}
             <Link className="auth-link" to="/register">
               Kayıt Ol
             </Link>
           </p>
-
-          <div className="login-divider">
-            <span>veya</span>
-          </div>
-
-          <div className="login-passkey">
-            <span className="login-passkey-icon">
-              <FingerprintIcon size={22} />
-            </span>
-            <div>
-              <p className="login-passkey-title">Passkey / Parmak İzi</p>
-              <p className="login-passkey-subtitle">Hızlı ve güvenli giriş</p>
-            </div>
-          </div>
         </GlassPanel>
       </div>
     </div>

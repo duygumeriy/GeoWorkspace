@@ -15,7 +15,9 @@ import {
   AnalysisIcon,
   ChevronIcon,
   PinIcon,
+  GripIcon,
 } from '../ui/icons/index.js'
+import useDockDrag from '../../hooks/useDockDrag.js'
 import './DrawToolbar.css'
 
 const TOOL_ICONS = { point: PointIcon, line: LineIcon, polygon: PolygonIcon }
@@ -48,6 +50,13 @@ const SELECTION_ICONS = { single: CursorIcon, box: BoxSelectIcon, polygon: Lasso
  * incelerken haritanın alt şeridini geri kazanmak gerekir. Katlanmış hâlde
  * geriye tek bir düğme kalır ve o düğme açıklığı `aria-expanded` ile bildirir.
  *
+ * <b>Çubuk SÜRÜKLENEBİLİR.</b> (Faz 6) Varsayılan yeri değişmedi — alt-orta —
+ * ama kullanıcı onu kullanılabilir harita alanının herhangi bir yerine
+ * taşıyabilir. Sürükleme YALNIZCA tutamaktan başlar: etikete, ok düğmesine ya
+ * da içerideki araçlara yapılan normal tıklamalar eskisi gibi çalışır.
+ * Konum yalnızca bir SUNUM tercihidir (bkz. `useDockDrag`); hiçbir izleme,
+ * takip, seçim veya yönetim kararına dokunmaz.
+ *
  * <b>Katlamak MOD DEĞİŞTİRMEZ.</b> Etkin araç, ölçüm ve seçim durumu
  * `useWorkspaceMode` içinde yaşar; bu bileşen yalnızca onu ÇİZER. Katlarken
  * aracı kapatmak, kullanıcının çizmekte olduğu şekli kaybettirirdi — bu yüzden
@@ -76,6 +85,10 @@ export default function DrawToolbar({
   collapsed = false,
   onToggleCollapse,
 }) {
+  /* Sürükleme durumu bu bileşenin İÇİNDE yaşar: konum saf sunumdur ve
+     çalışma alanı durumuna (workspaceMode) hiç uğramaz. */
+  const dock = useDockDrag()
+
   const {
     drawTools,
     canDrawAny,
@@ -108,9 +121,31 @@ export default function DrawToolbar({
             ? 'Durak Ekle'
             : null)
 
+
+  /* Tutamak AYRI bir denetimdir: sürükleme yalnızca buradan başlar. Etiket ve
+     ok düğmesi kendi işlerini yapmaya devam eder. */
+  const dragHandle = (
+    <button
+      type="button"
+      className="draw-toolbar-drag"
+      aria-label="Araç panelini taşı"
+      title="Araç panelini taşı — sürükleyin, ok tuşlarıyla kaydırın, Home ile varsayılana dönün"
+      {...dock.handleProps}
+    >
+      <GripIcon size={16} />
+    </button>
+  )
+
+  const dockClassName = [
+    'draw-toolbar',
+    dock.placed ? 'draw-toolbar--placed' : '',
+    dock.dragging ? 'is-dragging' : '',
+  ].filter(Boolean).join(' ')
+
   if (collapsed) {
     return (
-      <div className="draw-toolbar draw-toolbar--collapsed">
+      <div className={`${dockClassName} draw-toolbar--collapsed`} ref={dock.elementRef} style={dock.style}>
+        {dragHandle}
         <button
           type="button"
           className="draw-toolbar-handle"
@@ -131,7 +166,17 @@ export default function DrawToolbar({
   }
 
   return (
-    <div className="draw-toolbar" id="draw-toolbar-panel" role="toolbar" aria-label="Çizim araçları">
+    <div
+      className={dockClassName}
+      id="draw-toolbar-panel"
+      role="toolbar"
+      aria-label="Çizim araçları"
+      ref={dock.elementRef}
+      style={dock.style}
+    >
+      {dragHandle}
+      <span className="draw-toolbar-divider" aria-hidden="true" />
+
       {hasToolGroup && (
       <div className="draw-toolbar-group">
         {drawTypes.map((type) => {
