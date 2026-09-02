@@ -92,6 +92,15 @@
   --transport-dock-glow: 0 0 0 1px rgba(139, 92, 246, 0.12), 0 0 26px rgba(108, 60, 231, 0.4);
   --transport-dock-glow-strong: 0 0 0 1px rgba(139, 92, 246, 0.22), 0 0 38px rgba(108, 60, 231, 0.6);
 
+  /* --- Kenar çubuğu marka levhası ------------------------------------------
+     Info&Motion çizimi KOYU zemin için üretilmiştir: "Motion" kelimesi ve
+     slogan beyazdır. Bu yüzden levha İKİ TEMADA DA koyudur ve bilinçli olarak
+     tema başına yeniden tanımlanmaz — açık temada beyaz üstüne beyaz yazı
+     okunmaz olurdu. Çizimin kendisine DOKUNULMAZ; okunabilirliği zemin
+     sağlar. */
+  --sidebar-brand-plate: linear-gradient(135deg, rgba(12, 17, 38, 0.96) 0%, rgba(26, 22, 66, 0.94) 100%);
+  --sidebar-brand-plate-border: rgba(139, 92, 246, 0.28);
+
   --brand-header-bg: linear-gradient(100deg, rgba(12, 17, 38, 0.95) 0%, rgba(23, 20, 61, 0.9) 55%, rgba(10, 14, 32, 0.95) 100%);
   --brand-header-border: rgba(139, 92, 246, 0.32);
   --brand-header-glow: 0 10px 30px -18px rgba(108, 60, 231, 0.85);

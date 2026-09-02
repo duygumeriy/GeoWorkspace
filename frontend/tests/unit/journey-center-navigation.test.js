@@ -108,24 +108,25 @@ test('the map shortcut and the sidebar row name the same product', () => {
   assert.match(quick, /JOURNEY_CENTER_TITLE/)
 })
 
-test('the sidebar keeps its Phase 6 branding', () => {
-  /* Faz 6 sözleşmesi: konum iğnesi + projenin TAM adı. Yeni bir satır eklemek
-     markayı DEĞİŞTİRMEZ.
+test('the sidebar brand slot is the product artwork, not a retyped title', () => {
+  /* Faz 10 sözleşmesi: marka yuvası sağlanan Info&Motion çizimidir. Yeni bir
+     gezinme satırı eklemek markayı DEĞİŞTİRMEZ.
 
-     Ölçüm ÇİZİLEN marka bloğu üzerindedir: dosyanın tamamında kurumsal marka
-     adını aramak, o markanın neden BURADA olmadığını açıklayan yorumda
-     kırılırdı — koruduğu şeyi korumayan bir denetim olurdu. */
+     Ölçüm ÇİZİLEN marka bloğu üzerindedir: dosyanın tamamını taramak, markanın
+     nerede durduğunu açıklayan yorumlarda kırılırdı. */
   const brand = stripComments(SIDEBAR.slice(
     SIDEBAR.indexOf('<div className="map-sidebar-brand">'),
     SIDEBAR.indexOf('<nav className="map-sidebar-nav"'),
   ))
 
-  assert.match(brand, /<PinIcon size=\{22\} \/>/)
-  assert.match(brand, /\{!collapsed && <span className="map-sidebar-brand-name">Staj Harita Uygulaması<\/span>\}/)
+  assert.match(brand, /<img className="map-sidebar-brand-logo" src=\{infomotionLogo\}/)
 
-  // Kurumsal logo ya da kısaltılmış başlık YOKTUR.
-  assert.ok(!brand.includes('<img'))
-  assert.ok(!/Başarsoft|Info&Motion/.test(brand))
+  // Ad ve slogan çizimin İÇİNDEDİR; yanına ikinci bir başlık yazılmaz.
+  assert.ok(!brand.includes('Staj Harita Uygulaması'))
+  assert.ok(!brand.includes('map-sidebar-brand-name'))
+
+  // Kurumsal marka (Başarsoft) bu yuvada değil, üst şerittedir.
+  assert.ok(!/Başarsoft/.test(brand))
 })
 
 /* --- İki ürün, iki eksen --------------------------------------------------------- */

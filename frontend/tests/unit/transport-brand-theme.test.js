@@ -59,40 +59,78 @@ const APP_TITLE = 'Staj Harita Uygulaması'
  * KENAR ÇUBUĞU — uygulama kimliği
  * ========================================================================== */
 
-/* --- 1 / 4. Konum iğnesi geri geldi; kurumsal işaret bu yuvada değil -------- */
+/* --- 1 / 4. Ürün kimliği ÇİZİMDİR (Faz 10) ---------------------------------
+   Faz 6'daki "konum iğnesi + yazılmış proje adı" düzeni BİLİNÇLİ olarak
+   değiştirildi: kenar çubuğunun marka yuvası artık sağlanan Info&Motion
+   çizimini taşır. Kurumsal marka (Başarsoft) hâlâ bu yuvada DEĞİL, üst
+   şerittedir — sorumluluk ayrımı korunur. */
 
-test('the sidebar title slot uses the location pin again, not the company mark', () => {
-  const brandSlot = SIDEBAR.match(/<span className="map-sidebar-brand-icon">([\s\S]*?)<\/span>/)
-  assert.ok(brandSlot, 'kenar çubuğu marka yuvası bulunmalı')
-  assert.match(brandSlot[1], /<PinIcon\s/)
+test('the sidebar brand slot carries the Info&Motion artwork', () => {
+  const brandSlot = SIDEBAR.slice(
+    SIDEBAR.indexOf('<div className="map-sidebar-brand">'),
+    SIDEBAR.indexOf('<nav className="map-sidebar-nav"'),
+  )
+
+  assert.match(brandSlot, /className="map-sidebar-brand-logo"/)
+  assert.match(brandSlot, /src=\{infomotionLogo\}/)
+
+  // Çizim YEREL varlıktır; uzak bir adresten çekilmez.
+  assert.match(SIDEBAR, /import infomotionLogo from '\.\.\/\.\.\/assets\/brand\/infomotion-logo\.png'/)
+  assert.ok(existsSync(new URL('../../src/assets/brand/infomotion-logo.png', import.meta.url)))
+
+  // Eski yuva artık yok: iğne ve yazılmış ad marka alanından kalktı.
+  assert.equal(brandSlot.includes('map-sidebar-brand-icon'), false)
+  assert.equal(brandSlot.includes(APP_TITLE), false)
 
   // Kurumsal işaret bileşeni bu ekranda HİÇ kullanılmaz.
   assert.equal(SIDEBAR.includes('BrandMark'), false)
   assert.equal(existsSync(new URL('../../src/components/ui/BrandMark.jsx', import.meta.url)), false)
 })
 
-/* --- 2 / 3. Proje adı TAM görünür ------------------------------------------ */
+/* --- 2 / 3. Ad ve slogan ÇİZİMİN İÇİNDEDİR --------------------------------- */
 
-test('the sidebar shows the full project name', () => {
-  assert.match(SIDEBAR, new RegExp(`className="map-sidebar-brand-name">\\s*\\{?['"]?${APP_TITLE}`))
+test('the sidebar does not retype what the artwork already says', () => {
+  /* Çizim ürün adını ve sloganı kendi içinde taşır; HTML'e ikinci kez yazmak
+     görenlere aynı şeyi iki kez okuturdu. Ekran okuyucu ise onu erişilebilir
+     addan duyar. */
+  assert.equal(SIDEBAR.includes('map-sidebar-brand-name'), false)
+  assert.match(SIDEBAR, /const BRAND_ALT = 'Info&Motion — Sahadan veriye, veriden harekete\.'/)
+  assert.match(SIDEBAR, /alt=\{BRAND_ALT\}/)
 })
 
-test('the sidebar title is not truncated', () => {
-  const rules = rulesFor(SIDEBAR_CSS, '.map-sidebar-brand-name')
+test('the sidebar artwork keeps its aspect ratio', () => {
+  const rules = rulesFor(SIDEBAR_CSS, '.map-sidebar-brand-logo')
   assert.equal(rules.length, 1)
   const body = rules[0].body
 
-  /* Kırpma ÜÇ ayarın birlikte çalışmasıydı; üçü de geri alınmıştır.
-     "Staj Harita Uygulam…" tam olarak buradan doğuyordu. */
-  assert.equal(/text-overflow:\s*ellipsis/.test(body), false)
-  assert.equal(/white-space:\s*nowrap/.test(body), false)
-  assert.equal(/overflow:\s*hidden/.test(body), false)
-  assert.match(body, /white-space:\s*normal/)
+  /* Oran KORUNUR: YALNIZCA genişlik verilir, yükseklik türetilir. Sabit bir
+     yükseklik 3:1 çizimi ezerdi. */
+  assert.match(body, /height:\s*auto/)
+  assert.equal(/height:\s*\d/.test(body), false)
+  assert.equal(/object-fit:\s*fill/.test(body), false)
 
-  // Okunmaz hâle küçültülmez ve kenar çubuğu genişletilmez.
-  const size = body.match(/font-size:\s*([\d.]+)rem/)
-  assert.ok(size && Number(size[1]) >= 0.8, 'başlık okunabilir boyutta kalmalı')
-  assert.match(SIDEBAR_CSS, /\.map-sidebar\s*\{[^}]*width:\s*240px/)
+  /* Değişmez olan şey ÖLÇÜ DEĞİL, SINIRIN NEREDEN GELDİĞİDİR: genişlik
+     kapsayıcıya bağlı olmalıdır, böylece çizim levhayı hiçbir genişlikte
+     aşamaz.
+
+     Belirli bir özelliğe (`max-width`) ya da belirli bir piksele çivilemek
+     yanlış olurdu: marka ölçüsü meşru biçimde ayarlanabilir ve nitekim
+     ayarlandı — `width: 100%` + `max-width: 176px` ikilisi tek bir
+     `width: min(100%, …)` ifadesine indi. İkisi de aynı güvenceyi verir;
+     `width: 176px` gibi kapsayıcıdan kopuk bir ölçü ise vermez ve buradan
+     geçemez. */
+  const width = body.match(/(?:^|[\s;])width:\s*([^;]+);/)
+  assert.ok(width, 'çizimin bir genişlik bildirimi olmalı')
+  assert.ok(
+    width[1].includes('100%'),
+    `genişlik kapsayıcıya bağlı olmalı, bulunan: ${width[1].trim()}`,
+  )
+
+  /* Kenar çubuğu bunun için genişletilmedi. Ölçüm BİLDİRİM gövdelerinden
+     okunur; dosya geneline atılan bir desen medya sorgusu başlığına
+     çarpabilirdi. */
+  const sidebar = rulesFor(SIDEBAR_CSS, '.map-sidebar').map((rule) => rule.body).join('\n')
+  assert.match(sidebar, /width:\s*240px/)
 })
 
 /* --- 5. Harita ikonografisi değişmedi --------------------------------------- */

@@ -72,3 +72,78 @@ export function resolveTransportClick(map, pixel, { isRouteVisible = () => true 
 
   return { target: TRANSPORT_CLICK_TARGET.NONE, stop: null, routeId: null }
 }
+
+/* --- Tıklamanın SEÇİMDEKİ karşılığı ---------------------------------------------
+   `resolveTransportClick` NEYE tıklandığını söyler; bu fonksiyon o isabetin
+   SEÇİM durumunda ne anlama geldiğini söyler. İkisini ayırmak, kararın
+   React'siz ve tarayıcısız sınanabilmesini sağlar — kanca yalnızca sonucu
+   uygular ve ikinci bir kural kitabı tutmaz. */
+
+/** Bir ulaşım tıklamasının seçim üzerindeki sonucu. */
+export const TRANSPORT_CLICK_ACTIONS = Object.freeze({
+  /** Araç: balonunu kendi katmanı açar, seçim zinciri çekilir. */
+  IGNORE: 'ignore',
+  SELECT_STOP: 'selectStop',
+  SELECT_ROUTE: 'selectRoute',
+  /** Seçim bırakılır. Yalnızca GERÇEKTEN boş tıklamada güzergah da bırakılır. */
+  CLEAR: 'clear',
+})
+
+/**
+ * Bir isabetin seçim sonucunu belirler.
+ *
+ * <b>Sonuç YALNIZCA seçim taşır.</b> Tipte başlatma, durdurma, duraklatma,
+ * izleme ya da takip için bir alan YOKTUR ve olmamalıdır: boş bir harita
+ * tıklamasının çok kullanıcılı bir çalıştırmayı durdurabilmesi ya da bir
+ * kamerayı bırakabilmesi yapısal olarak imkânsız kalmalıdır. Bu, yorumla değil
+ * tipin ŞEKLİYLE garanti edilir.
+ *
+ * <b><code>clearsRoute</code> yalnızca hiçbir şeye tıklanmadığında doğrudur.</b>
+ * Görünmez bir güzergaha ya da seçim işleyicisi olmayan bir güzergaha tıklamak
+ * BOŞ tıklama değildir: kullanıcı gerçek bir nesneye dokunmuştur ve seçili
+ * hattı kaybetmeyi beklemez. Ayrım olmasaydı, gizlenmiş bir hattın üstüne
+ * tıklamak seçili hattı sessizce düşürürdü.
+ *
+ * @param {{ target?: string, stop?: object|null, routeId?: number|null }} hit
+ * @param {{ canSelectRoute?: boolean }} [options]
+ */
+export function transportClickOutcome(hit, { canSelectRoute = true } = {}) {
+  const target = hit?.target ?? TRANSPORT_CLICK_TARGET.NONE
+
+  if (target === TRANSPORT_CLICK_TARGET.VEHICLE) {
+    return Object.freeze({
+      action: TRANSPORT_CLICK_ACTIONS.IGNORE,
+      stop: null,
+      routeId: null,
+      clearsRoute: false,
+    })
+  }
+
+  if (target === TRANSPORT_CLICK_TARGET.STOP) {
+    return Object.freeze({
+      action: TRANSPORT_CLICK_ACTIONS.SELECT_STOP,
+      stop: hit?.stop ?? null,
+      routeId: null,
+      clearsRoute: false,
+    })
+  }
+
+  if (target === TRANSPORT_CLICK_TARGET.ROUTE && canSelectRoute) {
+    return Object.freeze({
+      action: TRANSPORT_CLICK_ACTIONS.SELECT_ROUTE,
+      stop: null,
+      routeId: hit?.routeId ?? null,
+      clearsRoute: false,
+    })
+  }
+
+  return Object.freeze({
+    action: TRANSPORT_CLICK_ACTIONS.CLEAR,
+    stop: null,
+    routeId: null,
+    /* Güzergah YALNIZCA boş haritada bırakılır. Seçim işleyicisi olmayan bir
+       güzergah isabeti mevcut davranışı korur: durak seçimi bırakılır, hat
+       seçimi KORUNUR — tıklanan şey gerçek bir nesnedir. */
+    clearsRoute: target === TRANSPORT_CLICK_TARGET.NONE,
+  })
+}

@@ -3,7 +3,11 @@ import {
   TRANSPORT_STOP_KIND,
   TRANSPORT_STOP_LAYER_CLASSNAME,
 } from '../map/transport.js'
-import { TRANSPORT_CLICK_TARGET, resolveTransportClick } from '../map/transportInteraction.js'
+import {
+  TRANSPORT_CLICK_ACTIONS,
+  resolveTransportClick,
+  transportClickOutcome,
+} from '../map/transportInteraction.js'
 
 const HIT_TOLERANCE = 8
 
@@ -25,6 +29,12 @@ export default function useTransportStopInteraction(map, {
   hoverEnabled,
   onSelect,
   onSelectRoute = null,
+  /* BOŞ harita tıklamasında seçili güzergahı bırakır.
+     <b>Yalnızca SEÇİMDİR.</b> POI, durak ve çizim seçimleri boş tıklamada zaten
+     bırakılıyordu; güzergah bırakılmıyordu ve bu tutarsızlıktı. Bırakmak
+     simülasyonu durdurmaz, izlemeyi/takibi kaldırmaz ve yönetim seçimine
+     dokunmaz — sonuç tipinde böyle bir alan zaten yoktur. */
+  onClearRoute = null,
   isRouteVisible = () => true,
 }) {
   useEffect(() => {
@@ -37,25 +47,35 @@ export default function useTransportStopInteraction(map, {
          çekilinir — iki yerde iki farklı isabet kuralı yazılmaz. */
       const hit = resolveTransportClick(map, event.pixel, { isRouteVisible })
 
-      if (hit.target === TRANSPORT_CLICK_TARGET.VEHICLE) return
+      /* İsabetin SEÇİMDEKİ karşılığı saf `transportClickOutcome`'dadır; bu
+         kanca yalnızca uygular. Sonuç tipi hiçbir yaşam döngüsü alanı
+         taşımaz, dolayısıyla bir tıklama simülasyon durduramaz. */
+      const outcome = transportClickOutcome(hit, { canSelectRoute: Boolean(onSelectRoute) })
 
-      if (hit.target === TRANSPORT_CLICK_TARGET.STOP) {
-        onSelect(hit.stop)
+      if (outcome.action === TRANSPORT_CLICK_ACTIONS.IGNORE) return
+
+      if (outcome.action === TRANSPORT_CLICK_ACTIONS.SELECT_STOP) {
+        onSelect(outcome.stop)
         return
       }
 
-      if (hit.target === TRANSPORT_CLICK_TARGET.ROUTE && onSelectRoute) {
-        onSelectRoute(hit.routeId)
+      if (outcome.action === TRANSPORT_CLICK_ACTIONS.SELECT_ROUTE) {
+        onSelectRoute(outcome.routeId)
         return
       }
 
-      // Ne durak ne güzergah: mevcut "seçimi bırak" davranışı korunur.
+      // Mevcut "durak seçimini bırak" davranışı korunur.
       onSelect(null)
+
+      /* BOŞ harita: seçili güzergah da bırakılır — POI, durak ve çizim
+         seçimleriyle aynı kural. Gerçek bir nesneye tıklanmışsa buraya
+         gelinmez. */
+      if (outcome.clearsRoute) onClearRoute?.()
     }
 
     map.on('singleclick', handleClick)
     return () => map.un('singleclick', handleClick)
-  }, [map, enabled, onSelect, onSelectRoute, isRouteVisible])
+  }, [map, enabled, onSelect, onSelectRoute, onClearRoute, isRouteVisible])
 
   useEffect(() => {
     if (!map || !enabled || !hoverEnabled) return undefined

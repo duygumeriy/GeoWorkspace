@@ -197,11 +197,18 @@ test('the moving vehicle keeps click precedence and still opens its popup', () =
   const interaction = stripComments(read('../../src/hooks/useTransportStopInteraction.js'))
 
   /* Zincir DEĞİŞMEDİ: araç isabeti en üsttedir ve güzergah seçimi ona hiç
-     ulaşmaz — bu kanca araçta yalnızca ÇEKİLİR. */
-  const vehicleGuard = interaction.indexOf('TRANSPORT_CLICK_TARGET.VEHICLE')
-  const routeBranch = interaction.indexOf('TRANSPORT_CLICK_TARGET.ROUTE')
-  assert.ok(vehicleGuard > 0 && routeBranch > vehicleGuard, 'araç önceliği güzergahın önünde değil')
-  assert.match(interaction, /if \(hit\.target === TRANSPORT_CLICK_TARGET\.VEHICLE\) return/)
+     ulaşmaz — bu kanca araçta yalnızca ÇEKİLİR.
+
+     Faz 10'da kararın kendisi saf `transportClickOutcome`'a taşındı, bu yüzden
+     sıra artık METİNDE değil DAVRANIŞTA kanıtlanır (bkz.
+     `map-selection-consistency.test.js`); burada yalnızca kancanın o karara
+     uyduğu ve araçta çekildiği okunur. */
+  assert.ok(interaction.includes('transportClickOutcome'))
+  assert.match(interaction, /if \(outcome\.action === TRANSPORT_CLICK_ACTIONS\.IGNORE\) return/)
+
+  const ignoreBranch = interaction.indexOf('TRANSPORT_CLICK_ACTIONS.IGNORE')
+  const routeBranch = interaction.indexOf('TRANSPORT_CLICK_ACTIONS.SELECT_ROUTE')
+  assert.ok(ignoreBranch > 0 && routeBranch > ignoreBranch, 'araç önceliği güzergahın önünde değil')
 
   // Balonu hâlâ aracın kendi katmanı açar; ikinci bir isabet kuralı yazılmadı.
   assert.ok(MAP_PAGE.includes('onVehicleClick: openVehiclePopup'))

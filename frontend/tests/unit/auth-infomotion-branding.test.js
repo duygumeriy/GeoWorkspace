@@ -316,9 +316,12 @@ test('the in-app map branding is untouched', () => {
   assert.match(TOPBAR, /className="map-topbar-brand-artwork"/)
   assert.equal(TOPBAR.includes('infomotion'), false)
 
-  // Kenar çubuğu kimliği ve paylaşılan araç işareti yerinde.
-  assert.ok(SIDEBAR.includes('Staj Harita Uygulaması'))
-  assert.equal(SIDEBAR.includes('infomotion'), false)
+  /* Faz 10: kenar çubuğu ÜRÜN kimliğini taşır ve AYNI yerel çizimi kullanır.
+     Kimlik dağılımı bilinçlidir — kenar çubuğu Info&Motion, üst şerit
+     Başarsoft. Kimlik doğrulama ekranları bundan ETKİLENMEZ: aynı dosyayı
+     kendi başına içe aktarmaya devam eder. */
+  assert.match(SIDEBAR, /import infomotionLogo from '\.\.\/\.\.\/assets\/brand\/infomotion-logo\.png'/)
+  assert.equal(SIDEBAR.includes('Staj Harita Uygulaması'), false)
   assert.ok(VEHICLE.includes('basarsoftMarkPolygonMarkup'))
   assert.ok(exists('../../src/assets/brand/basarsoft-symbol.svg'))
 })

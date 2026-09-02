@@ -4,6 +4,7 @@ import { usePermissions } from '../../auth/permissionStore.js'
 import { ADMIN_ENTRY_PERMISSIONS, PERMISSIONS } from '../../auth/permissionCodes.js'
 import useMediaQuery from '../../hooks/useMediaQuery.js'
 import IconButton from '../ui/IconButton.jsx'
+import infomotionLogo from '../../assets/brand/infomotion-logo.png'
 import {
   PinIcon,
   MapIcon,
@@ -31,6 +32,14 @@ import './Sidebar.css'
  * söyler.
  */
 export const JOURNEY_CENTER_ITEM_ID = 'journey'
+
+/**
+ * Marka çiziminin erişilebilir adı.
+ *
+ * Çizim ürün adını ve sloganını KENDİ İÇİNDE taşır; ekran okuyucu da aynısını
+ * duymalıdır. Metin ayrıca HTML'e yazılmaz — görenler onu iki kez okurdu.
+ */
+const BRAND_ALT = 'Info&Motion — Sahadan veriye, veriden harekete.'
 
 /**
  * Primary navigation.
@@ -182,13 +191,19 @@ export default function Sidebar({
         aria-hidden={isMobile && !mobileOpen ? 'true' : undefined}
       >
         <div className="map-sidebar-brand">
-          {/* UYGULAMA kimliği: konum iğnesi + projenin TAM adı.
-              Kurumsal marka (Başarsoft) bu alanda DEĞİL, üst şeritte durur;
-              ikisini tek yere koymak arayüzü aşırı markalı gösteriyordu. */}
-          <span className="map-sidebar-brand-icon">
-            <PinIcon size={22} />
-          </span>
-          {!collapsed && <span className="map-sidebar-brand-name">Staj Harita Uygulaması</span>}
+          {/* ÜRÜN kimliği ÇİZİMİN KENDİSİDİR.
+              Ad ve slogan çizimin içindedir; yanına ikinci bir başlık ya da
+              simge KONMAZ — aynı şeyi iki kez söylemek olurdu. Kurumsal marka
+              (Başarsoft) bu alanda değil, üst şeritte durur.
+
+              Daraltılmış kenar çubuğunda 3:1 oranındaki çizim okunacak kadar
+              yer bulamaz; bozulmasın diye çizilmez ve kimlik erişilebilir
+              adda yaşamaya devam eder. */}
+          {collapsed ? (
+            <span className="map-sidebar-brand-collapsed" role="img" aria-label={BRAND_ALT} />
+          ) : (
+            <img className="map-sidebar-brand-logo" src={infomotionLogo} alt={BRAND_ALT} />
+          )}
         </div>
 
         <nav className="map-sidebar-nav" aria-label="Ana gezinme">

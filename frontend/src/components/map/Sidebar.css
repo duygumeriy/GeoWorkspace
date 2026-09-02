@@ -19,43 +19,58 @@
   width: 76px;
 }
 
+/* --- Marka: Info&Motion çizimi ------------------------------------------------
+   Kimlik ÇİZİMİN KENDİSİDİR. Ad ve slogan çizimin içinde olduğu için yanına
+   ikinci bir başlık ya da simge konmaz; eski "iğne + yazılmış proje adı"
+   düzeni bu yüzden kaldırıldı.
+
+   Çizim koyu zemin için üretilmiştir ("Motion" ve slogan beyazdır), bu yüzden
+   levha iki temada da koyudur. Çizime FİLTRE uygulanmaz, oranı bozulmaz. */
 .map-sidebar-brand {
   display: flex;
-  /* İki satıra taşan başlıkta simge ÜSTTE hizalanır; ortalanınca ikinci
-     satırın yanında asılı kalıyordu. */
-  align-items: flex-start;
-  gap: 0.55rem;
-  padding: 0 0.35rem;
+  align-items: center;
+  /* Çizim levhanın ORTASINDA durur. `justify-content` olmadan esnek öğe sola
+     yaslanıyordu ve artan boşluğun tamamı sağda toplanıyordu. */
+  justify-content: center;
+  /* Yanlardaki nefes payı bir tık kısıldı: 240px'lik çubukta her piksel
+     çizime yarar ve levha yine de yapışık görünmez. */
+  padding: 0.5rem 0.45rem;
+  border-radius: var(--radius-md);
+  background: var(--sidebar-brand-plate);
+  border: 1px solid var(--sidebar-brand-plate-border);
   min-height: 28px;
 }
 
-.map-sidebar-brand-icon {
-  display: inline-flex;
-  flex-shrink: 0;
-  color: var(--primary-light);
-  /* Simge ilk satırın optik ortasına oturur. */
-  margin-top: 1px;
+.map-sidebar-brand-logo {
+  display: block;
+  /* Oran KORUNUR: yalnızca genişlik verilir, yükseklik türetilir. Sabit bir
+     yükseklik 3:1 çizimi ezerdi.
+
+     TEK bir ifade hem doldurur hem sınırlar: `100%` levhanın içini kaplar
+     (240px'lik çubukta ~191px), `228px` ise çubuk bir gün genişlerse çizimin
+     büyümesini durdurur. Taşma imkânsızdır — `100%` zaten min()'in bir
+     terimidir. Önceki 176px'lik tavan levhanın içinde kullanılmayan bir şerit
+     bırakıyordu. */
+  width: min(100%, 228px);
+  height: auto;
 }
 
-/* --- Uygulama adı ------------------------------------------------------------
-   Projenin adı TAM görünür. Eskiden tek satıra sıkıştırılıp `text-overflow`
-   ile kırpılıyordu ve "Staj Harita Uygulam…" diye okunuyordu; kenar çubuğunun
-   240px'lik genişliğinde 22 karakterlik ad kalın 0.95rem'de o satıra sığmaz.
+/* Daraltılmış rayda 3:1 çizim okunacak kadar yer bulamaz. Bozmak yerine
+   ÇİZİLMEZ; kimlik erişilebilir adda yaşamaya devam eder. */
+.map-sidebar.is-collapsed .map-sidebar-brand {
+  padding: 0;
+  border-color: transparent;
+  background: none;
+  min-height: 0;
+}
 
-   Çözüm kırpmayı KALDIRMAKTIR: ad sarılır (en çok iki satır) ve tipografi
-   yalnızca bir tık geri çekilir. Kenar çubuğu genişletilmez, yazı okunmaz
-   hâle küçültülmez ve menü satırlarının kendi kırpma politikası DEĞİŞMEZ —
-   bu kural yalnızca başlık yuvasına aittir. */
-.map-sidebar-brand-name {
-  font-size: 0.88rem;
-  font-weight: 700;
-  line-height: 1.25;
-  color: var(--text-primary);
-  white-space: normal;
-  overflow-wrap: break-word;
-  overflow: visible;
-  text-overflow: clip;
-  min-width: 0;
+.map-sidebar-brand-collapsed {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .map-sidebar-nav {
@@ -82,12 +97,55 @@
   font-weight: 500;
   font-family: inherit;
   cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast);
+  transition: background var(--transition-fast), color var(--transition-fast),
+    box-shadow var(--transition-fast), transform var(--transition-fast);
 }
 
+/* --- Etkileşim: varsayılan < hover < etkin -------------------------------------
+   Satırlar hover'da fazla düzdü. Vurgu ARTIRILIR ama sıra korunur: etkin öğe
+   her zaman en güçlüsüdür.
+
+   GEOMETRİ DEĞİŞMEZ. Kenarlık yerine `inset` gölge kullanılır; gerçek bir
+   kenarlık satırın yüksekliğini oynatır ve fare gezdikçe menü titrerdi.
+   `translateX` yalnızca 2px'tir ve `transform` düzeni etkilemez. */
 .map-sidebar-nav-item:hover {
-  background: var(--surface-soft);
+  background: color-mix(in srgb, var(--primary) 12%, var(--surface-soft));
   color: var(--text-primary);
+  box-shadow: inset 0 0 0 1px var(--brand-header-border);
+  transform: translateX(2px);
+}
+
+.map-sidebar-nav-item:hover svg {
+  color: var(--primary-light);
+}
+
+/* Klavye, fareden GERİ KALMAZ: odak halkası hover'ın taşıdığı her ipucunu
+   taşır ve üstüne görünür bir halka ekler. Dokunmatikte hover yoktur;
+   gezinme zaten hover olmadan da tam görünürdür. */
+.map-sidebar-nav-item:focus-visible {
+  outline: 2px solid var(--primary-light);
+  outline-offset: -2px;
+  background: color-mix(in srgb, var(--primary) 12%, var(--surface-soft));
+  color: var(--text-primary);
+  transform: translateX(2px);
+}
+
+.map-sidebar-nav-item:focus-visible svg {
+  color: var(--primary-light);
+}
+
+/* Etkin satır hover'a TESLİM OLMAZ: dolgu ve parıltı korunur, yalnızca aynı
+   2px kayma paylaşılır ki dokunuş tutarlı hissedilsin. */
+.map-sidebar-nav-item.is-active:hover,
+.map-sidebar-nav-item.is-active:focus-visible {
+  background: var(--gradient-primary);
+  color: #fff;
+  transform: translateX(2px);
+}
+
+.map-sidebar-nav-item.is-active:hover svg,
+.map-sidebar-nav-item.is-active:focus-visible svg {
+  color: #fff;
 }
 
 .map-sidebar.is-collapsed .map-sidebar-nav-item {
@@ -180,10 +238,35 @@
   border-color: var(--danger);
 }
 
+/* --- Daralt/genişlet: "Araçlar" rıhtımının görsel ailesi ----------------------
+   Denetim soluk kenar çubuğu zemininde kayboluyordu. Aynı uygulamada zaten
+   kabul edilmiş bir "bu yüzer bir denetimdir" dili var — rıhtımın mor kenarlığı
+   ve parıltısı — ve burada AYNI belirteçler kullanılır; yeni bir renk
+   uydurulmaz. Rıhtımın geometrisi kopyalanmaz, yalnızca vurgu dili paylaşılır. */
 .map-sidebar-collapse-btn {
   align-self: flex-end;
   min-width: 44px;
   min-height: 44px;
+  border-color: var(--transport-dock-border);
+  box-shadow: var(--transport-dock-glow);
+  color: var(--text-primary);
+}
+
+.map-sidebar-collapse-btn:hover {
+  border-color: var(--transport-dock-border);
+  box-shadow: var(--transport-dock-glow-strong);
+  color: var(--primary-light);
+}
+
+.map-sidebar-collapse-btn:focus-visible {
+  outline: 2px solid var(--primary-light);
+  outline-offset: 2px;
+  box-shadow: var(--transport-dock-glow-strong);
+}
+
+/* Basılı durum rıhtımdakiyle aynı: denetim jestin sahibi gibi görünür. */
+.map-sidebar-collapse-btn:active {
+  box-shadow: var(--transport-dock-glow-strong);
 }
 
 .map-sidebar-collapse-btn svg {
@@ -205,7 +288,8 @@
     width: 76px;
   }
 
-  .map-sidebar:not(.is-mobile-open) .map-sidebar-brand-name,
+  /* Rayda çizim GİZLENİR — 76px'e sıkıştırılan 3:1 bir logo okunmaz. */
+  .map-sidebar:not(.is-mobile-open) .map-sidebar-brand-logo,
   .map-sidebar:not(.is-mobile-open) .map-sidebar-username,
   .map-sidebar:not(.is-mobile-open) .map-sidebar-session,
   .map-sidebar:not(.is-mobile-open) .map-sidebar-logout span,
@@ -223,6 +307,14 @@
     padding: 0;
     background: none;
     border: none;
+  }
+
+  /* Çizim gizliyken levha da kalmaz: boş bir kutu bırakmaz. */
+  .map-sidebar:not(.is-mobile-open) .map-sidebar-brand {
+    padding: 0;
+    background: none;
+    border-color: transparent;
+    min-height: 0;
   }
 
   .map-sidebar:not(.is-mobile-open) .map-sidebar-collapse-btn {

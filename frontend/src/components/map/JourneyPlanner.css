@@ -455,6 +455,21 @@
   }
 
   .journey-panel.is-collapsed { width: auto; }
+
+  /* --- Dar ekranda TEK kaydırma sahibi (Faz 10) -------------------------------
+     Kaydedilenler ve Geçmiş listeleri masaüstünde kendi pencerelerinde kayar;
+     bu, uzun bir listenin paneli büyütmesini engeller ve orada doğrudur.
+
+     Alt sayfada ise panelin kendisi zaten 55%'e sınırlıdır ve iç listelerin
+     12–13rem'lik pencereleri neredeyse o kadardır: sonuç, birbirinin içinde
+     iki kaydırma alanı — parmak hangisini sürüklediğini bilemez. Dar ekranda
+     iç sınırlar KALKAR ve gövde tek kaydırma sahibi olur. */
+  .journey-saved-list,
+  .journey-history-list,
+  .journey-active-list {
+    max-height: none;
+    overflow-y: visible;
+  }
 }
 
 /* --- Canlı navigasyon (Faz 5D) -----------------------------------------------
@@ -961,7 +976,6 @@
 @media (max-width: 640px) {
   .journey-active-bulk { flex: 1 1 100%; }
   .journey-active-bulk > button { flex: 1; }
-  .journey-active-list { max-height: 11rem; }
 
   /* Seçim eylem çubuğu İKİ SÜTUNLU ızgaraya iner. */
   .journey-manage-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -1069,9 +1083,8 @@
 .confirm-dialog .text-field { margin: 0.25rem 0 0.75rem; }
 
 @media (max-width: 640px) {
-  /* Dar ekranda liste daha kısa bir pencereye sığar ve eylemler iki sütuna
-     iner; harita kullanılamaz hâle gelmez. */
-  .journey-saved-list { max-height: 12rem; }
+  /* Dar ekranda iç kaydırma KALKAR (tek-sahip kuralı yukarıdadır); yalnızca
+     eylemler iki sütuna iner. */
   .journey-saved-actions > button { flex: 1 1 45%; }
 }
 
@@ -1236,9 +1249,8 @@
 .journey-history-load { align-self: flex-start; }
 
 @media (max-width: 640px) {
-  /* Dar ekranda liste daha kısa bir pencereye sığar, ayrıntı tek sütuna iner
-     ve eylemler iki sütunu paylaşır; harita kullanılamaz hâle gelmez. */
-  .journey-history-list { max-height: 13rem; }
+  /* Dar ekranda iç kaydırma KALKAR (tek-sahip kuralı yukarıdadır); ayrıntı
+     tek sütuna iner ve eylemler iki sütunu paylaşır. */
   .journey-history-facts { grid-template-columns: minmax(0, 1fr); }
   .journey-history-actions > button { flex: 1 1 45%; }
   .journey-history-load { align-self: stretch; }

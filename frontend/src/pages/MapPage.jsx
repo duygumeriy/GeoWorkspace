@@ -1288,6 +1288,19 @@ export default function MapPage() {
     openJourneyWorkspaceWith(JOURNEY_PRODUCTS.SHARED)
   }, [mapContext, openJourneyWorkspaceWith])
 
+  /* --- Boş harita tıklaması: seçili güzergahı bırakır (Faz 10) ---------------
+     POI, durak ve çizim seçimleri boş tıklamada ZATEN bırakılıyordu; güzergah
+     bırakılmıyordu ve kullanıcı için bu tutarsızlıktı.
+
+     <b>YALNIZCA SEÇİMDİR.</b> Burada durdurma, duraklatma, sıfırlama, izlemeyi
+     bırakma, takibi bırakma ya da yönetim seçimini değiştirme YOKTUR — ve
+     olamaz: bu satır tek bir sunum durumunu boşaltır. İzlenen ve takip edilen
+     araçlar da kaybolmaz, çünkü sahiplik `followingRouteId`'dedir,
+     `selectedRouteId`'de değil (bkz. `transportVehicle`). */
+  const clearSelectedTransportRoute = useCallback(() => {
+    setSelectedTransportRouteId(null)
+  }, [])
+
   /* Gizlenen güzergah tıklanamaz: kullanıcı onu bilerek kapatmıştır. */
   const isTransportRouteSelectable = useCallback(
     (routeId) => transportRoutesVisible && !hiddenTransportRouteIds.has(Number(routeId)),
@@ -1708,6 +1721,8 @@ export default function MapPage() {
     hoverEnabled: hasFinePointer,
     onSelect: handleTransportStopSelected,
     onSelectRoute: handleTransportRouteSelected,
+    /* Boş tıklamada seçim bırakılır; yaşam döngüsüne dokunulmaz. */
+    onClearRoute: clearSelectedTransportRoute,
     isRouteVisible: isTransportRouteSelectable,
   })
 
