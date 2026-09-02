@@ -751,6 +751,61 @@
   color: var(--journey-accent);
 }
 
+/* --- NAVİGASYON (Faz 5) -------------------------------------------------------
+   SEÇİLİ hattın ayrıntısında, KOMPAKT bir blok. Faz 4B'de kazanılan sakinlik
+   korunur: iki satır, tek başlık, düğme yok. Talimat bir EYLEM değil, bir
+   BİLGİDİR — düğme gibi görünmesi kullanıcıyı tıklamaya davet ederdi. */
+
+.journey-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+}
+
+.journey-nav-title {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+/* Etiket ve talimat İKİ BÖLGEDİR: etiket kendi ölçüsünde kalır, talimat
+   esner ve gerektiğinde sarar. Tek satıra zorlamak, uzun bir sokak adını
+   kırpar ve talimatı okunmaz kılardı. */
+.journey-nav-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.journey-nav-label {
+  flex: 0 0 auto;
+  font-size: var(--font-small);
+  color: var(--text-secondary);
+}
+
+.journey-nav-instruction {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--font-small);
+  color: var(--text-secondary);
+  /* Uzun talimat panelden TAŞMAZ; sarar. */
+  overflow-wrap: anywhere;
+}
+
+/* ŞU ANKİ talimat vurgulanır; sonraki bir hatırlatmadır ve sessiz kalır. */
+.journey-nav-row.is-current .journey-nav-instruction {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.journey-nav-road { color: var(--text-secondary); font-weight: 400; }
+
 /* --- YÖNETİM YÜZEYİ (Faz 4B) --------------------------------------------------
    İZLEME araç çubuğundan GÖRSEL OLARAK da ayrılır: kendi kutusu, kendi sayacı
    ve kendi eylem sırası vardır. Aynı satıra karışsalardı kullanıcı bir

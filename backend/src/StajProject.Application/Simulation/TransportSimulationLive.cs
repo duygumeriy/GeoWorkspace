@@ -53,6 +53,29 @@ public enum TransportSimulationStatus
 /// ölçeklemesi gerekmez.
 /// </para>
 /// </remarks>
+/// <param name="CurrentStepSequence">
+/// Aracın İÇİNDE BULUNDUĞU manevranın OTORİTER sırası; güzergahın manevrası
+/// yoksa <c>null</c>.
+///
+/// <para>
+/// <b>Yalnızca SIRA taşınır, adım listesi DEĞİL.</b> Manevralar güzergahın
+/// ömrü boyunca sabittir; onları saniyede bir yeniden yayınlamak, değişmeyen
+/// bir veriyi her tick'te her gözlemciye tekrar göndermek olurdu. Liste
+/// okuma yolunda (başlatma/durum/aktif) bir kez verilir, canlı akış ise
+/// yalnızca DEĞİŞEN şeyi taşır.
+/// </para>
+///
+/// <para>
+/// <b>Sıra, dizi konumu DEĞİLDİR.</b> İstemci adımı bu değere göre arar;
+/// <c>steps[sequence]</c> varsayımı, sunucunun sırayı yeniden numaralandırdığı
+/// gün sessizce yanlış talimat gösterirdi.
+/// </para>
+/// </param>
+/// <param name="DistanceToNextManeuverMeters">
+/// SONRAKİ manevraya kalan mesafe; sonraki manevra yoksa (varış)
+/// <c>null</c>. Sunucu hesaplar; tarayıcı yalnızca biçimlendirir — mesafeyi
+/// harita koordinatlarından tahmin etmek ikinci bir ilerleme motoru demekti.
+/// </param>
 public sealed record TransportSimulationLiveUpdate(
     Guid SimulationId,
     int RouteId,
@@ -60,9 +83,16 @@ public sealed record TransportSimulationLiveUpdate(
     double Longitude,
     double Latitude,
     double ProgressPercent,
-    DateTime UpdatedAtUtc)
+    DateTime UpdatedAtUtc,
+    int? CurrentStepSequence = null,
+    double? DistanceToNextManeuverMeters = null)
 {
     /// <summary>Depodaki durumdan yayın sözleşmesine dönüşüm.</summary>
+    /// <remarks>
+    /// Navigasyon alanları ANLIK GÖRÜNTÜDEN okunur, burada yeniden
+    /// hesaplanmaz: ikinci bir hesap, duraklatılmış bir çalıştırmanın donmuş
+    /// adımını sessizce ilerletebilirdi.
+    /// </remarks>
     public static TransportSimulationLiveUpdate From(
         ActiveTransportSimulation simulation,
         TransportSimulationStatus status) =>
@@ -73,7 +103,9 @@ public sealed record TransportSimulationLiveUpdate(
             simulation.Snapshot.Position.Longitude,
             simulation.Snapshot.Position.Latitude,
             Math.Clamp(simulation.Snapshot.ProgressRatio, 0, 1) * 100,
-            simulation.Snapshot.CapturedAt);
+            simulation.Snapshot.CapturedAt,
+            simulation.Snapshot.CurrentStepSequence,
+            simulation.Snapshot.DistanceToNextManeuverMeters);
 }
 
 /// <summary>Aktif kümedeki DEĞİŞİKLİĞİN yönü.</summary>

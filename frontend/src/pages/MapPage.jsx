@@ -126,6 +126,7 @@ import {
   activeSimulationsPresentation,
   lifecycleIntent,
 } from '../map/activeSimulations.js'
+import { sharedNavigationPresentation } from '../map/sharedNavigation.js'
 
 /** Yıkıcı yaşam döngüsü işlemleri ONAY ister; duraklat/sürdür istemez. */
 const isDestructiveLifecycleOperation = (operation) =>
@@ -1127,6 +1128,25 @@ export default function MapPage() {
     activeSimulationSearch,
     canStartSharedSimulation,
     canStopSharedSimulation,
+  ])
+
+  /* --- NAVİGASYON (Faz 5) ------------------------------------------------------
+     SEÇİLİ hattın bağlamına aittir. İzlemek (haritada araç), takip etmek
+     (kamera) ve yönetim seçimi (komut hedefi) bu bölümü ne açar ne kapatır.
+
+     Hiçbir değer BURADA üretilmez: hangi manevrada olunduğuna ve sonrakine ne
+     kadar kaldığına sunucu karar verir; sayfa yalnızca iki otoriter parçayı
+     (sabit adım listesi + canlı sıra) bir araya getirir. */
+  const sharedNavigation = useMemo(() => sharedNavigationPresentation({
+    routeId: selectedTransportRouteId,
+    simulation: simulation.simulation,
+    navigation: selectedTransportRouteId == null
+      ? null
+      : simulation.navigationByRoute[selectedTransportRouteId] ?? null,
+  }), [
+    selectedTransportRouteId,
+    simulation.simulation,
+    simulation.navigationByRoute,
   ])
 
   /* Satır SEÇİMİ yalnızca ayrıntı bağlamını taşır: izlemeyi DEĞİŞTİRMEZ,
@@ -3882,6 +3902,7 @@ export default function MapPage() {
                   onSelectAllActive={simulation.manageAllActive}
                   onClearSelection={simulation.clearManaged}
                   onRunBatchAction={runLifecycleOperation}
+                  sharedNavigation={sharedNavigation}
                   poiSearch={journeyPickerSearch}
                   onModeChange={journey.setMode}
                   onProfileChange={journey.setProfile}

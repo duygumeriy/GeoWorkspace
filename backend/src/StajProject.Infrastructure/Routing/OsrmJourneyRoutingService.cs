@@ -15,11 +15,26 @@ namespace StajProject.Infrastructure.Routing;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Mevcut <see cref="OsrmRoutingService"/> HİÇ DEĞİŞMEDİ.</b> Akıllı
-/// Ulaşım'ın kalıcı güzergah üretimi eskisi gibi o servisten geçer. Bu adaptör
-/// ayrı durur çünkü yolculuk planlaması manevra adımlarına (<c>steps=true</c>)
-/// ve profil başına AYRI bir uca ihtiyaç duyar; ikisini tek sınıfta birleştirmek
-/// güzergah üretimini yolculuğa özgü modele bağımlı kılardı.
+/// <b>İKİ ÜRÜN, İKİ ADAPTÖR.</b> Akıllı Ulaşım'ın kalıcı güzergah üretimi
+/// <see cref="OsrmRoutingService"/>'ten, yolculuk planlaması ise buradan
+/// geçer.
+/// </para>
+/// <para>
+/// <b>Ayrım <c>steps=true</c> DEĞİLDİR.</b> Faz 5'e kadar öyleydi: manevra
+/// adımlarını yalnızca yolculuk planlaması isterdi. Artık paylaşılan güzergah
+/// üretimi de istiyor ve kendi OTORİTER manevralarını kalıcı güzergahıyla
+/// birlikte saklıyor. Motora sorulan soru artık benzer; ayrı duran şey
+/// SAHİPLİKTİR:
+/// <list type="bullet">
+///   <item>ayrı adım modeli — buradaki <see cref="JourneyRouteStep"/>'e karşı
+///     paylaşılan taraftaki <c>OsrmRouteStep</c>;</item>
+///   <item>ayrı yaşam döngüsü — buradaki adımlar süreç içi ve GEÇİCİDİR,
+///     paylaşılan taraftakiler ise güzergahla birlikte KALICIDIR;</item>
+///   <item>ayrı yapılandırma yüzeyi — yolculuk PROFİL BAŞINA ayrı bir uç
+///     kullanır (aşağıya bakınız).</item>
+/// </list>
+/// İkisini tek sınıfta ya da tek modelde birleştirmek, birinin alan
+/// eklemesini diğerinin sözleşme değişikliğine çevirirdi.
 /// </para>
 /// <para>
 /// <b>Profil → uç eşlemesi yapılandırmadadır.</b> Sürüş mevcut
@@ -185,8 +200,20 @@ public sealed class OsrmJourneyRoutingService : IJourneyRoutingService
                 CultureInfo.InvariantCulture,
                 $"{coordinate.Longitude:R},{coordinate.Latitude:R}")));
 
-        /* steps=true tek farktır: güzergah üretimi adım istemez, yolculuk
-           planlaması ister. overview/geometries mevcut servisle aynıdır. */
+        /* steps=true: yolculuk planlaması manevra adımlarına ihtiyaç duyar.
+           overview/geometries paylaşılan servisle aynıdır.
+
+           BU ARTIK İKİ ÜRÜNÜ AYIRAN FARK DEĞİLDİR. Faz 5'e kadar öyleydi:
+           paylaşılan güzergah üretimi adım istemiyordu. Artık o da istiyor ve
+           kendi OTORİTER manevralarını kalıcı güzergahıyla birlikte saklıyor.
+
+           Ayrım motora sorulan soruda değil, SAHİPLİKTEDİR: iki ürün ayrı
+           adaptör (bu sınıf ile OsrmRoutingService), ayrı adım modeli
+           (JourneyRouteStep ile OsrmRouteStep) ve ayrı yaşam döngüsü kullanır.
+           Buradaki adımlar süreç içi ve geçicidir; paylaşılan taraftakiler
+           kalıcıdır. Tek bir adaptörde ya da tek bir modelde birleştirmek,
+           birinin alan eklemesini diğerinin sözleşme değişikliğine
+           çevirirdi. */
         return new Uri(
             $"{endpoint.BaseUrl.TrimEnd('/')}/route/v1/{endpoint.Profile}/{joined}"
             + "?overview=full&geometries=geojson&steps=true",

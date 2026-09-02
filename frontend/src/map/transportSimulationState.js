@@ -68,7 +68,17 @@ function timestamp(value) {
   return Number.isFinite(parsed) ? parsed : null
 }
 
-function normalize({ simulationId, routeId, status, longitude, latitude, progressPercent, updatedAtUtc }) {
+function normalize({
+  simulationId,
+  routeId,
+  status,
+  longitude,
+  latitude,
+  progressPercent,
+  updatedAtUtc,
+  currentStepSequence,
+  distanceToNextManeuverMeters,
+}) {
   const id = simulationId ?? null
   const route = finiteNumber(routeId)
   if (!id || route === null) return null
@@ -81,6 +91,17 @@ function normalize({ simulationId, routeId, status, longitude, latitude, progres
     latitude: finiteNumber(latitude) ?? 0,
     progressPercent: clampPercent(progressPercent),
     updatedAtUtc: updatedAtUtc ?? null,
+
+    /* NAVİGASYON OTORİTESİ SUNUCUDADIR (Faz 5). Buradaki iki alan yalnızca
+       TAŞINIR: hangi manevrada olunduğuna ve sonrakine ne kadar kaldığına
+       sunucu karar verir. İstemci onları ne hesaplar ne ilerletir — geometriye
+       bakıp "burada sağa dönülüyor" demek, motorun bilmediği bir gerçeği
+       uydurmak olurdu.
+
+       Yokluk NORMALDİR: güzergahın manevrası olmayabilir ya da araç son
+       adımda olabilir. `null` bu yüzden sıfıra düşürülmez. */
+    currentStepSequence: finiteNumber(currentStepSequence),
+    distanceToNextManeuverMeters: finiteNumber(distanceToNextManeuverMeters),
   })
 }
 
@@ -120,6 +141,8 @@ export function normalizeStatusSnapshot(snapshot) {
     latitude: snapshot.latitude,
     progressPercent: clampPercent((finiteNumber(snapshot.progressRatio) ?? 0) * 100),
     updatedAtUtc: snapshot.capturedAt ?? null,
+    currentStepSequence: snapshot.currentStepSequence,
+    distanceToNextManeuverMeters: snapshot.distanceToNextManeuverMeters,
   })
 }
 

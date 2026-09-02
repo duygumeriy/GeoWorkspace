@@ -21,6 +21,10 @@ import {
   normalizeStatusSnapshot,
 } from '../map/transportSimulationState.js'
 import {
+  applyNavigationSnapshot,
+  reconcileNavigation,
+} from '../map/sharedNavigation.js'
+import {
   LIFECYCLE_OPERATIONS,
   activeRouteIdsOf,
   applyActiveSimulationList,
@@ -116,6 +120,18 @@ export default function useTransportSimulation({
      başka kullanıcılara yayınlanmaz. */
   const [watchedRuns, setWatchedRuns] = useState({})
 
+  /* --- NAVİGASYON (Faz 5) ------------------------------------------------------
+     Adım LİSTESİ sabittir ve OKUMA yolundan gelir; canlı akış yalnızca hangi
+     adımda olunduğunu taşır. Liste bu yüzden ayrı bir kutuda durur — ama
+     ÇALIŞTIRMA KİMLİĞİYLE birlikte: A biter ve aynı hatta B başlarsa, B'nin
+     sırasını A'nın listesinde aramak başka bir yolculuğun talimatını
+     göstermek olurdu.
+
+     Kanonik sözlüğe (`byRoute`) yazılamaz: oradaki tek yazma kuralı canlı
+     güncelleme biçimini bilir ve adım listesi taşımayan her tick listeyi
+     silerdi. */
+  const [navigationByRoute, setNavigationByRoute] = useState({})
+
   /* --- YÖNETİM SEÇİMİ (Faz 4B) -------------------------------------------------
      İZLEME ile AYNI biçim, AYRI kutu. Biri haritada ne çizileceğine, diğeri
      hangi çalıştırmaya KOMUT gideceğine karar verir; tek kutuda toplamak
@@ -177,6 +193,30 @@ export default function useTransportSimulation({
     setByRoute((current) => ({ ...current, [targetRouteId]: value }))
   }, [])
 
+  /**
+   * OTORİTER bir tek-çalıştırma yanıtından navigasyonu yazar.
+   *
+   * <b>Neden TEK bir ilkel.</b> Adım listesi canlı akışta TAŞINMAZ (sabittir),
+   * dolayısıyla YENİ bir çalıştırma kimliği doğuran her yol onu kendi
+   * yanıtından hidratlamak zorundadır. Hidratlama yalnızca OKUMA yoluna
+   * bağlıydı ve bu bir kör nokta bıraktı: seçili bir hatta Başlat ya da
+   * Yeniden Başlat yapıldığında yeni çalıştırma hiçbir zaman yeniden
+   * okunmuyor, uzlaştırma eski kaydı (haklı olarak) düşürüyor ve panel
+   * "navigasyon mevcut değil" diyordu — oysa sunucu adımları o yanıtta
+   * göndermişti.
+   *
+   * <b>Yanıt OLDUĞU GİBİ verilir.</b> Sunucu sözleşmesindeki alan adları
+   * (`routeId`, `simulationId`, `hasNavigationSteps`, `navigationSteps`) saf
+   * modülün beklediğiyle birebir aynıdır; araya ikinci bir eşleme koymak, iki
+   * ayrı alan haritasının zamanla ayrışması demekti.
+   *
+   * <b>DEVRALMA DEĞİLDİR.</b> Kayıt daima yanıttaki ÇALIŞTIRMA kimliğiyle
+   * damgalanır; eski bir kaydın kimliği değiştirilerek yeniden kullanılmaz.
+   */
+  const hydrateNavigation = useCallback((payload) => {
+    setNavigationByRoute((current) => applyNavigationSnapshot(current, payload))
+  }, [])
+
   const client = useCallback(() => {
     if (!clientRef.current) {
       clientRef.current = createTransportSimulationHubClient({
@@ -230,7 +270,10 @@ export default function useTransportSimulation({
       }
       if (!response.ok) throw new Error(await readApiError(response, 'Simülasyon durumu okunamadı.'))
 
-      const snapshot = normalizeStatusSnapshot(await response.json())
+      /* Ham yanıt AYRICA tutulur: kanonik durum yalnızca canlı yayın
+         alanlarını taşır, adım LİSTESİ ise okuma yoluna aittir. */
+      const payload = await response.json()
+      const snapshot = normalizeStatusSnapshot(payload)
       if (requestId !== statusRequestId.current) return null
 
       if (!snapshot) {
@@ -247,6 +290,10 @@ export default function useTransportSimulation({
          duraklatılmış bir çalıştırmayı KESİN OLARAK daha yeni olmayan bir
          Running olayı geri alamaz. */
       applyState(snapshot)
+
+      // Okuma yolu da AYNI ilkelden geçer; ikinci bir uygulama yoktur.
+      hydrateNavigation(payload)
+
       return snapshot
     } catch (loadError) {
       if (requestId !== statusRequestId.current) return null
@@ -256,7 +303,7 @@ export default function useTransportSimulation({
     } finally {
       if (requestId === statusRequestId.current) setStatusLoading(false)
     }
-  }, [canView, setRouteState, applyState])
+  }, [canView, setRouteState, applyState, hydrateNavigation])
 
   useEffect(() => {
     setError('')
@@ -394,8 +441,13 @@ export default function useTransportSimulation({
       /* Başlatma cevabı zaten %0'lık sunucu anlık görüntüsüdür: ekranı hemen
          onunla güncellemek, sayfa yenilemeyi ya da fazladan bir isteği
          gereksiz kılar. */
-      const snapshot = normalizeStatusSnapshot(await response.json())
+      const payload = await response.json()
+      const snapshot = normalizeStatusSnapshot(payload)
       applyState(snapshot)
+
+      /* YENİ çalıştırma navigasyonunu KENDİ yanıtından alır. Bu yol yeniden
+         okunmaz; hidratlama olmasaydı yeni çalıştırma adımsız görünürdü. */
+      hydrateNavigation(payload)
 
       /* Başlatan kullanıcı aracı CANLI görmelidir: aynı tek bağlantı üzerinden
          rotanın grubuna PASİF olarak abone olunur. Bu bir "Takip Et" değildir —
@@ -420,7 +472,7 @@ export default function useTransportSimulation({
     } finally {
       setStarting(false)
     }
-  }, [applyState, canView, client, starting, syncSubscriptions])
+  }, [applyState, canView, client, hydrateNavigation, starting, syncSubscriptions])
 
   /**
    * PAYLAŞILAN çalıştırmayı herkes için durdurur.
@@ -705,6 +757,8 @@ export default function useTransportSimulation({
     /* Yönetim seçimi de bırakılır: görüntüleme yetkisi düşen birinin ekranında
        asılı kalmış bir komut hedefi listesi kalmamalıdır. */
     setManagedRuns(clearManagedRuns())
+    // Navigasyon da bırakılır: yetkisi olmayanın ekranında talimat asılı kalmaz.
+    setNavigationByRoute({})
     lifecyclePendingRef.current = {}
     setLifecyclePending({})
     setBatchError('')
@@ -789,6 +843,13 @@ export default function useTransportSimulation({
     setManagedRuns((current) => reconcileManagedRuns(current, byRoute))
   }, [byRoute])
 
+  /* NAVİGASYON KAYDI da AYNI kuralla uzlaştırılır: çalıştırma bittiyse ya da
+     yerine yenisi geçtiyse liste düşer. B, A'nın adım listesini DEVRALMAZ —
+     kendi listesi seçildiğinde okunur. */
+  useEffect(() => {
+    setNavigationByRoute((current) => reconcileNavigation(current, byRoute))
+  }, [byRoute])
+
   /** YÖNETİM SEÇİMİ. İzlemeye, seçime, kameraya ve sunucuya DOKUNMAZ. */
   const toggleManaged = useCallback((targetRouteId) => {
     setManagedRuns((current) => {
@@ -866,7 +927,22 @@ export default function useTransportSimulation({
          ezmesine kapı aralardı. */
       for (const result of payload?.results ?? []) {
         if (result?.update) applyState(normalizeLiveUpdate(result.update))
-        if (result?.simulation) applyState(normalizeStatusSnapshot(result.simulation))
+
+        if (result?.simulation) {
+          applyState(normalizeStatusSnapshot(result.simulation))
+
+          /* YENİDEN BAŞLATMANIN kritik adımı. Sunucu YENİ çalıştırmayı kendi
+             adım listesiyle birlikte döndürür; bu yol yeniden okunmadığı için
+             hidratlama BURADA yapılmazsa uzlaştırma eski kaydı (haklı olarak)
+             düşürür ve panel adımları olan bir hatta "navigasyon mevcut değil"
+             derdi.
+
+             `simulation` YALNIZCA BAŞARILI sonuçlarda doludur: bayat ya da
+             uygun olmayan hedefler onu `null` bırakır, dolayısıyla kısmi bir
+             yığında yalnızca gerçekten değişen hatlar hidratlanır ve
+             ilgisiz rotalara hiç dokunulmaz. */
+          hydrateNavigation(result.simulation)
+        }
       }
 
       const summary = batchResultSummary(intent.operation, payload)
@@ -884,7 +960,7 @@ export default function useTransportSimulation({
       )
       setLifecyclePending(lifecyclePendingRef.current)
     }
-  }, [applyState])
+  }, [applyState, hydrateNavigation])
 
   const managedRouteIds = useMemo(() => managedRouteIdsOf(managedRuns), [managedRuns])
 
@@ -948,6 +1024,11 @@ export default function useTransportSimulation({
     subscribedRouteIds,
     watchedRuns,
     watchedRouteIds,
+    /* NAVİGASYON: adım listesi (okuma yolundan) dışarı verilir; hangi adımda
+       olunduğu ise kanonik durumdadır (`byRoute[routeId].currentStepSequence`).
+       İkisini tek kutuda birleştirmek, sabit veriyi her tick'te yeniden
+       yazmak olurdu. */
+    navigationByRoute,
     toggleWatch,
     watchAll,
     clearWatch,

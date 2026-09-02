@@ -820,28 +820,62 @@ public sealed class JourneyRoutingTests
     /* --- REGRESYON --------------------------------------------------------------- */
 
     [Fact]
-    public void The_existing_osrm_port_and_its_consumers_are_unchanged()
+    public void The_shared_and_personal_routing_ports_stay_separate()
     {
-        /* Akıllı Ulaşım'ın kalıcı güzergah üretimi ESKİ portu kullanmaya devam
-           eder ve yolculuğa özgü adım modelini hiç görmez. */
-        var legacy = Assert.Single(typeof(IOsrmRoutingService).GetMethods());
-        Assert.Equal(nameof(IOsrmRoutingService.RouteAsync), legacy.Name);
-        Assert.Equal(typeof(Task<ServiceResult<OsrmRouteResult>>), legacy.ReturnType);
-        Assert.Equal(typeof(OsrmRouteRequest), legacy.GetParameters()[0].ParameterType);
+        /* BU İDDİA FAZ 5'TE KONUMLANDI ve zayıflamadı.
 
-        // Eski sonuç tipi adım TAŞIMAZ; genişletilmemiştir.
-        Assert.Null(typeof(OsrmRouteResult).GetProperty("Steps"));
+           Faz 5B'de ölçü "paylaşılan sonuç tipi adım TAŞIMAZ" idi ve o gün
+           doğruydu: yolculuk planlaması adım modelini getiriyordu ve o modelin
+           paylaşılan porta sızmaması gerekiyordu. Faz 5 ise paylaşılan ürüne
+           KENDİ otoriter manevralarını kazandırdı — artık paylaşılan sonuç
+           adım TAŞIR.
 
-        // Yolculuk portu ayrıdır ve eskisinden türemez.
+           Korunan asıl şey hiç değişmedi: İKİ ÜRÜN AYRI KALIR. Ölçü bu yüzden
+           "adım yok"tan "adım VAR ama KENDİ tipinde" hâline geçti; yolculuğun
+           modelini ödünç almak ya da portları birleştirmek hâlâ burada
+           düşer. */
+        var shared = Assert.Single(typeof(IOsrmRoutingService).GetMethods());
+        Assert.Equal(nameof(IOsrmRoutingService.RouteAsync), shared.Name);
+        Assert.Equal(typeof(Task<ServiceResult<OsrmRouteResult>>), shared.ReturnType);
+        Assert.Equal(typeof(OsrmRouteRequest), shared.GetParameters()[0].ParameterType);
+
+        /* Paylaşılan sonuç KENDİ adımını taşır ve o adım yolculuğun modeli
+           DEĞİLDİR. İki ürünün tek bir manevra tipini paylaşması, birinin
+           alan eklemesinin diğerinin sözleşmesini değiştirmesi demekti. */
+        var sharedSteps = typeof(OsrmRouteResult).GetProperty("Steps");
+        Assert.NotNull(sharedSteps);
+        Assert.Equal(typeof(IReadOnlyList<OsrmRouteStep>), sharedSteps!.PropertyType);
+        Assert.NotEqual(typeof(IReadOnlyList<JourneyRouteStep>), sharedSteps.PropertyType);
+
+        // Ve iki adım modeli AYRI ad alanlarında durur.
+        Assert.NotEqual(typeof(OsrmRouteStep).Namespace, typeof(JourneyRouteStep).Namespace);
+
+        /* Paylaşılan adım SAĞLAYICIDAN BAĞIMSIZDIR: ham JSON tipi (JsonElement
+           / JsonDocument) sözleşmeye sızmaz ve yolculuk tipine hiç
+           bağlanmaz. */
+        Assert.All(typeof(OsrmRouteStep).GetProperties(), property =>
+        {
+            Assert.DoesNotContain("Json", property.PropertyType.Name, StringComparison.Ordinal);
+            Assert.DoesNotContain("Journey", property.PropertyType.Name, StringComparison.Ordinal);
+        });
+
+        // Yolculuk portu ayrıdır ve paylaşılandan türemez.
         Assert.False(typeof(IOsrmRoutingService).IsAssignableFrom(typeof(IJourneyRoutingService)));
+        Assert.False(typeof(IJourneyRoutingService).IsAssignableFrom(typeof(IOsrmRoutingService)));
 
-        // Güzergah üretimi hâlâ yalnızca eski portu ister.
+        // Güzergah üretimi hâlâ YALNIZCA paylaşılan portu ister.
         Assert.Contains(
             typeof(TransportService).GetConstructors().Single().GetParameters(),
             parameter => parameter.ParameterType == typeof(IOsrmRoutingService));
         Assert.DoesNotContain(
             typeof(TransportService).GetConstructors().Single().GetParameters(),
             parameter => parameter.ParameterType == typeof(IJourneyRoutingService));
+
+        /* Ve KİŞİSEL yolculuk tüketicileri paylaşılan porta YÖNLENDİRİLMEDİ:
+           yolculuk yönlendirmesi hâlâ kendi adaptörünü kullanır. */
+        Assert.DoesNotContain(
+            typeof(OsrmJourneyRoutingService).GetConstructors().Single().GetParameters(),
+            parameter => parameter.ParameterType == typeof(IOsrmRoutingService));
     }
 
     [Fact]

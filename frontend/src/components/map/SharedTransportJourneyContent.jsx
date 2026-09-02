@@ -48,6 +48,10 @@ const SHARED_VIEWS = Object.freeze({
  */
 export default function SharedTransportJourneyContent({
   shared = null,
+  /* NAVİGASYON (Faz 5). SEÇİLİ hattın bağlamına aittir: izlemek, takip etmek
+     ya da yönetim için seçmek bu bölümü ne açar ne kapatır. Bileşen hiçbir
+     talimat ÜRETMEZ; sunucudan gelmiş olguyu çizer. */
+  navigation = null,
   onStart,
   onPause,
   onResume,
@@ -184,6 +188,48 @@ export default function SharedTransportJourneyContent({
         <p className="journey-note" role="status">
           {shared.statusLoading ? 'Yükleniyor…' : 'Aktif simülasyon yok'}
         </p>
+      )}
+
+      {/* NAVİGASYON. Çalışan bir simülasyon yokken hiç çizilmez: talimat,
+          hareket eden bir aracın bilgisidir. */}
+      {shared.isActive && navigation && (
+        <div className="journey-nav" aria-label="Navigasyon">
+          <span className="journey-nav-title">Navigasyon</span>
+
+          {/* Manevrası olmayan hat NORMALDİR ve altyapı hatası gibi
+              sunulmaz — bu yüzden `journey-note`, `journey-error` değil. */}
+          {!navigation.available && (
+            <p className="journey-note" role="status">{navigation.message}</p>
+          )}
+
+          {navigation.available && navigation.current && (
+            <div className="journey-nav-row is-current">
+              <span className="journey-nav-label">Şimdi</span>
+              <span className="journey-nav-instruction">
+                {navigation.current.instruction}
+                {/* Sokak adı yalnızca VARSA taşınır; boş bir ad bilgi
+                    değildir. */}
+                {navigation.current.name && (
+                  <span className="journey-nav-road"> · {navigation.current.name}</span>
+                )}
+              </span>
+            </div>
+          )}
+
+          {/* SONRAKİ manevra yalnızca varsa gösterilir: varışta bir sonraki
+              yoktur ve boş bir satır uydurulmaz. */}
+          {navigation.available && navigation.next && (
+            <div className="journey-nav-row">
+              <span className="journey-nav-label">Sonraki</span>
+              <span className="journey-nav-instruction">
+                {navigation.next.text}
+                {navigation.next.name && (
+                  <span className="journey-nav-road"> · {navigation.next.name}</span>
+                )}
+              </span>
+            </div>
+          )}
+        </div>
       )}
 
       <div className="journey-actions">

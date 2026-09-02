@@ -143,6 +143,8 @@ export default function JourneyPlannerPanel({
   onSelectAllActive,
   onClearSelection,
   onRunBatchAction,
+  /* NAVİGASYON (Faz 5). Panel hiçbir talimat yorumlamaz; yalnızca aktarır. */
+  sharedNavigation = null,
   poiSearch = null,
   onModeChange,
   onProfileChange,
@@ -298,6 +300,7 @@ export default function JourneyPlannerPanel({
       {!collapsed && showingShared && (
         <SharedTransportJourneyContent
           shared={shared}
+          navigation={sharedNavigation}
           onStart={onStartShared}
           onPause={onPauseShared}
           onResume={onResumeShared}

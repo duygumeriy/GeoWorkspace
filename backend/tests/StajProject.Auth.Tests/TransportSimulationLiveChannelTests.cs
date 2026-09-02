@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.SignalR;
 using NSubstitute;
 using StajProject.Api.Hubs;
 using StajProject.Api.Simulation;
+using StajProject.Application.DTOs;
 using StajProject.Application.Interfaces;
 using StajProject.Application.Simulation;
 using StajProject.Domain.Common;
@@ -209,9 +210,15 @@ public sealed class TransportSimulationLiveChannelTests
             .ToArray();
 
         /* Ham geometri, OSRM adresleri, kullanıcı kimliği ve EF alanları
-           bilinçli olarak DIŞARIDADIR. */
+           bilinçli olarak DIŞARIDADIR.
+
+           Faz 5 bu kümeye İKİ hafif SAYIL ekledi ve yalnızca ikisini: hangi
+           manevrada olunduğu ve sonrakine ne kadar kaldığı. İkisi de her
+           tick'te DEĞİŞİR, dolayısıyla canlı kanala aittir. */
         Assert.Equal(
             [
+                "CurrentStepSequence",
+                "DistanceToNextManeuverMeters",
                 "Latitude",
                 "Longitude",
                 "ProgressPercent",
@@ -221,6 +228,54 @@ public sealed class TransportSimulationLiveChannelTests
                 "UpdatedAtUtc"
             ],
             properties);
+    }
+
+    [Fact]
+    public void The_live_update_never_broadcasts_the_static_navigation_step_list()
+    {
+        /* ASIL SINIR BUDUR ve Faz 5'te önemi arttı: manevra LİSTESİ güzergahın
+           ömrü boyunca SABİTTİR. Onu saniyede bir, her gözlemciye yeniden
+           göndermek, hiç değişmeyen bir veriyi canlı kanalın yüküne çevirirdi.
+           Liste OKUMA yolunda (başlatma/durum) bir kez verilir; canlı akış
+           yalnızca DEĞİŞEN sırayı taşır.
+
+           Ölçü ada değil TİPE bakar: adı ne olursa olsun, sözleşmeye bir
+           koleksiyon girdiği anda bu test düşer. */
+        var payloadTypes = typeof(TransportSimulationLiveUpdate)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Where(property => property.Name != "EqualityContract")
+            .Select(property => property.PropertyType)
+            .ToArray();
+
+        Assert.All(payloadTypes, type =>
+        {
+            var effective = Nullable.GetUnderlyingType(type) ?? type;
+
+            // Yalnızca hafif SAYILLAR: sayı, enum, Guid, tarih.
+            Assert.True(
+                effective.IsValueType,
+                $"canlı yayın sözleşmesine referans tipi girdi: {effective.Name}");
+
+            Assert.False(
+                typeof(System.Collections.IEnumerable).IsAssignableFrom(effective),
+                $"canlı yayın sözleşmesine koleksiyon girdi: {effective.Name}");
+        });
+
+        /* Ve statik/ağır veri ADIYLA da aranır: adım listesi, geometri, ham
+           motor yanıtı ya da kalıcı varlık sözleşmeye giremez. */
+        var names = typeof(TransportSimulationLiveUpdate)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Select(property => property.Name)
+            .ToArray();
+
+        foreach (var forbidden in new[] { "NavigationSteps", "Steps", "Maneuvers", "Geometry" })
+        {
+            Assert.DoesNotContain(names, name => name.Contains(forbidden, StringComparison.Ordinal));
+        }
+
+        /* Buna karşılık OKUMA yanıtı listeyi TAŞIR: ayrım tam olarak budur ve
+           iki sözleşmenin ayrı kalmasının nedeni de odur. */
+        Assert.NotNull(typeof(TransportSimulationResponse).GetProperty("NavigationSteps"));
     }
 
     [Fact]

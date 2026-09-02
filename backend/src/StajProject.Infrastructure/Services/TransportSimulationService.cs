@@ -159,6 +159,7 @@ public sealed class TransportSimulationService : ITransportSimulationService
         var simulation = NewRun(
             new RouteFacts(route.Id, route.Name, route.ColorHex),
             runnable.Path,
+            runnable.Navigation,
             userId,
             now);
 
@@ -202,7 +203,11 @@ public sealed class TransportSimulationService : ITransportSimulationService
         .. _state.Active()
             .OrderBy(simulation => simulation.RouteName, StringComparer.OrdinalIgnoreCase)
             .ThenBy(simulation => simulation.RouteId)
-            .Select(ToResponse)
+            /* KEŞİF listesi adım LİSTESİ taşımaz: manevralar sabittir ve
+               seçilen hattın kendi okumasından gelir. Her aktif hattın tüm
+               manevralarını bu listeye koymak, yükü hat sayısıyla çarpardı.
+               "Manevra var mı" bilgisi yine de taşınır. */
+            .Select(simulation => ToResponse(simulation, includeNavigationSteps: false))
     ];
 
     /// <summary>Keşif sinyalini duyurur; kanal yoksa hiçbir şey olmaz.</summary>
@@ -352,6 +357,7 @@ public sealed class TransportSimulationService : ITransportSimulationService
             simulationId,
             route,
             runnable.Path,
+            runnable.Navigation,
             userId,
             cancellationToken);
 
@@ -519,6 +525,7 @@ public sealed class TransportSimulationService : ITransportSimulationService
             target.SimulationId,
             route,
             runnable.Path,
+            runnable.Navigation,
             actorId,
             cancellationToken);
 
@@ -635,6 +642,7 @@ public sealed class TransportSimulationService : ITransportSimulationService
         Guid simulationId,
         RouteFacts route,
         TransportSimulationPath path,
+        TransportRouteNavigation navigation,
         int actorId,
         CancellationToken cancellationToken)
     {
@@ -652,8 +660,10 @@ public sealed class TransportSimulationService : ITransportSimulationService
             return Stale();
         }
 
-        // YENİ kimlik, %0 ilerleme, güzergahın İLK köşesi.
-        var replacement = NewRun(route, path, actorId, DateTime.UtcNow);
+        /* YENİ kimlik, %0 ilerleme, güzergahın İLK köşesi ve BAŞTAKİ manevra.
+           Yerine geçen çalıştırma eskisinin adımını DEVRALMAZ: bu başka bir
+           yolculuktur. */
+        var replacement = NewRun(route, path, navigation, actorId, DateTime.UtcNow);
 
         var replaced = await _replacer.ReplaceAsync(
             routeId,
@@ -723,6 +733,10 @@ public sealed class TransportSimulationService : ITransportSimulationService
     {
         var path = await _dbContext.TransportRoutePaths
             .AsNoTracking()
+            /* Manevralar geometriyle AYNI okumada gelir; ikinci bir sorgu,
+               araya giren bir yeniden üretimde geometri ile adımların
+               ayrışmasına kapı aralardı. */
+            .Include(item => item.Steps)
             .FirstOrDefaultAsync(item => item.RouteId == routeId, cancellationToken);
 
         return ToRunnablePath(path);
@@ -734,6 +748,7 @@ public sealed class TransportSimulationService : ITransportSimulationService
     {
         var paths = await _dbContext.TransportRoutePaths
             .AsNoTracking()
+            .Include(item => item.Steps)
             .Where(item => routeIds.Contains(item.RouteId))
             .ToListAsync(cancellationToken);
 
@@ -744,14 +759,22 @@ public sealed class TransportSimulationService : ITransportSimulationService
     {
         if (path is null)
         {
-            return new RunnablePath(null, TransportSimulationOperationResultCode.PathNotFound, PathNotFoundMessage);
+            return new RunnablePath(
+                null,
+                TransportRouteNavigation.Empty,
+                TransportSimulationOperationResultCode.PathNotFound,
+                PathNotFoundMessage);
         }
 
         if (path.IsStale)
         {
             /* Bayat yol bir DOĞRULAMA hatası değildir: istek kusursuzdur,
                sistemin mevcut durumuyla çelişir. */
-            return new RunnablePath(null, TransportSimulationOperationResultCode.StalePath, StalePathMessage);
+            return new RunnablePath(
+                null,
+                TransportRouteNavigation.Empty,
+                TransportSimulationOperationResultCode.StalePath,
+                StalePathMessage);
         }
 
         /* Geometri BURADA sıradan sayılara kopyalanır. Bu satırdan sonra depoya
@@ -765,9 +788,24 @@ public sealed class TransportSimulationService : ITransportSimulationService
         {
             return new RunnablePath(
                 null,
+                TransportRouteNavigation.Empty,
                 TransportSimulationOperationResultCode.InsufficientGeometry,
                 InsufficientGeometryMessage);
         }
+
+        /* Manevralar da BURADA sıradan verilere kopyalanır: depoya giren hiçbir
+           şey EF'e bağlı kalmaz. Adımı olmayan yol GEÇERLİDİR — çalıştırma
+           kurulur, yalnızca navigasyon sunulmaz. */
+        var navigation = TransportRouteNavigation.Create(path.Steps
+            .Select(step => new TransportNavigationStep(
+                step.Sequence,
+                step.ManeuverType,
+                step.ManeuverModifier,
+                step.Name,
+                step.DistanceMeters,
+                step.DurationSeconds,
+                step.StartDistanceMeters,
+                step.EndDistanceMeters)));
 
         return new RunnablePath(
             new TransportSimulationPath(
@@ -776,6 +814,7 @@ public sealed class TransportSimulationService : ITransportSimulationService
                 path.DurationSeconds,
                 path.Profile,
                 path.GeneratedAt),
+            navigation,
             TransportSimulationOperationResultCode.Succeeded,
             string.Empty);
     }
@@ -787,6 +826,7 @@ public sealed class TransportSimulationService : ITransportSimulationService
     private static ActiveTransportSimulation NewRun(
         RouteFacts route,
         TransportSimulationPath path,
+        TransportRouteNavigation navigation,
         int startedByUserId,
         DateTime now) =>
         new(
@@ -802,7 +842,14 @@ public sealed class TransportSimulationService : ITransportSimulationService
                 SegmentIndex: 0,
                 ProgressRatio: 0,
                 DistanceCoveredMeters: 0,
-                CapturedAt: now));
+                CapturedAt: now,
+                /* %0'da BAŞLANGIÇ manevrası geçerli cevaptır ve ilk tick'i
+                   beklemez: başlatma yanıtını okuyan istemci "Şimdi" satırını
+                   boş görmemelidir. Yeniden başlatma da buradan geçer, bu
+                   yüzden yeni çalıştırma daima BAŞTAKİ adımda doğar. */
+                CurrentStepSequence: navigation.SequenceAt(0),
+                DistanceToNextManeuverMeters: navigation.DistanceToNextManeuverMeters(0)),
+            Navigation: navigation);
 
     private static CoreOutcome Stale() =>
         new(TransportSimulationOperationResultCode.Stale, StaleSimulationMessage);
@@ -844,9 +891,18 @@ public sealed class TransportSimulationService : ITransportSimulationService
     /// <summary>Rotanın çalıştırma kurmak için gereken KALICI bilgileri.</summary>
     private sealed record RouteFacts(int Id, string Name, string ColorHex);
 
-    /// <summary>Okunmuş ve kopyalanmış güzergah ya da neden okunamadığı.</summary>
+    /// <summary>
+    /// Okunmuş ve kopyalanmış güzergah + OTORİTER manevraları, ya da neden
+    /// okunamadığı.
+    /// </summary>
+    /// <remarks>
+    /// Geometri ile manevralar AYNI okumadan gelir. İkisini ayrı yollardan
+    /// almak, bir çalıştırmanın bir yolun geometrisini başka bir yolun
+    /// adımlarıyla işletmesine kapı aralardı.
+    /// </remarks>
     private readonly record struct RunnablePath(
         TransportSimulationPath? Path,
+        TransportRouteNavigation Navigation,
         TransportSimulationOperationResultCode Code,
         string Message);
 
@@ -872,7 +928,18 @@ public sealed class TransportSimulationService : ITransportSimulationService
             : TransportSimulationLiveUpdate.From(simulation, simulation.Status);
     }
 
-    private static TransportSimulationResponse ToResponse(ActiveTransportSimulation simulation) =>
+    /// <summary>
+    /// Çalışma zamanı durumundan istemci görünümüne.
+    /// </summary>
+    /// <param name="includeNavigationSteps">
+    /// Adım LİSTESİ taşınsın mı? TEK hat okumalarında evet; çok hatlı KEŞİF
+    /// listesinde hayır — orada her hattın tüm manevralarını göndermek yükü
+    /// hat sayısıyla çarpardı. Listenin boş olması "manevra yok" demek
+    /// DEĞİLDİR: bunu <c>HasNavigationSteps</c> söyler.
+    /// </param>
+    private static TransportSimulationResponse ToResponse(
+        ActiveTransportSimulation simulation,
+        bool includeNavigationSteps = true) =>
         new()
         {
             SimulationId = simulation.SimulationId,
@@ -894,6 +961,23 @@ public sealed class TransportSimulationService : ITransportSimulationService
             SegmentIndex = simulation.Snapshot.SegmentIndex,
             ProgressRatio = simulation.Snapshot.ProgressRatio,
             DistanceCoveredMeters = simulation.Snapshot.DistanceCoveredMeters,
-            CapturedAt = simulation.Snapshot.CapturedAt
+            CapturedAt = simulation.Snapshot.CapturedAt,
+
+            /* NAVİGASYON da OLDUĞU GİBİ alınır: hangi adımda olunduğu anlık
+               görüntünün parçasıdır ve burada yeniden hesaplanmaz. */
+            HasNavigationSteps = simulation.Steps.HasSteps,
+            NavigationSteps = includeNavigationSteps
+                ? [.. simulation.Steps.Steps.Select(step => new TransportSimulationNavigationStepResponse
+                {
+                    Sequence = step.Sequence,
+                    ManeuverType = step.ManeuverType,
+                    ManeuverModifier = step.ManeuverModifier,
+                    Name = step.Name,
+                    DistanceMeters = step.DistanceMeters,
+                    DurationSeconds = step.DurationSeconds
+                })]
+                : [],
+            CurrentStepSequence = simulation.Snapshot.CurrentStepSequence,
+            DistanceToNextManeuverMeters = simulation.Snapshot.DistanceToNextManeuverMeters
         };
 }

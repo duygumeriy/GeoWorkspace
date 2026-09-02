@@ -631,9 +631,11 @@ public sealed class SmartTransportRouteGenerationTests
         public List<OsrmRouteRequest> Requests { get; } = [];
         public Action? OnRoute { get; set; }
 
+        /* Manevra listesi bu takımın konusu DEĞİLDİR ve boş verilir: adımı
+           olmayan güzergah geçerlidir ve rota üretimi ondan bağımsız çalışır. */
         public void Succeed(LineString geometry, double distance, double duration) =>
             _result = ServiceResult<OsrmRouteResult>.Success(
-                new OsrmRouteResult(geometry, distance, duration, "driving"));
+                new OsrmRouteResult(geometry, distance, duration, "driving", []));
 
         public void Fail(ServiceErrorKind kind, string message) => _result = kind switch
         {

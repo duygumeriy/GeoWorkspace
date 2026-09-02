@@ -47,12 +47,29 @@ public sealed record TransportSimulationPath(
 /// <param name="ProgressRatio">0..1 aralığında ilerleme oranı.</param>
 /// <param name="DistanceCoveredMeters">Kat edilen mesafe.</param>
 /// <param name="CapturedAt">Anlık görüntünün üretildiği UTC an.</param>
+/// <param name="CurrentStepSequence">
+/// Aracın İÇİNDE BULUNDUĞU manevranın OTORİTER sırası; güzergahın manevrası
+/// yoksa <c>null</c>.
+///
+/// <para>
+/// <b>Anlık görüntünün parçasıdır ve bu kasıtlıdır.</b> Değeri her okuyanın
+/// yeniden hesaplaması, "şu an hangi adımdayız" sorusunun birden çok sahibi
+/// olması demekti — duraklatılmış bir çalıştırmada saat dururken adım da
+/// kendiliğinden donar, çünkü donan şey anlık görüntünün kendisidir.
+/// </para>
+/// </param>
+/// <param name="DistanceToNextManeuverMeters">
+/// SONRAKİ manevraya kalan mesafe; sonraki manevra yoksa <c>null</c>. Sunucu
+/// hesaplar; tarayıcı yalnızca biçimlendirir.
+/// </param>
 public sealed record TransportSimulationSnapshot(
     TransportSimulationPoint Position,
     int SegmentIndex,
     double ProgressRatio,
     double DistanceCoveredMeters,
-    DateTime CapturedAt);
+    DateTime CapturedAt,
+    int? CurrentStepSequence = null,
+    double? DistanceToNextManeuverMeters = null);
 
 /// <summary>Bir rota üzerinde çalışan tek aktif simülasyon.</summary>
 /// <param name="SimulationId">
@@ -87,8 +104,17 @@ public sealed record ActiveTransportSimulation(
     TransportSimulationSnapshot Snapshot,
     TransportSimulationStatus Status = TransportSimulationStatus.Running,
     DateTime? PausedAt = null,
-    TimeSpan AccumulatedPausedDuration = default)
+    TimeSpan AccumulatedPausedDuration = default,
+    /* NAVİGASYON ÇALIŞTIRMAYA AİTTİR, rotaya değil. Aynı hatta yerine geçen
+       yeni bir çalıştırma kendi kopyasını taşır; böylece bir çalıştırmanın
+       adım listesi başka bir çalıştırmanınkiyle karışamaz ve yol yeniden
+       üretildiğinde çalışan simülasyon eski adımlarla devam etmez —
+       geçersizleşme onu zaten iptal eder. */
+    TransportRouteNavigation? Navigation = null)
 {
+    /// <summary>Bu çalıştırmanın OTORİTER manevraları; yoksa boş.</summary>
+    public TransportRouteNavigation Steps => Navigation ?? TransportRouteNavigation.Empty;
+
     /// <summary>Aynı çalıştırmanın yeni anlık görüntüsü.</summary>
     public ActiveTransportSimulation With(TransportSimulationSnapshot snapshot) =>
         this with { Snapshot = snapshot };

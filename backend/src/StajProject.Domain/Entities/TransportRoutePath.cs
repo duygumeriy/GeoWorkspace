@@ -35,4 +35,14 @@ public class TransportRoutePath
     public string? LastFailureReason { get; set; }
 
     public DateTime ModifiedDate { get; set; }
+
+    /// <summary>
+    /// Bu güzergahın OTORİTER manevra adımları; sıra ile artar.
+    /// </summary>
+    /// <remarks>
+    /// Boş liste GEÇERLİDİR ve bir hata değildir: motor adım üretmeyebilir.
+    /// O durumda hat yine simüle edilir, yalnızca navigasyon sunulmaz —
+    /// eksik veri geometriden TÜRETİLMEZ.
+    /// </remarks>
+    public ICollection<TransportRoutePathStep> Steps { get; set; } = new List<TransportRoutePathStep>();
 }

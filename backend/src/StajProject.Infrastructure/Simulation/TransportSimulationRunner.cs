@@ -375,12 +375,7 @@ public sealed class TransportSimulationRunner
         var ratio = Math.Clamp(elapsedSeconds / durationSeconds, 0, 1);
 
         var position = track.At(ratio);
-        var snapshot = new TransportSimulationSnapshot(
-            position.Point,
-            position.SegmentIndex,
-            position.ProgressRatio,
-            position.DistanceMeters,
-            utcNow);
+        var snapshot = Snapshot(simulation, position, utcNow);
 
         var advanced = simulation.With(snapshot);
 
@@ -416,6 +411,56 @@ public sealed class TransportSimulationRunner
         }
 
         await PublishAsync(advanced, TransportSimulationStatus.Running, cancellationToken);
+    }
+
+    /// <summary>
+    /// Konumdan OTORİTER anlık görüntü — navigasyon dahil.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>HANGİ MANEVRADA OLDUĞUMUZA SUNUCU KARAR VERİR.</b> Değer burada, kat
+    /// edilen mesafeden çözülür ve anlık görüntüye YAZILIR; tarayıcı onu ne
+    /// hesaplar ne ilerletir. Adımı istemcide çözmek, çizginin kıvrımına bakıp
+    /// "sağa dön" demeye kadar giden bir yol açardı.
+    /// </para>
+    /// <para>
+    /// <b>Mesafe MOTORUN ekseninde ölçülür.</b> Adım sınırları güzergahı üreten
+    /// motorun metrelerindedir; ilerleme oranı bu yüzden yolun KALICI
+    /// <c>DistanceMeters</c>'ı ile çarpılır. İzin kendi haversine kümülatifi
+    /// yalnızca KONUM interpolasyonu içindir ve buraya karıştırılmaz — iki
+    /// ölçüyü karıştırmak aracı yanlış manevrada gösterirdi.
+    /// </para>
+    /// </remarks>
+    private static TransportSimulationSnapshot Snapshot(
+        ActiveTransportSimulation simulation,
+        TransportSimulationPosition position,
+        DateTime utcNow)
+    {
+        var navigation = simulation.Steps;
+
+        if (!navigation.HasSteps)
+        {
+            /* Manevrası olmayan güzergah GEÇERLİDİR: araç yine hareket eder,
+               yalnızca navigasyon sunulmaz. Uydurulmuş bir adım, sunucunun
+               bilmediği bir gerçeği bildiriyormuş gibi olurdu. */
+            return new TransportSimulationSnapshot(
+                position.Point,
+                position.SegmentIndex,
+                position.ProgressRatio,
+                position.DistanceMeters,
+                utcNow);
+        }
+
+        var distanceAlongRoute = position.ProgressRatio * simulation.Path.DistanceMeters;
+
+        return new TransportSimulationSnapshot(
+            position.Point,
+            position.SegmentIndex,
+            position.ProgressRatio,
+            position.DistanceMeters,
+            utcNow,
+            navigation.SequenceAt(distanceAlongRoute),
+            navigation.DistanceToNextManeuverMeters(distanceAlongRoute));
     }
 
     /// <summary>

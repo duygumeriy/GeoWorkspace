@@ -1027,6 +1027,72 @@ namespace StajProject.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("StajProject.Domain.Entities.TransportRoutePathStep", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<double>("DistanceMeters")
+                        .HasColumnType("double precision")
+                        .HasColumnName("distance_meters");
+
+                    b.Property<double>("DurationSeconds")
+                        .HasColumnType("double precision")
+                        .HasColumnName("duration_seconds");
+
+                    b.Property<double>("EndDistanceMeters")
+                        .HasColumnType("double precision")
+                        .HasColumnName("end_distance_meters");
+
+                    b.Property<string>("ManeuverModifier")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("maneuver_modifier");
+
+                    b.Property<string>("ManeuverType")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("maneuver_type");
+
+                    b.Property<string>("Name")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name");
+
+                    b.Property<int>("PathId")
+                        .HasColumnType("integer")
+                        .HasColumnName("path_id");
+
+                    b.Property<int>("Sequence")
+                        .HasColumnType("integer")
+                        .HasColumnName("sequence");
+
+                    b.Property<double>("StartDistanceMeters")
+                        .HasColumnType("double precision")
+                        .HasColumnName("start_distance_meters");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PathId", "Sequence")
+                        .IsUnique();
+
+                    b.ToTable("transport_route_path_step", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_transport_route_path_step_bounds_ordered", "end_distance_meters >= start_distance_meters");
+
+                            t.HasCheckConstraint("ck_transport_route_path_step_distance_nonnegative", "distance_meters >= 0");
+
+                            t.HasCheckConstraint("ck_transport_route_path_step_duration_nonnegative", "duration_seconds >= 0");
+
+                            t.HasCheckConstraint("ck_transport_route_path_step_sequence_nonnegative", "sequence >= 0");
+                        });
+                });
+
             modelBuilder.Entity("StajProject.Domain.Entities.TransportStop", b =>
                 {
                     b.Property<int>("Id")
@@ -1444,6 +1510,17 @@ namespace StajProject.Infrastructure.Persistence.Migrations
                     b.Navigation("Route");
                 });
 
+            modelBuilder.Entity("StajProject.Domain.Entities.TransportRoutePathStep", b =>
+                {
+                    b.HasOne("StajProject.Domain.Entities.TransportRoutePath", "Path")
+                        .WithMany("Steps")
+                        .HasForeignKey("PathId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Path");
+                });
+
             modelBuilder.Entity("StajProject.Domain.Entities.User", b =>
                 {
                     b.HasOne("StajProject.Domain.Entities.User", null)
@@ -1486,6 +1563,11 @@ namespace StajProject.Infrastructure.Persistence.Migrations
                     b.Navigation("Path");
 
                     b.Navigation("Stops");
+                });
+
+            modelBuilder.Entity("StajProject.Domain.Entities.TransportRoutePath", b =>
+                {
+                    b.Navigation("Steps");
                 });
 #pragma warning restore 612, 618
         }

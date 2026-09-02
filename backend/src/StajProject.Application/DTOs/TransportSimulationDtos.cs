@@ -74,4 +74,82 @@ public sealed class TransportSimulationResponse
 
     /// <summary>Anlık görüntünün sunucuda üretildiği UTC an.</summary>
     public DateTime CapturedAt { get; set; }
+
+    /* --- NAVİGASYON (Faz 5) --------------------------------------------------
+       Manevralar güzergahın ömrü boyunca SABİTTİR; bu yüzden OKUMA yolunda bir
+       kez verilir, canlı akışta ise yalnızca değişen sıra taşınır. */
+
+    /// <summary>
+    /// Güzergahın OTORİTER manevraları; sıraya göre artar.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Boş liste ile "taşınmadı" AYNI ŞEY DEĞİLDİR</b> ve ayrımı
+    /// <see cref="HasNavigationSteps"/> yapar: aktif KEŞİF listesi çok sayıda
+    /// hattı tek yanıtta taşır ve her biri için tüm adım listesini göndermek
+    /// yükü hat sayısıyla çarpardı. O listede alan bilinçli olarak boştur;
+    /// seçili hattın okuması ise dolu gelir.
+    /// </para>
+    /// <para>
+    /// Veri geometriden TÜRETİLMEZ: değerler yolun üretildiği anda motordan
+    /// alınıp saklanmıştır.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<TransportSimulationNavigationStepResponse> NavigationSteps { get; set; } = [];
+
+    /// <summary>
+    /// Güzergahın manevrası VAR MI? Liste boş gelse bile bu alan doğruyu
+    /// söyler.
+    /// </summary>
+    public bool HasNavigationSteps { get; set; }
+
+    /// <summary>
+    /// Aracın İÇİNDE BULUNDUĞU manevranın OTORİTER sırası; manevra yoksa
+    /// <c>null</c>. Dizi konumu DEĞİLDİR.
+    /// </summary>
+    public int? CurrentStepSequence { get; set; }
+
+    /// <summary>SONRAKİ manevraya kalan mesafe; sonraki manevra yoksa <c>null</c>.</summary>
+    public double? DistanceToNextManeuverMeters { get; set; }
+}
+
+/// <summary>
+/// Paylaşılan hattın tek bir OTORİTER manevrası (istemci görünümü).
+/// </summary>
+/// <remarks>
+/// <para>
+/// <b>Ham motor yanıtı değildir.</b> Alan adları sağlayıcıdan bağımsızdır;
+/// OSRM'nin JSON şekli bu sözleşmenin parçası DEĞİLDİR.
+/// </para>
+/// <para>
+/// <b>Kullanıcıya gösterilecek metin BURADA ÜRETİLMEZ.</b> Motor çekirdeği
+/// insan okunabilir talimat vermez; uydurulmuş bir metin, sunucunun bilmediği
+/// bir gerçeği bildiriyormuş gibi olurdu. Türkçeleştirme saf bir SUNUM
+/// kararıdır ve arayüzdeki mevcut manevra sözlüğünde yapılır.
+/// </para>
+/// <para>
+/// <b>Koordinat TAŞINMAZ.</b> İstemcinin manevra konumundan mesafe ya da yön
+/// hesaplamasına gerek yoktur ve olmamalıdır: hangi adımda olunduğunu ve
+/// sonrakine ne kadar kaldığını sunucu söyler.
+/// </para>
+/// </remarks>
+public sealed class TransportSimulationNavigationStepResponse
+{
+    /// <summary>Sıfır tabanlı, güzergah boyunca artan OTORİTER sıra.</summary>
+    public int Sequence { get; set; }
+
+    /// <summary>Kararlı manevra türü (ör. <c>turn</c>, <c>depart</c>, <c>arrive</c>).</summary>
+    public string ManeuverType { get; set; } = string.Empty;
+
+    /// <summary>Manevra yönü (ör. <c>left</c>, <c>slight right</c>); yoksa <c>null</c>.</summary>
+    public string? ManeuverModifier { get; set; }
+
+    /// <summary>Yol/sokak adı; motor vermiyorsa <c>null</c>.</summary>
+    public string? Name { get; set; }
+
+    /// <summary>Adımın KENDİ uzunluğu.</summary>
+    public double DistanceMeters { get; set; }
+
+    /// <summary>Adımın KENDİ süresi.</summary>
+    public double DurationSeconds { get; set; }
 }
