@@ -390,6 +390,17 @@ builder.Services.AddScoped<IJourneyPlanningService, JourneyPlanningService>();
 builder.Services.AddSingleton<IJourneySimulationStateStore, InMemoryJourneySimulationStateStore>();
 builder.Services.AddScoped<IJourneySimulationService, JourneySimulationService>();
 
+/* --- Kaydedilmiş kişisel yolculuklar (Faz 7) ---------------------------------
+   Sahibine ÖZEL, yeniden kullanılabilir yolculuk TANIMLARI. Çalışma zamanı
+   durumunun sahibi DEĞİLDİR: simülasyon kimliği, ilerleme ya da geometri
+   saklamaz; her yeniden kullanım mevcut başlatma yolundan geçer ve YENİ bir
+   çalıştırma üretir.
+
+   AppDbContext'e, planlama servisine ve doğrulanmış kimliğe bağlı olduğu için
+   scoped'dır. Paylaşılan hat simülasyonunun kayıtlarına ve yaşam döngüsüne
+   dokunmaz. */
+builder.Services.AddScoped<ISavedJourneyService, SavedJourneyService>();
+
 var journeySimulationOptions = builder.Configuration
     .GetSection(JourneySimulationOptions.SectionName)
     .Get<JourneySimulationOptions>() ?? new JourneySimulationOptions();

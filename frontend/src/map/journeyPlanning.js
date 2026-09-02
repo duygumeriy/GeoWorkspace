@@ -54,6 +54,19 @@ export const PANEL_STATES = Object.freeze({
   CLOSED: 'closed',
 })
 
+/**
+ * Kişisel ürünün İKİ bölümü.
+ *
+ * Bu, planlama KİPLERİYLE (Hat / Hat Bölümü / Serbest) karıştırılmamalıdır:
+ * orası "yolculuğum nasıl kurulur", burası "planlıyor muyum yoksa
+ * kayıtlarıma mı bakıyorum". Bölüm değiştirmek hiçbir taslağı silmez ve
+ * hiçbir çalıştırmaya dokunmaz.
+ */
+export const PERSONAL_SECTIONS = Object.freeze({
+  PLAN: 'plan',
+  SAVED: 'saved',
+})
+
 /** Geçiş noktasının plandaki rolü. */
 export const WAYPOINT_ROLES = Object.freeze({
   ORIGIN: 'origin',
@@ -132,6 +145,10 @@ export function initialJourneyPlannerState({ canUseTransport = true } = {}) {
        varsayılanıdır: çalışan bir kişisel yolculuk varsa kurtarma yine
        çalışır ve durumunu kısayolun rozetinden bildirir. */
     panel: PANEL_STATES.CLOSED,
+    /* Kişisel ürün PLANLAMA bölümünde açılır: kullanıcı çalışma alanını
+       çoğunlukla yeni bir yolculuk kurmak için açar. Kayıtlar bir tık
+       uzaktadır ve bölüm değişimi hiçbir seçimi silmez. */
+    section: PERSONAL_SECTIONS.PLAN,
     activeSlotKey: null,
   }
 }
@@ -246,6 +263,43 @@ export function journeyPlannerReducer(state, action) {
       }
     }
 
+    case 'setSection': {
+      if (!Object.values(PERSONAL_SECTIONS).includes(action.section)) return state
+      if (action.section === state.section) return state
+      /* Kayıt listesine geçerken silah BIRAKILIR: kişisel nokta yuvası
+         ekranda değilken silahlı kalmak, haritadaki bir tıklamanın
+         görünmeyen bir yuvaya yazması demekti. */
+      return {
+        ...state,
+        section: action.section,
+        activeSlotKey: action.section === PERSONAL_SECTIONS.PLAN ? state.activeSlotKey : null,
+      }
+    }
+
+    case 'loadSaved': {
+      /* Kaydedilmiş bir yolculuğu YÜKLEMEK taslağı BİLİNÇLİ olarak değiştirir
+         ve hiçbir simülasyon başlatmaz: burada ne bir çalıştırma kimliği ne de
+         bir kanal vardır. Taslak yarım bırakılmaz — yüklenen kip neyi
+         gerektiriyorsa o alanlar yazılır, ötekiler temizlenir; aksi hâlde eski
+         kipin seçimleri yeni taslakta hayalet gibi yaşardı. */
+      const draft = action.draft
+      if (!draft || !Object.values(JOURNEY_MODES).includes(draft.mode)) return state
+      if (!JOURNEY_PROFILE_IDS.includes(draft.profile)) return state
+
+      return {
+        ...state,
+        mode: draft.mode,
+        profile: draft.profile,
+        routeId: draft.routeId ?? null,
+        fromStopId: draft.fromStopId ?? null,
+        toStopId: draft.toStopId ?? null,
+        waypoints: draft.waypoints ?? [createWaypointSlot(), createWaypointSlot()],
+        // Yüklenen yolculuk PLANLAMA bölümünde incelenir; başlatma ayrı bir karardır.
+        section: PERSONAL_SECTIONS.PLAN,
+        activeSlotKey: null,
+      }
+    }
+
     case 'setPanel': {
       if (!Object.values(PANEL_STATES).includes(action.panel)) return state
       // Panel kapanınca harita seçimi de bırakılır; görünmeyen bir yuva doldurulmaz.
@@ -260,6 +314,7 @@ export function journeyPlannerReducer(state, action) {
         ...initialJourneyPlannerState(),
         panel: state.panel,
         product: state.product,
+        section: state.section,
         mode: state.mode,
         profile: state.profile,
       }

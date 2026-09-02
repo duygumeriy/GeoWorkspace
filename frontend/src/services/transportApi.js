@@ -290,3 +290,82 @@ export function stopJourneySimulation(simulationId, { signal } = {}) {
     signal,
   })
 }
+
+/* --- Kaydedilmiş kişisel yolculuklar (Faz 7) ----------------------------------
+   Sahibine ÖZEL yolculuk TANIMLARI. Aynı authFetch, aynı Authorization
+   başlığı, aynı 401/403 davranışı; ikinci bir API katmanı ya da ikinci bir
+   token deposu AÇILMAZ.
+
+   Bu uçlar SIRADAN REST'tir: burada SignalR yoktur, canlı kanal yoktur ve
+   hiçbir zamanlayıcı kurulmaz. Kaydedilmiş bir yolculuk canlı bir simülasyon
+   DEĞİLDİR.
+
+   Sahip kimliği HİÇBİR istekte taşınmaz: sunucu onu doğrulanmış JWT'den okur.
+   Yol üzerinde bir kullanıcı kimliği göndermek, tahminle başkasının kaydına
+   açılan bir kapı olurdu. */
+
+/** Çağıranın KENDİ kayıtları; hafif liste (geometri/manevra taşımaz). */
+export function fetchSavedJourneys({ signal } = {}) {
+  return authFetch('/api/transport/journeys/saved', { signal })
+}
+
+/** Tek bir kaydın tam tanımı; başkasınınki için 404. */
+export function fetchSavedJourney(savedJourneyId, { signal } = {}) {
+  return authFetch(`/api/transport/journeys/saved/${savedJourneyId}`, { signal })
+}
+
+/**
+ * Planlanan yolculuğu bir TANIM olarak kaydeder.
+ *
+ * Gövde, önizleme/başlatma ile AYNI niyet sözleşmesini taşır; simülasyon
+ * kimliği, geometri ya da ölçüm GÖNDERİLMEZ. Kaydetmek bir simülasyon
+ * BAŞLATMAZ.
+ */
+export function createSavedJourney({ name, isFavorite = false, journey }, { signal } = {}) {
+  return authFetch('/api/transport/journeys/saved', {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ name, isFavorite, journey }),
+    signal,
+  })
+}
+
+/**
+ * Ad ve/veya yıldızı günceller.
+ *
+ * Gönderilmeyen alan DEĞİŞMEZ; yıldız düğmesi bu yüzden adı taşımak zorunda
+ * kalmaz. Yıldız DEĞER olarak gönderilir, "tersine çevir" olarak değil.
+ */
+export function updateSavedJourney(savedJourneyId, { name, isFavorite } = {}, { signal } = {}) {
+  const body = {}
+  if (name !== undefined) body.name = name
+  if (isFavorite !== undefined) body.isFavorite = isFavorite
+
+  return authFetch(`/api/transport/journeys/saved/${savedJourneyId}`, {
+    method: 'PUT',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(body),
+    signal,
+  })
+}
+
+/** Kaydı kalıcı olarak siler; çalışan bir yolculuğa dokunmaz. */
+export function deleteSavedJourney(savedJourneyId, { signal } = {}) {
+  return authFetch(`/api/transport/journeys/saved/${savedJourneyId}`, {
+    method: 'DELETE',
+    signal,
+  })
+}
+
+/**
+ * Kayıttan YENİ bir kişisel simülasyon başlatır.
+ *
+ * Eski çalıştırma DİRİLTİLMEZ: yanıt her çağrıda yeni bir `simulationId` taşır
+ * ve güzergah kayıtlı bir geometriden okunmaz, sunucuda yeniden hesaplanır.
+ */
+export function reuseSavedJourney(savedJourneyId, { signal } = {}) {
+  return authFetch(`/api/transport/journeys/saved/${savedJourneyId}/reuse`, {
+    method: 'POST',
+    signal,
+  })
+}

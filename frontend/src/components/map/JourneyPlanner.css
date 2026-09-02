@@ -945,3 +945,109 @@
   .journey-manage-head { flex-direction: column; align-items: flex-start; }
   .journey-manage-select { width: 100%; }
 }
+
+/* --- Kaydedilmiş kişisel yolculuklar (Faz 7) ---------------------------------
+   Kayıtlar aynı çalışma alanının İÇİNDE yaşar; ayrı bir sayfa açılmaz ve
+   haritayı kaplayan yeni bir panel eklenmez. Liste kendi penceresinde kayar,
+   böylece harita her zaman görünür kalır.
+
+   Panele SABİT BİR MİNİMUM GENİŞLİK VERİLMEZ: satırlar dar ekranda kendi
+   içinde sarar. */
+
+.journey-saved {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.journey-saved-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  /* Uzun liste PANELİ büyütmez; kendi içinde kayar. */
+  max-height: 18rem;
+  overflow-y: auto;
+}
+
+.journey-saved-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.5rem;
+  border: 1px solid var(--border-soft, transparent);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+}
+
+.journey-saved-row[aria-busy='true'] { opacity: 0.6; }
+
+.journey-saved-head {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+/* Yıldız KENDİ düğmesidir: satırı seçmez, yolculuğu başlatmaz. */
+.journey-star {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.2rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.journey-star.is-on { color: var(--warning, #f59e0b); }
+
+.journey-star.is-on svg { fill: currentColor; }
+
+.journey-saved-name {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  font-size: var(--font-small);
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  /* Uzun ad satırı taşırmaz. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.journey-saved-meta,
+.journey-saved-time {
+  margin: 0;
+  font-size: var(--font-small);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.journey-saved-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.journey-saved-actions > button { flex: 1 1 auto; }
+
+/* Ad diyaloğunun alanı, onay diyaloğunun kabuğunu paylaşır; yalnızca
+   aralığını bildirir. */
+.confirm-dialog .text-field { margin: 0.25rem 0 0.75rem; }
+
+@media (max-width: 640px) {
+  /* Dar ekranda liste daha kısa bir pencereye sığar ve eylemler iki sütuna
+     iner; harita kullanılamaz hâle gelmez. */
+  .journey-saved-list { max-height: 12rem; }
+  .journey-saved-actions > button { flex: 1 1 45%; }
+}

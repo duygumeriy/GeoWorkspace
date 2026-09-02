@@ -170,6 +170,12 @@ export default function useJourneyPlanner({
     /* ÜRÜN seçimi bir sunum kararıdır: ne kişisel yolculuğu ne de paylaşılan
        hattı durdurur, hiçbir kanalı kapatmaz ve hiçbir takibi bırakmaz. */
     setProduct: (product) => dispatch({ type: 'setProduct', product }),
+    /* BÖLÜM seçimi de bir sunum kararıdır: planlama taslağını silmez, çalışan
+       bir yolculuğu durdurmaz ve hiçbir kanal açmaz/kapatmaz. */
+    setSection: (section) => dispatch({ type: 'setSection', section }),
+    /* Kaydedilmiş bir tanımı taslağa yükler. BAŞLATMAZ: yükleme ile başlatma
+       ayrı kararlardır ve burada hiçbir istek yola çıkmaz. */
+    loadSaved: (draft) => dispatch({ type: 'loadSaved', draft }),
     openPanel: () => dispatch({ type: 'setPanel', panel: PANEL_STATES.OPEN }),
     collapsePanel: () => dispatch({ type: 'setPanel', panel: PANEL_STATES.COLLAPSED }),
     closePanel: () => dispatch({ type: 'setPanel', panel: PANEL_STATES.CLOSED }),

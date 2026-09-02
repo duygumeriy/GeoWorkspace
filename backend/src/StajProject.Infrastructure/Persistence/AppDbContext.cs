@@ -57,6 +57,15 @@ public class AppDbContext : IdentityDbContext<User, IdentityRole<int>, int>
 
     public DbSet<TransportRoutePathStep> TransportRoutePathSteps => Set<TransportRoutePathStep>();
 
+    /* --- Kaydedilmiş kişisel yolculuklar (Faz 7) ----------------------------
+       Sahibine ÖZEL, yeniden kullanılabilir yolculuk TANIMLARI. Çalışma zamanı
+       durumu (simülasyon kimliği, ilerleme, konum) burada SAKLANMAZ ve
+       paylaşılan hat verisinin yaşam döngüsüne dokunulmaz. */
+
+    public DbSet<SavedJourney> SavedJourneys => Set<SavedJourney>();
+
+    public DbSet<SavedJourneyPoint> SavedJourneyPoints => Set<SavedJourneyPoint>();
+
     /* --- Dinamik yetkilendirme ---------------------------------------------
        Yetki kataloğu ve grant tabloları. Identity'nin rol/kullanıcı tabloları
        ile aynı context'te durur: bir rolün yetkilendirilmesi ile o rolün

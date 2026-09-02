@@ -143,6 +143,10 @@ import useJourneyPlanner from '../hooks/useJourneyPlanner.js'
 import useJourneyPreviewLayer from '../hooks/useJourneyPreviewLayer.js'
 import useJourneyWaypointPicking from '../hooks/useJourneyWaypointPicking.js'
 import useJourneySimulation from '../hooks/useJourneySimulation.js'
+import useSavedJourneys from '../hooks/useSavedJourneys.js'
+import JourneyNameDialog from '../components/map/JourneyNameDialog.jsx'
+import { savedJourneyDraft, savedJourneyTarget } from '../map/savedJourneys.js'
+import { PANEL_STATES, PERSONAL_SECTIONS } from '../map/journeyPlanning.js'
 import useJourneyVehicleLayer from '../hooks/useJourneyVehicleLayer.js'
 import useJourneyWaypointLayer from '../hooks/useJourneyWaypointLayer.js'
 import useTransportStopRelocation from '../hooks/useTransportStopRelocation.js'
@@ -1477,6 +1481,137 @@ export default function MapPage() {
   )
 
   useJourneyWaypointLayer(mapInstance, { waypoints: journeyWaypoints })
+
+  /* --- Kaydedilmiş kişisel yolculuklar (Faz 7) -------------------------------
+     Kaydedilmiş bir yolculuk canlı durum DEĞİLDİR: burada SignalR yoktur,
+     ikinci bir kişisel kanal açılmaz, hiçbir zamanlayıcı kurulmaz ve
+     LocalStorage otorite olarak kullanılmaz. Liste yalnızca kullanıcı o
+     bölümü AÇTIĞINDA okunur; veri başka hiçbir şeyle değişmez.
+
+     Paylaşılan hat bu koddan HİÇ etkilenmez: onun sekmesi, servisi, hub'ı ve
+     durumu olduğu gibi kalır. */
+
+  const journeySavedSectionOpen = journey.state.panel === PANEL_STATES.OPEN
+    && journeyProduct === JOURNEY_PRODUCTS.PERSONAL
+    && journey.state.section === PERSONAL_SECTIONS.SAVED
+
+  const savedJourneys = useSavedJourneys({
+    permitted: allowed.canUseJourney,
+    enabled: journeySavedSectionOpen,
+  })
+
+  /* --- Kaydetme ------------------------------------------------------------
+     KAYDETMEK BAŞLATMAK DEĞİLDİR: bu akış hiçbir simülasyon kurmaz,
+     `simulationId` değiştirmez, kamerayı oynatmaz ve paylaşılan duruma
+     dokunmaz. Kaydedilen şey planlayıcının KANONİK niyetidir — önizlemenin
+     geometrisi ya da ölçümleri değil. */
+  const [journeySavePending, setJourneySavePending] = useState(false)
+
+  const requestJourneySave = useCallback(() => {
+    // Geçersiz bir seçim için diyalog hiç açılmaz.
+    if (!journey.buildIntent()) return
+    savedJourneys.clearError()
+    setJourneySavePending(true)
+  }, [journey, savedJourneys])
+
+  const confirmJourneySave = useCallback(async (name) => {
+    const intent = journey.buildIntent()
+    if (!intent) return
+
+    const created = await savedJourneys.save({ name, journey: intent })
+    if (created) setJourneySavePending(false)
+  }, [journey, savedJourneys])
+
+  /* --- Yeniden adlandırma ---------------------------------------------------
+     KİMLİK DONDURULUR. Diyalog açıldığı andaki kayıt hedeftir: kullanıcı
+     arada başka bir satıra dokunsa bile eylem A'ya uygulanır. Bu, projedeki
+     diğer bayat-niyet korumalarıyla aynı ilkedir. */
+  const [journeyRenamePending, setJourneyRenamePending] = useState(null)
+
+  const requestSavedJourneyRename = useCallback((savedJourneyId) => {
+    // Hedef DONDURULUR; kural saf modüldedir ve burada yalnızca uygulanır.
+    const target = savedJourneyTarget(savedJourneys.items, savedJourneyId)
+    if (!target) return
+    savedJourneys.clearError()
+    setJourneyRenamePending(target)
+  }, [savedJourneys])
+
+  const confirmSavedJourneyRename = useCallback(async (name) => {
+    const target = journeyRenamePending
+    if (!target) return
+
+    // Dondurulmuş kimlik: çözülme anındaki liste durumu okunmaz.
+    const renamed = await savedJourneys.rename(target.id, name)
+    if (renamed) setJourneyRenamePending(null)
+  }, [journeyRenamePending, savedJourneys])
+
+  /* --- Silme ----------------------------------------------------------------
+     Silmek GERİ ALINAMAZ: kaydedilmiş yolculuğun çöp kutusu yoktur. Mevcut
+     onay diyaloğu kullanılır (`window.confirm` DEĞİL) ve hedef kimlik onay
+     anında DONDURULUR. */
+  const [journeyDeletePending, setJourneyDeletePending] = useState(null)
+  const [journeyDeleting, setJourneyDeleting] = useState(false)
+  const journeyDeleteInFlight = useRef(false)
+
+  const requestSavedJourneyDelete = useCallback((savedJourneyId) => {
+    // Hedef DONDURULUR: onay çözüldüğünde listedeki seçim okunmaz.
+    const target = savedJourneyTarget(savedJourneys.items, savedJourneyId)
+    if (!target) return
+    savedJourneys.clearError()
+    setJourneyDeletePending(target)
+  }, [savedJourneys])
+
+  const confirmSavedJourneyDelete = useCallback(async () => {
+    const target = journeyDeletePending
+    if (!target || journeyDeleteInFlight.current) return
+
+    journeyDeleteInFlight.current = true
+    setJourneyDeleting(true)
+
+    try {
+      // A seçiliyken açılan onay, sonradan B seçilse bile A'yı siler.
+      await savedJourneys.remove(target.id)
+    } finally {
+      journeyDeleteInFlight.current = false
+      setJourneyDeleting(false)
+      setJourneyDeletePending(null)
+    }
+  }, [journeyDeletePending, savedJourneys])
+
+  /* Yıldız DEĞER gönderir; sunucuda "tersine çevir" yoktur. İyimser güncelleme
+     YAPILMAZ: geri alma mekanizması kurmadan iyimser olmak, başarısız bir
+     istekte yıldızı kullanıcının görmediği bir durumda bırakırdı. */
+  const toggleSavedJourneyFavorite = useCallback(
+    (savedJourneyId, next) => savedJourneys.setFavorite(savedJourneyId, next),
+    [savedJourneys],
+  )
+
+  /* --- Yükleme (BAŞLATMA DEĞİL) ---------------------------------------------
+     Kaydı planlayıcıya yüklemek yalnızca TASLAĞI değiştirir: hiçbir simülasyon
+     kurulmaz, çalışan bir yolculuk durdurulmaz ve kamera takibi değişmez.
+     Kullanıcı yüklenen yolculuğu inceleyip başlatmayı AYRICA seçer. */
+  const loadSavedJourney = useCallback(async (savedJourneyId) => {
+    const saved = await savedJourneys.load(savedJourneyId)
+    if (!saved) return
+
+    const draft = savedJourneyDraft(saved)
+    if (!draft) return
+
+    journey.loadSaved(draft)
+  }, [journey, savedJourneys])
+
+  /* --- Yeniden kullanma (AÇIK başlatma) -------------------------------------
+     Sunucu kanonik referansları yeniden çözer, güzergahı yeniden hesaplar ve
+     YENİ bir çalıştırma kimliği üretir. Yanıt mevcut kişisel kancaya
+     benimsetilir: ikinci bir canlı durum ya da ikinci bir SignalR bağlantısı
+     açılmaz. */
+  const startSavedJourney = useCallback(async (savedJourneyId) => {
+    const started = await savedJourneys.reuse(savedJourneyId)
+    if (!started) return
+
+    await journeySimulation.adopt(started)
+    openJourneyPanel()
+  }, [savedJourneys, journeySimulation, openJourneyPanel])
 
   /* Çağrı BURADADIR: gösterilecek geometri canlı simülasyona da bağlı olduğu
      için planlayıcıdan SONRA gelmesi gerekir. Katman ve uyum davranışı
@@ -3918,6 +4053,29 @@ export default function MapPage() {
                   onArmSlot={armJourneySlot}
                   onRequestPreview={journey.requestPreview}
                   onClear={journey.clear}
+                  /* KAYDEDİLENLER (Faz 7). Sunum modeli saf modülden gelir;
+                     her eylem KAYIT KİMLİĞİ taşır ve panelde "seçili kayıt"
+                     diye bir durum yoktur. */
+                  saved={{
+                    items: savedJourneys.items,
+                    loading: savedJourneys.loading,
+                    loaded: savedJourneys.loaded,
+                    error: savedJourneys.error,
+                    busyId: savedJourneys.busyId,
+                    saving: savedJourneys.saving,
+                  }}
+                  onSectionChange={journey.setSection}
+                  /* KAYDETMEK BAŞLATMAK DEĞİLDİR: bu yol simülasyona hiç
+                     dokunmaz. */
+                  onSaveJourney={requestJourneySave}
+                  canSaveJourney={Boolean(journey.buildIntent())}
+                  /* YÜKLEMEK de başlatmak değildir; başlatma ayrı eylemdir. */
+                  onLoadSavedJourney={loadSavedJourney}
+                  onUseSavedJourney={startSavedJourney}
+                  onRenameSavedJourney={requestSavedJourneyRename}
+                  onDeleteSavedJourney={requestSavedJourneyDelete}
+                  onToggleSavedFavorite={toggleSavedJourneyFavorite}
+                  onRetrySavedJourneys={savedJourneys.refresh}
                   onCollapse={journey.collapsePanel}
                   onClose={closeJourneyPanel}
                   onOpen={openJourneyPanel}
@@ -4532,6 +4690,52 @@ export default function MapPage() {
                 confirmLabel="Geri Yükle"
                 onConfirm={confirmRestore}
                 onCancel={() => setPendingRestore(null)}
+              />
+
+              {/* Kaydedilmiş yolculuk SİLME onayı. Aynı diyalog bileşeni,
+                  aynı Esc davranışı, aynı erişilebilirlik — tarayıcının
+                  `confirm()`'i DEĞİL. Hedef kimlik onay anında DONDURULMUŞTUR:
+                  A için açılan onay, arada B'ye dokunulsa bile A'yı siler. */}
+              <ConfirmDialog
+                open={Boolean(journeyDeletePending)}
+                title="Kaydedilen yolculuğu sil"
+                message={
+                  journeyDeletePending
+                    ? `“${journeyDeletePending.name}” yolculuğunu silmek istediğinize emin misiniz?`
+                    : ''
+                }
+                description="Kayıt kalıcı olarak silinir ve geri alınamaz. Çalışan bir yolculuğunuz varsa durmaz."
+                confirmLabel="Sil"
+                busy={journeyDeleting}
+                onConfirm={confirmSavedJourneyDelete}
+                onCancel={() => setJourneyDeletePending(null)}
+              />
+
+              {/* Planlanan yolculuğu KAYDETME diyaloğu. Ad ister; simülasyon
+                  başlatmaz. */}
+              <JourneyNameDialog
+                open={journeySavePending}
+                title="Yolculuğu kaydet"
+                description="Bu yolculuk yalnızca size özeldir ve daha sonra yeniden kullanabilirsiniz."
+                confirmLabel="Kaydet"
+                busy={savedJourneys.saving}
+                error={savedJourneys.error}
+                onConfirm={confirmJourneySave}
+                onCancel={() => setJourneySavePending(false)}
+              />
+
+              {/* YENİDEN ADLANDIRMA. Kimlik diyalog açıldığında dondurulur;
+                  eylem çözüldüğünde listedeki seçim okunmaz. */}
+              <JourneyNameDialog
+                open={Boolean(journeyRenamePending)}
+                title="Yolculuğu yeniden adlandır"
+                description="Yalnızca ad değişir; yolculuğun kendisi olduğu gibi kalır."
+                confirmLabel="Kaydet"
+                initialName={journeyRenamePending?.name ?? ''}
+                busy={savedJourneys.busyId === journeyRenamePending?.id}
+                error={savedJourneys.error}
+                onConfirm={confirmSavedJourneyRename}
+                onCancel={() => setJourneyRenamePending(null)}
               />
 
               {/* Unsaved edits. The same dialog component as the delete
