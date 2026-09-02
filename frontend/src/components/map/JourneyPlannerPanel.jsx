@@ -38,7 +38,11 @@ import {
   journeyTerminalTitle,
 } from '../../map/journeySimulationState.js'
 import { journeyPanelStyle } from '../../map/journeyLayout.js'
-import { JOURNEY_PRODUCTS, journeyProductLabel } from '../../map/journeyWorkspace.js'
+import {
+  JOURNEY_CENTER_TITLE,
+  JOURNEY_PRODUCTS,
+  journeyCenterSubtitle,
+} from '../../map/journeyWorkspace.js'
 import SharedTransportJourneyContent from './SharedTransportJourneyContent.jsx'
 import SavedJourneysSection from './SavedJourneysSection.jsx'
 import JourneyHistorySection from './JourneyHistorySection.jsx'
@@ -80,14 +84,6 @@ function pickableLabelOf({ canUseStops, canUsePois }) {
   if (canUseStops) return 'durak'
   if (canUsePois) return 'yer'
   return 'nokta'
-}
-
-/* Ürün adı başlıkta okunur: kullanıcı hangi ÜRÜNE baktığını, hangi kipte
-   olduğundan önce bilmelidir. */
-function workspaceTitle(activeProduct) {
-  return activeProduct === JOURNEY_PRODUCTS.SHARED
-    ? journeyProductLabel(JOURNEY_PRODUCTS.SHARED)
-    : 'Yolculuk'
 }
 
 function formatStepMetric(step) {
@@ -284,21 +280,51 @@ export default function JourneyPlannerPanel({
      ilerleme sayacı üretilmez. */
   const busy = Boolean(loading || live?.starting)
 
+  /* Başlık altındaki bağlam. Kural saf modüldedir; panel yalnızca elindeki
+     değerleri verir ve hiçbir ölçüm hesaplamaz. */
+  const subtitle = journeyCenterSubtitle({
+    product,
+    live: isLive && liveModel
+      ? { label: isTerminal
+        ? journeyTerminalTitle(liveModel.status)
+        : `Sürüyor · %${Math.round(liveModel.progressPercent)}` }
+      : null,
+    shared,
+    planner: {
+      profileLabel: journeyProfileLabelOf(state.profile),
+      /* Serbest kipte DOLDURULMUŞ nokta sayısı; hat kiplerinde nokta sayısı
+         kullanıcının kurduğu bir şey değildir ve sayılmaz. */
+      pointCount: state.mode === JOURNEY_MODES.WAYPOINTS
+        ? state.waypoints.filter((slot) => slot.reference != null).length
+        : 0,
+    },
+  })
+
   return (
     <section
       className={`journey-panel ${collapsed ? 'is-collapsed' : ''}`.trim()}
       /* Ölçüler JS'te TANIMLI, CSS'te tüketilir: 340/240 gibi bir sayı iki
          dosyada birden yaşamaz. */
       style={journeyPanelStyle()}
-      aria-label="Yolculuk çalışma alanı"
+      aria-label={JOURNEY_CENTER_TITLE}
       aria-busy={busy}
     >
       <header className="journey-head">
-        <div className="journey-head-title">
-          {showingShared
-            ? <RouteIcon size={16} aria-hidden="true" />
-            : <ActiveProfileIcon size={16} aria-hidden="true" />}
-          <span>{workspaceTitle(product)}</span>
+        {/* Başlık SABİTTİR ve ürüne göre değişmez: kullanıcı önce nerede
+            olduğunu, sonra hangi ürüne baktığını okur. Ürün adını başlıkta
+            tekrarlamak, hemen altındaki ürün çubuğuyla aynı bilgiyi iki kez
+            yazmaktı. Simge ise BAĞLAMI taşır — paylaşımlı üründe hat, kişisel
+            üründe seçili profil. */}
+        <div className="journey-head-identity">
+          <div className="journey-head-title">
+            {showingShared
+              ? <RouteIcon size={16} aria-hidden="true" />
+              : <ActiveProfileIcon size={16} aria-hidden="true" />}
+            <span>{JOURNEY_CENTER_TITLE}</span>
+          </div>
+          {/* TEK satırlık bağlam özeti; söylenecek bir şey yoksa hiç çizilmez.
+              Değerler panelin zaten elindedir — süslemek için istek atılmaz. */}
+          {subtitle && <p className="journey-head-subtitle">{subtitle}</p>}
         </div>
         <div className="journey-head-actions">
           <button

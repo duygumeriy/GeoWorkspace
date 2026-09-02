@@ -5,7 +5,7 @@ import ActiveSimulationsList from './ActiveSimulationsList.jsx'
 /**
  * Paylaşılan bölümün İKİ görünümü.
  *
- * Bunlar ürün sekmesi DEĞİLDİR (o eksen "Kendi Yolculuğum / Hat Simülasyonu"
+ * Bunlar ürün sekmesi DEĞİLDİR (o eksen "Kendi Yolculuğum / Paylaşımlı Ulaşım"
  * ayrımıdır): aynı ürünün iki bakışıdır — seçili hattın ayrıntısı ve o anda
  * çalışan tüm hatların listesi. Görünüm değiştirmek hiçbir simülasyona,
  * izleme seçimine ya da aboneliğe dokunmaz.
@@ -81,11 +81,16 @@ export default function SharedTransportJourneyContent({
 
   const tabs = active
     ? (
-      <div className="journey-shared-views" role="group" aria-label="Paylaşılan hat görünümü">
+      /* İKİNCİL gezinme dili kullanılır (`journey-tab`), ürün çubuğununki
+         (`journey-product-tab`) DEĞİL. Bunlar aynı ürünün iki bakışıdır;
+         ürün çubuğuyla aynı görünmeleri, kullanıcıya "Seçili Hat"ı
+         "Kendi Yolculuğum" ile aynı eksenin değeri gibi okuturdu. Kişisel
+         ürünün bölümleri de aynı dili kullanır. */
+      <div className="journey-tabs journey-shared-views" role="group" aria-label="Paylaşımlı ulaşım görünümü">
         <button
           type="button"
           aria-pressed={!showingActive}
-          className={`journey-product-tab ${!showingActive ? 'is-active' : ''}`.trim()}
+          className={`journey-tab ${!showingActive ? 'is-active' : ''}`.trim()}
           onClick={() => setView(SHARED_VIEWS.SELECTED)}
         >
           Seçili Hat
@@ -93,7 +98,7 @@ export default function SharedTransportJourneyContent({
         <button
           type="button"
           aria-pressed={showingActive}
-          className={`journey-product-tab ${showingActive ? 'is-active' : ''}`.trim()}
+          className={`journey-tab ${showingActive ? 'is-active' : ''}`.trim()}
           onClick={() => setView(SHARED_VIEWS.ACTIVE)}
         >
           {/* Sayaç bir ROZET değil, listenin büyüklüğüdür; sıfırken de

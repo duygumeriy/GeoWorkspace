@@ -36,11 +36,22 @@
 
 .journey-head {
   display: flex;
-  align-items: center;
+  /* Kimlik iki satır olabilir; eylemler ÜSTE yaslanır ki alt başlık uzadığında
+     düğmeler ortada asılı kalmasın. */
+  align-items: flex-start;
   justify-content: space-between;
   gap: 0.5rem;
   padding: 0.6rem 0.6rem 0.5rem 0.75rem;
   flex-shrink: 0;
+}
+
+/* Başlık + tek satırlık bağlam. `min-width: 0` olmadan uzun bir hat adı
+   düğmeleri panelin dışına iterdi. */
+.journey-head-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
 }
 
 .journey-head-title {
@@ -52,6 +63,17 @@
   letter-spacing: 0.02em;
   text-transform: uppercase;
   color: var(--journey-accent);
+}
+
+/* Bağlam özeti başlıktan görsel olarak GERİDEDİR: kimlik önce okunur.
+   Tek satırda kalır — iki satıra taşan bir özet, başlığı bir bloğa çevirirdi. */
+.journey-head-subtitle {
+  margin: 0;
+  font-size: var(--font-small);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .journey-head-actions { display: flex; gap: 0.15rem; }
@@ -98,10 +120,13 @@
   overflow-y: auto;
 }
 
-/* ÜST DÜZEY ürün seçimi. Kip sekmelerinden (`.journey-tab`) görsel olarak
-   AYRIŞIR: ikisi aynı görünseydi kullanıcı "Hat" kipi ile "Hat Simülasyonu"
-   ürününü aynı eksenin iki değeri sanardı. Ürün çubuğu panelin başlığına
-   yapışır ve altında ince bir ayraç taşır. */
+/* ÜST DÜZEY ürün seçimi. İkincil gezinmeden (`.journey-tab`) görsel olarak
+   AYRIŞIR: ikisi aynı görünseydi kullanıcı "Planla" bölümü ile
+   "Kendi Yolculuğum" ürününü aynı eksenin iki değeri sanardı. Ürün çubuğu
+   panelin başlığına yapışır ve altında ince bir ayraç taşır.
+
+   AYNI GEREKÇE paylaşımlı üründe de geçerlidir: oradaki "Seçili Hat /
+   Aktif Simülasyonlar" da ikincil gezinmedir ve `.journey-tab` kullanır. */
 .journey-products {
   display: flex;
   gap: 0.25rem;
@@ -620,11 +645,9 @@
    Yükseklik panelin kendi ölçüsüne göre esner; ikinci bir yerleşim sistemi
    kurulmaz. */
 
-.journey-shared-views {
-  display: flex;
-  gap: 0.25rem;
-  margin-bottom: 0.1rem;
-}
+/* Düzeni artık `.journey-tabs` verir (ikincil gezinmenin ortak dili); burada
+   yalnızca bölümün kendi alt boşluğu kalır. */
+.journey-shared-views { margin-bottom: 0.1rem; }
 
 .journey-active {
   display: flex;

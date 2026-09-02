@@ -232,7 +232,7 @@ test('the terminal card shows the final server result, computing nothing new', (
      paneldeki kısayol da AYNI cümleyi kullanır. */
   assert.ok(card.includes('journeyTerminalTitle(liveModel.status)'))
   assert.equal(journeyTerminalTitle(JOURNEY_SIMULATION_STATUS.COMPLETED), 'Yolculuk tamamlandı')
-  assert.equal(journeyTerminalTitle(JOURNEY_SIMULATION_STATUS.CANCELLED), 'Yolculuk durduruldu')
+  assert.equal(journeyTerminalTitle(JOURNEY_SIMULATION_STATUS.CANCELLED), 'Yolculuk iptal edildi')
   assert.equal(journeyTerminalTitle('Beklenmeyen'), 'Yolculuk sona erdi')
 
   // Özet satırı (profil · mesafe · süre) her iki evrede de aynı modelden gelir.

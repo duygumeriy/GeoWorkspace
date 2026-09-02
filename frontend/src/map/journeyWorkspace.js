@@ -21,9 +21,21 @@ export const JOURNEY_PRODUCTS = Object.freeze({
   SHARED: 'shared',
 })
 
+/**
+ * Ürün adları.
+ *
+ * <b>Paylaşımlı ürün artık bir SİMÜLASYONDAN fazlasıdır:</b> kalıcı hatlar,
+ * canlı çalıştırmalar, izleme/takip ve — yetkisi olana — yaşam döngüsü
+ * yönetimi. "Hat Simülasyonu" adı bu bütünün yalnızca bir parçasını anlatıyor
+ * ve üst düzey ürün ekseninde kişisel yolculuğun karşısına bir ÖZELLİK adı
+ * koyuyordu. İki ürün de artık ne olduklarıyla adlandırılır.
+ *
+ * Ad yalnızca SUNUMDUR: ürün kimlikleri (`personal` / `shared`), yetkiler ve
+ * hiçbir yaşam döngüsü davranışı bundan etkilenmez.
+ */
 const PRODUCT_LABELS = Object.freeze({
   [JOURNEY_PRODUCTS.PERSONAL]: 'Kendi Yolculuğum',
-  [JOURNEY_PRODUCTS.SHARED]: 'Hat Simülasyonu',
+  [JOURNEY_PRODUCTS.SHARED]: 'Paylaşımlı Ulaşım',
 })
 
 export function journeyProductLabel(product) {
@@ -175,4 +187,55 @@ export function sharedJourneyPresentation({
     resuming: Boolean(resuming),
     error: error || '',
   })
+}
+
+/* --- Yolculuk Merkezi başlığı ---------------------------------------------------
+   Başlık SABİTTİR ve ürüne göre değişmez: kullanıcı önce nerede olduğunu
+   ("Yolculuk Merkezi"), sonra hangi ürüne baktığını (ürün çubuğu) okur.
+   Başlığın ürün adını tekrar etmesi, aynı bilgiyi üst üste iki kez yazmak ve
+   ürün çubuğunu gereksiz kılmaktı. */
+
+/** Panelin değişmeyen kimliği. */
+export const JOURNEY_CENTER_TITLE = 'Yolculuk Merkezi'
+
+/**
+ * Başlığın altındaki TEK satırlık bağlam özeti.
+ *
+ * <b>Yeni veri İSTENMEZ.</b> Yalnızca panelin zaten elinde olan değerler
+ * okunur; süslemek için bir istek atmak, bir metin uğruna sunucuya gitmek
+ * olurdu. Elde anlamlı bir şey yoksa <code>null</code> döner ve satır hiç
+ * çizilmez — boş bir alt başlık, yer kaplayan bir gürültüdür.
+ *
+ * <b>Ölçüm HESAPLANMAZ.</b> Yüzde, süre ya da mesafe burada üretilmez; gelen
+ * etiketler olduğu gibi kullanılır.
+ *
+ * @param {{ product?: string, live?: { label?: string } | null,
+ *           shared?: { routeName?: string, routeId?: number,
+ *                      isActive?: boolean, statusLabel?: string } | null,
+ *           planner?: { profileLabel?: string, pointCount?: number } | null }} context
+ */
+export function journeyCenterSubtitle({ product, live = null, shared = null, planner = null } = {}) {
+  if (product === JOURNEY_PRODUCTS.SHARED) {
+    if (!shared) return null
+
+    const name = shared.routeName || (shared.routeId != null ? `Hat #${shared.routeId}` : null)
+    if (!name) return null
+
+    /* Durum yalnızca ÇALIŞAN bir hat için yazılır. "Aktif simülasyon yok"
+       cümlesi zaten gövdede duruyor; başlıkta tekrarlamak aynı olumsuzu iki
+       kez söylemekti. */
+    return shared.isActive && shared.statusLabel ? `${name} · ${shared.statusLabel}` : name
+  }
+
+  /* Kişisel üründe CANLI durum her şeyin önündedir: çalışan bir yolculuk
+     varken kullanıcının taslağını özetlemek, olup biteni gizlerdi. */
+  if (live?.label) return live.label
+
+  if (!planner?.profileLabel) return null
+
+  const points = Number.isFinite(planner.pointCount) && planner.pointCount > 0
+    ? `${planner.pointCount} nokta`
+    : null
+
+  return [planner.profileLabel, points].filter(Boolean).join(' · ')
 }

@@ -326,7 +326,7 @@ test('a terminal run keeps its final popup from the final server snapshot', () =
   assert.equal(popup.isTerminal, true)
   assert.equal(popup.statusLabel, 'Tamamlandı')
   assert.equal(popup.progressLabel, '%100')
-  assert.equal(journeyStatusLabel(JOURNEY_SIMULATION_STATUS.CANCELLED), 'Durduruldu')
+  assert.equal(journeyStatusLabel(JOURNEY_SIMULATION_STATUS.CANCELLED), 'İptal Edildi')
   assert.equal(journeyStatusLabel('Beklenmeyen'), 'Bilinmiyor')
 })
 

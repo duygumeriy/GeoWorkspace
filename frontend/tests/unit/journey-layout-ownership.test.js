@@ -297,7 +297,7 @@ test('a closed panel announces a terminal journey with the shared wording', () =
     simulation: { simulationId: 'sim-1' },
     snapshot: { simulationId: 'sim-1', status: JOURNEY_SIMULATION_STATUS.CANCELLED, progressPercent: 61 },
   })
-  assert.equal(cancelled.label, 'Yolculuk durduruldu')
+  assert.equal(cancelled.label, 'Yolculuk iptal edildi')
 
   // Benimsenmiş çalıştırma yoksa kısayol sıradan bir düğmedir.
   assert.equal(journeyStatusIndicator({ simulation: null, snapshot: null }), null)
@@ -313,7 +313,9 @@ test('the trigger lives in the existing control stack and reads that status', ()
 
   assert.match(QUICK, /className=\{`quick-action journey-trigger/)
   assert.match(QUICK, /aria-pressed=\{Boolean\(journey\.open\)\}/)
-  assert.match(QUICK, /journey\.status \? `Yolculuk planlayıcısı · \$\{journey\.status\.label\}`/)
+  /* Ad ÜRÜNÜN adıdır (Faz 9): kısayol yalnızca planlayıcıyı değil, kaydedilenleri,
+     geçmişi ve paylaşımlı ulaşımı da açar. */
+  assert.match(QUICK, /journey\.status\s*\n?\s*\? `\$\{JOURNEY_CENTER_TITLE\} · \$\{journey\.status\.label\}`/)
   assert.match(QUICK, /className=\{`journey-trigger-dot is-\$\{journey\.status\.tone\}`\}/)
 
   // Nokta bir bildirim ya da animasyon değildir.

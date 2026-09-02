@@ -1,5 +1,6 @@
 import { Route as RouteIcon, Search } from 'lucide-react'
 import { HomeIcon, CrosshairIcon, FocusIcon } from '../ui/icons/index.js'
+import { JOURNEY_CENTER_TITLE } from '../../map/journeyWorkspace.js'
 import './QuickActions.css'
 
 /**
@@ -64,9 +65,16 @@ export default function QuickActions({
           type="button"
           className={`quick-action journey-trigger ${journey.open ? 'is-open' : ''}`.trim()}
           /* Panel kapalıyken bile yolculuğun SÜRDÜĞÜ söylenir: nokta görsel
-             ipucudur, cümle ise erişilebilir addadır. */
-          aria-label={journey.status ? `Yolculuk planlayıcısı · ${journey.status.label}` : 'Yolculuk planlayıcısı'}
-          title={journey.status ? journey.status.label : 'Yolculuk planla'}
+             ipucudur, cümle ise erişilebilir addadır.
+
+             Ad ÜRÜNÜN adıdır, bir özelliğinki değil: kısayol artık yalnızca
+             planlayıcıyı değil, kaydedilenleri, geçmişi ve paylaşımlı ulaşımı
+             da açıyor. Kenar çubuğundaki satırla AYNI metin kullanılır —
+             kullanıcı iki farklı yerden aynı ürüne gittiğini bilmelidir. */
+          aria-label={journey.status
+            ? `${JOURNEY_CENTER_TITLE} · ${journey.status.label}`
+            : JOURNEY_CENTER_TITLE}
+          title={journey.status ? journey.status.label : JOURNEY_CENTER_TITLE}
           aria-pressed={Boolean(journey.open)}
           onClick={journey.onToggle}
         >

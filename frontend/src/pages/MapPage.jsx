@@ -3918,6 +3918,13 @@ export default function MapPage() {
         canOpenMyPois={canOpenMyPois}
         canOpenMyStops={canOpenMyStops}
         canOpenLocationAnalysis={canOpenLocationAnalysis}
+        /* Yolculuk Merkezi'nin TEK kenar çubuğu girişi. Görünürlük, panelin
+           kendisiyle AYNI yetki hesabından gelir: kullanıcının erişebildiği
+           en az bir ürün varsa satır çıkar. */
+        canOpenJourneyCenter={canOpenJourney}
+        /* Satır paneli açar/kapatır — harita kısayoluyla AYNI eylem. Hiçbir
+           simülasyon, izleme ya da takip durumu değişmez. */
+        onOpenJourneyCenter={toggleJourneyPanel}
         username={username}
         remaining={remaining}
         onLogout={handleLogout}

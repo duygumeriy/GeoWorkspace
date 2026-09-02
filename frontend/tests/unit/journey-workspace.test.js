@@ -87,12 +87,12 @@ test('a user holding both products gets both tabs in a stable order', () => {
 
   assert.deepEqual(journeyProductTabs(BOTH), [
     { id: JOURNEY_PRODUCTS.PERSONAL, label: 'Kendi Yolculuğum' },
-    { id: JOURNEY_PRODUCTS.SHARED, label: 'Hat Simülasyonu' },
+    { id: JOURNEY_PRODUCTS.SHARED, label: 'Paylaşımlı Ulaşım' },
   ])
 
   // Etiketler ÜRÜN adlarıdır; kişisel planlama kipleriyle karışmaz.
   assert.equal(journeyProductLabel(JOURNEY_PRODUCTS.PERSONAL), 'Kendi Yolculuğum')
-  assert.equal(journeyProductLabel(JOURNEY_PRODUCTS.SHARED), 'Hat Simülasyonu')
+  assert.equal(journeyProductLabel(JOURNEY_PRODUCTS.SHARED), 'Paylaşımlı Ulaşım')
   assert.notEqual(journeyProductLabel(JOURNEY_PRODUCTS.SHARED), 'Hat')
 })
 

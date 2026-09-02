@@ -498,13 +498,13 @@ test('başarılı durdurma TERMİNAL yaşam döngüsüne geçirir', () => {
   assert.equal(live.isTerminal, true)
   assert.equal(
     journeyStatusIndicator({ simulation: SIMULATION, snapshot: latest }).label,
-    'Yolculuk durduruldu',
+    'Yolculuk iptal edildi',
   )
 
   // Terminal balonu da aynı otoriteyi okur; ayrı bir metin üretmez.
   assert.equal(
     journeyVehiclePopupModel({ simulation: SIMULATION, snapshot: latest }).statusLabel,
-    'Durduruldu',
+    'İptal Edildi',
   )
 })
 

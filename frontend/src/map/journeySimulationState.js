@@ -151,10 +151,17 @@ export function journeyPhase({ simulation, snapshot } = {}) {
  * Panel de, kapalıyken görünen kısayol da AYNI metni kullanır: iki yerde iki
  * ayrı Türkçe cümle tutmak, zamanla "tamamlandı" ile "bitti"nin yan yana
  * yaşaması demekti. Bilinmeyen bir terminal durum çökertmez.
+ *
+ * <b>İPTAL EDİLDİ, "durduruldu" DEĞİL.</b> Aynı sunucu durumu (`Cancelled`)
+ * canlı panelde "durduruldu", geçmiş listesinde "İptal Edildi" diye
+ * okunuyordu; kullanıcı iki farklı sonuç olduğunu sanabilirdi. Sonucun tek
+ * adı vardır. EYLEM adı ayrıdır ve değişmez: kullanıcı yolculuğu "Durdur"
+ * düğmesiyle bitirir — yaptığı iş durdurmak, sonucun adı ise iptal edilmiş
+ * olmaktır.
  */
 export const JOURNEY_TERMINAL_TITLES = Object.freeze({
   [JOURNEY_SIMULATION_STATUS.COMPLETED]: 'Yolculuk tamamlandı',
-  [JOURNEY_SIMULATION_STATUS.CANCELLED]: 'Yolculuk durduruldu',
+  [JOURNEY_SIMULATION_STATUS.CANCELLED]: 'Yolculuk iptal edildi',
   default: 'Yolculuk sona erdi',
 })
 
@@ -195,7 +202,8 @@ export function journeyStatusIndicator({ simulation, snapshot } = {}) {
 const STATUS_LABELS = Object.freeze({
   [JOURNEY_SIMULATION_STATUS.RUNNING]: 'Sürüyor',
   [JOURNEY_SIMULATION_STATUS.COMPLETED]: 'Tamamlandı',
-  [JOURNEY_SIMULATION_STATUS.CANCELLED]: 'Durduruldu',
+  /* Geçmiş rozetiyle AYNI kelime: tek bir sunucu durumunun tek bir adı olur. */
+  [JOURNEY_SIMULATION_STATUS.CANCELLED]: 'İptal Edildi',
 })
 
 export function journeyStatusLabel(status) {
