@@ -16,40 +16,43 @@
 
 .admin-nav-brand {
   display: flex;
-  align-items: center;
-  gap: 0.65rem;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.35rem;
   padding: 0 0.4rem;
 }
 
-.admin-nav-brand-mark {
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 36px;
-  height: 36px;
-  border-radius: var(--radius-sm);
-  background: var(--gradient-primary);
-  color: #fff;
-  font-size: 13px;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-}
-
-.admin-nav-brand-text {
+/* Levha ve çizim harita kenar çubuğuyla AYNI kurala uyar: aynı jetonlar, aynı
+   ortalama. İki ekran yan yana konduğunda marka aynı görünsün diye kural
+   kopyalanmaz, aynı değişkenler okunur. */
+.admin-nav-brand-plate {
   display: flex;
-  flex-direction: column;
-  min-width: 0;
-  line-height: 1.25;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem 0.45rem;
+  border-radius: var(--radius-md);
+  background: var(--sidebar-brand-plate);
+  border: 1px solid var(--sidebar-brand-plate-border);
+  min-height: 28px;
 }
 
-.admin-nav-brand-text strong {
-  color: var(--text-primary);
-  font-size: 15px;
+.admin-nav-brand-logo {
+  display: block;
+  /* Oran KORUNUR: yalnızca genişlik verilir, yükseklik türetilir. Sabit bir
+     yükseklik 3:1 çizimi ezerdi. */
+  width: min(100%, 228px);
+  height: auto;
 }
 
-.admin-nav-brand-text small {
+/* Bağlam etiketi: hangi ekranda olunduğunu söyler, ikinci bir marka kurmaz —
+   bu yüzden ikincil renkte ve küçük kalır. */
+.admin-nav-brand-context {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: center;
 }
 
 /* --- Gruplar -------------------------------------------------------------- */

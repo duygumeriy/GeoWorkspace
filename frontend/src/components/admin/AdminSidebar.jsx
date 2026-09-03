@@ -6,6 +6,7 @@ import {
   TRANSPORT_ROUTE_SECTION_PERMISSIONS,
 } from '../../auth/permissionCodes.js'
 import { ClockIcon, KeyIcon, MapIcon, PinIcon, ShieldIcon, UserIcon } from '../ui/icons/index.js'
+import infomotionLogo from '../../assets/brand/infomotion-logo.png'
 import './AdminSidebar.css'
 
 /* Tek gezinme tanımı. Sayfalar kendi menülerini kurmaz; bir uç eklemek burada
@@ -14,6 +15,11 @@ import './AdminSidebar.css'
    Her satır, açtığı ekranın GET ucunun aradığı yetkiyi taşır — bu yüzden menü
    ile rota koruyucusu aynı cevabı verir ve görünen bir bağlantı yetkisizlik
    ekranına çıkmaz. */
+/* Harita kenar çubuğuyla AYNI çizim ve aynı erişilebilir ad: iki ekran tek
+   ürün gibi okunsun diye marka ikinci kez çizilmez, var olan varlık yeniden
+   kullanılır. */
+const BRAND_ALT = 'Info&Motion — Sahadan veriye, veriden harekete.'
+
 const NAV_ITEMS = [
   { to: '/admin/users', label: 'Kullanıcılar', Icon: UserIcon, anyOf: [PERMISSIONS.USERS_VIEW] },
   { to: '/admin/roles', label: 'Roller', Icon: ShieldIcon, anyOf: [PERMISSIONS.ROLES_VIEW] },
@@ -50,11 +56,13 @@ export default function AdminSidebar({ onNavigate }) {
   return (
     <nav className="admin-nav" aria-label="Yönetim menüsü">
       <div className="admin-nav-brand">
-        <span className="admin-nav-brand-mark" aria-hidden="true">GW</span>
-        <span className="admin-nav-brand-text">
-          <strong>GeoWorkspace</strong>
-          <small>Yönetim Paneli</small>
+        {/* Ad ve slogan çizimin İÇİNDEDİR; yanına ikinci bir başlık konmaz.
+            Altta duran yalnızca bağlam etiketidir: hangi ekranda olunduğunu
+            söyler, ayrı bir marka kurmaz. */}
+        <span className="admin-nav-brand-plate">
+          <img className="admin-nav-brand-logo" src={infomotionLogo} alt={BRAND_ALT} />
         </span>
+        <span className="admin-nav-brand-context">Yönetim Paneli</span>
       </div>
 
       {/* Tek bir bölüm bile görünmüyorsa başlık da çizilmez: boş bir "Yönetim"
