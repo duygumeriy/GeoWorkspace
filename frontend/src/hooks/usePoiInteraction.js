@@ -22,9 +22,10 @@ const HIT_TOLERANCE = 8
  * mevcut araçlarla paylaşmak zorunda kalırdı.
  *
  * @param {import('ol/Map').default | null} map
- * @param {{ enabled: boolean, onSelect: (poi: object|null) => void }} options
+ * @param {{ enabled: boolean, onSelect: (poi: object|null) => void,
+ *           isPoiVisible?: (poiId: number) => boolean }} options
  */
-export default function usePoiInteraction(map, { enabled, onSelect }) {
+export default function usePoiInteraction(map, { enabled, onSelect, isPoiVisible = () => true }) {
   useEffect(() => {
     if (!map || !enabled) return undefined
 
@@ -34,6 +35,7 @@ export default function usePoiInteraction(map, { enabled, onSelect }) {
         (feature, layer) =>
           layer?.getClassName?.().includes(POI_LAYER_CLASSNAME)
           && feature.get('featureKind') === POI_FEATURE_KIND
+          && isPoiVisible(feature.get('poiId'))
             ? feature
             : null,
         { hitTolerance: HIT_TOLERANCE },
@@ -52,5 +54,5 @@ export default function usePoiInteraction(map, { enabled, onSelect }) {
     return () => {
       map.un('singleclick', handleClick)
     }
-  }, [map, enabled, onSelect])
+  }, [map, enabled, onSelect, isPoiVisible])
 }

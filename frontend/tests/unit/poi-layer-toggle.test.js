@@ -30,14 +30,14 @@ const sidebar = read('../../src/components/map/Sidebar.jsx')
 
 /* --- Satırın kendisi ---------------------------------------------------------- */
 
-test("the panel offers a fourth row, POI'ler, next to the drawing types", () => {
+test("the panel offers a canonical POI'ler group", () => {
   assert.match(panel, /POI'ler/)
   assert.match(panel, /data-testid="layers-poi-row"/)
 
-  // Çizim türleriyle AYNI görsel dil: aynı satır sınıfı, aynı AÇIK/KAPALI metni.
+  // Kalıcı kayıt gruplarıyla aynı disclosure/checkbox dili.
   const row = panel.slice(panel.indexOf('data-testid="layers-poi-row"'))
-  assert.match(row.slice(0, 900), /layers-row/)
-  assert.match(row.slice(0, 900), /AÇIK.*KAPALI|KAPALI/s)
+  assert.match(row.slice(0, 1400), /Disclosure/)
+  assert.match(row.slice(0, 1400), /VisibilityCheckbox/)
 
   // İkinci bir simge kütüphanesi eklenmedi.
   assert.match(panel, /from 'lucide-react'/)
@@ -46,17 +46,33 @@ test("the panel offers a fourth row, POI'ler, next to the drawing types", () => 
 test('POI is NOT folded into the drawing type list', () => {
   /* Katılsaydı toplu seçime, stil düzenleyicisine ve /api/drawings/* uçlarına
      da kendiliğinden karışırdı. */
-  assert.match(panel, /DRAWING_TYPE_LIST\.map/)
-  const list = stripComments(between(panel, 'DRAWING_TYPE_LIST.map', 'data-testid="layers-poi-row"'))
-  assert.ok(!/POI/.test(list))
+  assert.match(panel, /drawings\?\.permitted/)
+  assert.match(panel, /poi\?\.permitted/)
+  assert.ok(!/\/api\/drawings/.test(stripComments(panel)))
 })
 
 /* --- Yetki --------------------------------------------------------------------- */
 
 test('the row appears only for a caller holding poi.view, and by permission alone', () => {
-  assert.match(panel, /\{poi\?\.permitted && \(/)
+  /* Kapı satır içi JSX yerine adlandırılmış bir türetmededir; ölçülen şey
+     kapının KENDİSİDİR, yazıldığı yer değil. */
+  const showPoi = between(panel, 'const showPoi =', '\n').replace('const showPoi =', '').trim()
+  assert.match(showPoi, /^poi\?\.permitted && poi\.count > 0 &&/)
 
-  const props = between(page, 'poi={{', 'onTogglePoi=')
+  /* Arama yalnızca SUNUM süzgecidir: kendi başına satırı açamaz, yani yetki
+     ve kayıt varlığı dışında alternatif bir dal yoktur. */
+  const withoutSearchFilter = showPoi.replace(/\(!searching \|\| [^)]*\)/, '')
+  assert.ok(!withoutSearchFilter.includes('||'), 'no alternative branch may substitute for poi.view')
+
+  /* Bölüm YALNIZCA bu türetmeden geçer; kapı ile satır arasında ikinci bir
+     koşullu giriş yoktur. */
+  assert.equal((panel.match(/data-testid="layers-poi-row"/g) ?? []).length, 1)
+  assert.match(panel, /\{showPoi && \(\s*<section className="layers-section" data-testid="layers-poi-row">/)
+
+  /* Panel yetkisiz POI verisini kendisi çekmez. */
+  assert.doesNotMatch(stripComments(panel), /fetch|\/api\//)
+
+  const props = between(page, 'poi={{', 'onSetPoiVisibility=')
   assert.match(props, /permitted: allowed\.canViewPoi/)
 
   /* Rol adına bakan hiçbir kural yoktur — ne burada ne panelde. */
@@ -78,86 +94,67 @@ test('without poi.view no POI data or presentation request is authorized', () =>
 
 /* --- Varsayılan ---------------------------------------------------------------- */
 
-test('the POI layer starts visible', () => {
+test('the POI record visibility starts with an empty hidden-ID set', () => {
   /* POI'ler haritanın normal içeriğidir; gizli açılmaları kullanıcıya kayıp
      veri gibi görünürdü. */
-  assert.match(page, /const \[poiLayerVisible, setPoiLayerVisible\] = useState\(true\)/)
+  const visibilityHook = read('../../src/hooks/useLayerVisibility.js')
+  assert.match(visibilityHook, /hiddenPoiIds, setHiddenPoiIds\] = useState\(\(\) => new Set\(\)\)/)
 })
 
 /* --- KAPALI -------------------------------------------------------------------- */
 
-test('turning it off hides the real layers, not just their style', () => {
-  /* Saydam bir stil POI'yi görünmez ama TIKLANABİLİR bırakırdı. */
-  assert.match(hook, /layerRef\.current\?\.setVisible\(visible\)/)
-  assert.match(page, /const normalPoiLayerVisible = poiLayerVisible && !locationAnalysisResultActive/)
-  assert.match(page, /visible: normalPoiLayerVisible/)
-
-  // WMS rasteri de aynı anahtardan geçer.
-  assert.match(page, /permitted: allowed\.canViewPoi && normalPoiLayerVisible/)
+test('individual hiding returns no vector style and suspends the complete raster', () => {
+  const poiMap = read('../../src/map/poi.js')
+  assert.match(poiMap, /if \(!isPoiVisible\(feature\.get\('poiId'\)\)\) return undefined/)
+  assert.match(page, /suspended: layerVisibility\.hiddenPoiIds\.size > 0/)
 })
 
-test('turning it off stops POI hit detection', () => {
-  const gate = between(page, 'const poiClickEnabled', 'const handlePoiSelected')
-
-  assert.match(gate, /allowed\.canViewPoi/)
-  assert.match(gate, /normalPoiLayerVisible/)
+test('individual hiding stops POI hit detection through the no-style predicate', () => {
+  assert.match(hook, /isRecordVisible\(hiddenIdsRef\.current, poiId\)/)
+  assert.match(hook, /sourceRef\.current\?\.changed\(\)/)
 })
 
-test('no presentation request is issued while the layer is hidden', () => {
+test('no presentation request is issued while individual filtering is active', () => {
   /* Kanca yetkisiz durumda katmanı HİÇ kurmaz ve hiçbir dinleyici bağlamaz;
      kapalı katman aynı yoldan geçer, dolayısıyla kaydırma/yakınlaşma boyunca
      istek üretilmez. */
   const raster = read('../../src/hooks/usePoiPresentationLayer.js')
-  const guard = raster.slice(raster.indexOf('if (!map || !permitted)'), raster.indexOf('let disposed'))
-
-  assert.match(guard, /return undefined/)
-  assert.match(guard, /setLayerActive\(false\)/)
-
-  // Uçan istek, effect'in kendi temizliğinde iptal edilir.
-  assert.match(raster, /entry\.controller\?\.abort\(\)/)
-  assert.match(raster, /entry\.requestNumber \+= 1/)
+  assert.match(raster, /if \(suspendedRef\.current\) return/)
+  assert.match(raster, /!suspendedRef\.current/)
 })
 
-test('hiding the layer retires the selection and its panel', () => {
-  /* Görünmeyen bir kaydı anlatan açık bir panel bırakmak, kullanıcıya haritada
-     olmayan bir şeyi gösterirdi. Aynı kural çizim tarafında da vardır. */
-  const toggle = between(page, 'const togglePoiLayer', '}, [mapContext])')
-
-  assert.match(toggle, /mapContext\.close\(MAP_CONTEXTS\.poiInfo\)/)
-  assert.match(toggle, /setSelectedPoi\(null\)/)
+test('individual hiding does not mutate POI selection state', () => {
+  const visibilityHook = read('../../src/hooks/useLayerVisibility.js')
+  assert.ok(!/setSelectedPoi|mapContext/.test(visibilityHook))
 })
 
 test('toggling is pure presentation: it never writes to the database', () => {
-  const toggle = between(page, 'const togglePoiLayer', '}, [mapContext])')
+  const toggle = read('../../src/hooks/useLayerVisibility.js')
 
   for (const mutation of ['deletePoi', 'updatePoi', 'createPoi', 'fetch', 'authFetch', 'restore']) {
     assert.ok(!toggle.includes(mutation), `${mutation} must not run on a visibility toggle`)
   }
 
-  // Panelin kendi metni de bunu söyler ve değişmedi.
-  assert.match(panel, /kayıtlar veritabanında kalır/)
+  assert.match(panel, /kayıtlar korunur/)
 })
 
 /* --- AÇIK ---------------------------------------------------------------------- */
 
-test('turning it back on refetches the image but NOT the records', () => {
+test('showing every POI restores presentation without refetching records', () => {
   /* Görünürlük yetkiden ayrıdır: katmanı kapatmak veriyi atmaz. Kaynak yalnızca
      `permitted` düştüğünde boşaltılır. */
-  const clear = between(hook, 'if (permitted) {', '}, [permitted, load])')
-
-  assert.match(clear, /sourceRef\.current\?\.clear\(\)/)
-  assert.ok(!/visible/.test(clear), 'visibility must not clear the source')
-
-  // Raster yeniden kurulduğunda ilk yüklemesini kendisi yapar.
   const raster = read('../../src/hooks/usePoiPresentationLayer.js')
-  assert.match(raster, /map\.on\('change:size', scheduleLoad\)\n    scheduleLoad\(\)/)
+  assert.match(raster, /if \(!suspended\) scheduleLoadRef\.current\?\.\(\)/)
+  const visibilityRedraw = between(hook, '/* Seçim değiştiğinde', '/* --- Veri')
+  assert.match(visibilityRedraw, /sourceRef\.current\?\.changed\(\)/)
+  assert.ok(!/clear\(/.test(visibilityRedraw))
 })
 
 /* --- Sayaç --------------------------------------------------------------------- */
 
 test('the count comes from the records already loaded, not a second request', () => {
-  assert.match(hook, /setCount\(source\.getFeatures\(\)\.length\)/)
-  assert.match(hook, /const syncCount = useCallback/)
+  assert.match(hook, /setCount\(canonicalPois\.length\)/)
+  assert.match(hook, /const syncRecords = useCallback/)
   assert.match(page, /count: poi\.count/)
 
   /* Sunucu listeyi kendi kurallarıyla süzer (aktif, silinmemiş, kategorisi
@@ -167,17 +164,17 @@ test('the count comes from the records already loaded, not a second request', ()
 })
 
 test('the count follows create and delete without a refetch', () => {
-  assert.match(hook, /if \(feature\) sourceRef\.current\?\.addFeature\(feature\)\n    syncCount\(\)/)
-  assert.match(hook, /if \(existing\) source\.removeFeature\(existing\)\n    syncCount\(\)/)
+  assert.match(hook, /if \(feature\) sourceRef\.current\?\.addFeature\(feature\)\n    syncRecords\(\)/)
+  assert.match(hook, /if \(existing\) source\.removeFeature\(existing\)\n    syncRecords\(\)/)
 })
 
 /* --- Yan etkisizlik ------------------------------------------------------------ */
 
-test('the POI switch touches nothing else on the map', () => {
-  const toggle = between(page, 'const togglePoiLayer', '}, [mapContext])')
+test('the POI visibility state touches nothing else on the map', () => {
+  const toggle = read('../../src/hooks/useLayerVisibility.js')
 
   for (const other of [
-    'toggleVisibility', 'setScopeLayerVisible', 'heatmap', 'presentationActiveRef',
+    'setScopeLayerVisible', 'heatmap', 'presentationActiveRef',
     'point', 'line', 'polygon',
   ]) {
     assert.ok(!toggle.includes(other), `${other} must be untouched`)
@@ -186,13 +183,13 @@ test('the POI switch touches nothing else on the map', () => {
 
 test('search never re-enables a layer the user hid', () => {
   /* Görünürlük açık bir tercihtir; arama onu sessizce geri almaz. */
-  const handler = between(page, 'const focusSearchResult', 'const togglePoiLayer')
+  const handler = between(page, 'const focusSearchResult', 'const zoomToSelectedPoi')
 
-  assert.match(handler, /if \(!poiLayerVisible\) return/)
-  assert.ok(!/setPoiLayerVisible/.test(handler))
+  assert.match(handler, /isPoiSelectable\(result\.id\)/)
+  assert.ok(!/setHiddenPoiIds/.test(handler))
 
   // Kamera yine de gider: veri keşfi bir sunum kararı değildir.
-  assert.ok(handler.indexOf('mapView.focusPoi(') < handler.indexOf('if (!poiLayerVisible) return'))
+  assert.ok(handler.indexOf('mapView.focusPoi(') < handler.indexOf('isPoiSelectable('))
 })
 
 test('the creation draft is a separate layer and survives the switch', () => {
@@ -202,7 +199,7 @@ test('the creation draft is a separate layer and survives the switch', () => {
   assert.match(poiModule, /export function createPoiPendingLayer/)
   assert.match(poiModule, /export function createPoiDraftLayer/)
 
-  const toggle = between(page, 'const togglePoiLayer', '}, [mapContext])')
+  const toggle = read('../../src/hooks/useLayerVisibility.js')
   assert.ok(!/pending|draft|Placement/i.test(toggle))
 })
 

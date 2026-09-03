@@ -164,6 +164,7 @@ export function createTransportLayers(
   stopsVisible = () => true,
   routeVisible = () => true,
   hoveredRouteId = () => null,
+  stopVisible = () => true,
 ) {
   const routeSource = new VectorSource()
   const pathSource = new VectorSource()
@@ -208,6 +209,7 @@ export function createTransportLayers(
     source: stopSource,
     className: TRANSPORT_STOP_LAYER_CLASSNAME,
     style: (feature) => {
+      if (!stopVisible(feature.get('stopId'))) return undefined
       const selected = feature.get('stopId') === selectedStopId()
       /* Duraklar kapalıyken Duraklarım odağı yalnızca seçili durağı
          geçici gösterir; kullanıcının kalıcı tercihi değişmez. */

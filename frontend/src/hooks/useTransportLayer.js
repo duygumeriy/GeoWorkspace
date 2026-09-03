@@ -3,6 +3,7 @@ import { readApiError } from '../services/api.js'
 import { fetchTransportRoutePaths, fetchTransportRoutes, fetchTransportRouteStops } from '../services/transportApi.js'
 import { createTransportLayers, transportFeatures } from '../map/transport.js'
 import { boundingExtent } from 'ol/extent.js'
+import { isRecordVisible } from '../map/layerVisibility.js'
 
 const EMPTY_HIDDEN_ROUTE_IDS = Object.freeze([])
 
@@ -14,6 +15,7 @@ export default function useTransportLayer(map, {
   routesVisible = true,
   stopsVisible = true,
   hiddenRouteIds = EMPTY_HIDDEN_ROUTE_IDS,
+  hiddenStopIds = EMPTY_HIDDEN_ROUTE_IDS,
   showToast,
   onSnapshot,
 }) {
@@ -29,12 +31,14 @@ export default function useTransportLayer(map, {
   const routesVisibleRef = useRef(routesVisible)
   const stopsVisibleRef = useRef(stopsVisible)
   const hiddenRouteIdsRef = useRef(new Set(hiddenRouteIds))
+  const hiddenStopIdsRef = useRef(new Set(hiddenStopIds))
   selectedStopIdRef.current = selectedStopId
   selectedRouteIdRef.current = selectedRouteId
   hoveredRouteIdRef.current = hoveredRouteId
   routesVisibleRef.current = routesVisible
   stopsVisibleRef.current = stopsVisible
   hiddenRouteIdsRef.current = new Set(hiddenRouteIds)
+  hiddenStopIdsRef.current = new Set(hiddenStopIds)
   const requestIdRef = useRef(0)
   const [routes, setRoutes] = useState([])
   const [stops, setStops] = useState([])
@@ -50,6 +54,7 @@ export default function useTransportLayer(map, {
       () => stopsVisibleRef.current,
       (routeId) => !hiddenRouteIdsRef.current.has(routeId),
       () => hoveredRouteIdRef.current,
+      (stopId) => isRecordVisible(hiddenStopIdsRef.current, stopId),
     )
     routeSourceRef.current = layers.routeSource
     pathSourceRef.current = layers.pathSource
@@ -81,7 +86,7 @@ export default function useTransportLayer(map, {
     stopLayerRef.current?.changed()
     routeLayerRef.current?.changed()
     pathLayerRef.current?.changed()
-  }, [selectedStopId, selectedRouteId, hoveredRouteId, routesVisible, stopsVisible, hiddenRouteIds])
+  }, [selectedStopId, selectedRouteId, hoveredRouteId, routesVisible, stopsVisible, hiddenRouteIds, hiddenStopIds])
 
   const load = useCallback(async () => {
     if (!map || !permitted) return

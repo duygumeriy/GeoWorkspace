@@ -15,6 +15,8 @@ import {
   isRecordVisible,
   poiCategoryScopeIds,
   poiIdsInCategoryScope,
+  reconcileHiddenDrawingIds,
+  reconcileHiddenIds,
   showDrawing,
   showDrawings,
   showRecord,
@@ -249,4 +251,16 @@ test('bulk action uses canonical membership and preserves hidden records outside
   assert.deepEqual(filteredRows.map((poi) => poi.id), [10])
   assert.deepEqual([...hidden], [20, 10, 11, 12])
   assert.equal(hidden.has(20), true)
+})
+
+test('stale numeric hidden IDs are reconciled against canonical records', () => {
+  const current = new Set([2, 99])
+  assert.deepEqual([...reconcileHiddenIds(current, [1, 2, 3])], [2])
+  assert.equal(reconcileHiddenIds(current, [2, 99]), current)
+  assert.deepEqual([...reconcileHiddenIds(new Set([2, Number.NaN]), [2])], [2])
+})
+
+test('stale composite drawing identities are reconciled without cross-type collisions', () => {
+  const current = new Set(['point:2', 'line:2', 'polygon:99'])
+  assert.deepEqual([...reconcileHiddenDrawingIds(current, ['point:2', 'line:2'])], ['point:2', 'line:2'])
 })

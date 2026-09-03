@@ -84,6 +84,15 @@ export function hideRecords(hiddenIds, recordIds) {
   return next
 }
 
+/** Drops preferences for records no longer present while preserving identity when unchanged. */
+export function reconcileHiddenIds(hiddenIds, recordIds) {
+  const current = canonicalHiddenIds(hiddenIds)
+  const canonical = new Set(canonicalRecordIds(recordIds))
+  const next = new Set([...current].filter((id) => canonical.has(id)))
+  const inputIsCanonicalSet = hiddenIds instanceof Set && hiddenIds.size === current.size
+  return inputIsCanonicalSet && next.size === current.size ? hiddenIds : next
+}
+
 /**
  * Empty groups are deliberately unchecked, not "all visible" by vacuous truth.
  * This gives an empty parent a safe, non-actionable visual state.
@@ -214,6 +223,14 @@ export function hideDrawings(hiddenIds, identities) {
   const next = canonicalHiddenDrawingIds(hiddenIds)
   for (const id of canonicalDrawingIdentities(identities)) next.add(id)
   return next
+}
+
+export function reconcileHiddenDrawingIds(hiddenIds, identities) {
+  const current = canonicalHiddenDrawingIds(hiddenIds)
+  const canonical = new Set(canonicalDrawingIdentities(identities))
+  const next = new Set([...current].filter((id) => canonical.has(id)))
+  const inputIsCanonicalSet = hiddenIds instanceof Set && hiddenIds.size === current.size
+  return inputIsCanonicalSet && next.size === current.size ? hiddenIds : next
 }
 
 export function drawingVisibilityState(identities, hiddenIds) {

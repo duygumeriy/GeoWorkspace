@@ -80,7 +80,7 @@ import {
  */
 export default function usePoiPresentationLayer(
   map,
-  { permitted, version = 0, activeRef = null, onChange = null },
+  { permitted, suspended = false, version = 0, activeRef = null, onChange = null },
 ) {
   const [active, setActive] = useState(false)
   const [error, setError] = useState(null)
@@ -93,6 +93,9 @@ export default function usePoiPresentationLayer(
 
   const versionRef = useRef(version)
   versionRef.current = version
+
+  const suspendedRef = useRef(suspended)
+  suspendedRef.current = suspended
 
   /** Katmanın canlı durumu; effect'lerden erişilebilir. */
   const entryRef = useRef(null)
@@ -134,7 +137,8 @@ export default function usePoiPresentationLayer(
     const resolution = map?.getView()?.getResolution() ?? null
 
     const shown =
-      !entry.failed
+      !suspendedRef.current
+      && !entry.failed
       && entry.imageVersion !== null
       && entry.imageVersion === versionRef.current
       && entry.imageResolution !== null
@@ -182,6 +186,7 @@ export default function usePoiPresentationLayer(
     entryRef.current = entry
 
     const load = async () => {
+      if (suspendedRef.current) return
       const size = map.getSize()
       const view = map.getView()
       if (!size || size[0] <= 0 || size[1] <= 0 || view.getProjection().getCode() !== 'EPSG:3857') return
@@ -274,6 +279,13 @@ export default function usePoiPresentationLayer(
       setLayerActive(false)
     }
   }, [map, permitted, setLayerActive, syncLayer])
+
+  /* Individual filtering hands presentation to the vector layer. The current
+     image is retained and can return immediately when every POI is visible. */
+  useEffect(() => {
+    syncLayer()
+    if (!suspended) scheduleLoadRef.current?.()
+  }, [suspended, syncLayer])
 
   /* Her BAŞARILI POI mutasyonu görüntüyü geçersizleştirir. Gizleme hemen olur
      ki silinmiş ya da taşınmış bir POI hayalet olarak kalmasın; yerine geleni

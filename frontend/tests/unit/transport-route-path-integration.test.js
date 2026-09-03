@@ -198,15 +198,30 @@ test('global stop create, delete, move or transfer, and restore use the same pat
 test('master and child route toggles are independent from the stop toggle', () => {
   assert.match(mapPage, /hiddenTransportRouteIds/)
   assert.match(mapPage, /onToggleTransportRoute=\{toggleTransportRoute\}/)
-  assert.match(mapPage, /onToggleTransportStops=\{\(\) => setTransportStopsVisible/)
+  assert.match(mapPage, /onSetTransportStops=\{layerVisibility\.setStopVisible\}/)
   assert.match(layers, /aria-label="Güzergah görünürlüğü"/)
   assert.match(layers, /onToggleTransportRoute\?\.\(route\.id\)/)
-  assert.match(layers, /transport\.routes\.map/)
+  assert.match(layers, /routes\.map/)
 })
 
 test('the child list reflects active accessible routes already loaded by transport.view', () => {
   assert.match(hook, /filter\(\(route\) => route\.isActive === true\)/)
   assert.match(mapPage, /permitted: allowed\.canViewTransport/)
   assert.match(mapPage, /routes: transport\.routes\.map/)
-  assert.match(layers, /\{transport\?\.permitted &&/)
+  assert.match(mapPage, /routeCount: transport\.routes\.length/)
+  assert.match(mapPage, /visible: !hiddenTransportRouteIds\.has\(route\.id\)/)
+
+  // Kapı adlandırılmış bir türetmededir; yetki ve yüklenmiş kayıt sayısı zorunludur.
+  const showRoutes = sourceSection(layers, 'const showRoutes =', '\n').replace('const showRoutes =', '').trim()
+  assert.match(showRoutes, /^transport\?\.permitted && transport\.routeCount > 0 &&/)
+
+  // Arama yalnızca sunum süzgecidir; yetkinin yerine geçen bir dal yoktur.
+  const withoutSearchFilter = showRoutes.replace(/\(!searching \|\| [^)]*\)/, '')
+  assert.ok(!withoutSearchFilter.includes('||'), 'no alternative branch may substitute for transport.view')
+
+  // Güzergâh bölümü YALNIZCA bu türetmeden geçer ve verisini kendisi çekmez.
+  const routeListAt = layers.indexOf('aria-label="Güzergah görünürlüğü"')
+  const routeGateAt = layers.lastIndexOf('{showRoutes && (', routeListAt)
+  assert.ok(routeGateAt >= 0, 'the route section must be rendered through showRoutes')
+  assert.doesNotMatch(layers, /fetch|\/api\//)
 })

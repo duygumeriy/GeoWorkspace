@@ -36,6 +36,7 @@ export default function useTransportStopInteraction(map, {
      dokunmaz — sonuç tipinde böyle bir alan zaten yoktur. */
   onClearRoute = null,
   isRouteVisible = () => true,
+  isStopVisible = () => true,
 }) {
   useEffect(() => {
     if (!map || !enabled) return undefined
@@ -45,7 +46,7 @@ export default function useTransportStopInteraction(map, {
          yalnızca sonucu uygular. Araç kendi balonunu
          `useTransportVehicleLayer` üzerinden açar, bu yüzden burada yalnızca
          çekilinir — iki yerde iki farklı isabet kuralı yazılmaz. */
-      const hit = resolveTransportClick(map, event.pixel, { isRouteVisible })
+      const hit = resolveTransportClick(map, event.pixel, { isRouteVisible, isStopVisible })
 
       /* İsabetin SEÇİMDEKİ karşılığı saf `transportClickOutcome`'dadır; bu
          kanca yalnızca uygular. Sonuç tipi hiçbir yaşam döngüsü alanı
@@ -75,7 +76,7 @@ export default function useTransportStopInteraction(map, {
 
     map.on('singleclick', handleClick)
     return () => map.un('singleclick', handleClick)
-  }, [map, enabled, onSelect, onSelectRoute, onClearRoute, isRouteVisible])
+  }, [map, enabled, onSelect, onSelectRoute, onClearRoute, isRouteVisible, isStopVisible])
 
   useEffect(() => {
     if (!map || !enabled || !hoverEnabled) return undefined
@@ -86,7 +87,8 @@ export default function useTransportStopInteraction(map, {
         event.pixel,
         (feature, layer) =>
           layer?.getClassName?.().includes(TRANSPORT_STOP_LAYER_CLASSNAME)
-          && feature.get('featureKind') === TRANSPORT_STOP_KIND,
+          && feature.get('featureKind') === TRANSPORT_STOP_KIND
+          && isStopVisible(feature.get('stopId')),
         { hitTolerance: HIT_TOLERANCE },
       )
       if (found) {
@@ -102,5 +104,5 @@ export default function useTransportStopInteraction(map, {
       map.un('pointermove', handleMove)
       if (ownsCursor && map.getTargetElement()) map.getTargetElement().style.cursor = ''
     }
-  }, [map, enabled, hoverEnabled])
+  }, [map, enabled, hoverEnabled, isStopVisible])
 }

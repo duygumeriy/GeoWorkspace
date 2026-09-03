@@ -113,6 +113,7 @@ export default function useDrawingWorkspace(
        null bırakıldığında hiçbir tür WMS'e devredilmez: vektörler eskisi gibi
        kendi normal stilini çizer. */
     presentationActiveRef = null,
+    hiddenDrawingIds = new Set(),
   },
 ) {
   const sourceRef = useRef(null)
@@ -194,8 +195,8 @@ export default function useDrawingWorkspace(
 
   // The layer style function runs outside React, so it reads live values from
   // refs rather than closed-over state.
-  const renderStateRef = useRef({ selectedKeys: EMPTY_SELECTION, visibility: ALL_VISIBLE })
-  renderStateRef.current = { selectedKeys, visibility }
+  const renderStateRef = useRef({ selectedKeys: EMPTY_SELECTION, visibility: ALL_VISIBLE, hiddenDrawingIds: new Set() })
+  renderStateRef.current = { selectedKeys, visibility, hiddenDrawingIds }
 
   /* Sunum durumu render state'ine KOPYALANMAZ, okunur: WMS görüntüsü bir
      React render'ı olmadan da yerine oturabilir ve stil fonksiyonu o anki
@@ -310,7 +311,7 @@ export default function useDrawingWorkspace(
   // Selection and visibility are render inputs; nudge the layer when they change.
   useEffect(() => {
     refreshLayer()
-  }, [selectedKeys, visibility, refreshLayer])
+  }, [hiddenDrawingIds, selectedKeys, visibility, refreshLayer])
 
   /* --- Load ----------------------------------------------------------------
      The backend returns ONLY the current user's active, non-deleted records,
@@ -446,8 +447,9 @@ export default function useDrawingWorkspace(
   )
 
   const isVisible = useCallback(
-    (feature) => visibility[feature.get('drawingType')] !== false,
-    [visibility],
+    (feature) => visibility[feature.get('drawingType')] !== false
+      && !hiddenDrawingIds.has(`${feature.get('drawingType')}:${feature.get('databaseId')}`),
+    [visibility, hiddenDrawingIds],
   )
 
   /** "Tüm Görünenleri Seç": everything on screen, nothing from a hidden layer. */
@@ -1300,11 +1302,11 @@ export default function useDrawingWorkspace(
 
     const extent = createEmpty()
     for (const feature of source.getFeatures()) {
-      if (visibility[feature.get('drawingType')] === false) continue
+      if (!isVisible(feature)) continue
       extend(extent, feature.getGeometry().getExtent())
     }
     return isEmpty(extent) ? null : extent
-  }, [visibility])
+  }, [isVisible])
 
   const extentOf = useCallback(
     (key) => featureByKey(key)?.getGeometry()?.getExtent() ?? null,
@@ -1355,8 +1357,9 @@ export default function useDrawingWorkspace(
 
   /** How many features are on screen right now — enables "Tüm Görünenleri Seç". */
   const visibleCount = useMemo(
-    () => drawings.filter((item) => visibility[item.type] !== false).length,
-    [drawings, visibility],
+    () => drawings.filter((item) => visibility[item.type] !== false
+      && !hiddenDrawingIds.has(`${item.type}:${item.databaseId}`)).length,
+    [drawings, visibility, hiddenDrawingIds],
   )
 
   return {
