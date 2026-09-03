@@ -35,7 +35,10 @@ export const TRANSPORT_CLICK_TARGET = Object.freeze({
  *
  * Gizlenmiş güzergah seçilemez: kullanıcı onu bilerek kapatmıştır.
  */
-export function resolveTransportClick(map, pixel, { isRouteVisible = () => true } = {}) {
+export function resolveTransportClick(map, pixel, {
+  isRouteVisible = () => true,
+  isStopVisible = () => true,
+} = {}) {
   if (!map || !pixel) return { target: TRANSPORT_CLICK_TARGET.NONE, stop: null, routeId: null }
 
   const featureAt = (className, kind, tolerance) => map.forEachFeatureAtPixel(
@@ -52,7 +55,7 @@ export function resolveTransportClick(map, pixel, { isRouteVisible = () => true 
   }
 
   const stopFeature = featureAt(TRANSPORT_STOP_LAYER_CLASSNAME, TRANSPORT_STOP_KIND, STOP_HIT_TOLERANCE)
-  if (stopFeature) {
+  if (stopFeature && isStopVisible(stopFeature.get('stopId'))) {
     return {
       target: TRANSPORT_CLICK_TARGET.STOP,
       stop: stopFeature.get('transportStop') ?? null,

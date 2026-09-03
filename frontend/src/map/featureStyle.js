@@ -6,6 +6,7 @@ import Fill from 'ol/style/Fill.js'
 import Stroke from 'ol/style/Stroke.js'
 import CircleStyle from 'ol/style/Circle.js'
 import { DRAWING_TYPES, normalizeStyle } from './drawingTypes.js'
+import { drawingIdentity } from './layerVisibility.js'
 
 /**
  * Turns the style metadata stored in PostGIS into OpenLayers styles.
@@ -199,6 +200,7 @@ function selectionHaloStyle(typeId, safe) {
  * did. The map is never blank because a rendering service is down.
  *
  * @param {() => { selectedKeys: Set<string>, visibility: Record<string, boolean>,
+ *                 hiddenDrawingIds?: Set<string>,
  *                 presentationActive?: Record<string, boolean> }} getRenderState
  */
 export function createLayerStyleFunction(getRenderState) {
@@ -206,12 +208,15 @@ export function createLayerStyleFunction(getRenderState) {
     const typeId = feature.get('drawingType')
     if (!DRAWING_TYPES[typeId]) return undefined
 
-    const { selectedKeys, visibility, presentationActive } = getRenderState?.() ?? {}
+    const { selectedKeys, visibility, hiddenDrawingIds, presentationActive } = getRenderState?.() ?? {}
 
     // Layer toggle: returning no style hides the feature and also removes it
     // from hit detection, so a hidden layer cannot be clicked or hovered.
     // The record itself stays in the source and in the database.
     if (visibility && visibility[typeId] === false) return undefined
+
+    const identity = drawingIdentity(typeId, feature.get('databaseId'))
+    if (identity && hiddenDrawingIds?.has(identity)) return undefined
 
     // `previewStyle` is set while the style panel is open and lets the user see
     // a change before it is committed; it is never sent to the API on its own.

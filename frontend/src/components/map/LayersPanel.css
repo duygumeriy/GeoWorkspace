@@ -1,163 +1,44 @@
-.layers-hint {
-  margin: 0;
-  font-size: var(--font-small);
-  color: var(--text-secondary);
-  line-height: 1.5;
+.layers-panel { width: min(390px, calc(100% - 2rem)); }
+.layers-panel .map-sheet-body { min-height: 0; gap: 0.75rem; padding: 0.75rem; }
+.layers-search { display: flex; align-items: center; gap: 0.55rem; min-height: 42px; padding: 0 0.7rem; border: 1px solid var(--border-soft); border-radius: var(--radius-md); background: var(--surface-soft); color: var(--text-tertiary); flex: none; }
+.layers-search:focus-within { border-color: var(--primary); }
+.layers-search input { min-width: 0; width: 100%; border: 0; outline: 0; background: transparent; color: var(--text-primary); font: inherit; }
+.layers-search input::placeholder { color: var(--text-tertiary); }
+.layers-hint, .layers-empty { margin: 0; color: var(--text-secondary); font-size: var(--font-small); line-height: 1.45; }
+.layers-tree { display: grid; gap: 0.55rem; }
+.layers-section { min-width: 0; border: 1px solid var(--border-soft); border-radius: var(--radius-md); background: var(--surface-soft); }
+.layers-section-heading { display: flex; align-items: center; min-width: 0; }
+.layers-disclosure { display: flex; align-items: center; gap: 0.45rem; width: 100%; min-width: 0; min-height: 46px; padding: 0.45rem 0.6rem; border: 0; border-radius: inherit; background: transparent; color: var(--text-primary); font: inherit; font-size: var(--font-small); font-weight: 650; text-align: left; cursor: pointer; }
+.layers-disclosure:hover { background: var(--surface-hover, rgba(127, 127, 127, 0.1)); }
+.layers-chevron { flex: none; color: var(--text-tertiary); transition: transform var(--transition-fast); }
+.layers-disclosure[aria-expanded='true'] .layers-chevron { transform: rotate(90deg); }
+.layers-heading-icon { display: grid; place-items: center; color: var(--primary-light); flex: none; }
+.layers-heading-label { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.layers-count { flex: none; color: var(--text-tertiary); font-size: 11px; font-weight: 600; }
+.layers-section-content, .layers-branch { display: grid; gap: 0.35rem; padding: 0 0.55rem 0.55rem; }
+.layers-branch { margin-left: calc(0.45rem + var(--layers-depth, 0) * 0.2rem); padding-left: 0.65rem; border-left: 1px solid var(--border-soft); }
+.layers-category-list, .layers-record-list { display: grid; gap: 0.15rem; min-width: 0; margin: 0; padding: 0; list-style: none; }
+.layers-category { min-width: 0; }
+.layers-category > .layers-section-heading .layers-disclosure { min-height: 40px; padding-block: 0.3rem; }
+.layers-check { display: flex; align-items: center; gap: 0.55rem; min-width: 0; min-height: 40px; padding: 0.3rem 0.45rem; border-radius: var(--radius-sm); color: var(--text-secondary); font-size: var(--font-small); cursor: pointer; }
+.layers-check:hover { background: var(--surface-hover, rgba(127, 127, 127, 0.1)); color: var(--text-primary); }
+.layers-check.is-disabled { opacity: 0.55; cursor: default; }
+.layers-check input { width: 17px; height: 17px; margin: 0; flex: none; accent-color: var(--primary); }
+.layers-check-label { min-width: 0; overflow-wrap: anywhere; }
+.layers-record { display: flex; align-items: center; min-width: 0; }
+.layers-record .layers-check { min-width: 0; flex: 1; }
+.layers-record-meta { max-width: 35%; color: var(--text-tertiary); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.layers-color { width: 9px; height: 9px; margin-right: 0.4rem; border-radius: var(--radius-full); box-shadow: 0 0 0 1px var(--border-strong); flex: none; }
+.layers-system-section { border-top: 1px solid var(--border-soft); padding-top: 0.65rem; }
+.layers-system-row { display: flex; align-items: center; gap: 0.55rem; width: 100%; min-height: 42px; padding: 0.45rem 0.6rem; border: 1px solid var(--border-soft); border-radius: var(--radius-md); background: transparent; color: var(--text-secondary); font: inherit; cursor: pointer; }
+.layers-system-row span { min-width: 0; flex: 1; text-align: left; }
+.layers-system-row small { margin-left: 0.25rem; color: var(--text-tertiary); }
+.layers-system-row strong { color: var(--text-tertiary); font-size: 10px; letter-spacing: 0.05em; }
+.layers-system-row.is-on { color: var(--text-primary); border-color: var(--border-strong); }
+.layers-system-row.is-on strong { color: var(--primary-light); }
+@media (max-width: 640px) {
+  .layers-panel { width: 100%; }
+  .layers-panel .map-sheet-body { padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px)); }
+  .layers-disclosure, .layers-check { min-height: 44px; }
 }
-
-.layers-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-}
-
-.layers-route-children { display: grid; gap: .3rem; margin: .4rem 0 .2rem; padding: 0 0 0 1rem; list-style: none; }
-.layers-route-child { display: flex; align-items: center; gap: .55rem; width: 100%; min-height: 40px; padding: .4rem .55rem; border: 1px solid transparent; border-radius: var(--radius-sm); background: transparent; color: var(--text-tertiary); font: inherit; text-align: left; cursor: pointer; }
-.layers-route-child:hover { border-color: var(--border-soft); background: var(--surface-soft); }
-.layers-route-child.is-on { color: var(--text-primary); }
-.layers-route-color { width: 10px; height: 10px; border-radius: 50%; flex: none; box-shadow: 0 0 0 1px var(--border-strong); }
-.layers-route-child:not(.is-on) .layers-route-color { opacity: .35; }
-.layers-route-name { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-small); }
-.layers-route-status { flex: none; color: var(--danger); font-size: 10px; }
-
-.layers-row {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 0.65rem;
-  min-height: 56px;
-  padding: 0.55rem 0.7rem;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-soft);
-  background: var(--surface-soft);
-  color: var(--text-secondary);
-  cursor: pointer;
-  text-align: left;
-  transition: border-color var(--transition-fast), color var(--transition-fast);
-}
-
-.layers-row:hover {
-  border-color: var(--border-strong);
-}
-
-.layers-row.is-on {
-  color: var(--text-primary);
-  border-color: var(--border-strong);
-}
-
-.layers-row-icon {
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-sm);
-  background: var(--surface-solid);
-  color: var(--primary-light);
-  flex-shrink: 0;
-}
-
-.layers-row:not(.is-on) .layers-row-icon {
-  color: var(--text-tertiary);
-}
-
-.layers-row-text {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-  flex: 1;
-  min-width: 0;
-}
-
-.layers-row-label {
-  font-size: var(--font-small);
-  font-weight: 600;
-}
-
-.layers-row-count {
-  font-size: 11px;
-  color: var(--text-tertiary);
-}
-
-.layers-row-state {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  color: var(--text-tertiary);
-  flex-shrink: 0;
-}
-
-.layers-row.is-on .layers-row-state {
-  color: var(--primary-light);
-}
-
-.layers-switch {
-  width: 38px;
-  height: 22px;
-  border-radius: var(--radius-full);
-  background: var(--border-soft);
-  border: 1px solid var(--border-soft);
-  position: relative;
-  flex-shrink: 0;
-  transition: background var(--transition-fast);
-}
-
-.layers-row.is-on .layers-switch {
-  background: var(--primary);
-}
-
-.layers-switch-knob {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 16px;
-  height: 16px;
-  border-radius: var(--radius-full);
-  background: #ffffff;
-  transition: transform var(--transition-fast);
-}
-
-.layers-row.is-on .layers-switch-knob {
-  transform: translateX(16px);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .layers-switch-knob {
-    transition: none;
-  }
-}
-
-/* --- Yetki alanı (sistem katmanı) -------------------------------------------
-   Kullanıcının kendi çizim katmanlarından AYRI bir grupta durur: ikisini aynı
-   listeye koymak, silinebilir bir katmanla silinemez bir sınırı aynı şey gibi
-   göstermek olurdu. */
-.layers-group-title {
-  margin: 1rem 0 0.5rem;
-  font-size: var(--font-small);
-  font-weight: 600;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-/* Satırın vurgusu haritadaki sınırla AYNI renktedir: panelde mavi, haritada
-   mor bir sınır görmek, ikisinin aynı şey olduğunu gizlerdi. */
-.layers-row--system.is-on {
-  border-color: rgba(168, 85, 247, 0.55);
-}
-
-/* Rozet METİNDİR: "sistem" olduğunu renk değil kelime söyler. */
-.layers-row-badge {
-  margin-left: 0.4rem;
-  padding: 0.05rem 0.35rem;
-  border-radius: var(--radius-full);
-  border: 1px solid var(--border-soft);
-  background: var(--surface-solid);
-  color: var(--text-secondary);
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.03em;
-  vertical-align: middle;
-}
+@media (prefers-reduced-motion: reduce) { .layers-chevron { transition: none; } }

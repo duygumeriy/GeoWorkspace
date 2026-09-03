@@ -95,6 +95,7 @@ import useLocationAnalysisTargetCatalog from '../hooks/useLocationAnalysisTarget
 import useMapPresentationLayer from '../hooks/useMapPresentationLayer.js'
 import usePoiLayer from '../hooks/usePoiLayer.js'
 import usePoiPresentationLayer from '../hooks/usePoiPresentationLayer.js'
+import useLayerVisibility from '../hooks/useLayerVisibility.js'
 import PoiSearchBar from '../components/map/PoiSearchBar.jsx'
 import usePoiPlacement from '../hooks/usePoiPlacement.js'
 import usePoiInteraction from '../hooks/usePoiInteraction.js'
@@ -157,12 +158,27 @@ import { deleteStopThenMaybeGenerate, persistStopThenMaybeGenerate } from '../se
 import { DRAWING_TYPES, DRAWING_TYPE_LIST, colorPatchFor, normalizeTags } from '../map/drawingTypes.js'
 import { trashRecordOf } from '../map/trashFilters.js'
 import {
+  categoryIndex,
+  isDescendantOf,
   MAX_CRITERIA,
   MIN_CRITERIA,
   emptyCriterion,
   toRequestCriteria,
   validateAnalysis,
 } from '../map/locationAnalysis.js'
+import {
+  buildPoiCategoryTree,
+  drawingGroups as layerDrawingGroups,
+  recordRows,
+} from '../map/layerManager.js'
+import {
+  drawingIdentities,
+  drawingVisibilityState,
+  hideRecords,
+  isRecordVisible,
+  showRecords,
+  visibilityState,
+} from '../map/layerVisibility.js'
 import { isGeometryInsideScope } from '../map/geographicScope.js'
 import {
   formatArea,
@@ -475,19 +491,7 @@ export default function MapPage() {
      `presentationVersion` ile aynı sözleşme. */
   const [poiPresentationVersion, setPoiPresentationVersion] = useState(0)
 
-  /**
-   * "Katmanlar → POI'ler": kalıcı POI gösteriminin görünürlüğü.
-   *
-   * <b>Çizim görünürlüğüyle aynı kavram, AYRI durum.</b> Çizim türlerinin
-   * görünürlüğü `useDrawingWorkspace`'e aittir ve POI oraya katılamaz — POI bir
-   * çizim değildir. Bu, panelin ikinci sistem satırı olan "Yetki Alanım"la
-   * (`scopeLayerVisible`) aynı kalıptır: kendi state'i, kendi prop'u, aynı
-   * görsel dil.
-   *
-   * Varsayılan AÇIK: POI'ler haritanın normal içeriğidir ve gizli açılmaları
-   * kullanıcıya kayıp veri gibi görünürdü.
-   */
-  const [poiLayerVisible, setPoiLayerVisible] = useState(true)
+  const layerVisibility = useLayerVisibility()
 
   /* Konum analizi normal POI görünürlüğünü DEĞİŞTİRMEZ; yalnızca sonuç
      oturumu boyunca bastırır. Böylece Temizle, kullanıcının analizden önceki
@@ -550,6 +554,7 @@ export default function MapPage() {
     /* Sunucu coğrafi bir ret döndürürse tarayıcının sınırı eskimiş demektir. */
     onForbidden: geographic.refresh,
     presentationActiveRef,
+    hiddenDrawingIds: layerVisibility.hiddenDrawingIds,
   })
 
   /* Hangi türlerin sunum görüntüsü, KAYDEDİLMEMİŞ yerel değişiklik yüzünden
@@ -564,21 +569,32 @@ export default function MapPage() {
      Katman görünürlüğüyle karıştırılmaz: biri kullanıcının kapattığı katman,
      diğeri geçici bir düzenleme durumudur. */
   const presentationSuspendedTypes = useMemo(() => {
+    const individuallyFiltered = new Set(
+      [...layerVisibility.hiddenDrawingIds].map((identity) => identity.split(':')[0]),
+    )
     /* Geometri oturumu: Modify ve Translate aynı oturumdan yürür, dolayısıyla
        ikisi de aynı askıya alma yaşam döngüsünü kullanır. */
     if (workspaceMode.isEditing && workspace.selectedFeature) {
-      return [workspace.selectedFeature.type]
+      individuallyFiltered.add(workspace.selectedFeature.type)
+      return [...individuallyFiltered]
     }
 
     /* Stil paneli canlı ÖNİZLEME yapar (`previewStyle`) ve önizleme henüz
        kaydedilmemiştir; kayıtlı renkli görüntü altta durursa eski ve yeni renk
        üst üste biner. Araç stili ('tool') hiçbir kaydı önizlemez. */
     if (styleTarget === 'feature' || styleTarget === 'bulk') {
-      return [...new Set(workspace.selectedFeatures.map((item) => item.type))]
+      for (const item of workspace.selectedFeatures) individuallyFiltered.add(item.type)
+      return [...individuallyFiltered]
     }
 
-    return []
-  }, [workspaceMode.isEditing, workspace.selectedFeature, workspace.selectedFeatures, styleTarget])
+    return [...individuallyFiltered]
+  }, [
+    workspaceMode.isEditing,
+    workspace.selectedFeature,
+    workspace.selectedFeatures,
+    styleTarget,
+    layerVisibility.hiddenDrawingIds,
+  ])
 
   /* Kalıcı çizimlerin GENEL GÖSTERİMİ: kimlik doğrulamalı WMS görüntüsü.
      Etkileşim (seçim, popup, düzenleme, taşıma, kutu/poligon seçimi) WFS
@@ -685,7 +701,7 @@ export default function MapPage() {
     return lookup
   }, [poiCategories.items])
 
-  const normalPoiLayerVisible = poiLayerVisible && !locationAnalysisResultActive
+  const normalPoiLayerVisible = !locationAnalysisResultActive
 
   const poi = usePoiLayer(mapInstance, {
     permitted: allowed.canViewPoi,
@@ -698,6 +714,7 @@ export default function MapPage() {
     visible: normalPoiLayerVisible,
     showToast,
     rasterActiveRef: poiPresentationActiveRef,
+    hiddenPoiIds: layerVisibility.hiddenPoiIds,
   })
   const {
     addPoi: addPoiToLayer,
@@ -716,6 +733,7 @@ export default function MapPage() {
        katman için kaydırma/yakınlaşma boyunca istek üretilmez ve uçan istek
        kancanın kendi temizliğinde iptal edilir. */
     permitted: allowed.canViewPoi && normalPoiLayerVisible,
+    suspended: layerVisibility.hiddenPoiIds.size > 0,
     version: poiPresentationVersion,
     activeRef: poiPresentationActiveRef,
     /* Raster devraldığında/bıraktığında vektör katmanının yeniden çizilmesi
@@ -796,7 +814,6 @@ export default function MapPage() {
   const [transportStopBusyId, setTransportStopBusyId] = useState(null)
   const [pendingTransportStopDelete, setPendingTransportStopDelete] = useState(null)
   const [transportRoutesVisible, setTransportRoutesVisible] = useState(true)
-  const [transportStopsVisible, setTransportStopsVisible] = useState(true)
   const [hiddenTransportRouteIds, setHiddenTransportRouteIds] = useState(() => new Set())
   const transportStopSaveInFlight = useRef(false)
 
@@ -805,8 +822,9 @@ export default function MapPage() {
     selectedStopId: selectedTransportStop?.id ?? null,
     selectedRouteId: selectedTransportRouteId,
     routesVisible: transportRoutesVisible,
-    stopsVisible: transportStopsVisible,
+    stopsVisible: true,
     hiddenRouteIds: hiddenTransportRouteIds,
+    hiddenStopIds: layerVisibility.hiddenTransportStopIds,
     showToast,
   })
 
@@ -1313,6 +1331,16 @@ export default function MapPage() {
     [transportRoutesVisible, hiddenTransportRouteIds],
   )
 
+  const isTransportStopSelectable = useCallback(
+    (stopId) => isRecordVisible(layerVisibility.hiddenTransportStopIds, stopId),
+    [layerVisibility.hiddenTransportStopIds],
+  )
+
+  const isPoiSelectable = useCallback(
+    (poiId) => isRecordVisible(layerVisibility.hiddenPoiIds, poiId),
+    [layerVisibility.hiddenPoiIds],
+  )
+
   /* --- Yolculuk planlayıcısı (Faz 5C) ---------------------------------------
      Durum ve istek yaşam döngüsü `useJourneyPlanner`'dadır; burada yalnızca
      mevcut parçalar bağlanır. Önizleme CANLI SİMÜLASYON DEĞİLDİR: SignalR
@@ -1719,6 +1747,7 @@ export default function MapPage() {
   usePoiInteraction(mapInstance, {
     enabled: poiClickEnabled && !journey.isPicking,
     onSelect: handlePoiSelected,
+    isPoiVisible: isPoiSelectable,
   })
 
   useTransportStopInteraction(mapInstance, {
@@ -1730,6 +1759,7 @@ export default function MapPage() {
     /* Boş tıklamada seçim bırakılır; yaşam döngüsüne dokunulmaz. */
     onClearRoute: clearSelectedTransportRoute,
     isRouteVisible: isTransportRouteSelectable,
+    isStopVisible: isTransportStopSelectable,
   })
 
   const retireTransportStopCreate = useCallback(() => {
@@ -1776,10 +1806,11 @@ export default function MapPage() {
   const focusMyStop = useCallback((stop) => {
     if (!stop || !Number.isFinite(stop.longitude) || !Number.isFinite(stop.latitude)) return
     mapView.focusPoint(fromLonLat([stop.longitude, stop.latitude]))
+    if (!isTransportStopSelectable(stop.id)) return
     setSelectedTransportRouteId(null)
     setSelectedTransportStop({ ...stop, colorHex: stop.colorHex || stop.routeColor })
     mapContext.activate(MAP_CONTEXTS.transportStopInfo)
-  }, [mapView, mapContext])
+  }, [mapView, mapContext, isTransportStopSelectable])
 
   const showTransportRoute = useCallback((routeId) => {
     const routeStops = transport.stops
@@ -2704,7 +2735,7 @@ export default function MapPage() {
          çalışır — veri keşfi bir sunum kararı değildir — ama kamera gittiği
          yerde görünmeyen bir kaydı seçip panelini açmak, katmanı kapatan
          kişiye tam da gizlediği şeyi göstermek olurdu. */
-      if (!poiLayerVisible) return
+      if (!isPoiSelectable(result.id)) return
 
       const record = findPoiOnLayer(result.id)
       if (!record) return
@@ -2712,33 +2743,8 @@ export default function MapPage() {
       setSelectedPoi(record)
       mapContext.activate(MAP_CONTEXTS.poiInfo)
     },
-    [workspace, mapView, mapContext, findPoiOnLayer, poiLayerVisible, focusMyStop, showTransportRoute],
+    [workspace, mapView, mapContext, findPoiOnLayer, isPoiSelectable, focusMyStop, showTransportRoute],
   )
-
-  /**
-   * "Katmanlar → POI'ler" anahtarı.
-   *
-   * <b>Kapatmak SEÇİMİ de emekliye ayırır.</b> Görünmeyen bir kaydı anlatan
-   * açık bir bilgi paneli bırakmak, kullanıcıya haritada olmayan bir şeyi
-   * gösterirdi. Aynı kural çizim tarafında da geçerlidir: bir tür gizlendiğinde
-   * o türdeki seçimler ayıklanır (`useDrawingWorkspace.toggleVisibility`), yani
-   * burada yapılan o kuralın POI karşılığıdır — yeni bir davranış değil.
-   *
-   * <b>Veritabanına HİÇBİR şey yazılmaz.</b> Bu bir sunum durumudur: silme,
-   * pasifleştirme ya da güncelleme çağrısı yoktur.
-   */
-  const togglePoiLayer = useCallback(() => {
-    setPoiLayerVisible((current) => {
-      const next = !current
-
-      if (!next) {
-        mapContext.close(MAP_CONTEXTS.poiInfo)
-        setSelectedPoi(null)
-      }
-
-      return next
-    })
-  }, [mapContext])
 
   /**
    * "Zoom Yap": seçili POI'ye AYNI kamera sözleşmesiyle gider.
@@ -3778,10 +3784,31 @@ export default function MapPage() {
 
   /* --- Derived ------------------------------------------------------------ */
 
-  const layerCounts = workspace.drawingGroups.reduce(
-    (acc, group) => ({ ...acc, [group.type.id]: group.items.length }),
-    {},
+  const poiCategoryById = useMemo(() => categoryIndex(poiCategories.items), [poiCategories.items])
+  const poiCategoryIsDescendant = useCallback(
+    (candidateId, ancestorId) => isDescendantOf(poiCategoryById, candidateId, ancestorId),
+    [poiCategoryById],
   )
+  const poiCategoryTree = useMemo(
+    () => buildPoiCategoryTree(
+      poi.pois,
+      poiCategories.items,
+      layerVisibility.hiddenPoiIds,
+      poiCategoryIsDescendant,
+    ),
+    [poi.pois, poiCategories.items, layerVisibility.hiddenPoiIds, poiCategoryIsDescendant],
+  )
+  const drawingLayerGroups = useMemo(
+    () => layerDrawingGroups(workspace.drawings, layerVisibility.hiddenDrawingIds),
+    [workspace.drawings, layerVisibility.hiddenDrawingIds],
+  )
+  const drawingLayerIds = useMemo(() => drawingIdentities(workspace.drawings), [workspace.drawings])
+  const stopLayerIds = useMemo(() => transport.stops.map((stop) => stop.id), [transport.stops])
+  const routeLayerIds = useMemo(() => transport.routes.map((route) => route.id), [transport.routes])
+
+  useEffect(() => layerVisibility.reconcilePois(poi.pois.map((item) => item.id)), [poi.pois, layerVisibility.reconcilePois])
+  useEffect(() => layerVisibility.reconcileStops(stopLayerIds), [stopLayerIds, layerVisibility.reconcileStops])
+  useEffect(() => layerVisibility.reconcileDrawings(drawingLayerIds), [drawingLayerIds, layerVisibility.reconcileDrawings])
 
 
   /* Panellerin açıklığı ARTIK TÜRETİLİR: sahibi tek bir bağlamdır. "Aynı anda
@@ -4385,24 +4412,34 @@ export default function MapPage() {
               <LayersPanel
                 open={mapContext.isActive(MAP_CONTEXTS.layers) && can(PERMISSIONS.LAYERS_VIEW)}
                 onClose={() => mapContext.close(MAP_CONTEXTS.layers)}
-                visibility={workspace.visibility}
-                counts={layerCounts}
-                onToggle={workspace.toggleVisibility}
-                /* POI satırı YETKİDEN türer: `poi.view` yoksa satır hiç
-                   çizilmez, raster istenmez ve vektör katmanı zaten kurulmaz.
-                   Rol adına bakan hiçbir kural yoktur. */
                 poi={{
                   permitted: allowed.canViewPoi,
-                  visible: poiLayerVisible,
                   count: poi.count,
+                  ids: poi.pois.map((item) => item.id),
+                  state: visibilityState(poi.pois.map((item) => item.id), layerVisibility.hiddenPoiIds),
+                  categories: poiCategoryTree,
                 }}
-                onTogglePoi={togglePoiLayer}
+                onSetPoiVisibility={layerVisibility.setPoiVisible}
+                onTogglePoi={layerVisibility.togglePoi}
+                drawings={{
+                  permitted: allowed.canViewDrawings,
+                  count: drawingLayerIds.length,
+                  ids: drawingLayerIds,
+                  state: drawingVisibilityState(drawingLayerIds, layerVisibility.hiddenDrawingIds),
+                  groups: drawingLayerGroups,
+                }}
+                onSetDrawingVisibility={layerVisibility.setDrawingVisible}
+                onToggleDrawing={layerVisibility.toggleDrawing}
                 transport={{
                   permitted: allowed.canViewTransport,
                   routesVisible: transportRoutesVisible,
-                  stopsVisible: transportStopsVisible,
                   routeCount: transport.routes.length,
                   stopCount: transport.stops.length,
+                  routeIds: routeLayerIds,
+                  routeState: visibilityState(routeLayerIds, hiddenTransportRouteIds),
+                  stopIds: stopLayerIds,
+                  stopState: visibilityState(stopLayerIds, layerVisibility.hiddenTransportStopIds),
+                  stops: recordRows(transport.stops, layerVisibility.hiddenTransportStopIds),
                   routes: transport.routes.map((route) => ({
                     id: route.id,
                     name: route.name,
@@ -4412,8 +4449,12 @@ export default function MapPage() {
                   })),
                 }}
                 onToggleTransportRoutes={() => setTransportRoutesVisible((value) => !value)}
+                onSetTransportRoutes={(ids, visible) => setHiddenTransportRouteIds(
+                  (current) => visible ? showRecords(current, ids) : hideRecords(current, ids),
+                )}
                 onToggleTransportRoute={toggleTransportRoute}
-                onToggleTransportStops={() => setTransportStopsVisible((value) => !value)}
+                onSetTransportStops={layerVisibility.setStopVisible}
+                onToggleTransportStop={layerVisibility.toggleStop}
                 /* Salt görselleştirme: katman kapatılabilir ama silinemez ve
                    başka bir kullanıcının alanını göstermez. */
                 scope={{

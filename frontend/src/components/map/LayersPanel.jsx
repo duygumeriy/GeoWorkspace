@@ -1,203 +1,236 @@
-import { MapPin } from 'lucide-react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { ChevronRight, MapPin, Search } from 'lucide-react'
 import MapSheet from './MapSheet.jsx'
-import { DRAWING_TYPE_LIST } from '../../map/drawingTypes.js'
+import { filterPoiCategoryTree, matchesLayerSearch } from '../../map/layerManager.js'
 import { PointIcon, LineIcon, PolygonIcon, ShieldIcon } from '../ui/icons/index.js'
 import './LayersPanel.css'
 
 const TYPE_ICONS = { point: PointIcon, line: LineIcon, polygon: PolygonIcon }
+const DEFAULT_EXPANDED = new Set(['poi', 'stops', 'drawings', 'routes'])
 
-/**
- * Per-geometry-type visibility, plus the caller's own authorization boundary.
- *
- * Turning a layer off only stops it rendering (the style function returns no
- * style for that type) — the features stay in the source and the rows stay in
- * PostGIS, so switching back on restores them with no refetch.
- *
- * <b>"Yetki Alanım" bir SİSTEM katmanıdır.</b> (Phase 9) Görünürlüğü
- * kapatılabilir ama silinemez, düzenlenemez ve başka bir kullanıcının alanını
- * göstermez: kapsam, kişinin kendi oturumundan okunur. Coğrafi alan YÖNETİMİ
- * burada değil, yönetim panelindedir — bu katman salt görselleştirmedir.
- *
- * Kısıtsız kullanıcıya sahte bir katman gösterilmez; bunun yerine durumun
- * kendisi ("Sınırsız") yazılır. Kapatılabilir ama hiçbir şey göstermeyen bir
- * satır, var olmayan bir sınırı varmış gibi ima ederdi.
- *
- * <b>POI çizim türlerinin yanında ama onlardan AYRI durur.</b> Aynı listede
- * dördüncü satırdır çünkü kullanıcı için hepsi "haritada ne görünüyor"
- * sorusunun parçasıdır; ama `DRAWING_TYPE_LIST`'e KATILMAZ, çünkü POI bir çizim
- * değildir — kendi yetkisi (`poi.view`), kendi uçları ve kendi katmanları
- * vardır. Listeye katılsaydı toplu seçime, stil düzenleyicisine ve
- * `/api/drawings/*` uçlarına da kendiliğinden karışırdı.
- *
- * Satır YALNIZCA `poi.view` taşıyan çağırana gösterilir ve bu karar çağırandan
- * gelir; burada rol adına bakan hiçbir kural yoktur.
- */
+function VisibilityCheckbox({ label, state, onChange, disabled = false, testId = undefined }) {
+  const ref = useRef(null)
+  const id = useId()
+
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = state?.indeterminate === true
+  }, [state?.indeterminate])
+
+  return (
+    <label className={`layers-check ${disabled ? 'is-disabled' : ''}`} htmlFor={id}>
+      <input
+        ref={ref}
+        id={id}
+        type="checkbox"
+        checked={state?.checked === true}
+        disabled={disabled}
+        data-testid={testId}
+        onChange={(event) => onChange?.(event.target.checked)}
+      />
+      <span className="layers-check-label">{label}</span>
+    </label>
+  )
+}
+
+function Disclosure({ groupKey, label, count, expanded, onToggle, icon: Icon = null }) {
+  const contentId = `layers-group-${groupKey}`
+  return (
+    <div className="layers-section-heading">
+      <button type="button" className="layers-disclosure" aria-expanded={expanded} aria-controls={contentId} onClick={onToggle}>
+        <ChevronRight className="layers-chevron" size={17} aria-hidden="true" />
+        {Icon && <span className="layers-heading-icon" aria-hidden="true"><Icon size={17} /></span>}
+        <span className="layers-heading-label">{label}</span>
+        <span className="layers-count" aria-label={`${count} kayıt`}>{count}</span>
+      </button>
+    </div>
+  )
+}
+
+function RecordCheckbox({ label, visible, onChange, meta = null, color = null }) {
+  return (
+    <li className="layers-record">
+      <VisibilityCheckbox label={label} state={{ checked: visible, indeterminate: false }} onChange={onChange} />
+      {color && <span className="layers-color" style={{ backgroundColor: color }} aria-hidden="true" />}
+      {meta && <span className="layers-record-meta">{meta}</span>}
+    </li>
+  )
+}
+
+function CategoryNode({ node, depth, query, expanded, onToggleExpanded, onSetVisible, onTogglePoi }) {
+  const key = `category:${node.key}`
+  const open = Boolean(query) || expanded.has(key)
+
+  return (
+    <li className="layers-category" style={{ '--layers-depth': Math.min(depth, 4) }}>
+      <Disclosure groupKey={key} label={node.label} count={node.count} expanded={open} onToggle={() => onToggleExpanded(key)} />
+      {open && (
+        <div className="layers-branch" id={`layers-group-${key}`}>
+          <VisibilityCheckbox label="Tümünü Göster" state={node.state} onChange={(visible) => onSetVisible(node.poiIds, visible)} />
+          {node.directPois.length > 0 && (
+            <ul className="layers-record-list">
+              {node.directPois.map((poi) => (
+                <RecordCheckbox key={poi.id} label={poi.name || `Adsız POI #${poi.id}`} visible={poi.visible} onChange={() => onTogglePoi(poi.id)} />
+              ))}
+            </ul>
+          )}
+          {node.children.length > 0 && (
+            <ul className="layers-category-list">
+              {node.children.map((child) => (
+                <CategoryNode key={child.key} node={child} depth={depth + 1} query={query} expanded={expanded} onToggleExpanded={onToggleExpanded} onSetVisible={onSetVisible} onTogglePoi={onTogglePoi} />
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </li>
+  )
+}
+
 export default function LayersPanel({
   open,
   onClose,
-  visibility,
-  counts,
-  onToggle,
   poi = null,
-  onTogglePoi,
+  drawings = null,
   transport = null,
+  onSetPoiVisibility,
+  onTogglePoi,
+  onSetDrawingVisibility,
+  onToggleDrawing,
   onToggleTransportRoutes,
+  onSetTransportRoutes,
   onToggleTransportRoute,
-  onToggleTransportStops,
+  onSetTransportStops,
+  onToggleTransportStop,
   scope = null,
   onToggleScope,
 }) {
+  const [query, setQuery] = useState('')
+  const [expanded, setExpanded] = useState(() => new Set(DEFAULT_EXPANDED))
+
+  const toggleExpanded = (key) => setExpanded((current) => {
+    const next = new Set(current)
+    if (next.has(key)) next.delete(key)
+    else next.add(key)
+    return next
+  })
+
+  const searching = query.trim().length > 0
+  const poiCategories = useMemo(
+    () => matchesLayerSearch("POI'ler", query)
+      ? (poi?.categories ?? [])
+      : filterPoiCategoryTree(poi?.categories ?? [], query),
+    [poi?.categories, query],
+  )
+  const drawingGroups = useMemo(() => (drawings?.groups ?? []).map((group) => {
+    const groupMatches = matchesLayerSearch('Çizimler', query) || matchesLayerSearch(group.label, query)
+    return {
+      ...group,
+      records: groupMatches ? group.records : group.records.filter((record) => matchesLayerSearch(record.name, query)),
+    }
+  }).filter((group) => group.records.length > 0), [drawings?.groups, query])
+  const stops = useMemo(() => matchesLayerSearch('Duraklar', query)
+    ? (transport?.stops ?? [])
+    : (transport?.stops ?? []).filter((stop) => matchesLayerSearch(`${stop.name ?? ''} ${stop.routeName ?? ''}`, query)), [transport?.stops, query])
+  const routes = useMemo(() => matchesLayerSearch('Güzergâhlar', query)
+    ? (transport?.routes ?? [])
+    : (transport?.routes ?? []).filter((route) => matchesLayerSearch(route.name, query)), [transport?.routes, query])
+
   if (!open) return null
 
   const scopeOn = scope?.visible !== false
-  const poiOn = poi?.visible !== false
+  const poiOpen = searching || expanded.has('poi')
+  const stopsOpen = searching || expanded.has('stops')
+  const drawingsOpen = searching || expanded.has('drawings')
+  const routesOpen = searching || expanded.has('routes')
+  const showPoi = poi?.permitted && poi.count > 0 && (!searching || poiCategories.length > 0)
+  const showStops = transport?.permitted && transport.stopCount > 0 && (!searching || stops.length > 0)
+  const showDrawings = drawings?.permitted && drawings.count > 0 && (!searching || drawingGroups.length > 0)
+  const showRoutes = transport?.permitted && transport.routeCount > 0 && (!searching || routes.length > 0)
+  const hasResults = showPoi || showStops || showDrawings || showRoutes
 
   return (
     <MapSheet open={open} title="Katmanlar" onClose={onClose} className="layers-panel">
-      <p className="layers-hint">
-        Katmanı kapatmak yalnızca görünümü gizler; kayıtlar veritabanında kalır.
-      </p>
+      <div className="layers-search">
+        <Search size={17} aria-hidden="true" />
+        <label className="sr-only" htmlFor="layer-manager-search">Katman ara</label>
+        <input id="layer-manager-search" type="search" value={query} placeholder="Katman ara..." autoComplete="off" onChange={(event) => setQuery(event.target.value)} />
+      </div>
 
-      <ul className="layers-list">
-        {DRAWING_TYPE_LIST.map((type) => {
-          const Icon = TYPE_ICONS[type.id]
-          const isOn = visibility[type.id] !== false
+      <p className="layers-hint">Görünürlük yalnızca haritayı değiştirir; kayıtlar korunur.</p>
 
-          return (
-            <li key={type.id}>
-              <button
-                type="button"
-                className={`layers-row ${isOn ? 'is-on' : ''}`}
-                aria-pressed={isOn}
-                onClick={() => onToggle(type.id)}
-              >
-                <span className="layers-row-icon">
-                  <Icon size={18} />
-                </span>
-                <span className="layers-row-text">
-                  <span className="layers-row-label">{type.plural}</span>
-                  <span className="layers-row-count">{counts[type.id] ?? 0} kayıt</span>
-                </span>
-                {/* Text state, not colour alone. */}
-                <span className="layers-row-state">{isOn ? 'AÇIK' : 'KAPALI'}</span>
-                <span className="layers-switch" aria-hidden="true">
-                  <span className="layers-switch-knob" />
-                </span>
-              </button>
-            </li>
-          )
-        })}
-
-        {/* Dördüncü satır: kalıcı POI gösterimi. Çizim türleriyle AYNI görsel
-            dili konuşur — aynı satır, aynı anahtar, aynı AÇIK/KAPALI metni —
-            ama kendi durumundan beslenir. */}
-        {poi?.permitted && (
-          <li>
-            <button
-              type="button"
-              className={`layers-row ${poiOn ? 'is-on' : ''}`}
-              aria-pressed={poiOn}
-              data-testid="layers-poi-row"
-              onClick={onTogglePoi}
-            >
-              <span className="layers-row-icon">
-                <MapPin size={18} strokeWidth={2} />
-              </span>
-              <span className="layers-row-text">
-                <span className="layers-row-label">POI'ler</span>
-                <span className="layers-row-count">{poi.count ?? 0} kayıt</span>
-              </span>
-              <span className="layers-row-state">{poiOn ? 'AÇIK' : 'KAPALI'}</span>
-              <span className="layers-switch" aria-hidden="true">
-                <span className="layers-switch-knob" />
-              </span>
-            </button>
-          </li>
-        )}
-      </ul>
-
-      {transport?.permitted && <>
-        <h3 className="layers-group-title">Ulaşım</h3>
-        <ul className="layers-list">
-          {[
-            ['routes', 'Güzergahlar', transport.routeCount ?? 0, transport.routesVisible !== false, onToggleTransportRoutes],
-            ['stops', 'Duraklar', transport.stopCount ?? 0, transport.stopsVisible !== false, onToggleTransportStops],
-          ].map(([id, label, count, isOn, toggle]) => <li key={id}>
-            <button type="button" className={`layers-row ${isOn ? 'is-on' : ''}`} aria-pressed={isOn} data-testid={`layers-transport-${id}`} onClick={toggle}>
-              <span className="layers-row-icon"><MapPin size={18} strokeWidth={2} /></span>
-              <span className="layers-row-text"><span className="layers-row-label">{label}</span><span className="layers-row-count">{count} kayıt</span></span>
-              <span className="layers-row-state">{isOn ? 'AÇIK' : 'KAPALI'}</span>
-              <span className="layers-switch" aria-hidden="true"><span className="layers-switch-knob" /></span>
-            </button>
-            {id === 'routes' && transport.routes?.length > 0 && (
-              <ul className="layers-route-children" aria-label="Güzergah görünürlüğü">
-                {transport.routes.map((route) => (
-                  <li key={route.id}>
-                    <button
-                      type="button"
-                      className={`layers-route-child ${route.visible ? 'is-on' : ''}`}
-                      aria-pressed={route.visible}
-                      aria-label={`${route.name} güzergahını ${route.visible ? 'gizle' : 'göster'}`}
-                      onClick={() => onToggleTransportRoute?.(route.id)}
-                    >
-                      <span className="layers-route-color" style={{ backgroundColor: route.colorHex }} aria-hidden="true" />
-                      <span className="layers-route-name">{route.name}</span>
-                      {route.isStale && <span className="layers-route-status">Güncel değil</span>}
-                      <span className="layers-row-state">{route.visible ? 'AÇIK' : 'KAPALI'}</span>
-                    </button>
-                  </li>
-                ))}
+      <div className="layers-tree" data-testid="layer-manager-scroll-content">
+        {showPoi && (
+          <section className="layers-section" data-testid="layers-poi-row">
+            <Disclosure groupKey="poi" label="POI'ler" count={poi.count} expanded={poiOpen} onToggle={() => toggleExpanded('poi')} icon={MapPin} />
+            {poiOpen && <div className="layers-section-content" id="layers-group-poi">
+              <VisibilityCheckbox label="Tümünü Göster" state={poi.state} onChange={(visible) => onSetPoiVisibility?.(poi.ids, visible)} />
+              <ul className="layers-category-list">
+                {poiCategories.map((node) => <CategoryNode key={node.key} node={node} depth={0} query={query} expanded={expanded} onToggleExpanded={toggleExpanded} onSetVisible={onSetPoiVisibility} onTogglePoi={onTogglePoi} />)}
               </ul>
-            )}
-          </li>)}
-        </ul>
-      </>}
+            </div>}
+          </section>
+        )}
 
-      {scope?.isRestricted ? (
-        <>
-          <h3 className="layers-group-title">Yetki</h3>
-          <ul className="layers-list">
-            <li>
-              <button
-                type="button"
-                className={`layers-row layers-row--system ${scopeOn ? 'is-on' : ''}`}
-                aria-pressed={scopeOn}
-                data-testid="layers-scope-row"
-                onClick={onToggleScope}
-              >
-                <span className="layers-row-icon">
-                  <ShieldIcon size={18} />
-                </span>
-                <span className="layers-row-text">
-                  <span className="layers-row-label">
-                    Yetki Alanım
-                    {/* Sistem rozeti: bu satır kullanıcının oluşturduğu bir
-                        katman değildir ve silinemez. */}
-                    <span className="layers-row-badge">sistem</span>
-                  </span>
-                  <span className="layers-row-count">
-                    {scope.areaCount > 1 ? `${scope.areaCount} bölge` : 'Çizim yapabileceğiniz alan'}
-                  </span>
-                </span>
-                <span className="layers-row-state">{scopeOn ? 'AÇIK' : 'KAPALI'}</span>
-                <span className="layers-switch" aria-hidden="true">
-                  <span className="layers-switch-knob" />
-                </span>
-              </button>
-            </li>
-          </ul>
-          <p className="layers-hint">
-            Bu sınır yalnızca size uygulanır ve buradan değiştirilemez; coğrafi yetki
-            yönetimi yönetim panelindedir.
-          </p>
-        </>
-      ) : (
-        <p className="layers-hint" data-testid="layers-scope-note">
-          {scope?.failed
-            ? 'Yetki alanı bilgisi şu anda okunamadı.'
-            : 'Yetki alanı: Sınırsız — çiziminizi kısıtlayan bir coğrafi sınır yok.'}
-        </p>
-      )}
+        {showStops && (
+          <section className="layers-section">
+            <Disclosure groupKey="stops" label="Duraklar" count={transport.stopCount} expanded={stopsOpen} onToggle={() => toggleExpanded('stops')} icon={MapPin} />
+            {stopsOpen && <div className="layers-section-content" id="layers-group-stops">
+              <VisibilityCheckbox label="Tümünü Göster" state={transport.stopState} onChange={(visible) => onSetTransportStops?.(transport.stopIds, visible)} />
+              <ul className="layers-record-list">
+                {stops.map((stop) => <RecordCheckbox key={stop.id} label={stop.name || `Adsız durak #${stop.id}`} visible={stop.visible} meta={stop.routeName} onChange={() => onToggleTransportStop?.(stop.id)} />)}
+              </ul>
+            </div>}
+          </section>
+        )}
+
+        {showDrawings && (
+          <section className="layers-section">
+            <Disclosure groupKey="drawings" label="Çizimler" count={drawings.count} expanded={drawingsOpen} onToggle={() => toggleExpanded('drawings')} />
+            {drawingsOpen && <div className="layers-section-content" id="layers-group-drawings">
+              <VisibilityCheckbox label="Tümünü Göster" state={drawings.state} onChange={(visible) => onSetDrawingVisibility?.(drawings.ids, visible)} />
+              <ul className="layers-category-list">
+                {drawingGroups.map((group) => {
+                  const Icon = TYPE_ICONS[group.id]
+                  const key = `drawing:${group.id}`
+                  const groupOpen = Boolean(query) || expanded.has(key)
+                  return <li key={group.id} className="layers-category">
+                    <Disclosure groupKey={key} label={group.label} count={group.count} expanded={groupOpen} onToggle={() => toggleExpanded(key)} icon={Icon} />
+                    {groupOpen && <div className="layers-branch" id={`layers-group-${key}`}>
+                      <VisibilityCheckbox label="Tümünü Göster" state={group.state} onChange={(visible) => onSetDrawingVisibility?.(group.ids, visible)} />
+                      <ul className="layers-record-list">
+                        {group.records.map((record) => <RecordCheckbox key={record.identity} label={record.name || `Adsız çizim #${record.databaseId}`} visible={record.visible} onChange={() => onToggleDrawing?.(record.identity)} />)}
+                      </ul>
+                    </div>}
+                  </li>
+                })}
+              </ul>
+            </div>}
+          </section>
+        )}
+
+        {showRoutes && (
+          <section className="layers-section">
+            <Disclosure groupKey="routes" label="Güzergâhlar" count={transport.routeCount} expanded={routesOpen} onToggle={() => toggleExpanded('routes')} />
+            {routesOpen && <div className="layers-section-content" id="layers-group-routes">
+              <VisibilityCheckbox label="Güzergâh katmanını göster" state={{ checked: transport.routesVisible, indeterminate: false }} onChange={onToggleTransportRoutes} testId="layers-transport-routes" />
+              <VisibilityCheckbox label="Tümünü Göster" state={transport.routeState} onChange={(visible) => onSetTransportRoutes?.(transport.routeIds, visible)} />
+              <ul className="layers-record-list" aria-label="Güzergah görünürlüğü">
+                {routes.map((route) => <RecordCheckbox key={route.id} label={route.name || `Adsız güzergâh #${route.id}`} visible={route.visible} color={route.colorHex} meta={route.isStale ? 'Güncel değil' : null} onChange={() => onToggleTransportRoute?.(route.id)} />)}
+              </ul>
+            </div>}
+          </section>
+        )}
+
+        {query && !hasResults && <p className="layers-empty">Aramanızla eşleşen katman kaydı bulunamadı.</p>}
+      </div>
+
+      {!query && scope?.isRestricted && <section className="layers-system-section">
+        <button type="button" className={`layers-system-row ${scopeOn ? 'is-on' : ''}`} aria-pressed={scopeOn} data-testid="layers-scope-row" onClick={onToggleScope}>
+          <ShieldIcon size={17} />
+          <span>Yetki Alanım <small>sistem</small></span>
+          <strong>{scopeOn ? 'AÇIK' : 'KAPALI'}</strong>
+        </button>
+      </section>}
     </MapSheet>
   )
 }

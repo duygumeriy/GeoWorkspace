@@ -322,10 +322,11 @@ test('every geometry type still has its features in the vector source', async ({
   await page.getByRole('button', { name: 'Katmanlar' }).click()
 
   for (const label of ['Noktalar', 'Çizgiler', 'Poligonlar']) {
-    const row = page.locator('.layers-row').filter({ hasText: label })
+    const row = page.locator('.layers-category').filter({ has: page.getByRole('button', { name: new RegExp(label) }) })
     // The count comes from the loaded features, not from the raster.
-    await expect(row.locator('.layers-row-count')).toHaveText('1 kayıt')
-    await expect(row).toHaveAttribute('aria-pressed', 'true')
+    await expect(row.locator('.layers-count').first()).toHaveText('1')
+    await row.getByRole('button', { name: new RegExp(label) }).click()
+    await expect(row.getByLabel('Tümünü Göster')).toBeChecked()
   }
 })
 
@@ -335,15 +336,17 @@ test('hiding and showing a layer in the same view reuses the cached raster', asy
   await settlePresentation(presentationRequests)
 
   await page.getByRole('button', { name: 'Katmanlar' }).click()
-  const pointRow = page.locator('.layers-row').filter({ hasText: 'Noktalar' })
+  const pointRow = page.locator('.layers-category').filter({ has: page.getByRole('button', { name: /Noktalar/ }) })
+  await pointRow.getByRole('button', { name: /Noktalar/ }).click()
+  const pointToggle = pointRow.getByLabel('Tümünü Göster')
 
-  await pointRow.click()
-  await expect(pointRow).toHaveAttribute('aria-pressed', 'false')
+  await pointToggle.click()
+  await expect(pointToggle).not.toBeChecked()
 
   const before = countByKind(presentationRequests)
 
-  await pointRow.click()
-  await expect(pointRow).toHaveAttribute('aria-pressed', 'true')
+  await pointToggle.click()
+  await expect(pointToggle).toBeChecked()
 
   /* Görünüm değişmedi, dolayısıyla eldeki görüntü hâlâ tam olarak doğru
      cevaptır. Her anahtar hareketinde yeniden istemek, aynı resmi ikinci kez
@@ -358,9 +361,11 @@ test('a layer hidden across a viewport change is refetched when shown again', as
   await settlePresentation(presentationRequests)
 
   await page.getByRole('button', { name: 'Katmanlar' }).click()
-  const pointRow = page.locator('.layers-row').filter({ hasText: 'Noktalar' })
-  await pointRow.click()
-  await expect(pointRow).toHaveAttribute('aria-pressed', 'false')
+  const pointRow = page.locator('.layers-category').filter({ has: page.getByRole('button', { name: /Noktalar/ }) })
+  await pointRow.getByRole('button', { name: /Noktalar/ }).click()
+  const pointToggle = pointRow.getByLabel('Tümünü Göster')
+  await pointToggle.click()
+  await expect(pointToggle).not.toBeChecked()
 
   /* Gizliyken harita hareket eder. Gizli tür `moveend` üzerinde istenmez, bu
      yüzden elindeki görüntü GÜNCELDİR ama BAŞKA BİR YERİ gösterir. */
@@ -368,8 +373,8 @@ test('a layer hidden across a viewport change is refetched when shown again', as
   await settlePresentation(presentationRequests)
   const before = countByKind(presentationRequests)
 
-  await pointRow.click()
-  await expect(pointRow).toHaveAttribute('aria-pressed', 'true')
+  await pointToggle.click()
+  await expect(pointToggle).toBeChecked()
 
   // Yanlış görünümün resmi güvenilemez: geri açılırken tazelenmelidir.
   await expect
@@ -623,17 +628,19 @@ test('layer visibility stays independent of edit suspension', async ({ page }) =
      kaydedilmemiş düzenleme yüzünden askıya alınan sunum. Katman anahtarı
      düzenleme sırasında da eskisi gibi çalışır. */
   await page.getByRole('button', { name: 'Katmanlar' }).click()
-  const pointRow = page.locator('.layers-row').filter({ hasText: 'Noktalar' })
-  await pointRow.click()
-  await expect(pointRow).toHaveAttribute('aria-pressed', 'false')
+  const pointRow = page.locator('.layers-category').filter({ has: page.getByRole('button', { name: /Noktalar/ }) })
+  await pointRow.getByRole('button', { name: /Noktalar/ }).click()
+  const pointToggle = pointRow.getByLabel('Tümünü Göster')
+  await pointToggle.click()
+  await expect(pointToggle).not.toBeChecked()
 
   // Nokta gizliyken görünüm değişir: çizgi tazelenir, gizli nokta istenmez.
   await page.setViewportSize(EDIT_TEST_VIEWPORT)
   await settlePresentation(presentationRequests)
   const hidden = countByKind(presentationRequests)
 
-  await pointRow.click()
-  await expect(pointRow).toHaveAttribute('aria-pressed', 'true')
+  await pointToggle.click()
+  await expect(pointToggle).toBeChecked()
 
   // Geri açılan nokta, DEĞİŞMİŞ görünüm için tazelenir.
   await expect.poll(() => countByKind(presentationRequests).point, { timeout: 8000 })

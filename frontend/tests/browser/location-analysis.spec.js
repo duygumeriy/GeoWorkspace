@@ -1207,9 +1207,18 @@ test('active analysis hides normal POIs and Clear removes analysis markers then 
 test('clear preserves a normal POI layer that was already disabled', async ({ page }) => {
   await prepareMap(page, { normalPois: [NORMAL_APP_POI] })
   await page.getByRole('button', { name: 'Katmanlar' }).click()
-  const normalPoiRow = page.getByTestId('layers-poi-row')
-  await normalPoiRow.click()
-  await expect(normalPoiRow).toHaveAttribute('aria-pressed', 'false')
+
+  /* Görünürlük artık satırın KENDİSİNDE değil, grubun yerel onay kutusundadır;
+     `layers-poi-row` yalnızca bölümün kapsayıcısıdır. Kilit nokta aynı kalır:
+     kullanıcının Konum Analizi'nden ÖNCE kapattığı normal POI sunumu. */
+  const normalPoiSection = page.getByTestId('layers-poi-row')
+  const normalPoiVisibility = normalPoiSection.getByRole('checkbox', { name: 'Tümünü Göster' }).first()
+  await expect(normalPoiVisibility).toBeChecked()
+
+  await normalPoiVisibility.click()
+  // Grubun TAMAMI gizlendi: kısmi (indeterminate) değil, düpedüz KAPALI.
+  await expect(normalPoiVisibility).not.toBeChecked()
+  await expect(normalPoiVisibility).not.toBeChecked({ indeterminate: true })
   await page.getByRole('button', { name: 'Katmanlar panelini kapat' }).click()
 
   await openPanel(page)
@@ -1217,7 +1226,13 @@ test('clear preserves a normal POI layer that was already disabled', async ({ pa
   await page.getByRole('button', { name: 'ANALİZİ BAŞLAT' }).click()
   await page.getByRole('button', { name: 'Temizle', exact: true }).click()
 
-  await expect(page.locator('.poi-layer')).toBeHidden()
+  /* Konum Analizi temizliği kendi katmanlarını toplar ama kullanıcının
+     tercihini GERİ ALMAZ: grup hâlâ kapalıdır. Sayaç da yerinde durur —
+     gizlemek kaydı atmaz, yalnızca göstermez. */
+  await page.getByRole('button', { name: 'Katmanlar' }).click()
+  await expect(normalPoiVisibility).not.toBeChecked()
+  await expect(normalPoiVisibility).not.toBeChecked({ indeterminate: true })
+  await expect(normalPoiSection.locator('.layers-count').first()).toHaveText('1')
 })
 
 test('analysis POI toggle never reveals unrelated normal POIs', async ({ page }) => {

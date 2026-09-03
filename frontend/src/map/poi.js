@@ -146,12 +146,14 @@ export function createPoiDraftLayer() {
  * @param {(categoryId: number|null) => ({ iconKey?: string|null, colorHex?: string|null })|null} [getPresentation]
  *   kategori kimliğinden simge/renk çözer; bilinmiyorsa nötr yedeğe düşülür
  * @param {() => number|undefined} [getResolution] görünümün o anki çözünürlüğü
+ * @param {(poiId: number) => boolean} [isPoiVisible] persisted-record visibility
  */
 export function createPoiLayer(
   getSelectedId,
   isRasterActive = () => false,
   getPresentation = () => null,
   getResolution = () => undefined,
+  isPoiVisible = () => true,
 ) {
   const source = new VectorSource()
   const layer = new VectorLayer({
@@ -159,6 +161,9 @@ export function createPoiLayer(
     className: POI_LAYER_CLASSNAME,
     zIndex: POI_LAYER_Z_INDEX,
     style: (feature) => {
+      /* No style means no paint and no OpenLayers hit-detection instruction. */
+      if (!isPoiVisible(feature.get('poiId'))) return undefined
+
       /* Kategori metadatası HENÜZ gelmemiş ya da hiç gelmeyecek olabilir
          (istek uçuyor, ya da göç öncesinden kalan metadatasız bir kategori).
          O durumda bile POI genel bir noktaya DÜŞMEZ: nötr renkli bir

@@ -220,10 +220,10 @@ test('a hidden POI layer does NOT hide the search trigger', () => {
 })
 
 test('selecting a result never re-enables the hidden POI layer', () => {
-  const handler = between(page, 'const focusSearchResult', 'const togglePoiLayer')
+  const handler = between(page, 'const focusSearchResult', 'const zoomToSelectedPoi')
 
-  assert.match(handler, /if \(!poiLayerVisible\) return/)
-  assert.ok(!/setPoiLayerVisible/.test(handler))
+  assert.match(handler, /isPoiSelectable\(result\.id\)/)
+  assert.ok(!/setHiddenPoiIds/.test(handler))
 })
 
 /* --- Duyarlılık ---------------------------------------------------------------- */

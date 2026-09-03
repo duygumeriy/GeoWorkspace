@@ -3,6 +3,7 @@ import { createPoiLayer, featureToPoi, poiToFeature } from '../map/poi.js'
 import { markerBandForResolution } from '../map/poiMarkerScale.js'
 import { prewarmPoiBadges } from '../map/poiMarkerStyle.js'
 import { fetchPois, readApiError } from '../services/api.js'
+import { isRecordVisible } from '../map/layerVisibility.js'
 
 /**
  * Kalıcı POI katmanı: tek kaynak, tek katman, yetkiye bağlı yaşam döngüsü.
@@ -52,11 +53,13 @@ export default function usePoiLayer(
     showToast,
     rasterActiveRef = null,
     categoryPresentation = null,
+    hiddenPoiIds = new Set(),
   },
 ) {
   const sourceRef = useRef(null)
   const layerRef = useRef(null)
   const [loading, setLoading] = useState(false)
+  const [pois, setPois] = useState([])
 
   /**
    * Haritadaki kalıcı POI sayısı — "Katmanlar" panelindeki satır bunu gösterir.
@@ -104,6 +107,9 @@ export default function usePoiLayer(
   const visibleRef = useRef(visible)
   visibleRef.current = visible
 
+  const hiddenIdsRef = useRef(hiddenPoiIds)
+  hiddenIdsRef.current = hiddenPoiIds
+
   /* Yalnızca EN YENİ isteğin sonucu yazılabilir: yetki değişimi ya da bir
      yenileme sırasında gelen eski cevap kaynağı geri saramaz. */
   const requestIdRef = useRef(0)
@@ -118,6 +124,7 @@ export default function usePoiLayer(
       () => rasterRef.current?.current === true,
       (categoryId) => presentationRef.current?.get(categoryId) ?? null,
       () => map.getView().getResolution(),
+      (poiId) => isRecordVisible(hiddenIdsRef.current, poiId),
     )
     sourceRef.current = source
     layerRef.current = layer
@@ -200,7 +207,7 @@ export default function usePoiLayer(
   /* Seçim değiştiğinde yalnızca yeniden çizim istenir; feature'lara dokunulmaz. */
   useEffect(() => {
     sourceRef.current?.changed()
-  }, [selectedId])
+  }, [selectedId, hiddenPoiIds])
 
   /* --- Veri --------------------------------------------------------------- */
 
@@ -225,7 +232,9 @@ export default function usePoiLayer(
          eklemede bir render tetikler ve arada boş bir kare gösterirdi. */
       source.clear()
       source.addFeatures(records.map(poiToFeature).filter(Boolean))
-      setCount(source.getFeatures().length)
+      const canonicalPois = source.getFeatures().map(featureToPoi)
+      setPois(canonicalPois)
+      setCount(canonicalPois.length)
       prewarmRef.current()
     } catch (error) {
       if (requestId !== requestIdRef.current) return
@@ -253,6 +262,7 @@ export default function usePoiLayer(
     // Yetki yoksa (ya da alındıysa) uçan istek geçersizleşir ve kaynak boşalır.
     requestIdRef.current += 1
     sourceRef.current?.clear()
+    setPois([])
     setCount(0)
     setLoading(false)
     /* Yetkisiz durum "okundu" SAYILMAZ: yetki geri verildiğinde okuma yeniden
@@ -272,8 +282,10 @@ export default function usePoiLayer(
   }, [])
 
   /** Sayacı kaynağın gerçek içeriğinden tazeler; tahmin edilmez, sayılır. */
-  const syncCount = useCallback(() => {
-    setCount(sourceRef.current?.getFeatures().length ?? 0)
+  const syncRecords = useCallback(() => {
+    const canonicalPois = sourceRef.current?.getFeatures().map(featureToPoi) ?? []
+    setPois(canonicalPois)
+    setCount(canonicalPois.length)
   }, [])
 
   /**
@@ -287,8 +299,8 @@ export default function usePoiLayer(
   const addPoi = useCallback((poi) => {
     const feature = poiToFeature(poi)
     if (feature) sourceRef.current?.addFeature(feature)
-    syncCount()
-  }, [syncCount])
+    syncRecords()
+  }, [syncRecords])
 
   /**
    * Güncellenen POI'yi yerinde tazeler.
@@ -307,8 +319,8 @@ export default function usePoiLayer(
 
     const feature = poiToFeature(poi)
     if (feature) source.addFeature(feature)
-    syncCount()
-  }, [syncCount])
+    syncRecords()
+  }, [syncRecords])
 
   /**
    * Soft-delete edilen POI'yi haritadan kaldırır.
@@ -321,8 +333,8 @@ export default function usePoiLayer(
     const source = sourceRef.current
     const existing = source?.getFeatureById(`poi-${id}`)
     if (existing) source.removeFeature(existing)
-    syncCount()
-  }, [syncCount])
+    syncRecords()
+  }, [syncRecords])
 
   /**
    * Katmandaki POI'yi kimliğiyle okur.
@@ -337,5 +349,5 @@ export default function usePoiLayer(
     return feature ? featureToPoi(feature) : null
   }, [])
 
-  return { loading, loaded, count, reload: load, addPoi, updatePoi, removePoi, findPoi, notifyRasterChanged }
+  return { pois, loading, loaded, count, reload: load, addPoi, updatePoi, removePoi, findPoi, notifyRasterChanged }
 }
