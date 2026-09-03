@@ -875,11 +875,17 @@ export default function MapPage() {
     canStartSharedSimulation,
   ])
 
+  /* BAŞLATMA da komut yolunda YENİDEN denetlenir ve bu, durdurma/duraklatma
+     tarafındaki kuralın aynısıdır: yetkiler oturum içinde tazelenebilir,
+     dolayısıyla düğmenin görünürlüğü bir denetim değildir. İki yaşam döngüsü
+     tarafının farklı sıkılıkta kurallar taşıması, aynı yeteneğin iki ayrı
+     kural kitabına sahip olması demekti. */
   const startSharedSimulation = useCallback(async () => {
+    if (!canStartSharedSimulation) return
     if (selectedTransportRouteId == null) return
     const snapshot = await simulation.start(selectedTransportRouteId)
     if (snapshot) setStartedSimulationId(snapshot.simulationId)
-  }, [selectedTransportRouteId, simulation])
+  }, [canStartSharedSimulation, selectedTransportRouteId, simulation])
 
   /* Paylaşılan durdurma ONAYIN arkasındadır: çok kullanıcılı canlı bir
      çalıştırmayı sonlandırır ve yanlış bir tıklama başkalarının izlediği

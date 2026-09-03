@@ -651,6 +651,10 @@ export default function TransportRoutePage() {
                 resuming={simulation.resuming}
                 error={simulation.error}
                 onStart={async () => {
+                  /* Başlatma da komut yolunda denetlenir — durdurma tarafıyla
+                     AYNI kural. Yönetim ekranında olmak bir yetki kaynağı
+                     değildir ve düğmenin görünürlüğü bir denetim değildir. */
+                  if (!canStartSimulation) return
                   const snapshot = await simulation.start(selectedRoute.id)
                   // Takip AÇILMAZ; yalnızca ilk konum haritada belirir.
                   if (snapshot) setStartedSimulationId(snapshot.simulationId)
