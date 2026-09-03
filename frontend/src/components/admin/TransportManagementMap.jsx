@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Map from 'ol/Map.js'
 import View from 'ol/View.js'
 import TileLayer from 'ol/layer/Tile.js'
@@ -108,8 +108,15 @@ export default function TransportManagementMap({
   } = transport
 
   /* Araç MEVCUT haritaya eklenen tek bir katmandır; ikinci bir harita ya da
-     paralel bir ulaşım katman sistemi yoktur. Konum/ilerleme sunucudan gelir. */
-  useTransportVehicleLayer(map, { presentation: vehicle })
+     paralel bir ulaşım katman sistemi yoktur. Konum/ilerleme sunucudan gelir.
+
+     YÖNETİM ekranı TEK araç sunar ve bu fazda değişmedi: burada çoklu izleme
+     kavramı yoktur, sayfa zaten SEÇİLİ hattın çalıştırmasıyla ilgilenir.
+     Katman kancası çoğul bir liste beklediği için tek sunum bir kalemlik
+     listeye sarılır — ikinci bir çizim yolu açılmaz. */
+  const vehiclePresentations = useMemo(() => (vehicle ? [vehicle] : []), [vehicle])
+
+  useTransportVehicleLayer(map, { presentations: vehiclePresentations })
 
   const vehiclePopup = vehicle && vehiclePopupSimulationId === vehicle.simulationId
     ? transportVehiclePopupModel(vehicle)

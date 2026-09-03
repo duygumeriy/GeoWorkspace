@@ -712,7 +712,7 @@ public sealed class JourneySimulationTests
     /* --- UÇ / YETKİ SÖZLEŞMESİ --------------------------------------------------- */
 
     [Fact]
-    public void The_endpoints_reuse_transport_view_and_never_the_management_permission()
+    public void The_endpoints_use_the_personal_journey_permission_and_never_the_management_one()
     {
         AssertEndpoint(nameof(JourneySimulationController.Start), typeof(HttpPostAttribute), null);
         AssertEndpoint(nameof(JourneySimulationController.Current), typeof(HttpGetAttribute), "current");
@@ -724,28 +724,33 @@ public sealed class JourneySimulationTests
                 .Cast<RouteAttribute>());
         Assert.Equal("api/transport/journeys/simulations", route.Template);
 
-        // Yönetim yetkisi bu üründe İSTENMEZ ve değişmeden kalır.
+        // PAYLAŞILAN hattın yaşam döngüsü kodları bu üründe İSTENMEZ ve
+        // değişmeden kalır.
         Assert.Equal("transport.simulation.start", PermissionCodes.TransportSimulationStart);
+        Assert.Equal("transport.simulation.stop", PermissionCodes.TransportSimulationStop);
     }
 
     [Fact]
-    public void This_phase_introduces_no_new_permission_code()
+    public void The_product_permission_is_decoupled_from_the_transport_network_permission()
     {
-        Assert.DoesNotContain(
-            PermissionCatalog.AllCodes,
-            code => code.Contains("journey", StringComparison.OrdinalIgnoreCase));
+        /* İKİ YÖNLÜ ayrım: kodlar farklıdır ve biri diğerini İMA ETMEZ.
+           Kişisel yolculuk verilmesi ulaşım ağını açmaz; ulaşım ağını
+           izleyebilmek kişisel yolculuk vermez. */
+        Assert.Equal("journey.use", PermissionCodes.JourneyUse);
+        Assert.NotEqual(PermissionCodes.TransportView, PermissionCodes.JourneyUse);
+        Assert.Contains(PermissionCodes.JourneyUse, PermissionCatalog.AllCodes);
     }
 
     [Fact]
-    public async Task Missing_transport_view_fails_closed_for_the_journey_endpoints()
+    public async Task Missing_journey_use_fails_closed_for_the_journey_endpoints()
     {
         var permissions = Substitute.For<IEffectivePermissionService>();
         permissions
-            .HasPermissionAsync(Owner, PermissionCodes.TransportView, Arg.Any<CancellationToken>())
+            .HasPermissionAsync(Owner, PermissionCodes.JourneyUse, Arg.Any<CancellationToken>())
             .Returns(false);
 
         var context = new AuthorizationHandlerContext(
-            [new PermissionRequirement(PermissionCodes.TransportView)],
+            [new PermissionRequirement(PermissionCodes.JourneyUse)],
             new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity(
                 [new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, "42")],
                 "test")),
@@ -845,8 +850,10 @@ public sealed class JourneySimulationTests
         var required = Assert.Single(method.GetCustomAttributes<RequirePermissionAttribute>(true));
 
         Assert.Equal(template, route.Template);
-        Assert.Equal(PermissionCodes.TransportView, required.PermissionCode);
+        Assert.Equal(PermissionCodes.JourneyUse, required.PermissionCode);
+        Assert.NotEqual(PermissionCodes.TransportView, required.PermissionCode);
         Assert.NotEqual(PermissionCodes.TransportSimulationStart, required.PermissionCode);
+        Assert.NotEqual(PermissionCodes.TransportSimulationStop, required.PermissionCode);
     }
 
     private static JourneyRouteStep Step(int sequence, double distance) =>
@@ -1169,6 +1176,13 @@ public sealed class JourneySimulationTests
                 .HasPermissionAsync(Arg.Any<int>(), PermissionCodes.PoiView, Arg.Any<CancellationToken>())
                 .Returns(true);
 
+            /* Ürün kapısı uçtadır; serviste sorulan KAYNAK yetkisidir. Bu
+               senaryolar hat tabanlı yolculuklar kurar, dolayısıyla ulaşım
+               ağını okuma yetkisi verilir. */
+            permissions
+                .HasPermissionAsync(Arg.Any<int>(), PermissionCodes.TransportView, Arg.Any<CancellationToken>())
+                .Returns(true);
+
             Planning = new JourneyPlanningService(db, currentUser, permissions, router);
 
             /* Arıza senaryosunda GERÇEK kaydedici, hep fırlatan bir yazıcının
@@ -1179,7 +1193,14 @@ public sealed class JourneySimulationTests
                 : new RecordingJourneyActivityRecorder();
 
             Activity = Recorder as RecordingJourneyActivityRecorder ?? new RecordingJourneyActivityRecorder();
-            Simulations = new JourneySimulationService(Planning, currentUser, Store, Broadcaster, Recorder);
+
+            /* GEÇMİŞ yazıcısı Faz 8'de servisin bağımlılığı oldu. Bu dosyanın
+               senaryoları geçmişi ölçmez; kalıcılık ve mükerrerlik kanıtları
+               kendi test dosyasında, GERÇEK yazıcı ve süreç içi veritabanıyla
+               yapılır. */
+            History = new RecordingJourneyHistoryWriter();
+            Simulations = new JourneySimulationService(
+                Planning, currentUser, Store, Broadcaster, Recorder, History);
         }
 
         private Fixture(Fixture origin, int? userId)
@@ -1200,10 +1221,19 @@ public sealed class JourneySimulationTests
                 .HasPermissionAsync(Arg.Any<int>(), PermissionCodes.PoiView, Arg.Any<CancellationToken>())
                 .Returns(true);
 
+            /* Ürün kapısı uçtadır; serviste sorulan KAYNAK yetkisidir. Bu
+               senaryolar hat tabanlı yolculuklar kurar, dolayısıyla ulaşım
+               ağını okuma yetkisi verilir. */
+            permissions
+                .HasPermissionAsync(Arg.Any<int>(), PermissionCodes.TransportView, Arg.Any<CancellationToken>())
+                .Returns(true);
+
             Planning = new JourneyPlanningService(Db, currentUser, permissions, Router);
             Activity = origin.Activity;
             Recorder = origin.Recorder;
-            Simulations = new JourneySimulationService(Planning, currentUser, Store, Broadcaster, Recorder);
+            History = origin.History;
+            Simulations = new JourneySimulationService(
+                Planning, currentUser, Store, Broadcaster, Recorder, History);
         }
 
         public AppDbContext Db { get; }
@@ -1216,6 +1246,9 @@ public sealed class JourneySimulationTests
 
         /// <summary>Servise/runner'a verilen kaydedici (arızalı senaryoda GERÇEK olanı).</summary>
         public IJourneyActivityRecorder Recorder { get; }
+
+        /// <summary>Yazılan geçmiş çağrıları; bu dosyada yalnızca bağımlılık olarak durur.</summary>
+        public RecordingJourneyHistoryWriter History { get; }
         public JourneyPlanningService Planning { get; }
         public JourneySimulationService Simulations { get; }
         public int RouteId { get; private set; }

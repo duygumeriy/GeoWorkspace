@@ -1,9 +1,24 @@
 import earthImage from '../assets/earth-login.jpg'
-import PinIcon from '../components/ui/icons/PinIcon.jsx'
+import infomotionLogo from '../assets/brand/infomotion-logo.png'
 import { ShieldIcon } from '../components/ui/icons/index.js'
 import './LoginVisualPane.css'
 
 /**
+ * Kimlik doğrulama ekranlarının SOL görsel yüzeyi.
+ *
+ * <b>Tek bir yerde durur ve üç ekran onu paylaşır</b> — giriş, `AuthShell`
+ * (kayıt, şifre sıfırlama, e-posta doğrulama, hesap etkinleştirme) ve iki
+ * aşamalı doğrulama. Ürün kimliğini buraya koymak, onu her ekrana ayrı ayrı
+ * kopyalamadan hepsinde aynı anda doğru yapar; kayıt ekranının BAŞARI dalı da
+ * aynı kabuğu kullandığı için markalı kalır.
+ *
+ * <b>Ürün markası SAĞLANAN ÇİZİMDİR</b> (yerel, saydam zeminli PNG; ilk
+ * denemedeki SVG geçerli bir belge değildi ve tarayıcıda hiç çizilmiyordu).
+ * Eskiden burada bir iğne simgesi, elle yazılmış bir ad ve bir slogan vardı;
+ * üçü de kurumsal çizimin içinde zaten mevcut. Metni ayrıca HTML olarak da
+ * yazmak sloganı iki kez göstermek olurdu, bu yüzden eski blok kaldırıldı —
+ * çizim yeniden üretilmedi, olduğu gibi kullanılıyor.
+ *
  * Purely decorative — aria-hidden so screen-reader users go straight to the
  * real form. No real map data is shown here, only brand visuals.
  */
@@ -14,15 +29,12 @@ export default function LoginVisualPane() {
       <div className="login-visual-earth-fade" />
 
       <div className="login-visual-brand">
-        <span className="login-visual-brand-icon">
-          <PinIcon size={60} />
-        </span>
-        <div>
-          <p className="login-visual-brand-name">
-            <span className="login-visual-brand-accent">Harita</span> Uygulaması
-          </p>
-          <p className="login-visual-brand-tagline">Akıllı haritalar, güçlü kararlar.</p>
-        </div>
+        {/* Çizim ad ve sloganı KENDİSİ taşır; yanına metin eklenmez. */}
+        <img
+          className="login-visual-brand-logo"
+          src={infomotionLogo}
+          alt="Info&Motion — Sahadan veriye, veriden harekete."
+        />
       </div>
 
       <div className="login-visual-badge">

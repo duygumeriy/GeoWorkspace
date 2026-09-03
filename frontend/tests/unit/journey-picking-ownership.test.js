@@ -92,13 +92,18 @@ test('the disarm action empties the slot without touching the rest of the plan',
   assert.equal(state.activeSlotKey, null)
   // Kip, panel ve noktalar YERİNDE kalır: silah bırakmak plan silmek değildir.
   assert.equal(state.mode, JOURNEY_MODES.WAYPOINTS)
-  assert.equal(state.panel, PANEL_STATES.OPEN)
+  assert.equal(state.panel, PANEL_STATES.CLOSED)
   assert.equal(state.waypoints.length, 2)
 })
 
 test('the planner hook applies both rules from the pure module', () => {
   // Kural kopyalanmaz, ÇAĞRILIR: ikinci bir tanım zamanla ayrışırdı.
-  assert.match(PLANNER_HOOK, /isPicking: journeyPickingActive\(\{/)
+  assert.match(PLANNER_HOOK, /isPicking: permitted && journeyPickingActive\(\{/)
+  /* Faz 2: nokta seçimi KİŞİSEL ürünün etkileşimidir. Ürün kapısı
+     (`journey.use`) olmadan hiç silahlanamaz — çalışma alanının paylaşılan
+     bölümünü kullanan ama kişisel ürünü olmayan kullanıcıda kişisel yüzey hiç
+     çizilmez ve bir tıklama görünmeyen bir yuvaya yazamaz. */
+  assert.match(PLANNER_HOOK, /product: state\.product,/)
   assert.match(PLANNER_HOOK, /workspaceAtRest,/)
   assert.match(PLANNER_HOOK, /shouldDisarmJourneySlot\(\{ activeSlotKey: state\.activeSlotKey, workspaceAtRest \}\)/)
 
@@ -112,7 +117,7 @@ test('MapPage defines the resting workspace as ordinary single-click selection',
     /const workspaceAtRest =\s*workspaceMode\.isSelecting && workspaceMode\.activeSelectionTool === 'single'/,
   )
   // Ve planlayıcı kancasına GEÇİRİLİR: kapı gerçekten kurulmuş olmalıdır.
-  assert.match(MAP_PAGE, /useJourneyPlanner\(\{\s*permitted: allowed\.canViewTransport,\s*workspaceAtRest,\s*\}\)/)
+  assert.match(MAP_PAGE, /useJourneyPlanner\(\{[^}]*permitted: allowed\.canUseJourney,[^}]*workspaceAtRest,\s*\}\)/s)
 })
 
 test('arming a slot first returns the workspace to rest, through each family own exit', () => {
@@ -191,7 +196,7 @@ test('the vehicle layer keeps rendering, moving and following while its click is
 
   // Katman ve eşitleme yolu duruyor: araç gizlenmiyor.
   assert.match(VEHICLE_HOOK, /createTransportVehicleLayer\(\)/)
-  assert.match(VEHICLE_HOOK, /syncTransportVehicleFeature\(sourceRef\.current, presentation\)/)
+  assert.match(VEHICLE_HOOK, /syncTransportVehicleFeatures\(sourceRef\.current, presentations\)/)
 
   // Varsayılan açıktır: mevcut çağıranların davranışı değişmez.
   assert.match(VEHICLE_HOOK, /clickEnabled = true/)

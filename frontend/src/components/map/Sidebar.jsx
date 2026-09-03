@@ -4,6 +4,7 @@ import { usePermissions } from '../../auth/permissionStore.js'
 import { ADMIN_ENTRY_PERMISSIONS, PERMISSIONS } from '../../auth/permissionCodes.js'
 import useMediaQuery from '../../hooks/useMediaQuery.js'
 import IconButton from '../ui/IconButton.jsx'
+import infomotionLogo from '../../assets/brand/infomotion-logo.png'
 import {
   PinIcon,
   MapIcon,
@@ -17,8 +18,28 @@ import {
   ShieldIcon,
   TrashIcon,
   AnalysisIcon,
+  RouteIcon,
 } from '../ui/icons/index.js'
 import './Sidebar.css'
+
+/**
+ * Yolculuk Merkezi satırının kimliği.
+ *
+ * <b>Bilinçli olarak <code>MAP_CONTEXTS.journey</code> ile AYNI değerdir:</b>
+ * panel bağlamı etkinken satır kendiliğinden etkin görünür ve ikinci bir
+ * "hangi satır açık" defteri tutulmaz. Kenar çubuğu bağlam kayıtlarını
+ * içe aktarmaz — tek bir dizge, iki modülü birbirine bağlamadan aynı gerçeği
+ * söyler.
+ */
+export const JOURNEY_CENTER_ITEM_ID = 'journey'
+
+/**
+ * Marka çiziminin erişilebilir adı.
+ *
+ * Çizim ürün adını ve sloganını KENDİ İÇİNDE taşır; ekran okuyucu da aynısını
+ * duymalıdır. Metin ayrıca HTML'e yazılmaz — görenler onu iki kez okurdu.
+ */
+const BRAND_ALT = 'Info&Motion — Sahadan veriye, veriden harekete.'
 
 /**
  * Primary navigation.
@@ -49,6 +70,16 @@ export default function Sidebar({
      satırı göstermek garanti 403 alacak bir akışa davet etmek olurdu. Hesap
      MapPage'deki yetki katmanındadır; burada yalnızca sonucu tüketilir. */
   canOpenLocationAnalysis = false,
+  /* Yolculuk Merkezi EN AZ BİR ürüne erişim ister (kişisel yolculuk ya da
+     paylaşımlı ulaşım); hesap MapPage'deki yetki katmanındadır
+     (`canOpenJourneyWorkspace`) ve burada yalnızca sonucu tüketilir. Rol adı
+     okunmaz. */
+  canOpenJourneyCenter = false,
+  /* Yolculuk Merkezi bir kenar çubuğu SAYFASI değil, haritanın kendi
+     panelidir: satır bu yüzden `onSelectPanel` yerine kendi açma eylemini
+     çağırır. Eylem yalnızca paneli gösterir/gizler — hiçbir simülasyona,
+     izlemeye ya da takibe dokunmaz. */
+  onOpenJourneyCenter,
   username,
   remaining,
   onLogout,
@@ -89,6 +120,13 @@ export default function Sidebar({
      diğer ikisi kişinin kendi hesabını ve uygulama bilgisini gösterir. */
   const items = [
     { id: null, label: 'Harita', Icon: MapIcon },
+    /* TEK Yolculuk Merkezi girişi. Kişisel planlama, kaydedilen yolculuklar,
+       yolculuk geçmişi ve paylaşımlı ulaşım AYRI satırlar DEĞİLDİR: hepsi tek
+       bir ürünün içindeki bölümlerdir ve dördünü de kenar çubuğuna sermek,
+       kullanıcıya bir ürün yerine dört ayrı araç gösterirdi. */
+    ...(canOpenJourneyCenter
+      ? [{ id: JOURNEY_CENTER_ITEM_ID, label: 'Yolculuk Merkezi', Icon: RouteIcon }]
+      : []),
     ...(can(PERMISSIONS.DRAWINGS_VIEW) ? [{ id: 'drawings', label: 'Çizimlerim', Icon: ListIcon }] : []),
     // Çizimlerim'in hemen ardında: aynı soru, farklı alan nesnesi.
     ...(canOpenMyPois ? [{ id: 'myPois', label: "POI'lerim", Icon: PinIcon }] : []),
@@ -123,6 +161,15 @@ export default function Sidebar({
   ]
 
   const handleSelect = (panelId) => {
+    /* Yolculuk Merkezi harita panelidir ve kendi açma/kapama eylemine
+       sahiptir; panel koordinatörüne bir kenar çubuğu sayfası gibi girmez.
+       Yönetim satırıyla AYNI kalıp: satırın hedefi sıradan bir panel değilse
+       kendi eylemi çağrılır. */
+    if (panelId === JOURNEY_CENTER_ITEM_ID) {
+      onOpenJourneyCenter?.()
+      if (isMobile) onCloseMobile?.()
+      return
+    }
     if (panelId === 'admin-users') {
       /* Kök yönlendirmesi aktörün açabileceği İLK bölümü seçer; buradan
          doğrudan /admin/users'a gitmek, yalnızca roles.view taşıyan bir
@@ -144,10 +191,19 @@ export default function Sidebar({
         aria-hidden={isMobile && !mobileOpen ? 'true' : undefined}
       >
         <div className="map-sidebar-brand">
-          <span className="map-sidebar-brand-icon">
-            <PinIcon size={22} />
-          </span>
-          {!collapsed && <span className="map-sidebar-brand-name">Staj Harita Uygulaması</span>}
+          {/* ÜRÜN kimliği ÇİZİMİN KENDİSİDİR.
+              Ad ve slogan çizimin içindedir; yanına ikinci bir başlık ya da
+              simge KONMAZ — aynı şeyi iki kez söylemek olurdu. Kurumsal marka
+              (Başarsoft) bu alanda değil, üst şeritte durur.
+
+              Daraltılmış kenar çubuğunda 3:1 oranındaki çizim okunacak kadar
+              yer bulamaz; bozulmasın diye çizilmez ve kimlik erişilebilir
+              adda yaşamaya devam eder. */}
+          {collapsed ? (
+            <span className="map-sidebar-brand-collapsed" role="img" aria-label={BRAND_ALT} />
+          ) : (
+            <img className="map-sidebar-brand-logo" src={infomotionLogo} alt={BRAND_ALT} />
+          )}
         </div>
 
         <nav className="map-sidebar-nav" aria-label="Ana gezinme">
@@ -174,7 +230,8 @@ export default function Sidebar({
           <div className="map-sidebar-user">
             {!collapsed && (
               <>
-                <span className="map-sidebar-username">{username || '—'}</span>
+                {/* Ad kısaltılabilir; tam hâli `title` ile erişilebilir kalır. */}
+                <span className="map-sidebar-username" title={username || undefined}>{username || '—'}</span>
                 {remaining && (
                   <span className="map-sidebar-session" title="Kalan oturum süresi">
                     <ClockIcon size={13} />

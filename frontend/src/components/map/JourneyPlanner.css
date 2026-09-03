@@ -36,11 +36,22 @@
 
 .journey-head {
   display: flex;
-  align-items: center;
+  /* Kimlik iki satır olabilir; eylemler ÜSTE yaslanır ki alt başlık uzadığında
+     düğmeler ortada asılı kalmasın. */
+  align-items: flex-start;
   justify-content: space-between;
   gap: 0.5rem;
   padding: 0.6rem 0.6rem 0.5rem 0.75rem;
   flex-shrink: 0;
+}
+
+/* Başlık + tek satırlık bağlam. `min-width: 0` olmadan uzun bir hat adı
+   düğmeleri panelin dışına iterdi. */
+.journey-head-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
 }
 
 .journey-head-title {
@@ -52,6 +63,17 @@
   letter-spacing: 0.02em;
   text-transform: uppercase;
   color: var(--journey-accent);
+}
+
+/* Bağlam özeti başlıktan görsel olarak GERİDEDİR: kimlik önce okunur.
+   Tek satırda kalır — iki satıra taşan bir özet, başlığı bir bloğa çevirirdi. */
+.journey-head-subtitle {
+  margin: 0;
+  font-size: var(--font-small);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .journey-head-actions { display: flex; gap: 0.15rem; }
@@ -96,6 +118,60 @@
   gap: 0.65rem;
   padding: 0 0.75rem 0.75rem;
   overflow-y: auto;
+}
+
+/* ÜST DÜZEY ürün seçimi. İkincil gezinmeden (`.journey-tab`) görsel olarak
+   AYRIŞIR: ikisi aynı görünseydi kullanıcı "Planla" bölümü ile
+   "Kendi Yolculuğum" ürününü aynı eksenin iki değeri sanardı. Ürün çubuğu
+   panelin başlığına yapışır ve altında ince bir ayraç taşır.
+
+   AYNI GEREKÇE paylaşımlı üründe de geçerlidir: oradaki "Seçili Hat /
+   Aktif Simülasyonlar" da ikincil gezinmedir ve `.journey-tab` kullanır. */
+.journey-products {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0 0.75rem 0.6rem;
+  border-bottom: 1px solid var(--border-soft, rgba(148, 163, 184, 0.25));
+}
+
+.journey-product-tab {
+  flex: 1;
+  padding: 0.4rem 0.3rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--font-small);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.journey-product-tab.is-active {
+  background: var(--journey-accent);
+  border-color: var(--journey-accent);
+  color: var(--surface, #fff);
+}
+
+/* --- Paylaşılan hat bölümü -------------------------------------------------- */
+
+.journey-shared-route {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: var(--font-body);
+}
+
+.journey-shared-swatch {
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 999px;
+  flex: none;
+}
+
+.journey-shared-status {
+  font-size: var(--font-small);
+  font-weight: 600;
+  color: var(--text-primary);
 }
 
 .journey-tabs { display: flex; gap: 0.25rem; }
@@ -379,6 +455,21 @@
   }
 
   .journey-panel.is-collapsed { width: auto; }
+
+  /* --- Dar ekranda TEK kaydırma sahibi (Faz 10) -------------------------------
+     Kaydedilenler ve Geçmiş listeleri masaüstünde kendi pencerelerinde kayar;
+     bu, uzun bir listenin paneli büyütmesini engeller ve orada doğrudur.
+
+     Alt sayfada ise panelin kendisi zaten 55%'e sınırlıdır ve iç listelerin
+     12–13rem'lik pencereleri neredeyse o kadardır: sonuç, birbirinin içinde
+     iki kaydırma alanı — parmak hangisini sürüklediğini bilemez. Dar ekranda
+     iç sınırlar KALKAR ve gövde tek kaydırma sahibi olur. */
+  .journey-saved-list,
+  .journey-history-list,
+  .journey-active-list {
+    max-height: none;
+    overflow-y: visible;
+  }
 }
 
 /* --- Canlı navigasyon (Faz 5D) -----------------------------------------------
@@ -558,3 +649,609 @@
 .journey-popup-step p { margin: 0; font-size: var(--font-small); font-weight: 600; }
 .journey-popup-step span { font-size: 0.72rem; color: var(--text-secondary); }
 .journey-popup-step em { font-size: 0.7rem; color: var(--text-secondary); font-style: normal; }
+
+/* --- Aktif Simülasyonlar (Faz 4A) ---------------------------------------------
+   Paylaşılan bölümün İKİNCİ görünümü. Ürün sekmelerinden (`.journey-products`)
+   ayrı bir çubukta durur çünkü farklı bir eksendir: orası hangi ÜRÜNE
+   bakıldığı, burası aynı ürünün hangi BAKIŞI.
+
+   Liste MASAÜSTÜNDE de kaydırılır ve sabit bir genişlik varsaymaz: panel
+   mobilde alt sayfaya dönüştüğünde aynı işaretleme, aynı satırlar geçerlidir.
+   Yükseklik panelin kendi ölçüsüne göre esner; ikinci bir yerleşim sistemi
+   kurulmaz. */
+
+/* Düzeni artık `.journey-tabs` verir (ikincil gezinmenin ortak dili); burada
+   yalnızca bölümün kendi alt boşluğu kalır. */
+.journey-shared-views { margin-bottom: 0.1rem; }
+
+.journey-active {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-height: 0;
+}
+
+.journey-active-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.journey-active-search {
+  flex: 1 1 8rem;
+  min-width: 0;
+  padding: 0.35rem 0.5rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--surface-soft);
+  background: var(--surface-soft);
+  color: var(--text-primary);
+  font-size: var(--font-small);
+}
+
+.journey-active-bulk {
+  display: flex;
+  gap: 0.3rem;
+  flex: 0 1 auto;
+}
+
+.journey-active-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  /* Uzun liste paneli taşırmaz; kaydırma LİSTENİN kendisindedir. */
+  max-height: 15rem;
+  overflow-y: auto;
+}
+
+/* SATIR TEK BİR KARTTIR ve üç bölgeye ayrılır: [kutu] [ad/durum] [İzle].
+   Orta bölge esner ve TAŞMAZ (`min-width: 0`), yan bölgeler kendi ölçüsünde
+   kalır. Eskiden satırda ayrıca üç yaşam döngüsü düğmesi vardı ve dar harita
+   panelinde hepsi aynı genişliği paylaşmaya çalışıyordu: ad kısalıyor,
+   etiketler düğmelerin üstüne biniyordu. Komutlar artık SEÇİM çubuğundadır. */
+.journey-active-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+}
+
+/* SEÇİLİ satır vurgulanır ama diğerleri okunur kalır: seçim bir görünürlük
+   kararı değildir. */
+.journey-active-row.is-selected {
+  border-color: var(--journey-accent);
+}
+
+.journey-active-select {
+  flex: 1 1 auto;
+  /* Uzun hat adı satırı GENİŞLETEMEZ; kendi bölgesinde kısalır. */
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  padding: 0.4rem 0.35rem;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.journey-active-name {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.journey-active-name strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Durum ve ilerleme TEK satırdır ve sarmaz: iki satıra inen bir meta,
+   kartların yüksekliğini çalıştırma durumuna göre zıplatırdı. */
+.journey-active-meta {
+  font-size: var(--font-small);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+/* TEK satır eylemi. Kısalmaz ve ezilmez. */
+.journey-active-watch {
+  flex: 0 0 auto;
+  align-self: center;
+  margin-right: 0.35rem;
+  padding: 0.3rem 0.5rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--surface-soft);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--font-small);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.journey-active-watch.is-watched {
+  border-color: var(--journey-accent);
+  color: var(--journey-accent);
+}
+
+/* --- NAVİGASYON (Faz 5) -------------------------------------------------------
+   SEÇİLİ hattın ayrıntısında, KOMPAKT bir blok. Faz 4B'de kazanılan sakinlik
+   korunur: iki satır, tek başlık, düğme yok. Talimat bir EYLEM değil, bir
+   BİLGİDİR — düğme gibi görünmesi kullanıcıyı tıklamaya davet ederdi. */
+
+.journey-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+}
+
+.journey-nav-title {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+/* Etiket ve talimat İKİ BÖLGEDİR: etiket kendi ölçüsünde kalır, talimat
+   esner ve gerektiğinde sarar. Tek satıra zorlamak, uzun bir sokak adını
+   kırpar ve talimatı okunmaz kılardı. */
+.journey-nav-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.journey-nav-label {
+  flex: 0 0 auto;
+  font-size: var(--font-small);
+  color: var(--text-secondary);
+}
+
+.journey-nav-instruction {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--font-small);
+  color: var(--text-secondary);
+  /* Uzun talimat panelden TAŞMAZ; sarar. */
+  overflow-wrap: anywhere;
+}
+
+/* ŞU ANKİ talimat vurgulanır; sonraki bir hatırlatmadır ve sessiz kalır. */
+.journey-nav-row.is-current .journey-nav-instruction {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.journey-nav-road { color: var(--text-secondary); font-weight: 400; }
+
+/* --- YÖNETİM YÜZEYİ (Faz 4B) --------------------------------------------------
+   İZLEME araç çubuğundan GÖRSEL OLARAK da ayrılır: kendi kutusu, kendi sayacı
+   ve kendi eylem sırası vardır. Aynı satıra karışsalardı kullanıcı bir
+   düğmenin haritayı mı yoksa sunucudaki simülasyonu mu etkilediğini tahmin
+   etmek zorunda kalırdı.
+
+   İKİ HÂL, İKİ AĞIRLIK. Seçim yokken yüzey neredeyse görünmezdir (tek bir
+   sessiz kısa yol); seçim varken kompakt bir eylem çubuğuna dönüşür. Panelin
+   dar olduğu yerde sürekli duran dört yıkıcı düğme, kullanıcının basamayacağı
+   şeylerle ekranı doldurmak demekti. */
+
+.journey-manage {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--journey-accent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--journey-accent) 8%, transparent);
+}
+
+/* SEÇİM YOK: çerçeve, dolgu ve vurgu yok — yalnızca bir bağlantı gibi duran
+   kısa yol. Boş bir seçim, panelde yer kaplamayı hak etmez. */
+.journey-manage.is-idle {
+  padding: 0;
+  border: none;
+  background: none;
+  align-items: flex-start;
+}
+
+.journey-manage-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  justify-content: space-between;
+}
+
+.journey-manage-count {
+  font-size: var(--font-small);
+  font-weight: 700;
+  color: var(--journey-accent);
+}
+
+.journey-manage-select {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+/* Seçim kısa yolları KOMUT DEĞİLDİR: düğme gibi değil, bağlantı gibi
+   görünürler. Bu, gerçek yaşam döngüsü komutlarının tek "düğme" olmasını
+   sağlar ve göz onları ilk fark eder. */
+.journey-manage-hint {
+  padding: 0.15rem 0;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font-size: var(--font-small);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 0.15rem;
+  cursor: pointer;
+}
+
+.journey-manage-hint:hover { color: var(--journey-accent); }
+
+/* Eylemler DAİMA sarılabilir bir ızgaradır: dar panelde iki sütuna iner ve
+   hiçbir etiket kırpılmaz ya da komşusunun üstüne binmez. */
+.journey-manage-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+  gap: 0.3rem;
+}
+
+.journey-manage-action {
+  padding: 0.4rem 0.5rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--surface-soft);
+  background: var(--surface-soft);
+  color: var(--text-secondary);
+  font-size: var(--font-small);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.journey-manage-action:disabled { opacity: 0.55; cursor: default; }
+
+/* YIKICI OLAN YALNIZCA GERÇEKTEN YIKICI OLANDIR. Duraklat/Devam Ettir aynı
+   çalıştırmayı sürdürür ve nötr kalır; her düğmeyi kırmızıya boyamak uyarıyı
+   anlamsızlaştırırdı. */
+.journey-manage-action.is-destructive {
+  border-color: var(--danger, #ef4444);
+  background: none;
+  color: var(--danger, #ef4444);
+}
+
+/* Yeniden başlatma sıfırlamadan DAHA ağırdır (bitirir VE yenisini kurar):
+   dolu zemin onu sıfırlamadan ayırır ve kazara tıklanmasını zorlaştırır. */
+.journey-manage-action.is-restart {
+  background: color-mix(in srgb, var(--danger, #ef4444) 12%, transparent);
+}
+
+/* Yönetim onay kutusu İZLE düğmesinden AÇIKÇA farklı görünür: kutu, düğme
+   değil. Görünür metin taşımaz — dar panelde hat adının yerini yerdi — ama
+   dokunmatik hedefi kutunun kendisinden büyüktür. */
+.journey-active-manage {
+  flex: 0 0 auto;
+  align-self: center;
+  display: flex;
+  align-items: center;
+  padding: 0.4rem 0.15rem 0.4rem 0.45rem;
+  cursor: pointer;
+}
+
+.journey-active-manage input {
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  cursor: pointer;
+}
+
+.journey-active-manage input:disabled { cursor: default; }
+
+/* Dar ekranda araç çubuğu iki satıra iner ve toplu eylemler tam genişliği
+   paylaşır; liste daha kısa bir pencereye sığar.
+
+   Panele SABİT BİR MİNİMUM GENİŞLİK VERİLMEZ: sorun genişlik değil, bilgi
+   hiyerarşisiydi ve orada çözüldü. */
+@media (max-width: 640px) {
+  .journey-active-bulk { flex: 1 1 100%; }
+  .journey-active-bulk > button { flex: 1; }
+
+  /* Seçim eylem çubuğu İKİ SÜTUNLU ızgaraya iner. */
+  .journey-manage-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .journey-manage-head { flex-direction: column; align-items: flex-start; }
+  .journey-manage-select { width: 100%; }
+}
+
+/* --- Kaydedilmiş kişisel yolculuklar (Faz 7) ---------------------------------
+   Kayıtlar aynı çalışma alanının İÇİNDE yaşar; ayrı bir sayfa açılmaz ve
+   haritayı kaplayan yeni bir panel eklenmez. Liste kendi penceresinde kayar,
+   böylece harita her zaman görünür kalır.
+
+   Panele SABİT BİR MİNİMUM GENİŞLİK VERİLMEZ: satırlar dar ekranda kendi
+   içinde sarar. */
+
+.journey-saved {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.journey-saved-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  /* Uzun liste PANELİ büyütmez; kendi içinde kayar. */
+  max-height: 18rem;
+  overflow-y: auto;
+}
+
+.journey-saved-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.5rem;
+  border: 1px solid var(--border-soft, transparent);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+}
+
+.journey-saved-row[aria-busy='true'] { opacity: 0.6; }
+
+.journey-saved-head {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+/* Yıldız KENDİ düğmesidir: satırı seçmez, yolculuğu başlatmaz. */
+.journey-star {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.2rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.journey-star.is-on { color: var(--warning, #f59e0b); }
+
+.journey-star.is-on svg { fill: currentColor; }
+
+.journey-saved-name {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  font-size: var(--font-small);
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  /* Uzun ad satırı taşırmaz. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.journey-saved-meta,
+.journey-saved-time {
+  margin: 0;
+  font-size: var(--font-small);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.journey-saved-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.journey-saved-actions > button { flex: 1 1 auto; }
+
+/* Ad diyaloğunun alanı, onay diyaloğunun kabuğunu paylaşır; yalnızca
+   aralığını bildirir. */
+.confirm-dialog .text-field { margin: 0.25rem 0 0.75rem; }
+
+@media (max-width: 640px) {
+  /* Dar ekranda iç kaydırma KALKAR (tek-sahip kuralı yukarıdadır); yalnızca
+     eylemler iki sütuna iner. */
+  .journey-saved-actions > button { flex: 1 1 45%; }
+}
+
+/* --- Kişisel yolculuk geçmişi (Faz 8) ----------------------------------------
+   Tutanaklar aynı çalışma alanının İÇİNDE yaşar; ayrı bir sayfa açılmaz ve
+   haritayı kaplayan yeni bir panel eklenmez. Liste kendi penceresinde kayar,
+   böylece harita her zaman görünür kalır.
+
+   Panele SABİT BİR MİNİMUM GENİŞLİK VERİLMEZ: satırlar dar ekranda kendi
+   içinde sarar. */
+
+.journey-history {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.journey-history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  /* Uzun liste PANELİ büyütmez; kendi içinde kayar. */
+  max-height: 20rem;
+  overflow-y: auto;
+}
+
+.journey-history-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.5rem;
+  border: 1px solid var(--border-soft, transparent);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+}
+
+.journey-history-row[aria-busy='true'] { opacity: 0.6; }
+
+.journey-history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+/* Rozet METİN taşır; renk yalnızca taramayı hızlandırır ve tek başına hiçbir
+   bilgi vermez. */
+.journey-history-badge {
+  padding: 0.1rem 0.4rem;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-small);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.journey-history-badge.tone-done {
+  background: color-mix(in srgb, var(--success, #16a34a) 16%, transparent);
+  color: var(--success, #16a34a);
+}
+
+.journey-history-badge.tone-stopped {
+  background: color-mix(in srgb, var(--danger, #ef4444) 14%, transparent);
+  color: var(--danger, #ef4444);
+}
+
+.journey-history-badge.tone-neutral {
+  background: var(--surface-soft);
+  color: var(--text-secondary);
+}
+
+.journey-history-when {
+  font-size: var(--font-small);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.journey-history-route {
+  margin: 0;
+  font-size: var(--font-small);
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.journey-history-meta {
+  margin: 0;
+  font-size: var(--font-small);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.journey-history-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.journey-history-actions > button { flex: 1 1 auto; }
+
+.journey-history-more { width: 100%; }
+
+/* Ayrıntı SATIRIN İÇİNDE açılır: haritayı kaplayan bir katman, birkaç
+   satırlık bir özete değmez. */
+.journey-history-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.15rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid var(--border-soft, transparent);
+}
+
+.journey-history-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.25rem 0.5rem;
+  margin: 0;
+}
+
+.journey-history-facts dt {
+  font-size: var(--font-small);
+  color: var(--text-secondary);
+}
+
+.journey-history-facts dd {
+  margin: 0;
+  font-size: var(--font-small);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.journey-history-points {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.journey-history-points li {
+  display: flex;
+  gap: 0.4rem;
+  align-items: baseline;
+  font-size: var(--font-small);
+}
+
+.journey-history-role {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+}
+
+.journey-history-point-name {
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.journey-history-load { align-self: flex-start; }
+
+@media (max-width: 640px) {
+  /* Dar ekranda iç kaydırma KALKAR (tek-sahip kuralı yukarıdadır); ayrıntı
+     tek sütuna iner ve eylemler iki sütunu paylaşır. */
+  .journey-history-facts { grid-template-columns: minmax(0, 1fr); }
+  .journey-history-actions > button { flex: 1 1 45%; }
+  .journey-history-load { align-self: stretch; }
+}

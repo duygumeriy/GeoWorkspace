@@ -275,7 +275,8 @@ public sealed class TransportSimulationInvalidationTests
                     new LineString([new Coordinate(32.80, 39.90), new Coordinate(32.90, 39.95)]) { SRID = 4326 },
                     1_500,
                     120,
-                    "driving"));
+                    "driving",
+                    []));
 
         public Task<ServiceResult<OsrmRouteResult>> RouteAsync(
             OsrmRouteRequest request,

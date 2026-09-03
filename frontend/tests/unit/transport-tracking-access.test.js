@@ -73,13 +73,17 @@ test('the canonical transport viewer role can open the map it is meant to read',
 })
 
 test('the main map exposes tracking behind transport.view alone', () => {
-  /* Ana harita `transport.view` ile ulaşılabilir tek yüzeydir; takip kartı da
-     aynı kapının arkasındadır. Yönetim ekranına girmeden hattı izlemek bu
-     sayede mümkün olur. */
+  /* Ana harita `transport.view` ile ulaşılabilir tek yüzeydir; takip yeteneği
+     de aynı kapının arkasındadır. Yönetim ekranına girmeden hattı izlemek bu
+     sayede mümkün olur.
+
+     Faz 2'de kapı DEĞİŞMEDİ, kabı değişti: denetimler ayrı bir karttan
+     YOLCULUK çalışma alanının paylaşılan bölümüne taşındı ve o bölüm hâlâ
+     yalnızca `transport.view` ile sunulur. */
   assert.match(mapPage, /permitted:\s*allowed\.canViewTransport/)
   assert.match(mapPage, /canView:\s*allowed\.canViewTransport/)
-  assert.match(mapPage, /\{allowed\.canViewTransport && selectedTransportRouteId != null && \(/)
-  assert.match(mapPage, /<TransportTrackingControls/)
+  assert.match(mapPage, /canUseTransport=\{allowed\.canViewTransport\}/)
+  assert.ok(!mapPage.includes('<TransportTrackingControls'))
   assert.match(read('../../src/hooks/useWorkspacePermissions.js'), /canViewTransport = can\(PERMISSIONS\.TRANSPORT_VIEW\)/)
 
   /* Ana harita rotası YÖNETİM yetkisiyle korunmuyor: kapı `map.view`dir ve
@@ -121,8 +125,52 @@ test('start stays bound to transport.simulation.start for the viewer surface', (
   assert.equal(starter.showStart, true)
 
   // Haritadaki kart yetkiyi yalnızca kanonik KOD üzerinden sorar.
-  assert.match(mapPage, /canStart: can\(PERMISSIONS\.TRANSPORT_SIMULATION_START\)/)
   assert.equal(PERMISSIONS.TRANSPORT_SIMULATION_START, 'transport.simulation.start')
+
+  /* KOD TEK BİR KEZ OKUNUR ve TEK bir yeteneğe bağlanır.
+
+     Ölçü eskiden `canStart: can(PERMISSIONS.TRANSPORT_SIMULATION_START)`
+     LİTERALİYDİ ve o gün doğruydu: kodun tek tüketicisi vardı. Faz 4B ikinci
+     bir tüketici getirdi — YENİDEN BAŞLATMA aynı başlatma yeteneğini durdurma
+     yeteneğiyle BİRLİKTE arar. Literali korumak, kodu iki ayrı yerde okumaya
+     zorlardı; iki okuma ise zamanla birbirinden sapabilen iki kural kitabı
+     demektir. İddia bu yüzden zayıflamadı, KONUMLANDI: ölçülen şey artık
+     sözdizimi değil, "tek okuma → tek ad → her tüketici o adı kullanır"
+     OLGUSUDUR. */
+  assert.equal(
+    (mapPage.match(/can\(PERMISSIONS\.TRANSPORT_SIMULATION_START\)/g) ?? []).length,
+    1,
+    'başlatma yetkisi birden çok yerden okunuyor',
+  )
+
+  const startCapability = mapPage.match(
+    /const\s+([A-Za-z0-9_]+)\s*=\s*can\(\s*PERMISSIONS\.TRANSPORT_SIMULATION_START\s*\)/,
+  )
+  assert.ok(startCapability, 'başlatma yeteneği etkin yetki kodundan türetilmiyor')
+
+  const startName = startCapability[1]
+
+  /* SIRADAN BAŞLATMA yalnızca bu yetenekten gelir: görünürlük kuralına
+     `canStart` olarak verilir ve başka hiçbir koddan türetilmez. */
+  assert.ok(
+    new RegExp(`canStart:\\s*${startName}\\b`).test(mapPage),
+    'görünürlük kuralı adlandırılmış başlatma yeteneğini almıyor',
+  )
+
+  /* YENİDEN BAŞLATMA da AYNI adı kullanır — ikinci bir okuma ya da yeni bir
+     yetki kodu (transport.simulation.restart) UYDURULMADAN. */
+  assert.ok(
+    new RegExp(`RESTART && !${startName}\\b`).test(mapPage),
+    'yeniden başlatma aynı adlandırılmış başlatma yeteneğini kullanmıyor',
+  )
+  assert.ok(!/simulation\.restart/.test(mapPage), 'üçüncü bir yetki kodu uydurulmuş')
+
+  /* Ve başlatma DURDURMADAN türetilmez (ya da tersi): iki kod ayrıdır ve biri
+     diğerinin yerine geçmez. */
+  assert.ok(!new RegExp(`${startName}[^\\n]*TRANSPORT_SIMULATION_STOP`).test(mapPage))
+
+  // Karar yalnızca etkin yetkidendir; rol adı kestirmesi YOKTUR.
+  assert.ok(!/canStart:\s*[^\n]*(isAdmin|roleName|userName|'Admin')/.test(mapPage))
 })
 
 /** Ana haritanın YALNIZCA takip ile ilgili bölümleri. */
@@ -242,8 +290,19 @@ test('the two live products keep separate hubs, events and group methods', () =>
 
 test('the map reuses the Phase 4 vehicle layer, presentation and popup', () => {
   assert.match(mapPage, /import useTransportVehicleLayer from '\.\.\/hooks\/useTransportVehicleLayer\.js'/)
-  assert.match(mapPage, /transportVehiclePresentation\(\{/)
-  assert.match(mapPage, /transportVehiclePopupModel\(transportVehicle\)/)
+  /* Faz 4A: ana haritanın AKTİF çizim listesi artık tek araçlı sunumdan
+     değil, İZLEME sunumundan doğar. Ölçülen şey aynı kalır — sayfa kendi
+     araç kuralını yazmaz, saf modülü çağırır. Tek araçlı sunum yönetim
+     ekranında olduğu gibi durur. */
+  assert.match(mapPage, /transportWatchedVehiclePresentations\(\{/)
+  assert.match(
+    read('../../src/pages/admin/TransportRoutePage.jsx'),
+    /transportVehiclePresentation\(\{/,
+  )
+  /* Balon TIKLANAN aracın sunumundan çizilir (Faz 4A): birden fazla işaretçi
+     varken küresel bir "seçili araç" modeli, hangisine tıklanırsa tıklansın
+     aynı balonu açardı. */
+  assert.match(mapPage, /transportVehiclePopupModel\(target\)/)
   assert.match(mapPage, /<TransportVehiclePopup/)
 
   /* İkinci bir araç katmanı kurulmadı: katman yalnızca paylaşılan kancanın
@@ -254,17 +313,28 @@ test('the map reuses the Phase 4 vehicle layer, presentation and popup', () => {
   assert.match(read('../../src/hooks/useTransportVehicleLayer.js'), /createTransportVehicleLayer\(\)/)
 })
 
-test('the tracking control is one shared component, used by both surfaces', () => {
-  assert.match(mapPage, /import TransportTrackingControls from '\.\.\/components\/map\/TransportTrackingControls\.jsx'/)
+test('the shared visibility rule is one pure function, used by both surfaces', () => {
+  /* Faz 2 ana haritadaki KABI değiştirdi, KURALI değil. Güzergah yönetimi
+     ekranı ortak bileşeni kullanmaya devam eder; ana harita ise aynı saf
+     kararı çalışma alanının paylaşılan bölümünde çizer. İkisi de kendi
+     görünürlük kuralını YAZMAZ. */
   assert.match(adminPage, /import TransportTrackingControls from '\.\.\/\.\.\/components\/map\/TransportTrackingControls\.jsx'/)
+  assert.ok(!mapPage.includes('TransportTrackingControls'))
 
-  // Görünürlük kuralı tek yerden gelir; iki ekran kendi kuralını yazmaz.
   for (const source of [mapPage, adminPage]) {
     assert.match(source, /transportSimulationControls\(\{/)
   }
   assert.match(controls, /controls\.showStart/)
   assert.match(controls, /controls\.showFollow/)
   assert.match(controls, /controls\.showUnfollow/)
+
+  /* Ana haritanın kabı, aynı kararı `sharedJourneyPresentation` üzerinden
+     okur; ikinci bir görünürlük kuralı doğmaz. */
+  assert.match(mapPage, /sharedJourneyPresentation\(\{[^}]*controls: simulationControls/s)
+  const shared = read('../../src/components/map/SharedTransportJourneyContent.jsx')
+  assert.match(shared, /shared\.showStart/)
+  assert.match(shared, /shared\.showFollow/)
+  assert.match(shared, /shared\.showUnfollow/)
 })
 
 /* --- Mevcut davranış korunur --------------------------------------------------- */
@@ -278,9 +348,25 @@ test('existing main-map transport wiring is untouched', () => {
 })
 
 test('the admin surface keeps its own start flow and button language', () => {
+  /* Faz 2 YÖNETİM ekranına DOKUNMADI: başlatma akışı, sahiplenilen çalıştırma
+     kimliği ve düğme dili aynen yerinde. */
   assert.match(adminPage, /simulation\.start\(selectedRoute\.id\)/)
   assert.match(adminPage, /setStartedSimulationId\(snapshot\.simulationId\)/)
+  assert.match(adminPage, /<TransportTrackingControls/)
+
   // Yönetim ekranı kendi düğme dilini korur (varsayılan admin-button).
   assert.doesNotMatch(adminPage, /primaryButtonClassName/)
-  assert.match(mapPage, /primaryButtonClassName="transport-popup-action"/)
+  assert.match(controls, /primaryButtonClassName = 'admin-button'/)
+
+  /* İDDİANIN ANA HARİTA YARISI DEĞİŞTİ. Eskiden ölçülen şey, ana haritanın
+     AYNI bileşeni farklı bir düğme diliyle ("transport-popup-action")
+     kullanmasıydı. Faz 2'de ana harita o bileşeni hiç kullanmıyor: paylaşılan
+     bölüm çalışma alanının kendi düğme dilini konuşuyor. Ölçülen ayrım
+     aynıdır — iki yüzey birbirinin görsel dilini taşımaz — yalnızca ana
+     haritanın tarafı artık kendi bileşeninde okunur. */
+  assert.ok(!mapPage.includes('transport-popup-action'))
+  const shared = read('../../src/components/map/SharedTransportJourneyContent.jsx')
+  assert.match(shared, /className="journey-primary"/)
+  assert.match(shared, /className="journey-secondary"/)
+  assert.ok(!shared.includes('admin-button'))
 })

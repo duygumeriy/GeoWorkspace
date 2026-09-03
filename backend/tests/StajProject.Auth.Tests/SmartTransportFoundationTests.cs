@@ -21,7 +21,12 @@ public class SmartTransportFoundationTests
         PermissionCodes.TransportRouteDelete,
         PermissionCodes.TransportRouteRestore,
         PermissionCodes.TransportRouteReorder,
-        PermissionCodes.TransportSimulationStart
+        PermissionCodes.TransportSimulationStart,
+
+        /* Durdurma, Yolculuk Merkezi Faz 1'de AYRI bir kod olarak eklendi:
+           bir hattı herkes için durdurmak, onu başlatmakla aynı yetenek
+           değildir ve `transport.view` onu ima etmez. */
+        PermissionCodes.TransportSimulationStop
     ];
 
     private static readonly string[] StopPermissions =
@@ -77,7 +82,8 @@ public class SmartTransportFoundationTests
                 "transport.route.delete",
                 "transport.route.restore",
                 "transport.route.reorder",
-                "transport.simulation.start"
+                "transport.simulation.start",
+                "transport.simulation.stop"
             ],
             TransportPermissions);
 
@@ -118,9 +124,23 @@ public class SmartTransportFoundationTests
            hâlâ dışarıdadır ve yeni hiçbir yetki eşlik etmez. */
         var user = RolePermissionDefaults.For(GisRoles.TransportUser);
         Assert.Equal(
-            new[] { PermissionCodes.MapView, PermissionCodes.PoiView, PermissionCodes.TransportView }
-                .OrderBy(code => code, StringComparer.Ordinal),
+            new[]
+            {
+                PermissionCodes.MapView,
+                PermissionCodes.PoiView,
+                PermissionCodes.TransportView,
+
+                /* Kişisel yolculuk (Yolculuk Merkezi Faz 1) profile EKLENDİ ve
+                   yine bir yönetim yetkisi DEĞİLDİR: kullanıcı yalnızca kendi
+                   yolculuğunu planlar ve oynatır. Hattı herkes için başlatmak
+                   ya da durdurmak hâlâ dışarıdadır. */
+                PermissionCodes.JourneyUse
+            }.OrderBy(code => code, StringComparer.Ordinal),
             user.OrderBy(code => code, StringComparer.Ordinal));
+
+        // Paylaşılan yaşam döngüsü kodları bu profile GİRMEZ.
+        Assert.DoesNotContain(PermissionCodes.TransportSimulationStart, user);
+        Assert.DoesNotContain(PermissionCodes.TransportSimulationStop, user);
     }
 
     [Fact]

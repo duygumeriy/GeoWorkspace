@@ -122,7 +122,10 @@ public sealed class OsrmRoutingFoundationTests
             [new(36.3, 41.3), new(36.1, 41.1), new(36.2, 41.2), new(36.4, 41.4)]));
 
         Assert.Contains("/36.3,41.3;36.1,41.1;36.2,41.2;36.4,41.4?", handler.LastRequestUri!.AbsoluteUri);
-        Assert.Contains("overview=full&geometries=geojson&steps=false", handler.LastRequestUri.Query);
+        /* Faz 5: adımlar ARTIK istenir. Manevralar yolun üretildiği anda
+           alınıp onunla birlikte saklanır; simülasyon sırasında ya da her
+           gözlemci için yeniden yönlendirme YAPILMAZ. */
+        Assert.Contains("overview=full&geometries=geojson&steps=true", handler.LastRequestUri.Query);
     }
 
     [Fact]

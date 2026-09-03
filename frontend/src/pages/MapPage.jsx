@@ -48,7 +48,6 @@ import TransportStopForm from '../components/map/TransportStopForm.jsx'
 import TransportStopEditForm from '../components/map/TransportStopEditForm.jsx'
 import TransportStopPopup from '../components/map/TransportStopPopup.jsx'
 import TransportVehiclePopup from '../components/map/TransportVehiclePopup.jsx'
-import TransportTrackingControls from '../components/map/TransportTrackingControls.jsx'
 import {
   DrawingHint,
   HoverTooltip,
@@ -104,8 +103,34 @@ import usePoiEditDraft from '../hooks/usePoiEditDraft.js'
 import useTransportLayer from '../hooks/useTransportLayer.js'
 import useTransportSimulation from '../hooks/useTransportSimulation.js'
 import useTransportVehicleLayer from '../hooks/useTransportVehicleLayer.js'
-import { transportSimulationControls } from '../map/transportSimulationState.js'
-import { transportVehiclePopupModel, transportVehiclePresentation } from '../map/transportVehicle.js'
+import {
+  sharedStopIntent,
+  sharedStopIntentIsCurrent,
+  transportSimulationControls,
+} from '../map/transportSimulationState.js'
+import {
+  JOURNEY_PRODUCTS,
+  canOpenJourneyWorkspace,
+  journeyProductTabs,
+  resolveJourneyProduct,
+  sharedJourneyPresentation,
+} from '../map/journeyWorkspace.js'
+import {
+  mergeVehiclePresentations,
+  transportStarterTerminalPresentation,
+  transportVehiclePopupModel,
+  transportWatchedVehiclePresentations,
+} from '../map/transportVehicle.js'
+import {
+  LIFECYCLE_OPERATIONS,
+  activeSimulationsPresentation,
+  lifecycleIntent,
+} from '../map/activeSimulations.js'
+import { sharedNavigationPresentation } from '../map/sharedNavigation.js'
+
+/** Yıkıcı yaşam döngüsü işlemleri ONAY ister; duraklat/sürdür istemez. */
+const isDestructiveLifecycleOperation = (operation) =>
+  operation === LIFECYCLE_OPERATIONS.RESET || operation === LIFECYCLE_OPERATIONS.RESTART
 import {
   journeyDisplayGeometryWkt,
   journeyStatusIndicator,
@@ -118,6 +143,12 @@ import useJourneyPlanner from '../hooks/useJourneyPlanner.js'
 import useJourneyPreviewLayer from '../hooks/useJourneyPreviewLayer.js'
 import useJourneyWaypointPicking from '../hooks/useJourneyWaypointPicking.js'
 import useJourneySimulation from '../hooks/useJourneySimulation.js'
+import useSavedJourneys from '../hooks/useSavedJourneys.js'
+import useJourneyHistory from '../hooks/useJourneyHistory.js'
+import JourneyNameDialog from '../components/map/JourneyNameDialog.jsx'
+import { savedJourneyDraft, savedJourneyTarget } from '../map/savedJourneys.js'
+import { journeyHistoryDraft } from '../map/journeyHistory.js'
+import { PANEL_STATES, PERSONAL_SECTIONS } from '../map/journeyPlanning.js'
 import useJourneyVehicleLayer from '../hooks/useJourneyVehicleLayer.js'
 import useJourneyWaypointLayer from '../hooks/useJourneyWaypointLayer.js'
 import useTransportStopRelocation from '../hooks/useTransportStopRelocation.js'
@@ -267,9 +298,43 @@ export default function MapPage() {
      Haritaya dokunan yolculuk kancaları (önizleme katmanı, nokta seçimi, canlı
      simülasyon) yerlerinde, aşağıda kalır. */
   const journey = useJourneyPlanner({
-    permitted: allowed.canViewTransport,
+    /* ÜRÜN kapısı: kişisel yolculuk kendi yetkisini okur. `transport.view`
+       DEĞİLDİR — ulaşım ağını izleyebilen herkesin kişisel yolculuk da
+       kullanabildiği varsayımı bilinçli olarak kaldırıldı. */
+    permitted: allowed.canUseJourney,
+    /* Hat tabanlı kipler ulaşım ağına erişim ister ve bu AYRI bir yetkidir;
+       yetkisi olmayana yalnızca serbest nokta kipi sunulur. */
+    canUseTransport: allowed.canViewTransport,
     workspaceAtRest,
   })
+
+  /* --- Çalışma alanı ürünleri (Faz 2) -----------------------------------------
+     Çalışma alanı TEK bir paneldir ama İKİ ürünü sunar; ürünlerin kendileri
+     teknik olarak ayrı kalır (ayrı servis, ayrı hub, ayrı depo). Hangi ürünün
+     sunulacağına saf `journeyWorkspace` modülü karar verir; burada yalnızca
+     etkin yetkiler ona verilir. Rol adı, kullanıcı adı ya da yönetici bayrağı
+     hiçbir yerde okunmaz. */
+  const journeyCapabilities = useMemo(() => ({
+    canUseJourney: allowed.canUseJourney,
+    canViewTransport: allowed.canViewTransport,
+  }), [allowed.canUseJourney, allowed.canViewTransport])
+
+  /* Kısayol EN AZ BİR ürünle görünür. Bu bir yetki genişletmesi DEĞİLDİR:
+     içerideki her bölüm kendi yetkisini ayrıca ister ve bağlayıcı denetim
+     backend'dedir. */
+  const canOpenJourney = canOpenJourneyWorkspace(journeyCapabilities)
+
+  /* Kullanıcının erişemediği bir ürün seçili kalırsa boş panel çizilmez:
+     erişilen ürüne indirgenir. Yetki anında değiştiğinde de doğru kalır. */
+  const journeyProduct = resolveJourneyProduct({
+    requested: journey.state.product,
+    ...journeyCapabilities,
+  })
+
+  const journeyProductOptions = useMemo(
+    () => journeyProductTabs(journeyCapabilities),
+    [journeyCapabilities],
+  )
 
   /* --- Panel sahipliği (Faz 5E-B · Dilim 4) ----------------------------------
      Yolculuk paneli sol üstte analiz paneliyle AYNI yeri kaplar. Bu yüzden
@@ -281,6 +346,15 @@ export default function MapPage() {
      SUNUM durumudur: çalışan simülasyon, terminal sonuç ve plan seçimleri
      olduğu gibi kalır, yeniden açıldığında panel doğru içeriği gösterir. */
   const openJourneyPanel = useCallback(() => {
+    journey.openPanel()
+    mapContext.activate(MAP_CONTEXTS.journey)
+  }, [journey, mapContext])
+
+  /* Belirli bir ÜRÜNLE açmak: haritadan bir hatta tıklamak çalışma alanını
+     paylaşılan bağlamda açar. Yalnızca SUNUM değişir — hiçbir simülasyon
+     başlamaz, hiçbir kamera talep edilmez. */
+  const openJourneyWorkspaceWith = useCallback((product) => {
+    journey.setProduct(product)
     journey.openPanel()
     mapContext.activate(MAP_CONTEXTS.journey)
   }, [journey, mapContext])
@@ -747,64 +821,415 @@ export default function MapPage() {
      hattı izleyebilmek buradan mümkün olur. İkinci bir SignalR istemcisi,
      ikinci bir araç uygulaması ya da ikinci bir harita KURULMAZ. */
   const [startedSimulationId, setStartedSimulationId] = useState(null)
-  const [vehiclePopupSimulationId, setVehiclePopupSimulationId] = useState(null)
+  /* Balon KİMLİĞİ rota + çalıştırmadır. Tek bir "seçili araç" kimliği, birden
+     fazla işaretçi varken hangisine tıklanırsa tıklansın aynı balonu açardı. */
+  const [vehiclePopupTarget, setVehiclePopupTarget] = useState(null)
+  const [activeSimulationSearch, setActiveSimulationSearch] = useState('')
 
   const simulation = useTransportSimulation({
     routeId: selectedTransportRouteId,
     canView: allowed.canViewTransport,
+    /* AKTİF KEŞİF yalnızca bu yüzeyde açılır: çalışma alanı "Aktif
+       Simülasyonlar" bölümünün sahibidir. Yönetim ekranı tek bir seçili hatla
+       ilgilenir ve orada tüm hatların yayınına abone olmak gereksiz bir trafik
+       demekti. */
+    discoverActive: allowed.canViewTransport,
   })
+
+  /* Yetenek TEK yerde okunur ve İKİ yerde tüketilir: görünürlük kararı ve
+     KOMUT yolu. Yalnızca görünürlüğe bağlamak, açık bir onay kutusu dururken
+     yetkisi geri alınan bir kullanıcının komutu yine de gönderebilmesi demekti
+     (yetkiler oturum içinde `refreshPermissions` ile değişebilir). */
+  const canStopSharedSimulation = can(PERMISSIONS.TRANSPORT_SIMULATION_STOP)
+
+  /* Başlatma AYRI bir yetkidir ve durdurmayı İMA ETMEZ. Faz 4B'de ikinci bir
+     tüketicisi oldu: YENİDEN BAŞLATMA gerçekten iki şey yapar (canlı bir yayını
+     herkes için bitirir ve yenisini kurar), bu yüzden İKİ kodu birden ister ve
+     üçüncü bir kod uydurulmaz. */
+  const canStartSharedSimulation = can(PERMISSIONS.TRANSPORT_SIMULATION_START)
 
   const simulationControls = useMemo(() => transportSimulationControls({
     routeId: selectedTransportRouteId,
     simulation: simulation.simulation,
     followingRouteId: simulation.followingRouteId,
-    // Başlatma AYRI bir yetkidir; yalnızca izleyen kullanıcı bu düğmeyi görmez.
-    canStart: can(PERMISSIONS.TRANSPORT_SIMULATION_START),
+    canStart: canStartSharedSimulation,
+    /* DURDURMA da AYRI bir yetkidir ve başlatmayı İMA ETMEZ: bir kurulum
+       hattı işletebilen birine durdurma vermeyebilir, ya da tersi. İki kod
+       burada ayrı ayrı okunur ve biri diğerinin yerine geçmez. */
+    canStop: canStopSharedSimulation,
     starting: simulation.starting,
+    stopping: simulation.stopping,
+    pausing: simulation.pausing,
+    resuming: simulation.resuming,
     following: simulation.following,
   }), [
     selectedTransportRouteId,
     simulation.simulation,
     simulation.followingRouteId,
     simulation.starting,
+    simulation.stopping,
+    simulation.pausing,
+    simulation.resuming,
     simulation.following,
-    can,
+    canStopSharedSimulation,
+    canStartSharedSimulation,
   ])
 
-  const transportVehicle = useMemo(() => transportVehiclePresentation({
-    simulation: simulation.followedSimulation ?? simulation.observedSimulation ?? simulation.simulation,
-    followingRouteId: simulation.followingRouteId,
-    observedRouteId: simulation.observedRouteId,
+  /* BAŞLATMA da komut yolunda YENİDEN denetlenir ve bu, durdurma/duraklatma
+     tarafındaki kuralın aynısıdır: yetkiler oturum içinde tazelenebilir,
+     dolayısıyla düğmenin görünürlüğü bir denetim değildir. İki yaşam döngüsü
+     tarafının farklı sıkılıkta kurallar taşıması, aynı yeteneğin iki ayrı
+     kural kitabına sahip olması demekti. */
+  const startSharedSimulation = useCallback(async () => {
+    if (!canStartSharedSimulation) return
+    if (selectedTransportRouteId == null) return
+    const snapshot = await simulation.start(selectedTransportRouteId)
+    if (snapshot) setStartedSimulationId(snapshot.simulationId)
+  }, [canStartSharedSimulation, selectedTransportRouteId, simulation])
+
+  /* Paylaşılan durdurma ONAYIN arkasındadır: çok kullanıcılı canlı bir
+     çalıştırmayı sonlandırır ve yanlış bir tıklama başkalarının izlediği
+     yayını keser.
+
+     BEKLEYEN DURUM BİR BAYRAK DEĞİL, BİR KİMLİKTİR. Onay kutusu açıkken A
+     çalıştırması bitip AYNI rotada B başlayabilir; yalnızca "onay açık"
+     bilgisi tutulsaydı, onay anında o anki kimlik okunur ve kullanıcının A
+     için verdiği karar sessizce B'yi durdururdu. Sunucu bunu yakalayamaz:
+     kendisine B için geçerli, yetkili ve kimliği tutan bir istek ulaşırdı.
+     Niyet bu yüzden TETİKLEME anında dondurulur. */
+  const [pendingSharedStop, setPendingSharedStop] = useState(null)
+  const sharedStopInFlight = useRef(false)
+
+  /* Onayı AÇMAK da bir yetenek ve KİMLİK kararıdır: düğme zaten gizli olsa
+     bile komut yolunun girişi kendi kapısını taşır, ve tam olarak burada
+     hangi çalıştırmanın durdurulmak istendiği YAKALANIR. */
+  const requestSharedStop = useCallback(() => {
+    if (!canStopSharedSimulation) return
+
+    const intent = sharedStopIntent({
+      routeId: selectedTransportRouteId,
+      simulationId: simulationControls.stoppableSimulationId,
+    })
+
+    // Rota + çalıştırma çiftinden biri eksikse niyet KURULAMAZ.
+    if (!intent) return
+
+    setPendingSharedStop(intent)
+  }, [canStopSharedSimulation, selectedTransportRouteId, simulationControls.stoppableSimulationId])
+
+  const confirmSharedStop = useCallback(async () => {
+    /* ÇİFT GÖNDERİM KORUMASI. Ref anında yazılır; state güncellemesini
+       beklemek, hızlı iki tıklamada ikinci isteğin yola çıkmasına izin
+       verirdi. */
+    if (sharedStopInFlight.current) return
+
+    const intent = pendingSharedStop
+
+    /* KOMUT ANINDA yeniden denetim — FAIL-CLOSED, İKİ eksende:
+
+       YETKİ: onay kutusu açıkken yetki geri alınmış olabilir (yetkiler
+       oturum içinde tazelenebilir); düğme kaybolur ama açık kalan kutu hâlâ
+       tıklanabilirdi. Görünürlük bir denetim değildir.
+
+       KİMLİK: yakalanan niyet HÂLÂ o anki çalıştırmaya işaret etmiyorsa
+       (A bitti, yerine B geçti ya da başka bir hatta geçildi) komut
+       GÖNDERİLMEZ. Yakalanan kimliği o anki kimlikle DEĞİŞTİRMEK,
+       kullanıcının hiç vermediği bir kararı uygulamak olurdu. */
+    if (!canStopSharedSimulation
+      || !sharedStopIntentIsCurrent(intent, {
+        routeId: selectedTransportRouteId,
+        stoppableSimulationId: simulationControls.stoppableSimulationId,
+      })) {
+      setPendingSharedStop(null)
+      return
+    }
+
+    sharedStopInFlight.current = true
+
+    try {
+      /* Komut YAKALANMIŞ kimlikleri taşır — o anki değerleri değil. İkisi de
+         tetikleme anındaki sunucu gerçeğinden gelir. */
+      await simulation.stop(intent.routeId, intent.simulationId)
+    } finally {
+      sharedStopInFlight.current = false
+      setPendingSharedStop(null)
+    }
+  }, [
+    simulation,
+    pendingSharedStop,
+    selectedTransportRouteId,
+    simulationControls.stoppableSimulationId,
+    canStopSharedSimulation,
+  ])
+
+  /* DURAKLAT / DEVAM ETTİR yıkıcı DEĞİLDİR: aynı çalıştırma sürer, yalnızca
+     saati durur. Bu yüzden onay istemezler ve o anda ekranda duran KANONİK
+     çalıştırma kimliğini doğrudan taşırlar. Yetenek yine de komut yolunda
+     yeniden denetlenir: görünürlük bir denetim değildir. */
+  const pauseSharedSimulation = useCallback(() => {
+    if (!canStopSharedSimulation) return
+    return simulation.pause(selectedTransportRouteId, simulationControls.stoppableSimulationId)
+  }, [canStopSharedSimulation, simulation, selectedTransportRouteId, simulationControls.stoppableSimulationId])
+
+  const resumeSharedSimulation = useCallback(() => {
+    if (!canStopSharedSimulation) return
+    return simulation.resume(selectedTransportRouteId, simulationControls.stoppableSimulationId)
+  }, [canStopSharedSimulation, simulation, selectedTransportRouteId, simulationControls.stoppableSimulationId])
+
+  const followSharedSimulation = useCallback(
+    () => simulation.follow(selectedTransportRouteId),
+    [simulation, selectedTransportRouteId],
+  )
+
+  /* Takibi bırakmak yalnızca KAMERA sahipliğini bırakır: yayın sürer,
+     işaretçi hareket etmeye devam eder ve sunucudaki simülasyon herkes için
+     çalışmaya devam eder. "Takibi Bırak", "Simülasyonu Durdur" DEĞİLDİR. */
+  const unfollowSharedSimulation = useCallback(() => simulation.unfollow(), [simulation])
+
+  /* Paylaşılan hattın SUNUM modeli. Hiçbir değer burada üretilmez: rota adı
+     katalogdan, mesafe/süre kalıcı güzergahtan, durum/ilerleme sunucunun
+     anlık görüntüsünden ve denetim görünürlüğü mevcut saf karardan gelir. */
+  const sharedJourney = useMemo(() => sharedJourneyPresentation({
+    routeId: selectedTransportRouteId,
+    routes: transport.activeRoutes,
+    paths: transport.paths,
+    controls: simulationControls,
+    statusLoading: simulation.statusLoading,
+    starting: simulation.starting,
+    stopping: simulation.stopping,
+    pausing: simulation.pausing,
+    resuming: simulation.resuming,
+    error: simulation.error,
+  }), [
+    selectedTransportRouteId,
+    transport.activeRoutes,
+    transport.paths,
+    simulationControls,
+    simulation.statusLoading,
+    simulation.starting,
+    simulation.stopping,
+    simulation.pausing,
+    simulation.resuming,
+    simulation.error,
+  ])
+
+  /* --- ÇOKLU İZLEME (Faz 4A) --------------------------------------------------
+     AKTİF bir aracın haritada görünmesinin TEK sahibi kullanıcının İZLEME
+     seçimidir.
+
+     SEÇİM görünürlük sahibi DEĞİLDİR: seçili ama izlenmeyen bir hattın
+     ayrıntıları panelde canlı akmaya devam eder, işaretçisi çizilmez.
+     GÖZLEM (observe) yalnızca VERİ sahipliğidir — o abonelik olmasaydı panel
+     donardı; ama abone olmak "çiz" demek değildir. AKTİF KÜME üyeliği de
+     yalnızca listenin tazeliğini sahiplenir. BAŞLATMA sahipliği ise hiçbir
+     aktif çalıştırmayı görünür kılmaz.
+
+     Bu ayrım SUNUM DÜZEYİNDE kurulur: aktif çizim listesi yalnızca izleme
+     sunumundan doğar, sonradan bir sahiplik dizesine göre süzülmez. */
+  const watchedVehicles = useMemo(() => transportWatchedVehiclePresentations({
+    byRoute: simulation.byRoute,
+    watchedRuns: simulation.watchedRuns,
     selectedRouteId: selectedTransportRouteId,
-    startedSimulationId,
+    followingRouteId: simulation.followingRouteId,
+    subscribedRouteIds: simulation.subscribedRouteIds,
     routes: transport.activeRoutes,
   }), [
-    simulation.followedSimulation,
-    simulation.observedSimulation,
-    simulation.simulation,
+    simulation.byRoute,
+    simulation.watchedRuns,
     simulation.followingRouteId,
-    simulation.observedRouteId,
+    simulation.subscribedRouteIds,
     selectedTransportRouteId,
-    startedSimulationId,
     transport.activeRoutes,
   ])
 
+  /* ESKİ, DAR ve TERMİNAL sunum: çalıştırmayı BAŞLATAN kullanıcı, o
+     çalıştırma bittikten sonra son konumunu görmeye devam eder.
+
+     Bu sunum AKTİF koleksiyonun DIŞINDADIR ve öyle kalmalıdır: fonksiyon
+     terminal olmayan bir çalıştırma için ASLA bir sunum üretmez, dolayısıyla
+     başlatma sahipliği aktif bir aracı görünür kılamaz. Canlı değildir ve
+     kamera talep etmez. */
+  const starterTerminalVehicle = useMemo(() => transportStarterTerminalPresentation({
+    simulation: simulation.simulation,
+    startedSimulationId,
+    selectedRouteId: selectedTransportRouteId,
+    routes: transport.activeRoutes,
+  }), [
+    simulation.simulation,
+    startedSimulationId,
+    selectedTransportRouteId,
+    transport.activeRoutes,
+  ])
+
+  /* Çizim listesi: AKTİF izlenen araçlar + isteğe bağlı TERMİNAL başlatıcı
+     sunumu. İkisi ayrı kavramdır; kimlik (rota + çalıştırma) çakışmayı
+     tekilleştirir. */
+  const vehiclePresentations = useMemo(
+    () => mergeVehiclePresentations(watchedVehicles, starterTerminalVehicle),
+    [watchedVehicles, starterTerminalVehicle],
+  )
+
+  /* Tıklama, TIKLANAN aracın kimliğini yakalar: hiçbir simülasyon
+     değiştirilmez, takip ele geçirilmez ve diğer işaretçiler etkilenmez. */
   const openVehiclePopup = useCallback((vehicle) => {
-    setVehiclePopupSimulationId(vehicle?.simulationId ?? null)
+    setVehiclePopupTarget(
+      vehicle ? { routeId: vehicle.routeId, simulationId: vehicle.simulationId } : null,
+    )
   }, [])
 
   useTransportVehicleLayer(mapInstance, {
-    presentation: transportVehicle,
+    presentations: vehiclePresentations,
     onVehicleClick: openVehiclePopup,
-    /* Yolculuk noktası seçimi silahlıyken YALNIZCA balon çekilir. Araç çizilmeye,
-       canlı konumunu almaya ve takip kamerasını sürdürmeye devam eder — sabit
-       hat simülasyonu ürünü bu koddan hiç etkilenmez. */
+    /* Yolculuk noktası seçimi silahlıyken YALNIZCA balon çekilir. Araçlar
+       çizilmeye, canlı konumlarını almaya ve takip kamerasını sürdürmeye devam
+       eder — sabit hat simülasyonu ürünü bu koddan hiç etkilenmez. */
     clickEnabled: !journey.isPicking,
   })
 
-  const vehiclePopup = transportVehicle && vehiclePopupSimulationId === transportVehicle.simulationId
-    ? transportVehiclePopupModel(transportVehicle)
-    : null
+  /* Balon TIKLANAN çalıştırmanın kanonik durumunu okur; küresel bir "seçili
+     araç" modeli DEĞİL. Çalıştırma listeden düştüğünde (bitti, izlemeden
+     çıkarıldı) balon da kendiliğinden kapanır. */
+  const vehiclePopup = useMemo(() => {
+    if (!vehiclePopupTarget) return null
+    const target = vehiclePresentations.find(
+      (item) => item.routeId === vehiclePopupTarget.routeId
+        && item.simulationId === vehiclePopupTarget.simulationId,
+    )
+    return target ? transportVehiclePopupModel(target) : null
+  }, [vehiclePopupTarget, vehiclePresentations])
+
+  /* --- AKTİF SİMÜLASYONLAR bölümünün sunum modeli ------------------------------
+     Hiçbir değer burada üretilmez: durum/ilerleme sunucunun anlık
+     görüntüsünden, ad/renk mevcut rota katalogundan gelir. Arama YALNIZCA
+     sunum süzgecidir — aktif kümeye, izleme seçimine ve aboneliklere hiç
+     dokunmaz. */
+  const activeSimulations = useMemo(() => activeSimulationsPresentation({
+    byRoute: simulation.byRoute,
+    routes: transport.activeRoutes,
+    watchedRuns: simulation.watchedRuns,
+    /* YÖNETİM SEÇİMİ İZLEMEDEN AYRI bir girdidir: biri haritada ne çizileceğine,
+       diğeri hangi çalıştırmaya komut gideceğine karar verir. */
+    managedRuns: simulation.managedRuns,
+    selectedRouteId: selectedTransportRouteId,
+    followedRouteId: simulation.followingRouteId,
+    search: activeSimulationSearch,
+    loading: simulation.activeLoading,
+    loaded: simulation.activeLoaded,
+    error: simulation.activeError,
+    /* Yetenekler TEK yerden okunur ve İKİ yerde tüketilir: görünürlük ve KOMUT
+       yolu. Yeniden başlatma İKİSİNİ birden ister — başlatabilmek, başkalarının
+       yayınlarını bitirme yetkisi değildir. */
+    canStart: canStartSharedSimulation,
+    canStop: canStopSharedSimulation,
+    pending: simulation.lifecyclePending,
+    batchError: simulation.batchError,
+    batchSummary: simulation.batchSummary,
+  }), [
+    simulation.byRoute,
+    simulation.watchedRuns,
+    simulation.managedRuns,
+    simulation.followingRouteId,
+    simulation.activeLoading,
+    simulation.activeLoaded,
+    simulation.activeError,
+    simulation.lifecyclePending,
+    simulation.batchError,
+    simulation.batchSummary,
+    selectedTransportRouteId,
+    transport.activeRoutes,
+    activeSimulationSearch,
+    canStartSharedSimulation,
+    canStopSharedSimulation,
+  ])
+
+  /* --- NAVİGASYON (Faz 5) ------------------------------------------------------
+     SEÇİLİ hattın bağlamına aittir. İzlemek (haritada araç), takip etmek
+     (kamera) ve yönetim seçimi (komut hedefi) bu bölümü ne açar ne kapatır.
+
+     Hiçbir değer BURADA üretilmez: hangi manevrada olunduğuna ve sonrakine ne
+     kadar kaldığına sunucu karar verir; sayfa yalnızca iki otoriter parçayı
+     (sabit adım listesi + canlı sıra) bir araya getirir. */
+  const sharedNavigation = useMemo(() => sharedNavigationPresentation({
+    routeId: selectedTransportRouteId,
+    simulation: simulation.simulation,
+    navigation: selectedTransportRouteId == null
+      ? null
+      : simulation.navigationByRoute[selectedTransportRouteId] ?? null,
+  }), [
+    selectedTransportRouteId,
+    simulation.simulation,
+    simulation.navigationByRoute,
+  ])
+
+  /* Satır SEÇİMİ yalnızca ayrıntı bağlamını taşır: izlemeyi DEĞİŞTİRMEZ,
+     takibi ele GEÇİRMEZ ve yönetim seçimi YAPMAZ. */
+  const selectActiveSimulationRow = useCallback((rowRouteId) => {
+    setSelectedTransportRouteId(rowRouteId)
+  }, [])
+
+  /* --- TOPLU YAŞAM DÖNGÜSÜ (Faz 4B) --------------------------------------------
+     BEKLEYEN DURUM BİR BAYRAK DEĞİL, DONDURULMUŞ BİR NİYETTİR: işlem + her
+     hedefin TAM kimliği. Paylaşılan Sıfırla akışındaki ilkenin aynısıdır,
+     yalnızca çoğul hâli — onay kutusu açıkken A bitip yerine B geçebilir ve
+     onay anında o anki kimliği okumak, kullanıcının hiç vermediği bir kararı
+     uygulamak olurdu. Sunucu bunu yakalayamazdı: kendisine B için geçerli,
+     yetkili ve kimliği tutan bir istek ulaşırdı. */
+  const [pendingBatchCommand, setPendingBatchCommand] = useState(null)
+
+  /**
+   * Bir işlemi ÇALIŞTIRIR ya da onayını açar.
+   *
+   * <b>Yetenek KOMUT YOLUNDA yeniden denetlenir</b> — görünürlük bir denetim
+   * değildir ve yetkiler oturum içinde tazelenebilir.
+   */
+  const runLifecycleOperation = useCallback((operation, overrideTargets = null) => {
+    if (!canStopSharedSimulation) return
+    if (operation === LIFECYCLE_OPERATIONS.RESTART && !canStartSharedSimulation) return
+
+    /* Satır komutu ile toplu komut AYNI yoldan geçer; satır yalnızca TEK
+       hedefli bir yönetim seçimi gibi davranır. İkinci bir komut uygulaması
+       YOKTUR. */
+    const intent = overrideTargets
+      ? lifecycleIntent(operation, {
+        managedRuns: { [overrideTargets.routeId]: overrideTargets.simulationId },
+        byRoute: simulation.byRoute,
+      })
+      : lifecycleIntent(operation, {
+        managedRuns: simulation.managedRuns,
+        byRoute: simulation.byRoute,
+      })
+
+    // Uygun hedef yoksa hiçbir istek yola çıkmaz.
+    if (!intent) return
+
+    /* YIKICI işlemler ONAYIN arkasındadır ve tıklama komut GÖNDERMEZ: yalnızca
+       niyeti dondurur. Duraklat/Devam Ettir yıkıcı DEĞİLDİR — aynı çalıştırma
+       sürer, yalnızca saati durur — bu yüzden onay istemezler. */
+    if (isDestructiveLifecycleOperation(operation)) {
+      setPendingBatchCommand(intent)
+      return
+    }
+
+    simulation.runLifecycleBatch(intent)
+  }, [canStopSharedSimulation, canStartSharedSimulation, simulation])
+
+  const confirmBatchCommand = useCallback(async () => {
+    const intent = pendingBatchCommand
+
+    /* KOMUT ANINDA yeniden denetim — FAIL-CLOSED: onay kutusu açıkken yetki
+       geri alınmış olabilir. Hedefler ise YENİDEN HESAPLANMAZ; niyetin
+       içindeki kimlikler olduğu gibi gönderilir ve bayat olanı sunucu
+       reddeder. */
+    if (!intent
+      || !canStopSharedSimulation
+      || (intent.operation === LIFECYCLE_OPERATIONS.RESTART && !canStartSharedSimulation)) {
+      setPendingBatchCommand(null)
+      return
+    }
+
+    setPendingBatchCommand(null)
+    await simulation.runLifecycleBatch(intent)
+  }, [pendingBatchCommand, canStopSharedSimulation, canStartSharedSimulation, simulation])
 
   const toggleTransportRoute = useCallback((routeId) => {
     setHiddenTransportRouteIds((current) => {
@@ -853,16 +1278,34 @@ export default function MapPage() {
   }, [mapContext])
 
   /* Haritadaki güzergah çizgisine doğrudan tıklamak, MEVCUT seçim durumunu
-     kullanır: ikinci bir "seçili rota" kavramı doğmaz ve takip kartı bu sayede
-     olduğu gibi açılır. Kamera oynatılmaz — kullanıcı zaten baktığı yere
-     tıklamıştır. */
+     kullanır: ikinci bir "seçili rota" kavramı doğmaz. Kamera oynatılmaz —
+     kullanıcı zaten baktığı yere tıklamıştır.
+
+     Faz 2'de tıklamanın SONUCU değişti: ayrı bir takip kartı açılmaz, YOLCULUK
+     çalışma alanı paylaşılan hat bağlamında açılır. Tıklama hâlâ bir SEÇİMDİR
+     ve bir yaşam döngüsü komutu DEĞİLDİR: simülasyon başlamaz, takip
+     açılmaz, kamera talep edilmez ve güzergah yeniden hesaplanmaz. */
   const handleTransportRouteSelected = useCallback((routeId) => {
     const next = Number(routeId)
     if (!Number.isFinite(next)) return
     setSelectedTransportRouteId(next)
     setSelectedTransportStop(null)
     mapContext.close(MAP_CONTEXTS.transportStopInfo)
-  }, [mapContext])
+    openJourneyWorkspaceWith(JOURNEY_PRODUCTS.SHARED)
+  }, [mapContext, openJourneyWorkspaceWith])
+
+  /* --- Boş harita tıklaması: seçili güzergahı bırakır (Faz 10) ---------------
+     POI, durak ve çizim seçimleri boş tıklamada ZATEN bırakılıyordu; güzergah
+     bırakılmıyordu ve kullanıcı için bu tutarsızlıktı.
+
+     <b>YALNIZCA SEÇİMDİR.</b> Burada durdurma, duraklatma, sıfırlama, izlemeyi
+     bırakma, takibi bırakma ya da yönetim seçimini değiştirme YOKTUR — ve
+     olamaz: bu satır tek bir sunum durumunu boşaltır. İzlenen ve takip edilen
+     araçlar da kaybolmaz, çünkü sahiplik `followingRouteId`'dedir,
+     `selectedRouteId`'de değil (bkz. `transportVehicle`). */
+  const clearSelectedTransportRoute = useCallback(() => {
+    setSelectedTransportRouteId(null)
+  }, [])
 
   /* Gizlenen güzergah tıklanamaz: kullanıcı onu bilerek kapatmıştır. */
   const isTransportRouteSelectable = useCallback(
@@ -906,7 +1349,7 @@ export default function MapPage() {
      kancası, kendi katmanı ve kendi takip durumu vardır. `simulation`
      (Faz 1-4) ve `simulation.followingRouteId` bu koddan HİÇ etkilenmez —
      bir yolculuk başlatmak/durdurmak bir hat grubuna katılmaz. */
-  const journeySimulation = useJourneySimulation({ permitted: allowed.canViewTransport })
+  const journeySimulation = useJourneySimulation({ permitted: allowed.canUseJourney })
 
   const journeyVehicle = useMemo(() => {
     const snapshot = journeySimulation.snapshot
@@ -932,7 +1375,7 @@ export default function MapPage() {
     setJourneyPopupSimulationId(simulationId)
     /* Aynı anda tek araç balonu: paylaşılan hattınki koordinasyonla kapanır.
        İki ürün birbirini TANIMAZ; sıralamayı sayfa kurar. */
-    setVehiclePopupSimulationId(null)
+    setVehiclePopupTarget(null)
   }, [])
 
   useJourneyVehicleLayer(mapInstance, {
@@ -961,9 +1404,9 @@ export default function MapPage() {
      balonu çekilir. İki ürün birbirini tanımaz; sıra yalnızca burada,
      sayfanın kendi düzeyinde kurulur. */
   useEffect(() => {
-    if (vehiclePopupSimulationId == null) return
+    if (vehiclePopupTarget == null) return
     setJourneyPopupSimulationId(null)
-  }, [vehiclePopupSimulationId])
+  }, [vehiclePopupTarget])
 
   /* Başlatma niyeti PLANLAYICININ mevcut seçiminden türetilir; önizlemenin
      planId'si, geometrisi ya da ölçümleri GÖNDERİLMEZ. */
@@ -1060,6 +1503,193 @@ export default function MapPage() {
 
   useJourneyWaypointLayer(mapInstance, { waypoints: journeyWaypoints })
 
+  /* --- Kaydedilmiş kişisel yolculuklar (Faz 7) -------------------------------
+     Kaydedilmiş bir yolculuk canlı durum DEĞİLDİR: burada SignalR yoktur,
+     ikinci bir kişisel kanal açılmaz, hiçbir zamanlayıcı kurulmaz ve
+     LocalStorage otorite olarak kullanılmaz. Liste yalnızca kullanıcı o
+     bölümü AÇTIĞINDA okunur; veri başka hiçbir şeyle değişmez.
+
+     Paylaşılan hat bu koddan HİÇ etkilenmez: onun sekmesi, servisi, hub'ı ve
+     durumu olduğu gibi kalır. */
+
+  const journeySavedSectionOpen = journey.state.panel === PANEL_STATES.OPEN
+    && journeyProduct === JOURNEY_PRODUCTS.PERSONAL
+    && journey.state.section === PERSONAL_SECTIONS.SAVED
+
+  const savedJourneys = useSavedJourneys({
+    permitted: allowed.canUseJourney,
+    enabled: journeySavedSectionOpen,
+  })
+
+  /* --- Kaydetme ------------------------------------------------------------
+     KAYDETMEK BAŞLATMAK DEĞİLDİR: bu akış hiçbir simülasyon kurmaz,
+     `simulationId` değiştirmez, kamerayı oynatmaz ve paylaşılan duruma
+     dokunmaz. Kaydedilen şey planlayıcının KANONİK niyetidir — önizlemenin
+     geometrisi ya da ölçümleri değil. */
+  const [journeySavePending, setJourneySavePending] = useState(false)
+
+  const requestJourneySave = useCallback(() => {
+    // Geçersiz bir seçim için diyalog hiç açılmaz.
+    if (!journey.buildIntent()) return
+    savedJourneys.clearError()
+    setJourneySavePending(true)
+  }, [journey, savedJourneys])
+
+  const confirmJourneySave = useCallback(async (name) => {
+    const intent = journey.buildIntent()
+    if (!intent) return
+
+    const created = await savedJourneys.save({ name, journey: intent })
+    if (created) setJourneySavePending(false)
+  }, [journey, savedJourneys])
+
+  /* --- Yeniden adlandırma ---------------------------------------------------
+     KİMLİK DONDURULUR. Diyalog açıldığı andaki kayıt hedeftir: kullanıcı
+     arada başka bir satıra dokunsa bile eylem A'ya uygulanır. Bu, projedeki
+     diğer bayat-niyet korumalarıyla aynı ilkedir. */
+  const [journeyRenamePending, setJourneyRenamePending] = useState(null)
+
+  const requestSavedJourneyRename = useCallback((savedJourneyId) => {
+    // Hedef DONDURULUR; kural saf modüldedir ve burada yalnızca uygulanır.
+    const target = savedJourneyTarget(savedJourneys.items, savedJourneyId)
+    if (!target) return
+    savedJourneys.clearError()
+    setJourneyRenamePending(target)
+  }, [savedJourneys])
+
+  const confirmSavedJourneyRename = useCallback(async (name) => {
+    const target = journeyRenamePending
+    if (!target) return
+
+    // Dondurulmuş kimlik: çözülme anındaki liste durumu okunmaz.
+    const renamed = await savedJourneys.rename(target.id, name)
+    if (renamed) setJourneyRenamePending(null)
+  }, [journeyRenamePending, savedJourneys])
+
+  /* --- Silme ----------------------------------------------------------------
+     Silmek GERİ ALINAMAZ: kaydedilmiş yolculuğun çöp kutusu yoktur. Mevcut
+     onay diyaloğu kullanılır (`window.confirm` DEĞİL) ve hedef kimlik onay
+     anında DONDURULUR. */
+  const [journeyDeletePending, setJourneyDeletePending] = useState(null)
+  const [journeyDeleting, setJourneyDeleting] = useState(false)
+  const journeyDeleteInFlight = useRef(false)
+
+  const requestSavedJourneyDelete = useCallback((savedJourneyId) => {
+    // Hedef DONDURULUR: onay çözüldüğünde listedeki seçim okunmaz.
+    const target = savedJourneyTarget(savedJourneys.items, savedJourneyId)
+    if (!target) return
+    savedJourneys.clearError()
+    setJourneyDeletePending(target)
+  }, [savedJourneys])
+
+  const confirmSavedJourneyDelete = useCallback(async () => {
+    const target = journeyDeletePending
+    if (!target || journeyDeleteInFlight.current) return
+
+    journeyDeleteInFlight.current = true
+    setJourneyDeleting(true)
+
+    try {
+      // A seçiliyken açılan onay, sonradan B seçilse bile A'yı siler.
+      await savedJourneys.remove(target.id)
+    } finally {
+      journeyDeleteInFlight.current = false
+      setJourneyDeleting(false)
+      setJourneyDeletePending(null)
+    }
+  }, [journeyDeletePending, savedJourneys])
+
+  /* Yıldız DEĞER gönderir; sunucuda "tersine çevir" yoktur. İyimser güncelleme
+     YAPILMAZ: geri alma mekanizması kurmadan iyimser olmak, başarısız bir
+     istekte yıldızı kullanıcının görmediği bir durumda bırakırdı. */
+  const toggleSavedJourneyFavorite = useCallback(
+    (savedJourneyId, next) => savedJourneys.setFavorite(savedJourneyId, next),
+    [savedJourneys],
+  )
+
+  /* --- Yükleme (BAŞLATMA DEĞİL) ---------------------------------------------
+     Kaydı planlayıcıya yüklemek yalnızca TASLAĞI değiştirir: hiçbir simülasyon
+     kurulmaz, çalışan bir yolculuk durdurulmaz ve kamera takibi değişmez.
+     Kullanıcı yüklenen yolculuğu inceleyip başlatmayı AYRICA seçer. */
+  const loadSavedJourney = useCallback(async (savedJourneyId) => {
+    const saved = await savedJourneys.load(savedJourneyId)
+    if (!saved) return
+
+    const draft = savedJourneyDraft(saved)
+    if (!draft) return
+
+    journey.loadSaved(draft)
+  }, [journey, savedJourneys])
+
+  /* --- Yeniden kullanma (AÇIK başlatma) -------------------------------------
+     Sunucu kanonik referansları yeniden çözer, güzergahı yeniden hesaplar ve
+     YENİ bir çalıştırma kimliği üretir. Yanıt mevcut kişisel kancaya
+     benimsetilir: ikinci bir canlı durum ya da ikinci bir SignalR bağlantısı
+     açılmaz. */
+  const startSavedJourney = useCallback(async (savedJourneyId) => {
+    const started = await savedJourneys.reuse(savedJourneyId)
+    if (!started) return
+
+    await journeySimulation.adopt(started)
+    openJourneyPanel()
+  }, [savedJourneys, journeySimulation, openJourneyPanel])
+
+  /* --- Kişisel yolculuk geçmişi (Faz 8) --------------------------------------
+     SONA ERMİŞ çalıştırmaların değişmez tutanağı. Kaydedilmiş yolculuklardan
+     (Faz 7) ve canlı simülasyondan AYRI bir durumdur: burada SignalR yoktur,
+     ikinci bir kişisel kanal açılmaz, hiçbir zamanlayıcı kurulmaz ve
+     LocalStorage otorite olarak kullanılmaz.
+
+     Liste yalnızca kullanıcı o bölümü AÇTIĞINDA okunur; geçmiş yalnızca bir
+     yolculuk sona erdiğinde değişir.
+
+     Paylaşılan hat bu koddan HİÇ etkilenmez. */
+
+  const journeyHistorySectionOpen = journey.state.panel === PANEL_STATES.OPEN
+    && journeyProduct === JOURNEY_PRODUCTS.PERSONAL
+    && journey.state.section === PERSONAL_SECTIONS.HISTORY
+
+  const journeyHistory = useJourneyHistory({
+    permitted: allowed.canUseJourney,
+    enabled: journeyHistorySectionOpen,
+  })
+
+  /* --- Yeniden yapma (AÇIK başlatma) -----------------------------------------
+     Sunucu kanonik referansları yeniden çözer, güzergahı yeniden hesaplar ve
+     YENİ bir çalıştırma kimliği üretir; tarihsel kimlik isteğe hiç girmez ve
+     tutanak değişmez. Yanıt mevcut kişisel kancaya benimsetilir: ikinci bir
+     canlı durum ya da ikinci bir SignalR bağlantısı açılmaz.
+
+     Bu yol KAYDEDİLMİŞ YOLCULUK OLUŞTURMAZ: geçmişi yeniden yapmak onu
+     saklamak değildir ve saklamak isteyen kullanıcının kendi "Kaydet" eylemi
+     zaten vardır. */
+  const reuseJourneyFromHistory = useCallback(async (journeyHistoryId) => {
+    const started = await journeyHistory.reuse(journeyHistoryId)
+    if (!started) return
+
+    await journeySimulation.adopt(started)
+    openJourneyPanel()
+  }, [journeyHistory, journeySimulation, openJourneyPanel])
+
+  /* --- Planlayıcıya yükleme (BAŞLATMA DEĞİL) ---------------------------------
+     Tutanağı planlayıcıya koymak yalnızca TASLAĞI değiştirir: hiçbir simülasyon
+     kurulmaz ve tarihsel çalıştırma diriltilmez — taslakta bir çalıştırma
+     kimliği yoktur. Kullanıcı yüklenen yolculuğu inceleyip başlatmayı AYRICA
+     seçer. */
+  const loadJourneyFromHistory = useCallback(async (journeyHistoryId) => {
+    /* Ayrıntı AÇIK olsa bile kimlikle yeniden istenir. Ekrandaki modeli
+       okumak bir tık daha ucuz olurdu ama hangi kaydın açık olduğuna bakan
+       bir kod, geç gelen bir ayrıntı cevabından sonra YANLIŞ yolculuğu
+       taslağa koyabilirdi. Kimlik dondurulur; dönen kayıt istenen kayıttır. */
+    const detail = await journeyHistory.openDetail(journeyHistoryId)
+    if (!detail) return
+
+    const draft = journeyHistoryDraft(detail)
+    if (!draft) return
+
+    journey.loadSaved(draft)
+  }, [journey, journeyHistory])
+
   /* Çağrı BURADADIR: gösterilecek geometri canlı simülasyona da bağlı olduğu
      için planlayıcıdan SONRA gelmesi gerekir. Katman ve uyum davranışı
      Faz 5C'deki gibidir. */
@@ -1097,6 +1727,8 @@ export default function MapPage() {
     hoverEnabled: hasFinePointer,
     onSelect: handleTransportStopSelected,
     onSelectRoute: handleTransportRouteSelected,
+    /* Boş tıklamada seçim bırakılır; yaşam döngüsüne dokunulmaz. */
+    onClearRoute: clearSelectedTransportRoute,
     isRouteVisible: isTransportRouteSelectable,
   })
 
@@ -1155,6 +1787,12 @@ export default function MapPage() {
       .sort((left, right) => left.sequenceOrder - right.sequenceOrder || left.id - right.id)
 
     setSelectedTransportRouteId(Number(routeId))
+    /* Durak balonundaki "Hattı Göster" de bir SEÇİMDİR ve seçimin karşılığı
+       artık çalışma alanının paylaşılan bölümüdür — ayrı kart kaldırıldığı
+       için aksi hâlde seçim hiçbir yerde görünmezdi. Kamera davranışı
+       DEĞİŞMEZ: bu uç zaten kullanıcının açık "bana bu hattı göster"
+       isteğidir; takip yine açılmaz ve simülasyon başlamaz. */
+    openJourneyWorkspaceWith(JOURNEY_PRODUCTS.SHARED)
     if (selectedTransportStop?.routeId !== Number(routeId)) setSelectedTransportStop(null)
     if (routeStops.length === 0) {
       showToast('info', 'Bu güzergahın haritada gösterilecek etkin durağı yok.')
@@ -1169,7 +1807,7 @@ export default function MapPage() {
       return
     }
     mapView.fitExtent(boundingExtent(routeStops.map((stop) => fromLonLat([stop.longitude, stop.latitude]))))
-  }, [transport.stops, selectedTransportStop, mapView, showToast])
+  }, [transport.stops, selectedTransportStop, mapView, showToast, openJourneyWorkspaceWith])
 
   const editTransportStop = useCallback((stop) => {
     if (!stop?.id || !allowed.canUpdateTransportStop) return
@@ -3301,6 +3939,13 @@ export default function MapPage() {
         canOpenMyPois={canOpenMyPois}
         canOpenMyStops={canOpenMyStops}
         canOpenLocationAnalysis={canOpenLocationAnalysis}
+        /* Yolculuk Merkezi'nin TEK kenar çubuğu girişi. Görünürlük, panelin
+           kendisiyle AYNI yetki hesabından gelir: kullanıcının erişebildiği
+           en az bir ürün varsa satır çıkar. */
+        canOpenJourneyCenter={canOpenJourney}
+        /* Satır paneli açar/kapatır — harita kısayoluyla AYNI eylem. Hiçbir
+           simülasyon, izleme ya da takip durumu değişmez. */
+        onOpenJourneyCenter={toggleJourneyPanel}
         username={username}
         remaining={remaining}
         onLogout={handleLogout}
@@ -3332,7 +3977,13 @@ export default function MapPage() {
                    panelinin üstüne oturuyordu. Durum özeti sunucudan türetilir
                    ve panel kapalıyken de yolculuğun sürdüğünü söyler. */
                 journey={{
-                  permitted: allowed.canViewTransport,
+                  /* BİRLEŞİK çalışma alanı kısayolu: paylaşılan hat de bu
+                     panelin içinde olduğu için, kısayolu yalnızca
+                     `journey.use`'a bağlamak `transport.view` taşıyan bir
+                     kullanıcının hat simülasyonuna hiçbir yerden
+                     ulaşamaması demek olurdu. Kapı EN AZ BİR ürünle açılır;
+                     içerideki her bölüm kendi yetkisini ayrıca ister. */
+                  permitted: canOpenJourney,
                   open: journey.state.panel !== 'closed',
                   onToggle: toggleJourneyPanel,
                   status: journeyStatus,
@@ -3418,11 +4069,13 @@ export default function MapPage() {
                 scopeRestricted={analysisCatalog.isRestricted}
               />
 
-              {/* Yolculuk planlayıcısı YALNIZCA `transport.view` ile sunulur:
-                  yetkisi olmayana, backend'in 403 döndüreceği bir akış
+              {/* Çalışma alanı EN AZ BİR ürünle çizilir; içindeki bölümler
+                  kendi yetkilerini ayrıca ister (kişisel: `journey.use`,
+                  paylaşılan: `transport.view`). Hiçbir ürünü olmayana panel
+                  hiç çizilmez — backend'in 403 döndüreceği bir akış
                   gösterilmez. Rol adı, kullanıcı adı ya da yönetici bayrağı
                   hiçbir biçimde okunmaz. */}
-              {allowed.canViewTransport && (
+              {canOpenJourney && (
                 <JourneyPlannerPanel
                   state={journey.state}
                   routes={transport.activeRoutes}
@@ -3440,6 +4093,37 @@ export default function MapPage() {
                      gerçekten beklediği durumu anlatır. */
                   picking={journey.isPicking}
                   canUsePois={allowed.canViewPoi}
+                  /* Ürün kapısı bir KAYNAK anahtarı değildir: hat ve durak
+                     seçimleri kendi yetkisini ister. Bu yalnızca GÖRÜNÜRLÜK
+                     kararıdır; bağlayıcı denetim backend'dedir. */
+                  canUseTransport={allowed.canViewTransport}
+                  /* ÜST DÜZEY ürün ekseni. Kararı saf modül verir; panel
+                     yalnızca çizer ve MapPage yetkiyi ikinci kez yorumlamaz. */
+                  product={journeyProduct}
+                  productTabs={journeyProductOptions}
+                  onProductChange={journey.setProduct}
+                  shared={sharedJourney}
+                  onStartShared={startSharedSimulation}
+                  onPauseShared={pauseSharedSimulation}
+                  onResumeShared={resumeSharedSimulation}
+                  onStopShared={requestSharedStop}
+                  onFollowShared={followSharedSimulation}
+                  onUnfollowShared={unfollowSharedSimulation}
+                  /* AKTİF SİMÜLASYONLAR (Faz 4A). Liste bir YÖNETİM yüzeyi
+                     değildir: satırlar yaşam döngüsü düğmesi taşımaz ve
+                     izleme/seçim/takip birbirinden bağımsız kalır. */
+                  activeSimulations={activeSimulations}
+                  onActiveSearchChange={setActiveSimulationSearch}
+                  onSelectActiveRoute={selectActiveSimulationRow}
+                  onToggleWatch={simulation.toggleWatch}
+                  onWatchAll={simulation.watchAll}
+                  onClearWatch={simulation.clearWatch}
+                  onRetryActive={simulation.reloadActive}
+                  onToggleManaged={simulation.toggleManaged}
+                  onSelectAllActive={simulation.manageAllActive}
+                  onClearSelection={simulation.clearManaged}
+                  onRunBatchAction={runLifecycleOperation}
+                  sharedNavigation={sharedNavigation}
                   poiSearch={journeyPickerSearch}
                   onModeChange={journey.setMode}
                   onProfileChange={journey.setProfile}
@@ -3455,6 +4139,52 @@ export default function MapPage() {
                   onArmSlot={armJourneySlot}
                   onRequestPreview={journey.requestPreview}
                   onClear={journey.clear}
+                  /* KAYDEDİLENLER (Faz 7). Sunum modeli saf modülden gelir;
+                     her eylem KAYIT KİMLİĞİ taşır ve panelde "seçili kayıt"
+                     diye bir durum yoktur. */
+                  saved={{
+                    items: savedJourneys.items,
+                    loading: savedJourneys.loading,
+                    loaded: savedJourneys.loaded,
+                    error: savedJourneys.error,
+                    busyId: savedJourneys.busyId,
+                    saving: savedJourneys.saving,
+                  }}
+                  onSectionChange={journey.setSection}
+                  /* KAYDETMEK BAŞLATMAK DEĞİLDİR: bu yol simülasyona hiç
+                     dokunmaz. */
+                  onSaveJourney={requestJourneySave}
+                  canSaveJourney={Boolean(journey.buildIntent())}
+                  /* YÜKLEMEK de başlatmak değildir; başlatma ayrı eylemdir. */
+                  onLoadSavedJourney={loadSavedJourney}
+                  onUseSavedJourney={startSavedJourney}
+                  onRenameSavedJourney={requestSavedJourneyRename}
+                  onDeleteSavedJourney={requestSavedJourneyDelete}
+                  onToggleSavedFavorite={toggleSavedJourneyFavorite}
+                  onRetrySavedJourneys={savedJourneys.refresh}
+                  /* GEÇMİŞ (Faz 8). Tutanak DEĞİŞTİRİLEMEZ: ad, favori ya da
+                     silme eylemi geçirilmez çünkü böyle bir eylem yoktur. */
+                  history={{
+                    items: journeyHistory.items,
+                    filterId: journeyHistory.filterId,
+                    loading: journeyHistory.loading,
+                    loadingMore: journeyHistory.loadingMore,
+                    loaded: journeyHistory.loaded,
+                    hasMore: journeyHistory.hasMore,
+                    error: journeyHistory.error,
+                    detail: journeyHistory.detail,
+                    detailId: journeyHistory.detailId,
+                    busyId: journeyHistory.busyId,
+                  }}
+                  onHistoryFilterChange={journeyHistory.setFilter}
+                  /* Ayrıntıyı AÇMAK bir simülasyon başlatmaz. */
+                  onOpenHistoryDetail={journeyHistory.openDetail}
+                  onCloseHistoryDetail={journeyHistory.closeDetail}
+                  /* YÜKLEMEK de başlatmak değildir; başlatma ayrı eylemdir. */
+                  onLoadHistoryIntoPlanner={loadJourneyFromHistory}
+                  onReuseHistory={reuseJourneyFromHistory}
+                  onLoadMoreHistory={journeyHistory.loadMore}
+                  onRetryHistory={journeyHistory.refresh}
                   onCollapse={journey.collapsePanel}
                   onClose={closeJourneyPanel}
                   onOpen={openJourneyPanel}
@@ -3733,7 +4463,7 @@ export default function MapPage() {
               <TransportVehiclePopup
                 map={mapInstance}
                 vehicle={vehiclePopup}
-                onClose={() => setVehiclePopupSimulationId(null)}
+                onClose={() => setVehiclePopupTarget(null)}
               />
 
               {/* Kişisel yolculuk balonu AYRI bir üründür; paylaşılan hat
@@ -3745,23 +4475,18 @@ export default function MapPage() {
                 onClose={() => setJourneyPopupSimulationId(null)}
               />
 
-              {allowed.canViewTransport && selectedTransportRouteId != null && (
-                <TransportTrackingControls
-                  className="transport-tracking-card"
-                  primaryButtonClassName="transport-popup-action"
-                  secondaryButtonClassName="transport-popup-action"
-                  controls={simulationControls}
-                  statusLoading={simulation.statusLoading}
-                  starting={simulation.starting}
-                  error={simulation.error}
-                  onStart={async () => {
-                    const snapshot = await simulation.start(selectedTransportRouteId)
-                    if (snapshot) setStartedSimulationId(snapshot.simulationId)
-                  }}
-                  onFollow={() => simulation.follow(selectedTransportRouteId)}
-                  onUnfollow={() => simulation.unfollow()}
-                />
-              )}
+              {/* AYRI "Hat Simülasyonu" kartı KALDIRILDI (Faz 2). Aynı
+                  yetenekler artık YOLCULUK çalışma alanının paylaşılan
+                  bölümündedir: iki bağımsız panelin ekranda yarışması,
+                  kullanıcıya iki ayrı ürün gibi görünen tek bir işi iki yerden
+                  yönettiriyordu.
+
+                  Ana harita o kartın bileşenine ARTIK HİÇ BAĞLI DEĞİLDİR —
+                  ne içe aktarır ne çizer. Bileşenin kendisi silinmedi;
+                  güzergah yönetimi ekranı onu kendi düzeninde kullanmaya
+                  devam eder ve sahibi orasıdır. Adı burada bilinçli olarak
+                  yazılmaz: kaldırılmış bir bağımlılığa yapılan ölü bir atıf,
+                  arayan kişiyi hâlâ burada duruyormuş gibi yanıltır. */}
 
               <LocationAnalysisPanel
                 open={locationAnalysisOpen}
@@ -3957,6 +4682,57 @@ export default function MapPage() {
               {/* POI silme onayı. Çizimlerle AYNI diyalog bileşeni: iki
                   silme de aynı görünür ve ikisi de yumuşak silmedir — metin
                   bu yüzden kalıcı bir kayıp vaat etmez. */}
+              {/* PAYLAŞILAN hat durdurma onayı. Kişisel yolculuk onayıyla AYNI
+                  diyalog bileşeni ama AYRI bir durum ve ayrı bir metin: bu
+                  çalıştırmayı yalnızca kullanıcının kendisi değil, hattı
+                  izleyen HERKES kaybeder — metin bunu açıkça söyler. */}
+              <ConfirmDialog
+                open={pendingSharedStop != null && canStopSharedSimulation}
+                title="Hat simülasyonunu sıfırla"
+                message="Bu hat simülasyonunu sıfırlamak istediğinize emin misiniz?"
+                /* Metin ürün anlamını OLDUĞU GİBİ söyler: çalıştırma sona
+                   erer ve hat başlangıç durumuna döner. "Aynı simülasyon
+                   %0'a alınır" demek yanlış olurdu — sonraki başlatma YENİ
+                   bir çalıştırma üretir. Yalnızca duraklatmak isteyen
+                   kullanıcı için ayrı bir eylem (Duraklat) vardır. */
+                description="Bu simülasyon sona erdirilecek ve hat başlangıç durumuna dönecek; onu izleyen diğer kullanıcılar da aracı görmeyi bırakır. Yeniden başlatıldığında %0'dan yeni bir simülasyon oluşturulur."
+                confirmLabel="Sıfırla"
+                cancelLabel="Vazgeç"
+                busy={simulation.stopping}
+                onConfirm={confirmSharedStop}
+                /* Vazgeçmek HİÇBİR ŞEY yapmaz: sunucuya istek gitmez. */
+                onCancel={() => setPendingSharedStop(null)}
+              />
+
+              {/* TOPLU yaşam döngüsü onayı (Faz 4B). Aynı diyalog bileşeni,
+                  AYRI bir durum ve işleme göre AYRI bir metin.
+
+                  METİN ÜRÜN ANLAMINI OLDUĞU GİBİ SÖYLER. Sıfırlama hat
+                  TANIMINI silmez ve yerine yeni bir çalıştırma koymaz; yeniden
+                  başlatma ise mevcut çalıştırmaları bitirip her hat için %0'dan
+                  YENİ bir simülasyon kurar — izleme, takip ve yönetim seçimi
+                  yeni çalıştırmaya GEÇMEZ. GUID gösterilmez: kullanıcıya
+                  anlatılan şey kaç çalıştırmanın etkileneceğidir. */}
+              <ConfirmDialog
+                open={pendingBatchCommand != null && canStopSharedSimulation}
+                title={pendingBatchCommand?.operation === LIFECYCLE_OPERATIONS.RESTART
+                  ? 'Seçili simülasyonları yeniden başlat'
+                  : 'Seçili simülasyonları sıfırla'}
+                message={pendingBatchCommand?.operation === LIFECYCLE_OPERATIONS.RESTART
+                  ? `Seçili ${pendingBatchCommand?.targets.length ?? 0} simülasyon yeniden başlatılsın mı?`
+                  : `Seçili ${pendingBatchCommand?.targets.length ?? 0} simülasyon sıfırlansın mı?`}
+                description={pendingBatchCommand?.operation === LIFECYCLE_OPERATIONS.RESTART
+                  ? 'Şu anki çalıştırmalar sona erer ve başarılı olan her hat için %0’dan YENİ bir simülasyon oluşturulur. Yeni simülasyonlar otomatik olarak izlenmez, takip edilmez ve yönetim seçiminde yer almaz. Hat tanımları silinmez.'
+                  : 'Seçili simülasyonlar sona erdirilecek ve bu hatlar başlangıç durumuna dönecek; onları izleyen diğer kullanıcılar da aracı görmeyi bırakır. Yerlerine yeni bir simülasyon oluşturulmaz ve hat tanımları silinmez.'}
+                confirmLabel={pendingBatchCommand?.operation === LIFECYCLE_OPERATIONS.RESTART
+                  ? 'Yeniden Başlat'
+                  : 'Sıfırla'}
+                cancelLabel="Vazgeç"
+                onConfirm={confirmBatchCommand}
+                /* Vazgeçmek HİÇBİR ŞEY yapmaz: sunucuya istek gitmez. */
+                onCancel={() => setPendingBatchCommand(null)}
+              />
+
               <ConfirmDialog
                 open={journeyStopPending}
                 title="Yolculuğu durdur"
@@ -4023,6 +4799,52 @@ export default function MapPage() {
                 confirmLabel="Geri Yükle"
                 onConfirm={confirmRestore}
                 onCancel={() => setPendingRestore(null)}
+              />
+
+              {/* Kaydedilmiş yolculuk SİLME onayı. Aynı diyalog bileşeni,
+                  aynı Esc davranışı, aynı erişilebilirlik — tarayıcının
+                  `confirm()`'i DEĞİL. Hedef kimlik onay anında DONDURULMUŞTUR:
+                  A için açılan onay, arada B'ye dokunulsa bile A'yı siler. */}
+              <ConfirmDialog
+                open={Boolean(journeyDeletePending)}
+                title="Kaydedilen yolculuğu sil"
+                message={
+                  journeyDeletePending
+                    ? `“${journeyDeletePending.name}” yolculuğunu silmek istediğinize emin misiniz?`
+                    : ''
+                }
+                description="Kayıt kalıcı olarak silinir ve geri alınamaz. Çalışan bir yolculuğunuz varsa durmaz."
+                confirmLabel="Sil"
+                busy={journeyDeleting}
+                onConfirm={confirmSavedJourneyDelete}
+                onCancel={() => setJourneyDeletePending(null)}
+              />
+
+              {/* Planlanan yolculuğu KAYDETME diyaloğu. Ad ister; simülasyon
+                  başlatmaz. */}
+              <JourneyNameDialog
+                open={journeySavePending}
+                title="Yolculuğu kaydet"
+                description="Bu yolculuk yalnızca size özeldir ve daha sonra yeniden kullanabilirsiniz."
+                confirmLabel="Kaydet"
+                busy={savedJourneys.saving}
+                error={savedJourneys.error}
+                onConfirm={confirmJourneySave}
+                onCancel={() => setJourneySavePending(false)}
+              />
+
+              {/* YENİDEN ADLANDIRMA. Kimlik diyalog açıldığında dondurulur;
+                  eylem çözüldüğünde listedeki seçim okunmaz. */}
+              <JourneyNameDialog
+                open={Boolean(journeyRenamePending)}
+                title="Yolculuğu yeniden adlandır"
+                description="Yalnızca ad değişir; yolculuğun kendisi olduğu gibi kalır."
+                confirmLabel="Kaydet"
+                initialName={journeyRenamePending?.name ?? ''}
+                busy={savedJourneys.busyId === journeyRenamePending?.id}
+                error={savedJourneys.error}
+                onConfirm={confirmSavedJourneyRename}
+                onCancel={() => setJourneyRenamePending(null)}
               />
 
               {/* Unsaved edits. The same dialog component as the delete

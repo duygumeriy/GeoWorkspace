@@ -46,11 +46,18 @@ export function createTransportSimulationConnection() {
     .build()
 }
 
-/** Uygulamanın kullandığı istemci: gerçek bağlantı + Faz 3 yaşam döngüsü. */
-export function createTransportSimulationHubClient({ onUpdate, onError } = {}) {
+/**
+ * Uygulamanın kullandığı istemci: gerçek bağlantı + Faz 3 yaşam döngüsü +
+ * Faz 4A aktif keşfi.
+ *
+ * Keşif sinyali AYNI bağlantı üzerinden gelir; ikinci bir hub, ikinci bir
+ * bağlantı ya da ayrı bir "keşif istemcisi" AÇILMAZ.
+ */
+export function createTransportSimulationHubClient({ onUpdate, onError, onActiveSetChanged } = {}) {
   return createTransportSimulationClient({
     createConnection: createTransportSimulationConnection,
     onUpdate,
     onError,
+    onActiveSetChanged,
   })
 }

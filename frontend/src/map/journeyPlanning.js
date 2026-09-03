@@ -11,6 +11,8 @@
  * uygular. Koordinat, geometri ve süre bu dosyada HİÇ üretilmez.
  */
 
+import { JOURNEY_PRODUCTS } from './journeyWorkspace.js'
+
 /** Backend `JourneyContractNames` ile birebir aynı tel değerleri. */
 export const JOURNEY_MODES = Object.freeze({
   ROUTE_FULL: 'routeFull',
@@ -51,6 +53,58 @@ export const PANEL_STATES = Object.freeze({
   COLLAPSED: 'collapsed',
   CLOSED: 'closed',
 })
+
+/**
+ * Kipin kullanıcıya gösterilen ADI.
+ *
+ * <b>Planlayıcıya aittir</b> çünkü kipi tanımlayan burasıdır. Kaydedilmiş
+ * yolculuklar (Faz 7) ve geçmiş (Faz 8) aynı adı okur; her biri kendi
+ * sözlüğünü tutsaydı, bir gün aynı kip iki farklı isimle görünürdü.
+ */
+const MODE_LABELS = Object.freeze({
+  [JOURNEY_MODES.ROUTE_FULL]: 'Hat',
+  [JOURNEY_MODES.ROUTE_SEGMENT]: 'Hat Bölümü',
+  [JOURNEY_MODES.WAYPOINTS]: 'Serbest',
+})
+
+/** Bilinmeyen bir kip çökertmez; tire ile geçilir. */
+export function journeyModeLabel(mode) {
+  return MODE_LABELS[mode] ?? '—'
+}
+
+/**
+ * Kişisel ürünün İKİ bölümü.
+ *
+ * Bu, planlama KİPLERİYLE (Hat / Hat Bölümü / Serbest) karıştırılmamalıdır:
+ * orası "yolculuğum nasıl kurulur", burası "planlıyor muyum yoksa
+ * kayıtlarıma mı bakıyorum". Bölüm değiştirmek hiçbir taslağı silmez ve
+ * hiçbir çalıştırmaya dokunmaz.
+ */
+export const PERSONAL_SECTIONS = Object.freeze({
+  PLAN: 'plan',
+  SAVED: 'saved',
+  HISTORY: 'history',
+})
+
+/**
+ * Gerçekten gösterilecek kişisel bölüm.
+ *
+ * <b>Neden saf bir kural.</b> Bu fail-safe daha önce panelin içinde,
+ * bölümleri TEK TEK sayan bir üçlü ifadeydi: "kayıtlar ise kayıtlar, değilse
+ * planlama". Üçüncü bölüm (Geçmiş) eklendiğinde o ifade sessizce yanlış hâle
+ * geldi — indirgeyici `history` yazıyordu ama panel onu planlamaya düşürüyor,
+ * kullanıcı Geçmiş'e basınca Planla açık kalıyordu. Kural burada, ÜYELİK
+ * üzerinden tanımlanır; böylece yeni bir bölüm eklemek onu düşürmez.
+ *
+ * <b>Bilinmeyen bir değer planlamaya düşer</b> ve bu bilinçlidir: tanımsız bir
+ * bölüm için boş bir panel çizmektense, kullanıcının her zaman
+ * kullanabileceği bölümü göstermek daha güvenlidir.
+ */
+export function resolvePersonalSection(section) {
+  return Object.values(PERSONAL_SECTIONS).includes(section)
+    ? section
+    : PERSONAL_SECTIONS.PLAN
+}
 
 /** Geçiş noktasının plandaki rolü. */
 export const WAYPOINT_ROLES = Object.freeze({
@@ -98,16 +152,42 @@ export function waypointReference({ source, id, label = '', routeName = '' }) {
   return { source, id: Number(id), label, routeName }
 }
 
-export function initialJourneyPlannerState() {
+/**
+ * Planlayıcının başlangıç durumu.
+ *
+ * <b>Kip, kullanıcının ERİŞEBİLDİĞİ kipe göre başlar.</b> Hat ve Hat Bölümü
+ * kipleri ulaşım ağına erişim ister (`transport.view`); o yetkisi olmayan
+ * birine varsayılan olarak hat seçimi açmak, hiç doldurulamayacak bir formla
+ * karşılaşmak demekti. Bu bir yetkilendirme kararı DEĞİL, bir başlangıç
+ * seçimidir — bağlayıcı denetim her zaman backend'dedir.
+ *
+ * @param {{ canUseTransport?: boolean }} [options]
+ */
+export function initialJourneyPlannerState({ canUseTransport = true } = {}) {
   return {
-    mode: JOURNEY_MODES.ROUTE_FULL,
+    /* ÜST DÜZEY ürün seçimi. Kişisel planlama KİPLERİYLE (Hat / Hat Bölümü /
+       Serbest) karıştırılmamalıdır: burası "hangi ÜRÜN", orası "kişisel
+       yolculuğum nasıl kurulur". Varsayılan kişiseldir; kullanıcının gerçekten
+       erişebildiği ürüne indirgeme `resolveJourneyProduct`'ın işidir ve yetki
+       kararı BURADA tekrarlanmaz. */
+    product: JOURNEY_PRODUCTS.PERSONAL,
+    mode: canUseTransport ? JOURNEY_MODES.ROUTE_FULL : JOURNEY_MODES.WAYPOINTS,
     profile: DEFAULT_JOURNEY_PROFILE,
     routeId: null,
     fromStopId: null,
     toStopId: null,
     // Başlangıç ve varış her zaman vardır; aradakiler isteğe bağlıdır.
     waypoints: [createWaypointSlot(), createWaypointSlot()],
-    panel: PANEL_STATES.OPEN,
+    /* Harita TEMİZ açılır. Panelin kendiliğinden açılması, kullanıcının hiç
+       istemediği bir çalışma alanının her girişte ekranı kaplaması demekti;
+       çalışma alanı artık AÇIKÇA kısayoldan açılır. Bu yalnızca bir SUNUM
+       varsayılanıdır: çalışan bir kişisel yolculuk varsa kurtarma yine
+       çalışır ve durumunu kısayolun rozetinden bildirir. */
+    panel: PANEL_STATES.CLOSED,
+    /* Kişisel ürün PLANLAMA bölümünde açılır: kullanıcı çalışma alanını
+       çoğunlukla yeni bir yolculuk kurmak için açar. Kayıtlar bir tık
+       uzaktadır ve bölüm değişimi hiçbir seçimi silmez. */
+    section: PERSONAL_SECTIONS.PLAN,
     activeSlotKey: null,
   }
 }
@@ -208,6 +288,62 @@ export function journeyPlannerReducer(state, action) {
       }
     }
 
+    case 'setProduct': {
+      /* Ürün değiştirmek bir SUNUM kararıdır: iki üründen hiçbiri durmaz,
+         hiçbir takip bırakılmaz ve hiçbir kanal kapanmaz. Silah da bırakılmaz
+         DEĞİL — kişisel nokta seçimi silahlıyken paylaşılan hatta geçmek, o
+         seçimi görünmez bir yuvaya bırakırdı. */
+      if (!Object.values(JOURNEY_PRODUCTS).includes(action.product)) return state
+      if (action.product === state.product) return state
+      return {
+        ...state,
+        product: action.product,
+        activeSlotKey: action.product === JOURNEY_PRODUCTS.PERSONAL ? state.activeSlotKey : null,
+      }
+    }
+
+    case 'setSection': {
+      if (!Object.values(PERSONAL_SECTIONS).includes(action.section)) return state
+      if (action.section === state.section) return state
+      /* Kayıt listesine geçerken silah BIRAKILIR: kişisel nokta yuvası
+         ekranda değilken silahlı kalmak, haritadaki bir tıklamanın
+         görünmeyen bir yuvaya yazması demekti. */
+      return {
+        ...state,
+        section: action.section,
+        activeSlotKey: action.section === PERSONAL_SECTIONS.PLAN ? state.activeSlotKey : null,
+      }
+    }
+
+    case 'loadSaved': {
+      /* TASLAĞI DEĞİŞTİREN TEK eylem budur ve İKİ kaynağı vardır: kaydedilmiş
+         bir yolculuk (Faz 7) ve sona ermiş bir yolculuğun tutanağı (Faz 8).
+         İkisi de aynı şekli üretir (`journeyDraftFromDefinition`), bu yüzden
+         ikinci bir "yükle" eylemi açılmaz — iki eylem, zamanla iki farklı
+         yükleme davranışı demekti.
+
+         YÜKLEMEK BAŞLATMAK DEĞİLDİR: burada ne bir çalıştırma kimliği ne de
+         bir kanal vardır. Taslak yarım da bırakılmaz — yüklenen kip neyi
+         gerektiriyorsa o alanlar yazılır, ötekiler temizlenir; aksi hâlde eski
+         kipin seçimleri yeni taslakta hayalet gibi yaşardı. */
+      const draft = action.draft
+      if (!draft || !Object.values(JOURNEY_MODES).includes(draft.mode)) return state
+      if (!JOURNEY_PROFILE_IDS.includes(draft.profile)) return state
+
+      return {
+        ...state,
+        mode: draft.mode,
+        profile: draft.profile,
+        routeId: draft.routeId ?? null,
+        fromStopId: draft.fromStopId ?? null,
+        toStopId: draft.toStopId ?? null,
+        waypoints: draft.waypoints ?? [createWaypointSlot(), createWaypointSlot()],
+        // Yüklenen yolculuk PLANLAMA bölümünde incelenir; başlatma ayrı bir karardır.
+        section: PERSONAL_SECTIONS.PLAN,
+        activeSlotKey: null,
+      }
+    }
+
     case 'setPanel': {
       if (!Object.values(PANEL_STATES).includes(action.panel)) return state
       // Panel kapanınca harita seçimi de bırakılır; görünmeyen bir yuva doldurulmaz.
@@ -218,7 +354,14 @@ export function journeyPlannerReducer(state, action) {
     case 'reset': {
       /* Panel durumu KORUNUR: "Temizle" seçimleri siler, kullanıcının açtığı
          paneli kapatmaz. */
-      return { ...initialJourneyPlannerState(), panel: state.panel, mode: state.mode, profile: state.profile }
+      return {
+        ...initialJourneyPlannerState(),
+        panel: state.panel,
+        product: state.product,
+        section: state.section,
+        mode: state.mode,
+        profile: state.profile,
+      }
     }
 
     default:
@@ -325,8 +468,14 @@ export function buildJourneyPreviewRequest(state) {
  * değil, kuralın parçasıdır.
  *
  * <b>Görünmeyen yuvaya yazılmaz</b> — panel açık değilse seçim silahlanmaz.
+ *
+ * <b>Beşinci koşul ÜRÜNDÜR.</b> Çalışma alanı paylaşılan hattı gösterirken
+ * kişisel geçiş noktası yuvası ekranda yoktur; silahlı kalırsa haritadaki bir
+ * tıklama görünmeyen bir yuvaya yazardı. İndirgeyici ürün değişiminde silahı
+ * zaten bırakır; buradaki koşul o kuralı KURALIN KENDİSİNDE de sabitler.
  */
 export function journeyPickingActive({
+  product = JOURNEY_PRODUCTS.PERSONAL,
   mode,
   panel,
   activeSlotKey,
@@ -334,6 +483,7 @@ export function journeyPickingActive({
 } = {}) {
   return Boolean(
     workspaceAtRest
+    && product === JOURNEY_PRODUCTS.PERSONAL
     && mode === JOURNEY_MODES.WAYPOINTS
     && panel === PANEL_STATES.OPEN
     && activeSlotKey != null,
@@ -355,4 +505,87 @@ export function waypointRoleAt(index, total) {
   if (index === 0) return WAYPOINT_ROLES.ORIGIN
   if (index === total - 1) return WAYPOINT_ROLES.DESTINATION
   return WAYPOINT_ROLES.VIA
+}
+
+/* --- Tanımdan taslağa ----------------------------------------------------------
+   Kaydedilmiş bir yolculuk (Faz 7) ile sona ermiş bir yolculuğun tutanağı
+   (Faz 8) FARKLI kavramlardır ama ikisi de aynı soruyu yanıtlayabilir: "bu
+   yolculuğu planlayıcıya nasıl geri koyarım?". Kural TEK yerde durur çünkü iki
+   kopya, zamanla iki farklı yükleme davranışına dönüşürdü. */
+
+/**
+ * Kanonik bir yolculuk tanımını PLANLAYICI TASLAĞINA çevirir.
+ *
+ * <b>Bu bir başlatma DEĞİLDİR.</b> Yalnızca formu doldurur: hiçbir simülasyon
+ * kurulmaz, hiçbir kanal açılmaz ve harita takibi değişmez.
+ *
+ * <b>Yuvalar YENİ anahtarlarla kurulur:</b> eski taslağın anahtarlarını
+ * devralmak, silahlı bir yuvanın kazara yeni listede yaşamaya devam etmesi
+ * demekti.
+ *
+ * <b>Etiket yalnızca EKRANDA yaşar</b> ve isteğe hiç girmez; sunucu noktayı
+ * kimliğinden çözer. Bu, tarihsel bir adın yeni bir yolculuğu yönlendirmesini
+ * yapısal olarak imkânsız kılar.
+ *
+ * @param {{ mode?: string, profile?: string, routeId?: number|null,
+ *           points?: Array<{ sequence?: number, source?: string,
+ *                            referenceId?: number, displayName?: string }> }} definition
+ * @returns {object|null} taslak alanları; tanım yeniden kurulamıyorsa `null`
+ */
+export function journeyDraftFromDefinition(definition) {
+  if (!definition) return null
+
+  const mode = Object.values(JOURNEY_MODES).includes(definition.mode) ? definition.mode : null
+  if (!mode) return null
+
+  const profile = JOURNEY_PROFILE_IDS.includes(definition.profile)
+    ? definition.profile
+    : DEFAULT_JOURNEY_PROFILE
+
+  const points = Array.isArray(definition.points)
+    ? [...definition.points].sort((left, right) => (left?.sequence ?? 0) - (right?.sequence ?? 0))
+    : []
+
+  if (mode === JOURNEY_MODES.ROUTE_FULL) {
+    /* Tam hat yolculuğu HATTIN KENDİSİNDEN kurulur. Kayıttaki noktalar (varsa)
+       tarihsel gösterim içindir ve geçiş noktası olarak KULLANILMAZ — hatta o
+       günden beri durak eklenmişse yeniden kurulan yolculuk onları da
+       içermelidir. */
+    if (definition.routeId == null) return null
+    return {
+      mode,
+      profile,
+      routeId: Number(definition.routeId),
+      fromStopId: null,
+      toStopId: null,
+      waypoints: null,
+    }
+  }
+
+  if (mode === JOURNEY_MODES.ROUTE_SEGMENT) {
+    if (definition.routeId == null || points.length !== 2) return null
+    return {
+      mode,
+      profile,
+      routeId: Number(definition.routeId),
+      fromStopId: Number(points[0].referenceId),
+      toStopId: Number(points[1].referenceId),
+      waypoints: null,
+    }
+  }
+
+  if (points.length < MIN_WAYPOINTS) return null
+
+  return {
+    mode,
+    profile,
+    routeId: null,
+    fromStopId: null,
+    toStopId: null,
+    waypoints: points.map((point) => createWaypointSlot(waypointReference({
+      source: point.source === WAYPOINT_SOURCES.POI ? WAYPOINT_SOURCES.POI : WAYPOINT_SOURCES.STOP,
+      id: point.referenceId,
+      label: point.displayName ?? '',
+    }))),
+  }
 }

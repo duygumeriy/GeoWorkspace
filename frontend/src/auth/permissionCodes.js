@@ -117,6 +117,22 @@ export const PERMISSIONS = Object.freeze({
      düzenleme onu ima eder. Arayüz yalnızca ETKİN kodu okur — rol adı,
      "Operatör" etiketi ya da isAdmin hiçbir yerde denetlenmez. */
   TRANSPORT_SIMULATION_START: 'transport.simulation.start',
+
+  /* Durdurmak, başlatmanın üzerine YÜKLENMEZ: paylaşılan bir hattı herkes için
+     durdurmak ayrı bir yetenektir ve `transport.view` onu İMA ETMEZ — takibi
+     bırakmak (kamera sahipliği) bir yaşam döngüsü komutu DEĞİLDİR ve hiçbir
+     yetki gerektirmez. Kod şimdilik yalnızca kimliktir; onu tüketen açık
+     durdurma komutu sonraki fazda gelir. */
+  TRANSPORT_SIMULATION_STOP: 'transport.simulation.stop',
+
+  /* --- Kişisel yolculuk ---------------------------------------------------- */
+  /* Kişisel yolculuk AYRI bir üründür ve `transport.view` altına gizlenmez:
+     ulaşım ağını haritada okuyabilmek ile kendine ait bir yolculuğu planlayıp
+     canlandırabilmek farklı yeteneklerdir. Kod bir ÜRÜN kapısıdır, kaynak
+     anahtarı DEĞİLDİR — plan içindeki hat/durak seçimleri hâlâ
+     `transport.view`, POI seçimleri hâlâ `poi.view` ister ve bağlayıcı kararı
+     her zaman backend verir. */
+  JOURNEY_USE: 'journey.use',
 })
 
 /**

@@ -127,10 +127,12 @@ test('the browser never contacts a routing engine directly', () => {
 /* --- Yetki ------------------------------------------------------------------- */
 
 test('the planner is offered only through the effective permission model', () => {
-  // Panel `transport.view` olmadan hiç render edilmez.
-  assert.match(MAP_PAGE, /allowed\.canViewTransport && \(\s*<JourneyPlannerPanel/)
+  // Panel, ürünün KENDİ yetkisi (`journey.use`) olmadan hiç render edilmez.
+  assert.match(MAP_PAGE, /canOpenJourney && \(\s*<JourneyPlannerPanel/)
   // POI seçenekleri ayrı bir yetkiye bağlıdır.
   assert.ok(MAP_PAGE.includes('canUsePois={allowed.canViewPoi}'))
+  // Hat/durak seçenekleri de öyle: ürün kapısı bir kaynak anahtarı değildir.
+  assert.ok(MAP_PAGE.includes('canUseTransport={allowed.canViewTransport}'))
 
   for (const [name, source] of JOURNEY_SOURCES) {
     const code = stripComments(source)
@@ -199,8 +201,11 @@ test('the live-journey action is real server work, never fake local behaviour', 
   assert.match(MAP_PAGE, /useJourneyPreviewLayer\(mapInstance, \{\s*geometryWkt: journeyGeometryWkt,/)
   assert.ok(!MAP_PAGE.includes('journeySimulation.simulation?.geometryWkt ?? journey.preview?.geometryWkt'))
 
-  // Mevcut paylaşılan hat denetimleri ayrı bileşende yaşamaya devam eder.
-  assert.ok(MAP_PAGE.includes('TransportTrackingControls'))
+  /* Paylaşılan hat AYRI bir üründür ve öyle kalır; Faz 2'de değişen tek şey
+     onun nereye ÇİZİLDİĞİDİR: ayrı kart yerine çalışma alanının paylaşılan
+     bölümü. Kişisel yolculuk durumu onunla hiçbir şey paylaşmaz. */
+  assert.ok(!MAP_PAGE.includes('TransportTrackingControls'))
+  assert.ok(MAP_PAGE.includes('shared={sharedJourney}'))
 })
 
 test('the plan id is correlation data and never reaches the start request', () => {
@@ -245,7 +250,7 @@ test('normal map interactions resume when planner picking is not armed', () => {
      durumu) orada da doğrudan çalıştırılarak ölçülür
      (`journey-picking-ownership.test.js`). Buradaki iddia bağlamadır: kancada
      ikinci bir kural KOPYASI yaşamamalıdır. */
-  assert.ok(PLANNER_HOOK.includes('isPicking: journeyPickingActive({'))
+  assert.ok(PLANNER_HOOK.includes('isPicking: permitted && journeyPickingActive({'))
   assert.ok(PLANNER_HOOK.includes('workspaceAtRest'))
   assert.ok(!PLANNER_HOOK.includes('state.mode === JOURNEY_MODES.WAYPOINTS'))
 

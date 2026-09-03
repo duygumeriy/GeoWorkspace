@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 167 166"
+     width="167"
+     height="166"
+     role="img"
+     aria-label="Logo">
+  <polygon
+    points="0,56 51,5 167,0 106,61"
+    fill="#4091D3"/>
+  <polygon
+    points="106,61 167,0 162,116 111,166"
+    fill="#1B2B51"/>
+</svg>

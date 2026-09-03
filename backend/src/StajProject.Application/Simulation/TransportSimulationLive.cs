@@ -14,10 +14,25 @@ public enum TransportSimulationStatus
     /// <summary>Araç yolda.</summary>
     Running,
 
+    /// <summary>
+    /// Çalıştırma DURAKLATILDI ve TERMİNAL DEĞİLDİR.
+    /// </summary>
+    /// <remarks>
+    /// Duraklatılmış bir çalıştırma hattın aktif yuvasını İŞGAL ETMEYE devam
+    /// eder: aynı hatta ikinci bir simülasyon başlatılamaz, gözlemciler onu
+    /// görmeye devam eder ve devam ettirildiğinde AYNI kimlikle kaldığı
+    /// yerden sürer. "Çalışmıyor" ile karıştırılmamalıdır.
+    /// </remarks>
+    Paused,
+
     /// <summary>Güzergahın sonuna ulaşıldı.</summary>
     Completed,
 
-    /// <summary>Çalıştırma sonlandırıldı (ör. güzergah geçersizleşti).</summary>
+    /// <summary>
+    /// Çalıştırma sonlandırıldı (kullanıcı sıfırladı ya da güzergah
+    /// geçersizleşti). TERMİNALDİR: hat yeniden başlatılabilir hâle gelir ve
+    /// sonraki başlatma YENİ bir kimlikle %0'dan başlar.
+    /// </summary>
     Cancelled
 }
 
@@ -38,6 +53,29 @@ public enum TransportSimulationStatus
 /// ölçeklemesi gerekmez.
 /// </para>
 /// </remarks>
+/// <param name="CurrentStepSequence">
+/// Aracın İÇİNDE BULUNDUĞU manevranın OTORİTER sırası; güzergahın manevrası
+/// yoksa <c>null</c>.
+///
+/// <para>
+/// <b>Yalnızca SIRA taşınır, adım listesi DEĞİL.</b> Manevralar güzergahın
+/// ömrü boyunca sabittir; onları saniyede bir yeniden yayınlamak, değişmeyen
+/// bir veriyi her tick'te her gözlemciye tekrar göndermek olurdu. Liste
+/// okuma yolunda (başlatma/durum/aktif) bir kez verilir, canlı akış ise
+/// yalnızca DEĞİŞEN şeyi taşır.
+/// </para>
+///
+/// <para>
+/// <b>Sıra, dizi konumu DEĞİLDİR.</b> İstemci adımı bu değere göre arar;
+/// <c>steps[sequence]</c> varsayımı, sunucunun sırayı yeniden numaralandırdığı
+/// gün sessizce yanlış talimat gösterirdi.
+/// </para>
+/// </param>
+/// <param name="DistanceToNextManeuverMeters">
+/// SONRAKİ manevraya kalan mesafe; sonraki manevra yoksa (varış)
+/// <c>null</c>. Sunucu hesaplar; tarayıcı yalnızca biçimlendirir — mesafeyi
+/// harita koordinatlarından tahmin etmek ikinci bir ilerleme motoru demekti.
+/// </param>
 public sealed record TransportSimulationLiveUpdate(
     Guid SimulationId,
     int RouteId,
@@ -45,9 +83,16 @@ public sealed record TransportSimulationLiveUpdate(
     double Longitude,
     double Latitude,
     double ProgressPercent,
-    DateTime UpdatedAtUtc)
+    DateTime UpdatedAtUtc,
+    int? CurrentStepSequence = null,
+    double? DistanceToNextManeuverMeters = null)
 {
     /// <summary>Depodaki durumdan yayın sözleşmesine dönüşüm.</summary>
+    /// <remarks>
+    /// Navigasyon alanları ANLIK GÖRÜNTÜDEN okunur, burada yeniden
+    /// hesaplanmaz: ikinci bir hesap, duraklatılmış bir çalıştırmanın donmuş
+    /// adımını sessizce ilerletebilirdi.
+    /// </remarks>
     public static TransportSimulationLiveUpdate From(
         ActiveTransportSimulation simulation,
         TransportSimulationStatus status) =>
@@ -58,7 +103,60 @@ public sealed record TransportSimulationLiveUpdate(
             simulation.Snapshot.Position.Longitude,
             simulation.Snapshot.Position.Latitude,
             Math.Clamp(simulation.Snapshot.ProgressRatio, 0, 1) * 100,
-            simulation.Snapshot.CapturedAt);
+            simulation.Snapshot.CapturedAt,
+            simulation.Snapshot.CurrentStepSequence,
+            simulation.Snapshot.DistanceToNextManeuverMeters);
+}
+
+/// <summary>Aktif kümedeki DEĞİŞİKLİĞİN yönü.</summary>
+/// <remarks>
+/// Yalnızca ÜYELİK değişimini anlatır. Duraklat/Sürdür burada YOKTUR ve
+/// olmamalıdır: duraklatılmış çalıştırma hattın aktif yuvasını işgal etmeye
+/// devam eder, yani aktif küme değişmez. Onları buraya koymak, her duraklatma
+/// tıklamasında tüm istemcilerin aktif listeyi yeniden okuması demekti.
+/// </remarks>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum TransportActiveSetChange
+{
+    /// <summary>Yeni bir çalıştırma aktif kümeye GİRDİ.</summary>
+    Started,
+
+    /// <summary>Bir çalıştırma aktif kümeden ÇIKTI (tamamlandı ya da iptal edildi).</summary>
+    Ended
+}
+
+/// <summary>
+/// "Aktif paylaşılan simülasyon kümesi DEĞİŞMİŞ OLABİLİR" sinyali.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <b>Bu bir KEŞİF sinyalidir, ikinci bir simülasyon otoritesi DEĞİL.</b>
+/// Konum, ilerleme ve yaşam döngüsü <see cref="TransportSimulationLiveUpdate"/>
+/// ile taşınmaya devam eder. Buraya tüm yükü kopyalamak, aynı gerçeğin iki
+/// kanaldan farklı sıralarla gelmesi ve istemcinin hangisine inanacağını
+/// bilememesi demekti.
+/// </para>
+/// <para>
+/// Rota ve çalıştırma kimliği yine de taşınır: istemci "ne değişti" sorusunu
+/// loglayabilsin ve gerektiğinde kendi bekleyen niyetiyle karşılaştırabilsin
+/// diye. Bağlayıcı cevap her zaman aktif liste okumasıdır.
+/// </para>
+/// </remarks>
+public sealed record TransportActiveSimulationSetChanged(
+    int RouteId,
+    Guid SimulationId,
+    TransportActiveSetChange Change,
+    DateTime ChangedAtUtc)
+{
+    public static TransportActiveSimulationSetChanged Started(
+        ActiveTransportSimulation simulation,
+        DateTime utcNow) =>
+        new(simulation.RouteId, simulation.SimulationId, TransportActiveSetChange.Started, utcNow);
+
+    public static TransportActiveSimulationSetChanged Ended(
+        ActiveTransportSimulation simulation,
+        DateTime utcNow) =>
+        new(simulation.RouteId, simulation.SimulationId, TransportActiveSetChange.Ended, utcNow);
 }
 
 /// <summary>
@@ -84,6 +182,33 @@ public static class TransportSimulationHubContract
 
     /// <summary>İstemcide çağrılan metot adı.</summary>
     public const string UpdateMethod = "SimulationUpdated";
+
+    /// <summary>
+    /// KEŞİF sinyalinin istemci metot adı.
+    /// </summary>
+    /// <remarks>
+    /// AYNI hub üzerinde durur. İkinci bir hub, ikinci bir bağlantı, ikinci
+    /// bir kimlik doğrulama hattı ve ikinci bir yeniden bağlanma davranışı
+    /// demekti; oysa taşınan şey aynı ürünün aynı canlı gerçeğidir.
+    /// </remarks>
+    public const string ActiveSetChangedMethod = "ActiveSimulationSetChanged";
+
+    /// <summary>Keşif üyeliğine katılma metodu (hub'da çağrılır).</summary>
+    public const string JoinDiscoveryMethod = "JoinActiveSimulationDiscovery";
+
+    /// <summary>Keşif üyeliğinden ayrılma metodu (hub'da çağrılır).</summary>
+    public const string LeaveDiscoveryMethod = "LeaveActiveSimulationDiscovery";
+
+    /// <summary>
+    /// Aktif küme değişikliklerini dinleyenlerin grubu.
+    /// </summary>
+    /// <remarks>
+    /// <b>Herkese yayın YAPILMAZ.</b> Sinyal, hangi hatların çalıştığını
+    /// açığa vurur; bu yüzden ayrı bir gruba gider ve gruba yalnızca etkin
+    /// <c>transport.view</c> yetkisi olanlar alınır. Rota grupları gibi bu
+    /// grup da bir yetki DEĞİLDİR — yayının hedefidir.
+    /// </remarks>
+    public const string DiscoveryGroup = "transport-simulation-active-discovery";
 
     private const string GroupPrefix = "transport-simulation-route-";
 

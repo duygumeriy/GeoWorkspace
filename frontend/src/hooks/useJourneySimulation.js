@@ -192,6 +192,30 @@ export default function useJourneySimulation({ permitted = false } = {}) {
     }
   }, [permitted, join])
 
+  /**
+   * Sunucunun OTORİTER başlatma yanıtını benimser.
+   *
+   * <b>Neden ayrı.</b> Kişisel bir çalıştırma iki yoldan doğabilir: planlanan
+   * bir niyetten ya da KAYDEDİLMİŞ bir tanımın yeniden kullanılmasından. İkisi
+   * de aynı yanıtı üretir ve aynı canlı kanala katılmalıdır; benimseme
+   * mantığını ikinci kez yazmak, iki yolun zamanla farklı davranması demekti.
+   * <b>İKİNCİ bir kişisel SignalR istemcisi açılmaz</b> — kanal hâlâ bir
+   * tanedir ve sahibi bu kancadır.
+   *
+   * Yanıt istemcinin YENİ gerçeğidir: geometri ve ölçümler eski önizlemeden
+   * farklı olabilir ve farklı olması yeniden doğrulamanın beklenen sonucudur.
+   */
+  const adopt = useCallback(async (body) => {
+    if (!body?.simulationId) return null
+
+    setSimulation(body)
+    setSnapshot(body.snapshot ?? null)
+    // Taze başlatma kamerayı TALEP EDER: kullanıcı yolculuğu o an başlattı.
+    setFollowing(adoptedJourneyFollow(JOURNEY_ADOPTION.START))
+    await join(body.simulationId)
+    return body
+  }, [join])
+
   const start = useCallback(async (intent) => {
     if (!permitted || !intent) return null
 
@@ -206,24 +230,16 @@ export default function useJourneySimulation({ permitted = false } = {}) {
         return null
       }
 
-      const body = await response.json()
-
-      /* Sunucu yanıtı YENİ gerçektir: geometri ve ölçümler önizlemedekinden
-         farklı olabilir ve farklı olması yeniden doğrulamanın beklenen
-         sonucudur. Eski önizleme burada bırakılır. */
-      setSimulation(body)
-      setSnapshot(body.snapshot ?? null)
-      // Taze başlatma kamerayı TALEP EDER: kullanıcı yolculuğu o an başlattı.
-      setFollowing(adoptedJourneyFollow(JOURNEY_ADOPTION.START))
-      await join(body.simulationId)
-      return body
+      /* Benimseme TEK yerdedir: kaydedilmiş bir tanımın yeniden kullanımı da
+         aynı yoldan geçer ve aynı kanala katılır. */
+      return await adopt(await response.json())
     } catch {
       setError(journeyErrorMessage(0, ''))
       return null
     } finally {
       setStarting(false)
     }
-  }, [permitted, join])
+  }, [permitted, adopt])
 
   const stop = useCallback(async () => {
     const active = simulation?.simulationId
@@ -289,6 +305,9 @@ export default function useJourneySimulation({ permitted = false } = {}) {
     following,
     setFollowing,
     start,
+    /* Kaydedilmiş bir tanımdan doğan çalıştırma da BURADAN benimsenir; ikinci
+       bir canlı durum ya da ikinci bir bağlantı kurulmaz. */
+    adopt,
     stop,
     dismiss,
   }

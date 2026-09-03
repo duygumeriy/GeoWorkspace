@@ -836,7 +836,18 @@ test('failed drag reorder rolls the visible order back to the server-confirmed b
   await list.locator('[data-stop-id="72"]').dragTo(list.locator('[data-stop-id="71"]'))
 
   await expect.poll(() => state.reorders.length).toBe(1)
-  await expect(page.getByRole('alert')).toContainText('Sıralama reddedildi.')
+  /* Ekranda AYNI ANDA birden fazla meşru `role="alert"` bulunabilir: sıralama
+     reddi sayfa düzeyindeki `admin-notice` bildirimidir, canlı bağlantı
+     uyarısı ise ayrı bir uyarıdır. Rol-yalnız bir konumlandırıcı bu yüzden
+     belirsizdir ve Playwright'ın katı kipi onu HAKLI olarak reddeder.
+
+     Çözüm `.first()` DEĞİLDİR: ilkini seçmek belirsizliği gizler ve yarın
+     sıra değişirse test sessizce başka bir uyarıyı ölçmeye başlardı. Uyarı
+     TAŞIDIĞI İLETİYLE süzülür — hangi uyarıyı kastettiğimizi söyler ve aynı
+     iletiyi taşıyan ikinci bir uyarı belirirse yine düşer. */
+  const reorderAlert = page.getByRole('alert').filter({ hasText: 'Sıralama reddedildi.' })
+  await expect(reorderAlert).toBeVisible()
+  await expect(reorderAlert).toContainText('Sıralama reddedildi.')
   await expect(list.locator('strong')).toHaveText(['Cumhuriyet', 'Meydan', 'Üniversite'])
 })
 

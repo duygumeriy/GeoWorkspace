@@ -330,7 +330,31 @@ public static class PermissionCatalog
         new(PermissionCodes.TransportSimulationStart,
             "Ulaşım Simülasyonu Başlatma",
             "Hesaplanmış bir güzergah üzerinde araç simülasyonu başlatabilir.",
-            PermissionCategories.Transport, 1400)
+            PermissionCategories.Transport, 1400),
+
+        /* Durdurma, başlatmanın hemen ardında okunur ama AYRI bir satırdır:
+           ikisi ayrı ayrı verilebilir. Kod bu fazda yalnızca tanımlanır;
+           katalogda bir kodun bulunması hiçbir erişim AÇMAZ — onu tüketen
+           komut sonraki fazda gelir. */
+        new(PermissionCodes.TransportSimulationStop,
+            "Ulaşım Simülasyonunu Durdurma",
+            "Çalışan bir hat simülasyonunu herkes için durdurabilir.",
+            PermissionCategories.Transport, 1410),
+
+        /* --- Kişisel yolculuk ---------------------------------------------
+
+           Kendi kategorisindedir ve Transport altına SOKULMAZ: kişisel
+           yolculuk, ortak ulaşım ağının bir parçası değil, kullanıcının
+           kendisine ait ve yalnızca kendisinin gördüğü ayrı bir üründür. Aynı
+           grupta görünmesi, yetki ekranında iki ayrı ürünü tek bir şeymiş gibi
+           gösterirdi. Kategori yalnızca GÖSTERİM grubudur — hiçbir
+           yetkilendirme kararı ona bakarak verilmez. */
+
+        new(PermissionCodes.JourneyUse,
+            "Kişisel Yolculuk Kullanma",
+            "Kendine ait bir yolculuk planlayabilir, önizleyebilir, başlatabilir ve durdurabilir. "
+            + "Ulaşım rotası, durak ve POI seçimleri kendi yetkilerini ayrıca gerektirir.",
+            PermissionCategories.Journey, 1500)
     ];
 
     /// <summary>Katalogdaki tüm kodlar.</summary>

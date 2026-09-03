@@ -105,6 +105,13 @@ export default function useWorkspacePermissions(workspaceMode) {
   const canCreatePoi = canAll([PERMISSIONS.POI_CREATE, PERMISSIONS.POI_VIEW])
 
   const canViewTransport = can(PERMISSIONS.TRANSPORT_VIEW)
+
+  /* Kişisel yolculuk KENDİ ürün kapısını okur. `transport.view` ile
+     BİRLEŞTİRİLMEZ: ikisi ayrı yeteneklerdir ve birleştirmek, ürünü yalnızca
+     ulaşım ağını da görebilen kullanıcılara açmak olurdu. Plan içindeki
+     hat/durak ve POI seçimleri kendi yetkilerini ayrıca ister ve bağlayıcı
+     kararı backend verir. */
+  const canUseJourney = can(PERMISSIONS.JOURNEY_USE)
   const canCreateTransportStop = can(PERMISSIONS.TRANSPORT_STOP_CREATE)
   const canUpdateTransportStop = can(PERMISSIONS.TRANSPORT_STOP_UPDATE)
   const canDeleteTransportStop = can(PERMISSIONS.TRANSPORT_STOP_DELETE)
@@ -274,6 +281,7 @@ export default function useWorkspacePermissions(workspaceMode) {
     canManagePoi,
     canRestorePoi,
     canViewTransport,
+    canUseJourney,
     canCreateTransportStop,
     canUpdateTransportStop,
     canDeleteTransportStop,

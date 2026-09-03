@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Collections.ObjectModel;
 using StajProject.Application.Simulation;
 
 namespace StajProject.Infrastructure.Simulation;
@@ -38,8 +39,14 @@ public sealed class InMemoryTransportSimulationStateStore : ITransportSimulation
 
     /* ConcurrentDictionary'nin değer görüntüsü kilit almadan alınır ve
        gezinirken değişebilir; runner zaten her yazmada kimlik denetimi
-       yaptığı için tutarlı bir "an" gerekmez. */
-    public IReadOnlyList<ActiveTransportSimulation> Active() => [.. _active.Values];
+       yaptığı için tutarlı bir "an" gerekmez.
+
+       Dönen liste SALT OKUNUR bir sarmalayıcıdır ve iç sözlüğün kendisi
+       DEĞİLDİR. Aktif keşif ucu bu görüntüyü doğrudan okuyacağı için önemi
+       arttı: çağıran bir liste alıp ona ekleme/çıkarma yapabilseydi, "aktif
+       küme" kavramının depo dışında ikinci bir sahibi doğardı. */
+    public IReadOnlyList<ActiveTransportSimulation> Active() =>
+        new ReadOnlyCollection<ActiveTransportSimulation>([.. _active.Values]);
 
     public bool TryUpdateSnapshot(int routeId, Guid simulationId, TransportSimulationSnapshot snapshot)
     {
@@ -54,7 +61,100 @@ public sealed class InMemoryTransportSimulationStateStore : ITransportSimulation
                 return false;
             }
 
+            /* DURAKLATILMIŞ çalıştırmaya YAZILMAZ. Duraklatma ile yarışan,
+               yolda olan bir tick aksi hâlde donmuş konumu ileri taşır ve
+               durumu sessizce Running'e çevirirdi. */
+            if (current.IsPaused)
+            {
+                return false;
+            }
+
             if (_active.TryUpdate(routeId, current.With(snapshot), current))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /* Duraklat/Sürdür de TAM OLARAK aynı CAS kalıbını izler: okunan sürüm hâlâ
+       yerindeyse yazılır. Önce okuyup sonra yazan bir servis kodu, iki
+       eşzamanlı komutun ikisinin de "çalışıyor" görüp ikisinin de duraklama
+       muhasebesine yazması demekti. */
+
+    public ActiveTransportSimulation? TryPause(int routeId, Guid simulationId, DateTime now)
+    {
+        while (_active.TryGetValue(routeId, out var current))
+        {
+            // Kimlik VE durum önkoşulu: yalnızca ÇALIŞAN o çalıştırma duraklar.
+            if (current.SimulationId != simulationId || current.Status != TransportSimulationStatus.Running)
+            {
+                return null;
+            }
+
+            var paused = current.Pause(now);
+
+            if (_active.TryUpdate(routeId, paused, current))
+            {
+                return paused;
+            }
+        }
+
+        return null;
+    }
+
+    public ActiveTransportSimulation? TryResume(int routeId, Guid simulationId, DateTime now)
+    {
+        while (_active.TryGetValue(routeId, out var current))
+        {
+            // Yalnızca DURAKLATILMIŞ o çalıştırma sürdürülür.
+            if (current.SimulationId != simulationId || current.Status != TransportSimulationStatus.Paused)
+            {
+                return null;
+            }
+
+            var resumed = current.Resume(now);
+
+            if (_active.TryUpdate(routeId, resumed, current))
+            {
+                return resumed;
+            }
+        }
+
+        return null;
+    }
+
+    /* YENİDEN BAŞLATMANIN ÇEKİRDEĞİ. Kaldır-sonra-ekle YERİNE tek bir
+       TryUpdate: hattın yuvası bir an bile boşalmaz, dolayısıyla araya giren
+       bir TryStart onu kapamaz. Kalıp diğer geçişlerle aynıdır — okunan sürüm
+       hâlâ yerindeyse yazılır. */
+    public bool TryReplace(int routeId, Guid expectedSimulationId, ActiveTransportSimulation replacement)
+    {
+        /* Yerine konan kayıt BAŞKA bir hattın çalıştırması olamaz: sözlük
+           anahtarı ile kaydın kendi rotası ayrışırsa, hat üzerinde kendi
+           rotasını inkâr eden bir çalıştırma dururdu. */
+        if (replacement.RouteId != routeId)
+        {
+            return false;
+        }
+
+        /* Aynı kimliği "yerine koymak" bir DEĞİŞTİRME değil, gizli bir geri
+           sarma olurdu: aynı çalıştırma %0'a döndürülmüş olurdu. Yeniden
+           başlatma daima YENİ bir kimlik üretir. */
+        if (replacement.SimulationId == expectedSimulationId)
+        {
+            return false;
+        }
+
+        while (_active.TryGetValue(routeId, out var current))
+        {
+            if (current.SimulationId != expectedSimulationId)
+            {
+                return false;
+            }
+
+            if (_active.TryUpdate(routeId, replacement, current))
             {
                 return true;
             }

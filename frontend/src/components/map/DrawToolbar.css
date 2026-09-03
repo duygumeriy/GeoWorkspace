@@ -9,11 +9,15 @@
   gap: 0.3rem;
   padding: 0.35rem;
   border-radius: var(--radius-full);
-  background: var(--surface-soft);
+  /* Faz 6: yüzer panel haritanın üstünde FARK EDİLİR olmalı ama gösteriş
+     yapmamalı. Renkler tema belirteçlerinden gelir (bkz. tokens.css); burada
+     tek bir sabit renk yoktur. */
+  background: var(--transport-dock-bg);
   backdrop-filter: blur(var(--blur-glass));
   -webkit-backdrop-filter: blur(var(--blur-glass));
-  border: 1px solid var(--border-soft);
-  box-shadow: var(--shadow-panel);
+  border: 1px solid var(--transport-dock-border);
+  box-shadow: var(--transport-dock-glow), var(--shadow-panel);
+  color: var(--transport-dock-text);
   /* Never let the bar run past the viewport on narrow screens. */
   max-width: calc(100% - 1.5rem);
   overflow-x: auto;
@@ -158,8 +162,9 @@
    dokunulabilir tek bir tutamak kalır. Tamamen gizlemek, aracı geri açmanın
    yolunu da gizlemek olurdu. */
 .draw-toolbar--collapsed {
-  padding: 0;
-  gap: 0;
+  /* Tutamak katlanmış hâlde de durur: panel taşınabilirliğini kaybetmez. */
+  padding: 0 0.2rem;
+  gap: 0.1rem;
 }
 
 .draw-toolbar-handle {
@@ -201,4 +206,63 @@
 
 .draw-toolbar-handle svg {
   transform: rotate(-90deg);
+}
+
+
+/* --- Sürüklenebilir yerleşim (Faz 6) -----------------------------------------
+   Varsayılan yer DEĞİŞMEDİ: konum tercihi yokken panel alt-ortadadır ve
+   yukarıdaki kurallar (medya sorguları dahil) aynen işler.
+
+   Kullanıcı paneli taşıdığında satır içi `left/top` devreye girer; bu sınıf
+   yalnızca ÇAKIŞAN varsayılanları (bottom/right/transform) geri alır. Seçici
+   bilinçli olarak iki sınıflıdır: aksi hâlde aşağıdaki medya sorgularıyla
+   eşit özgüllükte kalır ve sıraya bağımlı olurdu. */
+.draw-toolbar.draw-toolbar--placed {
+  bottom: auto;
+  right: auto;
+  transform: none;
+  /* Taşınmış panel artık ortalanmıyor: genişliği içeriğine göredir. */
+  max-width: calc(100% - 1.5rem);
+}
+
+/* --- Taşıma tutamağı ---------------------------------------------------------
+   Sürüklemenin TEK başlangıç noktası. Etiket, ok düğmesi ve içerideki araçlar
+   normal tıklamalarını korur; tutamak da klavyeyle çalışır (oklar + Home). */
+.draw-toolbar-drag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  min-height: 44px;
+  padding: 0 0.15rem;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: grab;
+  /* Sürüklerken tarayıcının kendi kaydırma/seçim jesti devreye girmemeli. */
+  touch-action: none;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+.draw-toolbar-drag:hover {
+  color: var(--text-primary);
+  background: var(--surface);
+}
+
+.draw-toolbar.is-dragging {
+  /* Sürükleme sırasında ek vurgu: panelin gesture'ın sahibi olduğu görünür. */
+  box-shadow: var(--transport-dock-glow-strong), var(--shadow-panel);
+}
+
+.draw-toolbar.is-dragging .draw-toolbar-drag {
+  cursor: grabbing;
+  color: var(--primary-light);
+}
+
+/* Dokunmatikte tutamak daha büyük bir hedef ister. */
+@media (pointer: coarse) {
+  .draw-toolbar-drag {
+    min-width: 44px;
+  }
 }

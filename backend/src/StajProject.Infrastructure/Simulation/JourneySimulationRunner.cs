@@ -114,7 +114,7 @@ public sealed class JourneySimulationRunner
                 "Yolculuk simülasyonu kullanılamayan bir güzergah üzerinde; iptal ediliyor. SimulationId: {SimulationId}",
                 simulation.SimulationId);
 
-            await CancelAsync(simulation, cancellationToken);
+            await CancelAsync(simulation, utcNow, cancellationToken);
             return;
         }
 
@@ -144,11 +144,13 @@ public sealed class JourneySimulationRunner
             {
                 _tracks.TryRemove(simulation.SimulationId, out _);
 
-                /* Denetim kaydı TAM OLARAK bu dalda yazılır: terminal geçişi
-                   kazanan tick burasıdır. Bayat bir tick ya da araya giren bir
-                   durdurma isteği `TryStop`u kaybeder ve ikinci bir satır
-                   yazamaz — mükerrerlik yapısal olarak imkânsızdır. */
-                await RecordCompletionAsync(advanced, cancellationToken);
+                /* Denetim kaydı ve GEÇMİŞ TAM OLARAK bu dalda yazılır: terminal
+                   geçişi kazanan tick burasıdır. Bayat bir tick ya da araya
+                   giren bir durdurma isteği `TryStop`u kaybeder ve ikinci bir
+                   satır yazamaz — mükerrerlik yapısal olarak imkânsızdır ve
+                   aynı çalıştırma için hem "tamamlandı" hem "iptal edildi"
+                   tutanağı oluşamaz. */
+                await RecordTerminalAsync(advanced, JourneySimulationStatus.Completed, utcNow, cancellationToken);
                 await PublishAsync(advanced, JourneySimulationStatus.Completed, cancellationToken);
             }
             else
@@ -170,21 +172,58 @@ public sealed class JourneySimulationRunner
     }
 
     /// <summary>
-    /// Doğal tamamlanmanın denetim kaydı.
+    /// Terminal geçişin KALICI izleri: kullanıcının geçmişi ve denetim defteri.
     /// </summary>
     /// <remarks>
+    /// <para>
+    /// <b>Yalnızca geçişi KAZANAN çağırır.</b> Her iki çağrı yolu da
+    /// <c>TryStop</c>'u kazandıktan sonra buraya gelir; bayat bir tick ya da
+    /// araya giren bir durdurma isteği kaybeder ve buraya hiç ulaşamaz.
+    /// Mükerrer ya da çelişkili bir tutanak bu yüzden yapısal olarak
+    /// imkânsızdır.
+    /// </para>
+    /// <para>
+    /// <b>İKİ defter, İKİ farklı soru.</b> Denetim defteri "kim neyi yaptı"
+    /// sorusunu yanıtlar ve MEVCUT davranışı olduğu gibi korunur: yalnızca
+    /// doğal tamamlanma bir satır yazar. Geçmiş ise kullanıcının kendi
+    /// yolculuk tutanağıdır ve her iki terminal sonuç için de yazılır —
+    /// kullanıcının başlattığı bir yolculuk, kullanılamayan bir güzergah
+    /// yüzünden sona erse bile "Geçmiş"te iz bırakmadan yok olmamalıdır.
+    /// </para>
+    /// <para>
     /// <b>Sahip kimliği çalıştırmanın kendi değişmez durumundan gelir.</b> Arka
     /// planda oturum yoktur; uydurma bir "sistem kullanıcısı" ise olayın gerçek
-    /// sahibini gizlerdi. Yazma hatası simülasyonu ETKİLEMEZ: denetim kaydı,
-    /// kaydettiği işlemin yanında ikincil bir sorumluluktur.
+    /// sahibini gizlerdi. Yazma hatası simülasyonu ETKİLEMEZ: her iki kayıt da,
+    /// kaydettikleri geçişin yanında ikincil bir sorumluluktur ve geçiş zaten
+    /// kazanılmıştır.
+    /// </para>
+    /// <para>
+    /// <b>TEK kapsam açılır.</b> İki yazıcı da <c>DbContext</c> taşır ve
+    /// çalıştırma başına en fazla bir kez çözülür; hiçbir kapsam tick'ler
+    /// arasında tutulmaz.
+    /// </para>
     /// </remarks>
-    private async Task RecordCompletionAsync(
+    private async Task RecordTerminalAsync(
         ActiveJourneySimulation simulation,
+        JourneySimulationStatus status,
+        DateTime utcNow,
         CancellationToken cancellationToken)
     {
         try
         {
             using var scope = _scopeFactory.CreateScope();
+
+            var history = scope.ServiceProvider.GetService<IJourneyHistoryWriter>();
+
+            if (history is not null)
+            {
+                await history.RecordAsync(simulation, status, utcNow, cancellationToken);
+            }
+
+            /* Denetim defteri DEĞİŞMEDİ: doğal tamamlanma dışındaki bu terminal
+               yol daha önce de satır yazmıyordu ve yazmamaya devam eder. */
+            if (status != JourneySimulationStatus.Completed) return;
+
             var recorder = scope.ServiceProvider.GetService<IJourneyActivityRecorder>();
 
             if (recorder is null) return;
@@ -207,12 +246,16 @@ public sealed class JourneySimulationRunner
         {
             _logger.LogWarning(
                 exception,
-                "Yolculuk tamamlanma aktivitesi kaydedilemedi. SimulationId: {SimulationId}",
+                "Yolculuk terminal kayıtları yazılamadı. Status: {Status}, SimulationId: {SimulationId}",
+                status,
                 simulation.SimulationId);
         }
     }
 
-    private async Task CancelAsync(ActiveJourneySimulation simulation, CancellationToken cancellationToken)
+    private async Task CancelAsync(
+        ActiveJourneySimulation simulation,
+        DateTime utcNow,
+        CancellationToken cancellationToken)
     {
         if (!_state.TryStop(simulation.SimulationId))
         {
@@ -221,6 +264,14 @@ public sealed class JourneySimulationRunner
         }
 
         _tracks.TryRemove(simulation.SimulationId, out _);
+
+        /* GEÇMİŞ bu yolda da yazılır. Denetim defterinde bu geçişin karşılığı
+           yoktur ve bu bilinçlidir: defter kullanıcının yaptığı işlemleri
+           kaydeder, burada ise kullanıcı hiçbir şey yapmamıştır. Ama
+           çalıştırma SONA ERMİŞTİR ve kullanıcının geçmişinde bir iz
+           bırakmadan yok olmamalıdır — aksi hâlde başlattığı yolculuk
+           "Geçmiş"te hiç görünmezdi. */
+        await RecordTerminalAsync(simulation, JourneySimulationStatus.Cancelled, utcNow, cancellationToken);
         await PublishAsync(simulation, JourneySimulationStatus.Cancelled, cancellationToken);
     }
 

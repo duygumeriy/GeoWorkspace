@@ -71,7 +71,7 @@ export default function RegisterPage() {
 
   if (success) {
     return (
-      <AuthShell eyebrow="Son bir adım" title="Hesabınız oluşturuldu">
+      <AuthShell eyebrow="Son bir adım" title="Hesabınız oluşturuldu" showLanguageSelector={false}>
         <div className="auth-success" role="status">
           <CheckIcon size={16} />
           <span>{success}</span>
@@ -86,8 +86,11 @@ export default function RegisterPage() {
     )
   }
 
+  /* Dil hapı kapalı: hiçbir şeyi değiştirmeyen bir denetim, kayıt olan kişiye
+     var olmayan bir seçenek vaat ediyordu. Kabuğun VARSAYILANI değişmez —
+     devre dışı bırakma bu ekrana özeldir ve iki dalda da geçerlidir. */
   return (
-    <AuthShell eyebrow="Aramıza katılın" title="Yeni hesap oluşturun">
+    <AuthShell eyebrow="Aramıza katılın" title="Yeni hesap oluşturun" showLanguageSelector={false}>
       <form onSubmit={handleSubmit} noValidate>
         <TextField
           id="register-username"

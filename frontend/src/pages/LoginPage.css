@@ -64,7 +64,10 @@
   position: relative;
   width: min(38vw, 640px);
   min-width: 550px;
-  min-height: 740px;
+  /* İçerik kısaldı: SSO düğmesi, "veya" ayırıcısı ve Passkey kartı kalktı.
+     Eski 740px, artık var olmayan blokların yüksekliğini de sayıyordu ve
+     formun altında boş bir şerit bırakırdı. */
+  min-height: 560px;
   padding: clamp(48px, 3.8vw, 54px);
   box-sizing: border-box;
   display: flex;
@@ -245,83 +248,6 @@
   top: 50%;
   transform: translateY(-50%);
   display: inline-flex;
-}
-
-.login-sso {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  width: 100%;
-  height: 54px;
-  margin-top: 14px;
-  border-radius: 11px;
-  border: 1px solid rgba(175, 185, 215, 0.4);
-  background: transparent;
-  color: #e7e7ef;
-  font-size: 15px;
-  font-weight: 500;
-  font-family: inherit;
-  cursor: pointer;
-  transition: border-color var(--transition-fast), background var(--transition-fast);
-}
-
-.login-sso:hover {
-  border-color: rgba(175, 185, 215, 0.65);
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.login-divider {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin: 22px 0;
-  color: rgba(220, 225, 240, 0.5);
-  font-size: 13px;
-}
-
-.login-divider::before,
-.login-divider::after {
-  content: '';
-  height: 1px;
-  flex: 1;
-  background: rgba(160, 170, 200, 0.18);
-}
-
-.login-passkey {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  min-height: 70px;
-  padding: 0 18px;
-  border-radius: 12px;
-  border: 1px solid rgba(150, 160, 200, 0.22);
-  background: rgba(255, 255, 255, 0.025);
-}
-
-.login-passkey-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 42px;
-  height: 42px;
-  border-radius: 50%;
-  color: var(--primary-light);
-  background: radial-gradient(circle, rgba(139, 92, 246, 0.3), rgba(139, 92, 246, 0.05) 70%, transparent);
-}
-
-.login-passkey-title {
-  margin: 0;
-  font-size: 14.5px;
-  font-weight: 600;
-  color: #f2f2f6;
-}
-
-.login-passkey-subtitle {
-  margin: 0.2rem 0 0;
-  font-size: 12.5px;
-  color: rgba(220, 225, 240, 0.55);
 }
 
 @keyframes login-error-enter {

@@ -19,18 +19,20 @@ namespace StajProject.Api.Controllers;
 /// <see cref="ServiceResult{T}"/>'i mevcut eşlemeyle HTTP'ye çevirir.
 /// </para>
 /// <para>
-/// <b>YENİ YETKİ ÜRETİLMEDİ.</b> Önizleme hiçbir şey yazmaz, hiçbir çalıştırma
-/// başlatmaz ve yalnızca kullanıcının zaten görebildiği verinin bir
-/// düzenlemesini döndürür; bu yüzden mevcut <c>transport.view</c> yeterlidir.
-/// Simülasyon başlatma yetkisi (<c>transport.simulation.start</c>) BİLİNÇLİ
-/// olarak istenmez: bir planı görmek, bir hattı canlı işletmek değildir ve
-/// planlamayı o kodun ardına saklamak, yalnızca izleyen kullanıcıları
-/// gereksizce dışarıda bırakırdı.
+/// <b>ÜRÜN KAPISI <c>journey.use</c>'dur.</b> Kişisel yolculuk ayrı bir
+/// üründür; eskiden buradaki kapı <c>transport.view</c> idi ve bu iki ayrı
+/// yeteneği tek koda bağlıyordu — hattı izleyebilen herkes kişisel yolculuk da
+/// kullanabiliyor, kişisel yolculuk verilmek istenen birine ise ulaşım ağının
+/// tamamı açılmak zorunda kalıyordu. Simülasyon başlatma yetkisi
+/// (<c>transport.simulation.start</c>) BİLİNÇLİ olarak istenmez: bir planı
+/// görmek, bir hattı herkes için canlı işletmek değildir.
 /// </para>
 /// <para>
-/// POI referansları AYRI bir yetki (<c>poi.view</c>) gerektirir ve bu denetim
-/// serviste yapılır — çünkü yalnızca istek gerçekten POI taşıdığında
-/// anlamlıdır; uca sabitlenirse POI'siz planlar da POI yetkisi isterdi.
+/// <b>Ürün kapısı bir kaynak anahtarı DEĞİLDİR.</b> Referanslar kendi
+/// yetkilerini serviste ayrıca ister: ulaşım rotası/durağı taşıyan istekler
+/// <c>transport.view</c>, POI taşıyanlar <c>poi.view</c>. Denetim uca
+/// sabitlenmez çünkü yalnızca istek gerçekten o referansı taşıdığında
+/// anlamlıdır — aksi hâlde POI'siz bir plan da POI yetkisi isterdi.
 /// </para>
 /// </remarks>
 [ApiController]
@@ -60,7 +62,7 @@ public sealed class JourneyPlanningController : ApiControllerBase
     /// bir canlı oturumu ima ederdi.
     /// </remarks>
     [HttpPost("preview")]
-    [RequirePermission(PermissionCodes.TransportView)]
+    [RequirePermission(PermissionCodes.JourneyUse)]
     public Task<ActionResult<JourneyPlanPreviewResponse>> Preview(
         [FromBody] JourneyPlanRequest request,
         CancellationToken cancellationToken) =>

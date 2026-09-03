@@ -12,17 +12,29 @@
 
 export const SIMULATION_STATUS = Object.freeze({
   RUNNING: 'Running',
+  /* DURAKLATILDI ve TERMİNAL DEĞİLDİR: çalıştırma hattın aktif yuvasını işgal
+     etmeye devam eder, aynı kimlikle sürdürülür ve "çalışmıyor" ile
+     karıştırılmamalıdır. */
+  PAUSED: 'Paused',
   COMPLETED: 'Completed',
   CANCELLED: 'Cancelled',
 })
 
+/* Terminal küme BÜYÜMEZ: yalnızca biten çalıştırmalar. Duraklatma buraya
+   girseydi gözlem bırakılır, takip düşer ve panel hattı boş sanardı. */
 const TERMINAL_STATUSES = new Set([SIMULATION_STATUS.COMPLETED, SIMULATION_STATUS.CANCELLED])
 
 const STATUS_LABELS = Object.freeze({
   [SIMULATION_STATUS.RUNNING]: 'Çalışıyor',
+  [SIMULATION_STATUS.PAUSED]: 'Duraklatıldı',
   [SIMULATION_STATUS.COMPLETED]: 'Tamamlandı',
   [SIMULATION_STATUS.CANCELLED]: 'İptal edildi',
 })
+
+/** Duraklatılmış mı? Terminal DEĞİLDİR. */
+export function isPausedSimulationStatus(status) {
+  return status === SIMULATION_STATUS.PAUSED
+}
 
 /** Çalıştırma bitti mi? Bitmiş bir çalıştırma "aktif" sayılmaz. */
 export function isTerminalSimulationStatus(status) {
@@ -56,7 +68,17 @@ function timestamp(value) {
   return Number.isFinite(parsed) ? parsed : null
 }
 
-function normalize({ simulationId, routeId, status, longitude, latitude, progressPercent, updatedAtUtc }) {
+function normalize({
+  simulationId,
+  routeId,
+  status,
+  longitude,
+  latitude,
+  progressPercent,
+  updatedAtUtc,
+  currentStepSequence,
+  distanceToNextManeuverMeters,
+}) {
   const id = simulationId ?? null
   const route = finiteNumber(routeId)
   if (!id || route === null) return null
@@ -69,6 +91,17 @@ function normalize({ simulationId, routeId, status, longitude, latitude, progres
     latitude: finiteNumber(latitude) ?? 0,
     progressPercent: clampPercent(progressPercent),
     updatedAtUtc: updatedAtUtc ?? null,
+
+    /* NAVİGASYON OTORİTESİ SUNUCUDADIR (Faz 5). Buradaki iki alan yalnızca
+       TAŞINIR: hangi manevrada olunduğuna ve sonrakine ne kadar kaldığına
+       sunucu karar verir. İstemci onları ne hesaplar ne ilerletir — geometriye
+       bakıp "burada sağa dönülüyor" demek, motorun bilmediği bir gerçeği
+       uydurmak olurdu.
+
+       Yokluk NORMALDİR: güzergahın manevrası olmayabilir ya da araç son
+       adımda olabilir. `null` bu yüzden sıfıra düşürülmez. */
+    currentStepSequence: finiteNumber(currentStepSequence),
+    distanceToNextManeuverMeters: finiteNumber(distanceToNextManeuverMeters),
   })
 }
 
@@ -87,20 +120,29 @@ export function normalizeLiveUpdate(update) {
  * REST anlık görüntüsünü (`GET /api/transport/simulations/routes/{id}`) aynı
  * biçime çevirir.
  *
- * REST yanıtı yalnızca ÇALIŞAN bir simülasyon için 200 döner (yoksa 404), bu
- * yüzden durumu `Running`'dir; ilerleme orada oran, canlı yayında yüzdedir ve
- * iki ölçünün arayüzde karışmaması için burada tek biçime indirgenir.
+ * <b>DURUM UYDURULMAZ.</b> Eskiden burada koşulsuz `Running` yazılıyordu:
+ * REST yalnızca çalışan bir simülasyon için 200 döndüğü ve o gün başka bir
+ * canlı durum bulunmadığı için doğru sayılıyordu. `Paused` eklendikten sonra
+ * bu varsayım YANLIŞ oldu — duraklatılmış bir hattın REST okuması onu
+ * "çalışıyor" diye bildiriyordu. Durum artık sunucudan gelirse ONDAN okunur;
+ * yük durumu taşımıyorsa (mevcut DTO taşımıyor) `Running`'e düşülür ve
+ * gerçeği canlı kanaldaki otoriter anlık görüntü düzeltir.
+ *
+ * İlerleme REST'te oran, canlı yayında yüzdedir; iki ölçünün arayüzde
+ * karışmaması için burada tek biçime indirgenir.
  */
 export function normalizeStatusSnapshot(snapshot) {
   if (!snapshot) return null
   return normalize({
     simulationId: snapshot.simulationId,
     routeId: snapshot.routeId,
-    status: SIMULATION_STATUS.RUNNING,
+    status: snapshot.status ?? SIMULATION_STATUS.RUNNING,
     longitude: snapshot.longitude,
     latitude: snapshot.latitude,
     progressPercent: clampPercent((finiteNumber(snapshot.progressRatio) ?? 0) * 100),
     updatedAtUtc: snapshot.capturedAt ?? null,
+    currentStepSequence: snapshot.currentStepSequence,
+    distanceToNextManeuverMeters: snapshot.distanceToNextManeuverMeters,
   })
 }
 
@@ -136,10 +178,81 @@ export function mergeSimulationState(current, incoming) {
   }
 
   if (isOlder) return current
+
+  /* DURAKLATILMIŞ durumu, KESİN OLARAK daha yeni olmayan bir `Running`
+     olayı geri alamaz. Sunucu duraklatma/sürdürme geçişlerinde damgayı
+     tazeler, bu yüzden gerçek bir "Devam Ettir" olayı her zaman daha
+     yenidir; yolda kalmış bir tick ise eşit ya da eski damga taşır ve
+     burada elenir. Duraklatma TERMİNAL DEĞİLDİR — bu yüzden aşağıdaki
+     terminal kilidi bu durumu kapsayamaz. */
+  if (isPausedSimulationStatus(current.status)
+    && incoming.status === SIMULATION_STATUS.RUNNING
+    && !(incomingTime !== null && currentTime !== null && incomingTime > currentTime)) {
+    return current
+  }
+
+  /* AYNI çalıştırma bir kez bittiyse GERİ DÖNMEZ. Zaman damgası tek başına
+     yetmiyor: terminal anlık görüntü son Running tick'iyle AYNI damgayı
+     taşır, dolayısıyla sırası bozulmuş bir Running olayı "daha eski"
+     sayılmaz ve eski kural onu kabul ederdi — bitmiş bir çalıştırma yeniden
+     yürüyor görünürdü.
+
+     Kilit ÇALIŞTIRMAYA ÖZELDİR: yukarıdaki dal farklı `simulationId`'yi
+     zaten yeni bir çalıştırma olarak kabul eder, bu yüzden aynı hatta
+     başlayan YENİ çalıştırma B bu kuraldan ETKİLENMEZ. */
+  if (isTerminalSimulationStatus(current.status)) return current
+
   if (isTerminalSimulationStatus(incoming.status)) return incoming
+
+  /* İlerleme GERİLEMEZ; eşit kalması ise meşrudur ve bu fazda zorunludur:
+     Duraklat/Devam Ettir geçişleri aracı hiç oynatmaz, dolayısıyla aynı
+     yüzdeyle gelir. Sıkı "artmalı" kuralı o geçişleri sessizce düşürürdü. */
   if (incoming.progressPercent < current.progressPercent) return current
 
   return incoming
+}
+
+/**
+ * Kullanıcının durdurmak İSTEDİĞİ çalıştırmanın YAKALANMIŞ kimliği.
+ *
+ * <b>Neden bir nesne, bir bayrak değil.</b> Onay kutusu açıkken dünya
+ * değişebilir: A çalıştırması bitip AYNI rotada B başlayabilir. Bekleyen
+ * durum yalnızca "onay açık mı" bilgisini taşısaydı, onay anında o anki
+ * kimlik okunur ve kullanıcının A için verdiği karar sessizce B'yi
+ * durdururdu. Niyet bu yüzden TETİKLEME anında dondurulur.
+ *
+ * <b>Rota tek başına bir niyet DEĞİLDİR.</b> İkisinden biri eksikse
+ * <c>null</c> döner; böylece "şu hatta ne çalışıyorsa durdur" biçiminde bir
+ * bekleyen niyet KURULAMAZ.
+ */
+export function sharedStopIntent({ routeId = null, simulationId = null } = {}) {
+  const route = finiteNumber(routeId)
+  if (route === null) return null
+  if (typeof simulationId !== 'string' || simulationId.length === 0) return null
+
+  return Object.freeze({ routeId: route, simulationId })
+}
+
+/**
+ * Yakalanmış niyet HÂLÂ o anki çalıştırmaya mı işaret ediyor?
+ *
+ * <b>Eşitlik İKİ eksende birden aranır.</b> Rota değişmişse kullanıcı artık
+ * başka bir hatta bakıyordur; çalıştırma kimliği değişmişse A bitmiş ve
+ * yerine B geçmiştir. İkisinde de doğru cevap komutu GÖNDERMEMEKTİR —
+ * yakalanan kimliği o anki kimlikle DEĞİŞTİRMEK, kullanıcının hiç vermediği
+ * bir kararı uygulamak olurdu.
+ *
+ * Sunucu yine son sözü söyler (yetki + rota + çalıştırma kimliği + atomik
+ * denetim); buradaki kural KULLANICI NİYETİNİ korur, sunucunun yetkisini
+ * değil.
+ */
+export function sharedStopIntentIsCurrent(intent, { routeId = null, stoppableSimulationId = null } = {}) {
+  if (!intent) return false
+
+  const current = sharedStopIntent({ routeId, simulationId: stoppableSimulationId })
+  if (!current) return false
+
+  return current.routeId === intent.routeId && current.simulationId === intent.simulationId
 }
 
 /**
@@ -156,7 +269,11 @@ export function transportSimulationControls({
   simulation = null,
   followingRouteId = null,
   canStart = false,
+  canStop = false,
   starting = false,
+  stopping = false,
+  pausing = false,
+  resuming = false,
   following = false,
 } = {}) {
   const route = finiteNumber(routeId)
@@ -167,14 +284,56 @@ export function transportSimulationControls({
 
   const isFollowing = route !== null && followingRouteId === route
 
+  /* Durdurma komutu ÇALIŞTIRMA KİMLİĞİ ister; kimlik bilinmiyorsa düğme hiç
+     sunulmaz. Rota tek başına yeterli olsaydı, eski bir sekme yerine geçmiş
+     YENİ bir çalıştırmayı durdurabilirdi — o yüzden kimlik burada bir
+     GÖRÜNÜRLÜK koşuludur, sonradan yapılan bir doğrulama değil. */
+  const stoppableSimulationId = active ? simulation.simulationId ?? null : null
+
+  /* DURAKLATILMIŞ da AKTİFTİR (terminal değildir), bu yüzden `active`
+     içindedir; ayrım yalnızca hangi yaşam döngüsü düğmesinin sunulacağıdır. */
+  const paused = active && isPausedSimulationStatus(simulation.status)
+
   return {
     isActive: active,
     isFollowing,
     // Çalışan bir simülasyon varken başlatma sunulmaz: backend zaten 409 döner.
     showStart: route !== null && canStart === true && !active,
     startDisabled: starting === true,
+
+    /* BAŞLATMA ile DURDURMA birbirini İMA ETMEZ: `canStop` ayrı bir etkin
+       yetkiden (`transport.simulation.stop`) gelir ve `canStart`'a hiç
+       bakmaz. Görünürlük yalnızca DENEYİMDİR — backend yetkisiz isteğe 403
+       döndürmeye devam eder. */
+    isPaused: paused,
+
+    /* ÜÇ yaşam döngüsü eylemi de AYNI yetkiye (`transport.simulation.stop`)
+       bağlıdır ve `canStart`'tan türetilmez. Duraklat yalnızca çalışırken,
+       Devam Ettir yalnızca duraklatılmışken sunulur; Sıfırla ikisinde de
+       geçerlidir çünkü her ikisi de canlı bir çalıştırmadır. */
+    showPause: active && !paused && canStop === true && stoppableSimulationId !== null,
+    showResume: paused && canStop === true && stoppableSimulationId !== null,
+    pauseDisabled: pausing === true || resuming === true,
+
+    /* Terminal eylem: arayüzde "Sıfırla" olarak sunulur. Ürün anlamı
+       "çalıştırmayı bitir ve hattı yeniden başlatılabilir hâle getir"dir;
+       backend sözleşmesi (Stop) DEĞİŞMEZ. */
+    showStop: active && canStop === true && stoppableSimulationId !== null,
+    stopDisabled: stopping === true,
+    stoppableSimulationId,
+
+    /* Duraklatılmış çalıştırma da takip EDİLEBİLİR: aynı canlı çalıştırmadır,
+       yalnızca hareket etmiyordur. */
     showFollow: active && !isFollowing,
-    showUnfollow: isFollowing,
+
+    /* TAKİBİ BIRAK yalnızca AKTİF bir çalıştırmada anlamlıdır. Eskiden
+       koşul yalnızca `isFollowing` idi; çalıştırma bittiğinde ekranda aynı
+       anda "Aktif simülasyon yok" ve "Takibi Bırak" görünüyordu — üstelik o
+       düğmeye basmak rotanın SignalR grubundan çıkmaya yol açıyor ve aynı
+       hatta başlayan YENİ çalıştırma sayfaya hiç ulaşmıyordu. Kamera
+       sahipliğinin terminal durumda bırakılması artık kancanın işidir ve
+       ABONELİĞİ KORUYARAK yapılır. */
+    showUnfollow: active && isFollowing,
     followDisabled: following === true,
     statusLabel: simulation && simulation.routeId === route
       ? simulationStatusLabel(simulation.status)

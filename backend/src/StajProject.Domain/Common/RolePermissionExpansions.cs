@@ -211,6 +211,69 @@ public static class RolePermissionExpansions
     ];
 
     /// <summary>
+    /// Paylaşılan simülasyonu DURDURMA kodunun genişlemesi (Yolculuk Merkezi
+    /// Faz 1).
+    /// </summary>
+    /// <remarks>
+    /// Başlatma kodunun dağılımıyla BİREBİR aynıdır ve bilinçlidir: mevcut
+    /// kurulumlarda hattı başlatabilen roller (Administrator, Ulaşım
+    /// Operatörü) onu durdurabilmelidir de — aksi hâlde başlattıkları hattı
+    /// yalnızca sistemin kendi iptali kapatabilirdi. İki kod yine de AYRIDIR;
+    /// buradaki eşitlik bir ima değil, açık bir dağıtım kararıdır. Ulaşım
+    /// Kullanıcısı, harita rolleri ve özel roller DIŞARIDADIR.
+    /// </remarks>
+    private static readonly string[] TransportSimulationStopPermissions =
+    [
+        PermissionCodes.TransportSimulationStop
+    ];
+
+    /// <summary>
+    /// Kişisel yolculuk kataloğu genişlemesi (Yolculuk Merkezi Faz 1).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Kişisel yolculuk daha önce <c>transport.view</c> ile korunuyordu; ürün
+    /// yeni kendi koduna taşındığında yeni kod yalnızca matrise yazılsaydı,
+    /// matris <b>yalnızca hiç yetkisi olmayan</b> rollere uygulandığı için
+    /// mevcut kurulumlardaki hiçbir rol kişisel yolculuğu KULLANAMAZDI —
+    /// yani ayrıştırma, üzerinde çalıştığı kurulumlarda özelliği kapatırdı.
+    /// </para>
+    /// <para>
+    /// POI ve konum analizi genişlemeleriyle aynı gerekçeyle liste
+    /// OPERASYONEL rolleri de kapsar: kişisel yolculuk yönetimsel bir yetenek
+    /// değil, sıradan bir harita kullanıcısının ürünüdür. Özel roller
+    /// DIŞARIDADIR ve yetkiyi Rol Yetki Düzenleyicisi'nden AÇIKÇA alır.
+    /// </para>
+    /// </remarks>
+    private static readonly string[] JourneyPermissions =
+    [
+        PermissionCodes.JourneyUse
+    ];
+
+    /// <summary>
+    /// Harita rollerinin ulaşım ağını GÖRÜNTÜLEME erişimi (Yolculuk Merkezi
+    /// Faz 1).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>transport.view</c> kataloğa sonradan eklenmedi; eksik olan, harita
+    /// rollerinin (Viewer/Editor/Analyst/Manager) BAŞLANGIÇ profilindeydi.
+    /// Ürün gereksinimi, sıradan harita kullanıcısının hatları görebilmesi ve
+    /// çalışan bir hat simülasyonunu izleyebilmesidir; bu roller mevcut
+    /// kurulumlarda çoktan provision edildiği için matrisin düzeltilmesi
+    /// onlara ULAŞMAZ.
+    /// </para>
+    /// <para>
+    /// Verilen tek şey GÖRÜNTÜLEMEDİR: hiçbir yönetim, yazma ya da simülasyon
+    /// yaşam döngüsü yetkisi eşlik etmez.
+    /// </para>
+    /// </remarks>
+    private static readonly string[] TransportViewOnly =
+    [
+        PermissionCodes.TransportView
+    ];
+
+    /// <summary>
     /// Ulaşım rollerinin harita erişimi.
     /// </summary>
     /// <remarks>
@@ -240,16 +303,24 @@ public static class RolePermissionExpansions
     [
         new(GisRoles.Administrator,
             [.. GeographyPermissions, .. AuditPermissions, .. HeatmapPermissions, .. PoiManagePermissions,
-             .. LocationAnalysisPermissions, .. TransportPermissions, .. TransportSimulationPermissions]),
+             .. LocationAnalysisPermissions, .. TransportPermissions, .. TransportSimulationPermissions,
+             .. TransportSimulationStopPermissions, .. JourneyPermissions]),
         new(GisRoles.TransportOperator,
-            [.. TransportSimulationPermissions, .. TransportMapAccessPermissions]),
-        new(GisRoles.TransportUser, [.. TransportMapAccessPermissions]),
+            [.. TransportSimulationPermissions, .. TransportSimulationStopPermissions,
+             .. TransportMapAccessPermissions, .. JourneyPermissions]),
+        new(GisRoles.TransportUser, [.. TransportMapAccessPermissions, .. JourneyPermissions]),
         new(GisRoles.GisManager,
-            [.. HeatmapPermissions, .. PoiManagePermissions, .. LocationAnalysisPermissions]),
+            [.. HeatmapPermissions, .. PoiManagePermissions, .. LocationAnalysisPermissions,
+             .. TransportViewOnly, .. JourneyPermissions]),
         new(GisRoles.GisAnalyst,
-            [.. HeatmapPermissions, .. PoiViewOnly, .. LocationAnalysisPermissions]),
-        new(GisRoles.GisEditor, [.. PoiCreatePermissions, .. LocationAnalysisPermissions]),
-        new(GisRoles.Viewer, [.. PoiViewOnly, .. LocationAnalysisPermissions])
+            [.. HeatmapPermissions, .. PoiViewOnly, .. LocationAnalysisPermissions,
+             .. TransportViewOnly, .. JourneyPermissions]),
+        new(GisRoles.GisEditor,
+            [.. PoiCreatePermissions, .. LocationAnalysisPermissions,
+             .. TransportViewOnly, .. JourneyPermissions]),
+        new(GisRoles.Viewer,
+            [.. PoiViewOnly, .. LocationAnalysisPermissions,
+             .. TransportViewOnly, .. JourneyPermissions])
     ];
 
     /// <summary>Genişlemelerde geçen tüm kodlar (tekrarsız).</summary>

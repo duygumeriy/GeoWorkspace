@@ -279,10 +279,45 @@ public class ActorAwareAssignableRoleTests
 
         /* Kanonik roller kendi mantıksal sıralarını korur, özel roller
            alfabetik gelir — eleme araya girse de düzen bozulmaz. Aktörün kendi
-           rolü ("Role-partial") de kapsanan bir özel roldür. */
+           rolü ("Role-partial") de kapsanan bir özel roldür.
+
+           ULAŞIM KULLANICISI'NIN VARLIĞI KURALIN KENDİSİNDEN GELİR. Kapı saf
+           alt küme kuralıdır (hedef rolün aktif yetkileri ⊆ aktörün etkin
+           yetkileri) ve hiçbir yerde rol ADINA bakılmaz. Aktör burada GIS
+           Analyst profilini taşır; o profil Viewer'ın üzerine kurulduğu için
+           Yolculuk Merkezi Faz 1'den sonra `transport.view` ve `journey.use`
+           kodlarını da içerir:
+
+               Ulaşım Kullanıcısı = { map.view, transport.view, poi.view, journey.use }
+               Aktör              ⊇ { map.view, transport.view, poi.view, journey.use }
+
+           Eksik kod kalmadığı için rol atanabilir hâle gelir. Faz ÖNCESİNDE
+           aktörde `transport.view` yoktu ve tam olarak o kod eksik olduğu için
+           rol listede görünmüyordu — yani liste genişlemesi bir otorite
+           genişlemesi DEĞİL, aktörün gerçekten kazandığı iki yeteneğin doğal
+           sonucudur. Ulaşım Operatörü hâlâ DIŞARIDADIR: simülasyon yaşam
+           döngüsü ve durak yönetimi kodlarını aktör taşımaz.
+
+           Kanonik sıradaki yeri de kuralın sonucudur: `GisRoles.All` içinde
+           GIS Analyst'ten sonra, tüm özel rollerden önce gelir. */
         Assert.Equal(
-            [GisRoles.Viewer, GisRoles.GisAnalyst, "Field Surveyor", "Role-partial", "Zonal Editor"],
+            [
+                GisRoles.Viewer,
+                GisRoles.GisAnalyst,
+                GisRoles.TransportUser,
+                "Field Surveyor",
+                "Role-partial",
+                "Zonal Editor"
+            ],
             offered);
+
+        /* Ayrımın kendisi de sabitlenir: eleme HÂLÂ çalışıyor olmalıdır —
+           aksi hâlde yukarıdaki liste, "her şey teklif ediliyor" durumunu
+           sessizce kabul etmiş olurdu. */
+        Assert.DoesNotContain(GisRoles.GisEditor, offered);
+        Assert.DoesNotContain(GisRoles.GisManager, offered);
+        Assert.DoesNotContain(GisRoles.TransportOperator, offered);
+        Assert.DoesNotContain(GisRoles.Administrator, offered);
     }
 
     /* --- Sorgu maliyeti --------------------------------------------------------------- */

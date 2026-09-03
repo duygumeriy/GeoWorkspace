@@ -824,9 +824,79 @@ public sealed class TransportService : ITransportService
         path.LastFailureReason = null;
         path.ModifiedDate = now;
 
+        await ReplaceRoutePathStepsAsync(path, routeResult.Steps, cancellationToken);
+
+        /* GEOMETRİ VE ADIMLAR TEK KAYIT İŞLEMİNDE yazılır. İki ayrı
+           SaveChanges, aradaki pencerede "yeni geometri + eski adımlar" (ya da
+           tersi) bırakırdı: o an başlatılan bir simülasyon, işlettiği yola ait
+           OLMAYAN talimatlar gösterirdi. */
         await _dbContext.SaveChangesAsync(cancellationToken);
         return ServiceResult<TransportRoutePathResponse>.Success(ToPathResponse(path));
     }
+
+    /// <summary>
+    /// Yolun manevra adımlarını TAMAMEN değiştirir: eskiler silinir, yenileri
+    /// eklenir.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Birleştirme (upsert) YAPILMAZ ve bu kasıtlıdır.</b> Yeni güzergah
+    /// eskisinden farklı sayıda ve farklı sınırlı adımlar taşır; sıra
+    /// numarasına göre eşleyip güncellemek, kalan eski adımların sessizce
+    /// hayatta kalmasına ve yeni geometriyle uyuşmayan sınırlar taşımasına
+    /// açık kapı bırakırdı. Tam değiştirme, "adımlar daima bu geometriye
+    /// aittir" değişmezini tek adımda korur.
+    /// </para>
+    /// <para>
+    /// Yazma yapılmaz: değişiklikler çağıranın TEK <c>SaveChangesAsync</c>'ine
+    /// bırakılır, böylece geometri ile adımlar aynı işlemde kalır.
+    /// </para>
+    /// </remarks>
+    private async Task ReplaceRoutePathStepsAsync(
+        TransportRoutePath path,
+        IReadOnlyList<OsrmRouteStep> steps,
+        CancellationToken cancellationToken)
+    {
+        /* Yeni bir yol satırında (Id henüz 0) silinecek bir şey yoktur ve
+           sorgu da çalıştırılmaz. */
+        if (path.Id != 0)
+        {
+            var existing = await _dbContext.TransportRoutePathSteps
+                .IgnoreQueryFilters()
+                .Where(step => step.PathId == path.Id)
+                .ToListAsync(cancellationToken);
+
+            if (existing.Count > 0)
+            {
+                _dbContext.TransportRoutePathSteps.RemoveRange(existing);
+            }
+        }
+
+        path.Steps.Clear();
+
+        foreach (var step in steps)
+        {
+            path.Steps.Add(new TransportRoutePathStep
+            {
+                Sequence = step.Sequence,
+                ManeuverType = Truncate(step.ManeuverType, TransportRoutePathStep.MaxManeuverTypeLength)!,
+                ManeuverModifier = Truncate(step.ManeuverModifier, TransportRoutePathStep.MaxManeuverModifierLength),
+                /* Motor çok uzun bir yol adı verebilir; kısaltmak talimatı
+                   bozmaz ama sütun sınırını aşmak tüm güzergah üretimini
+                   düşürürdü. */
+                Name = Truncate(step.Name, TransportRoutePathStep.MaxNameLength),
+                DistanceMeters = step.DistanceMeters,
+                DurationSeconds = step.DurationSeconds,
+                StartDistanceMeters = step.StartDistanceMeters,
+                EndDistanceMeters = step.EndDistanceMeters
+            });
+        }
+    }
+
+    private static string? Truncate(string? value, int maxLength) =>
+        value is { Length: > 0 } text
+            ? (text.Length <= maxLength ? text : text[..maxLength])
+            : null;
 
     private Task<List<StopTopologySnapshot>> LoadTopologySnapshotAsync(
         int routeId,

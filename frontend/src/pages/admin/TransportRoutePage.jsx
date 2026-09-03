@@ -23,7 +23,11 @@ import {
 } from '../../services/transportApi.js'
 import { restoreStopThenMaybeGenerate } from '../../services/transportStopWorkflow.js'
 import useTransportSimulation from '../../hooks/useTransportSimulation.js'
-import { transportSimulationControls } from '../../map/transportSimulationState.js'
+import {
+  sharedStopIntent,
+  sharedStopIntentIsCurrent,
+  transportSimulationControls,
+} from '../../map/transportSimulationState.js'
 import { transportVehiclePresentation } from '../../map/transportVehicle.js'
 import { moveStopInRoute } from '../../map/adminTransportStops.js'
 import {
@@ -58,6 +62,10 @@ export default function TransportRoutePage() {
   /* Diğer denetimlerle aynı kalıp: yalnızca ETKİN yetki kodu okunur.
      Görünürlük deneyimdir; yetkilendirme backend'dedir. */
   const canStartSimulation = can(PERMISSIONS.TRANSPORT_SIMULATION_START)
+  /* DURDURMA AYRI bir yetkidir ve başlatmayı İMA ETMEZ. Yönetim ekranında
+     olmak da bir yetki kaynağı DEĞİLDİR: karar burada da yalnızca etkin yetki
+     kodundan gelir ve bağlayıcı denetim backend'dedir. */
+  const canStopSimulation = can(PERMISSIONS.TRANSPORT_SIMULATION_STOP)
   const canManageRoutes = canCreate || canUpdate || canDelete || canReorder
 
   const [managementView, setManagementView] = useState(() => canManageRoutes ? 'routes' : 'stops')
@@ -93,6 +101,11 @@ export default function TransportRoutePage() {
   /* Bu oturumda BAŞLATILAN çalıştırmanın kimliği: aracın ilk (%0) konumunun
      seçili rotada gösterilebilmesi için. Takip başlatmaz. */
   const [startedSimulationId, setStartedSimulationId] = useState(null)
+  /* BEKLEYEN DURUM BİR BAYRAK DEĞİL, BİR KİMLİKTİR (ana haritayla aynı
+     gerekçe): onay kutusu açıkken A bitip AYNI rotada B başlayabilir ve
+     yalnızca "onay açık" bilgisi tutulsaydı, kullanıcının A için verdiği
+     karar sessizce B'yi durdururdu. Niyet tetikleme anında dondurulur. */
+  const [pendingSimulationStop, setPendingSimulationStop] = useState(null)
   const mutationInFlight = useRef(false)
   const stopRequestId = useRef(0)
   const pathRequestId = useRef(0)
@@ -134,7 +147,11 @@ export default function TransportRoutePage() {
     simulation: simulation.simulation,
     followingRouteId: simulation.followingRouteId,
     canStart: canStartSimulation,
+    canStop: canStopSimulation,
     starting: simulation.starting,
+    stopping: simulation.stopping,
+    pausing: simulation.pausing,
+    resuming: simulation.resuming,
     following: simulation.following,
   })
   const visibleRoutes = useMemo(
@@ -629,11 +646,43 @@ export default function TransportRoutePage() {
                 controls={simulationControls}
                 statusLoading={simulation.statusLoading}
                 starting={simulation.starting}
+                stopping={simulation.stopping}
+                pausing={simulation.pausing}
+                resuming={simulation.resuming}
                 error={simulation.error}
                 onStart={async () => {
+                  /* Başlatma da komut yolunda denetlenir — durdurma tarafıyla
+                     AYNI kural. Yönetim ekranında olmak bir yetki kaynağı
+                     değildir ve düğmenin görünürlüğü bir denetim değildir. */
+                  if (!canStartSimulation) return
                   const snapshot = await simulation.start(selectedRoute.id)
                   // Takip AÇILMAZ; yalnızca ilk konum haritada belirir.
                   if (snapshot) setStartedSimulationId(snapshot.simulationId)
+                }}
+                /* Tıklama komutu GÖNDERMEZ: yalnızca onayı açar ve
+                   durdurulmak İSTENEN çalıştırmanın kimliğini YAKALAR. Çok
+                   kullanıcılı canlı bir çalıştırma yanlış bir tıklamayla
+                   kesilmemelidir. */
+                /* Duraklat/Devam Ettir yıkıcı DEĞİLDİR: onay istemezler ve
+                   ana haritayla AYNI kanca komutlarını çağırırlar. Yetenek
+                   yine de burada denetlenir — yönetim ekranında olmak bir
+                   yetki kaynağı değildir. */
+                onPause={() => {
+                  if (!canStopSimulation) return
+                  simulation.pause(selectedId, simulationControls.stoppableSimulationId)
+                }}
+                onResume={() => {
+                  if (!canStopSimulation) return
+                  simulation.resume(selectedId, simulationControls.stoppableSimulationId)
+                }}
+                onStop={() => {
+                  if (!canStopSimulation) return
+                  const intent = sharedStopIntent({
+                    routeId: selectedId,
+                    simulationId: simulationControls.stoppableSimulationId,
+                  })
+                  // Rota + çalıştırma çiftinden biri eksikse niyet KURULAMAZ.
+                  if (intent) setPendingSimulationStop(intent)
                 }}
                 onFollow={() => simulation.follow(selectedRoute.id)}
                 onUnfollow={() => simulation.unfollow()}
@@ -726,6 +775,51 @@ export default function TransportRoutePage() {
       </div>
 
       {dialog && <TransportRouteDialog key={dialog.mode === 'edit' ? dialog.route.id : 'create'} route={dialog.route} busy={busy} error={dialogError} onCancel={() => setDialog(null)} onSubmit={submitRoute} />}
+
+      {/* Hat simülasyonu durdurma onayı. Sayfanın KENDİ diyalog dilini
+          kullanır (ana haritanınkini değil) ama komut ana haritayla AYNI
+          istemci fonksiyonudur: ikinci bir durdurma yolu YOKTUR. */}
+      {/* Yetenek kaybolursa AÇIK KALAN kutu da kapanır: görünürlük bir denetim
+          değildir ve yetkiler oturum içinde tazelenebilir. */}
+      {pendingSimulationStop && canStopSimulation && (
+        <div className="admin-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !simulation.stopping) setPendingSimulationStop(null) }}>
+          <div className="admin-dialog" role="alertdialog" aria-modal="true" aria-labelledby="transport-simulation-stop-title" aria-describedby="transport-simulation-stop-copy">
+            <h2 id="transport-simulation-stop-title">Hat simülasyonu sıfırlansın mı?</h2>
+            <p id="transport-simulation-stop-copy">Bu simülasyon sona erdirilecek ve hat başlangıç durumuna dönecek; onu izleyen diğer kullanıcılar da aracı görmeyi bırakır. Yeniden başlatıldığında %0'dan yeni bir simülasyon oluşturulur.</p>
+            <div className="admin-dialog-actions">
+              {/* Vazgeçmek HİÇBİR ŞEY yapmaz: sunucuya istek gitmez. */}
+              <button type="button" className="admin-button secondary" onClick={() => setPendingSimulationStop(null)} disabled={simulation.stopping}>İptal</button>
+              <button
+                type="button"
+                className="admin-button danger"
+                disabled={simulation.stopping}
+                onClick={async () => {
+                  /* KOMUT ANINDA yeniden denetim — FAIL-CLOSED, İKİ eksende:
+                     YETKİ (kutu açıkken geri alınmış olabilir) ve KİMLİK
+                     (yakalanan çalıştırma hâlâ o anki çalıştırma mı).
+                     A bitip yerine B geçtiyse istek HİÇ yola çıkmaz; yakalanan
+                     kimliği o anki kimlikle DEĞİŞTİRMEK, kullanıcının hiç
+                     vermediği bir kararı uygulamak olurdu.
+
+                     Komut YAKALANMIŞ iki kimliği taşır; "en güncel olanı
+                     durdur" geri dönüşü YOKTUR. */
+                  const intent = pendingSimulationStop
+                  if (canStopSimulation
+                    && sharedStopIntentIsCurrent(intent, {
+                      routeId: selectedId,
+                      stoppableSimulationId: simulationControls.stoppableSimulationId,
+                    })) {
+                    await simulation.stop(intent.routeId, intent.simulationId)
+                  }
+                  setPendingSimulationStop(null)
+                }}
+              >
+                {simulation.stopping ? 'Sıfırlanıyor…' : 'Sıfırla'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {deleteTarget && (
         <div className="admin-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setDeleteTarget(null) }}>

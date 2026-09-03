@@ -390,6 +390,33 @@ builder.Services.AddScoped<IJourneyPlanningService, JourneyPlanningService>();
 builder.Services.AddSingleton<IJourneySimulationStateStore, InMemoryJourneySimulationStateStore>();
 builder.Services.AddScoped<IJourneySimulationService, JourneySimulationService>();
 
+/* --- Kaydedilmiş kişisel yolculuklar (Faz 7) ---------------------------------
+   Sahibine ÖZEL, yeniden kullanılabilir yolculuk TANIMLARI. Çalışma zamanı
+   durumunun sahibi DEĞİLDİR: simülasyon kimliği, ilerleme ya da geometri
+   saklamaz; her yeniden kullanım mevcut başlatma yolundan geçer ve YENİ bir
+   çalıştırma üretir.
+
+   AppDbContext'e, planlama servisine ve doğrulanmış kimliğe bağlı olduğu için
+   scoped'dır. Paylaşılan hat simülasyonunun kayıtlarına ve yaşam döngüsüne
+   dokunmaz. */
+builder.Services.AddScoped<ISavedJourneyService, SavedJourneyService>();
+
+/* --- Kişisel yolculuk geçmişi (Faz 8) ----------------------------------------
+   SONA ERMİŞ çalıştırmaların değişmez tutanağı.
+
+   YAZICI ile SORGU servisi bilinçli olarak AYRIDIR. Yazıcının istemciye açık
+   bir ucu yoktur ve onu yalnızca sunucunun terminal geçişi çağırır — durdurma
+   isteği (scoped servis) ve arka plan runner'ı (kendi kapsamını açar). İkisini
+   tek arayüzde toplamak, bir gün bir controller'ın "geçmiş oluştur" ucunu
+   açmasını kolaylaştırırdı; oysa tutanağın istemciden gelen bir kaynağı
+   olmamalıdır.
+
+   Kaydedilmiş yolculuklarla (Faz 7) KARIŞTIRILMAMALIDIR: orası yeniden
+   kullanılabilir niyet, burası olmuş bir şeyin kaydıdır. Paylaşılan hat
+   simülasyonuna hiç dokunulmaz. */
+builder.Services.AddScoped<IJourneyHistoryWriter, JourneyHistoryWriter>();
+builder.Services.AddScoped<IJourneyHistoryService, JourneyHistoryService>();
+
 var journeySimulationOptions = builder.Configuration
     .GetSection(JourneySimulationOptions.SectionName)
     .Get<JourneySimulationOptions>() ?? new JourneySimulationOptions();
@@ -420,12 +447,41 @@ builder.Services.AddSingleton(transportSimulationOptions);
    Application'daki arayüzü tanır. IHubContext singleton'dır, adaptör de öyle. */
 builder.Services.AddSingleton<ITransportSimulationBroadcaster, SignalRTransportSimulationBroadcaster>();
 
+/* AKTİF KEŞİF sinyali AYNI hub üzerinden, AYRI bir gruba gider. İkinci bir hub
+   açılmadı: aynı ürünün aynı canlı gerçeği için ikinci bir yol, ikinci bir
+   kimlik hattı ve istemcide ikinci bir bağlantı demekti. Ayrılan tek şey
+   yayının HEDEFİDİR — ve o gruba yalnızca etkin transport.view yetkisi olan
+   bağlantılar alınır. */
+builder.Services.AddSingleton<ITransportSimulationDiscoveryBroadcaster, SignalRTransportSimulationDiscoveryBroadcaster>();
+
 /* Runner singleton'dır: aktif durum gibi o da istek ömrünü aşar ve hiçbir
    DbContext tutmaz. Aynı örnek İKİ rolü üstlenir — arka plan ilerletici ve
    güzergah geçersizleştiğinde çağrılan iptal portu; "durdur + yayınla"
    mantığının iki kopyası olmasın diye tek sahiptir. */
+/* Saat AÇIKÇA kaydedilir: runner hem ilerletmede hem duraklat/sürdür
+   geçişlerinde aynı zaman eksenini kullanır. Üretimde bu sistem saatidir. */
+builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<TransportSimulationRunner>();
 builder.Services.AddSingleton<ITransportSimulationCanceller>(
+    provider => provider.GetRequiredService<TransportSimulationRunner>());
+
+/* Açık kullanıcı durdurması AYNI çalışma zamanı sahibinden geçer: yaşam
+   döngüsünün (durumdan kaldırma + terminal yayın + iz temizliği) TEK bir sahibi
+   olmalıdır. İkinci bir uygulama, izleri sızdıran ya da terminal olayı hiç
+   yayınlamayan sessizce farklı bir durdurma yolu doğururdu. */
+builder.Services.AddSingleton<ITransportSimulationTerminator>(
+    provider => provider.GetRequiredService<TransportSimulationRunner>());
+
+/* Duraklat/Sürdür de AYNI çalışma zamanı sahibinden geçer: simülasyon saatinin
+   (duraklama muhasebesi) ve yayının tek bir sahibi olmalıdır. */
+builder.Services.AddSingleton<ITransportSimulationLifecycle>(
+    provider => provider.GetRequiredService<TransportSimulationRunner>());
+
+/* YENİDEN BAŞLATMA da AYNI çalışma zamanı sahibinden geçer. Ayrı bir uygulama,
+   "eskisini kaldır + yenisini kur" adımlarını iz temizliği ve yayın sırasından
+   habersiz biçimde tekrarlardı; oysa hattın yuvasının bir an bile boşalmaması
+   tam olarak o sahibin atomik değiştirme işlemine bağlıdır. */
+builder.Services.AddSingleton<ITransportSimulationReplacer>(
     provider => provider.GetRequiredService<TransportSimulationRunner>());
 builder.Services.AddHostedService<TransportSimulationBackgroundService>();
 

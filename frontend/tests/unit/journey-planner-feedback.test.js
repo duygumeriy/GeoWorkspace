@@ -151,8 +151,10 @@ test('an explicit invalid attempt is answered locally, with no backend request',
   assert.ok(PANEL.includes('disabled={!canRequest}'))
 })
 
+const PERSONAL_FEEDBACK = "{!collapsed && showingPersonal && (error || live?.error) && ("
+
 test('a real failure keeps error semantics', () => {
-  const feedback = branchWith("{!collapsed && (error || live?.error) && (", 'journey-feedback')
+  const feedback = branchWith(PERSONAL_FEEDBACK, 'journey-feedback')
 
   assert.match(feedback, /\{error && <p className="journey-error" role="alert">\{error\}<\/p>\}/)
 })
@@ -163,20 +165,57 @@ test('live error has exactly one home, outside the phase branches', () => {
   const renders = PANEL.match(/live\?\.error &&/g) ?? []
   assert.equal(renders.length, 1, 'canlı hata üç kez değil, bir kez çizilmeli')
 
-  const feedback = branchWith("{!collapsed && (error || live?.error) && (", 'journey-feedback')
+  const feedback = branchWith(PERSONAL_FEEDBACK, 'journey-feedback')
   assert.match(feedback, /\{live\?\.error && <p className="journey-error" role="alert">\{live\.error\}<\/p>\}/)
 
-  /* Ortak bölge, evre dallarından ÖNCE gelir: planlayıcı, ACTIVE ve TERMINAL
-     hepsi onu paylaşır — hiçbir dalın içinde yaşamaz. */
-  const feedbackAt = PANEL.indexOf('{!collapsed && (error || live?.error) && (')
-  for (const branchStart of ['{collapsed && (', '{!collapsed && isLive && (', '{!collapsed && !isLive && (']) {
+  /* Ortak bölge, KİŞİSEL evre dallarından ÖNCE gelir: planlayıcı, ACTIVE ve
+     TERMINAL hepsi onu paylaşır — hiçbir dalın içinde yaşamaz.
+
+     Faz 2 bölgeyi bir ürün koşuluyla daralttı (`showingPersonal`) ve bu
+     bilinçlidir: kişisel yolculuğun hatası, kullanıcı PAYLAŞILAN hatta
+     bakarken çizilirse başka bir ürünün başarısızlığı gibi okunurdu. Hata
+     KAYBOLMAZ — kanca durumu tutar ve kişisel ürüne dönüldüğünde yine
+     görünür. */
+  const feedbackAt = PANEL.indexOf(PERSONAL_FEEDBACK)
+  assert.ok(feedbackAt > 0, 'kişisel hata bölgesi bulunamadı')
+  for (const branchStart of [
+    '{collapsed && (',
+    '{!collapsed && showingPersonal && isLive && (',
+    '{!collapsed && showingPersonal && !isLive && (',
+  ]) {
     assert.ok(feedbackAt < PANEL.indexOf(branchStart), `${branchStart} hata bölgesinden önce geliyor`)
   }
 
   // Ve hata hiçbir şeyi durdurmaz/bırakmaz: bölgede eylem yoktur.
-  const feedbackBlock = branchWith("{!collapsed && (error || live?.error) && (", 'journey-feedback')
   for (const forbidden of ['onStopSimulation', 'onNewJourney', 'onReturnToPlanning', 'dismiss']) {
-    assert.ok(!feedbackBlock.includes(forbidden))
+    assert.ok(!feedback.includes(forbidden))
+  }
+})
+
+test('personal and shared failures never bleed into each other', () => {
+  /* İKİ ÜRÜN, İKİ HATA SAHİBİ. Kişisel hata kişisel bölgede, paylaşılan hata
+     paylaşılan bileşende yaşar; hiçbiri diğerinin yüzeyinde çizilmez ve
+     hiçbiri ikinci kez çizilmez. */
+  const shared = stripComments(read('../../src/components/map/SharedTransportJourneyContent.jsx'))
+
+  // Kişisel panel paylaşılan hatayı HİÇ okumaz.
+  assert.ok(!PANEL.includes('shared.error'))
+  assert.ok(!PANEL.includes('shared?.error'))
+
+  // Paylaşılan bölüm de kişisel hatayı okumaz.
+  assert.ok(!shared.includes('live?.error'))
+  assert.ok(!shared.includes('live.error'))
+
+  /* Paylaşılan hata GERÇEK bir başarısızlıktır ve nötr rehberliğe
+     dönüştürülmez: uyarı olarak duyurulur ve tam olarak bir kez çizilir. */
+  assert.match(shared, /\{shared\.error && <p className="journey-error" role="alert">\{shared\.error\}<\/p>\}/)
+  assert.equal((shared.match(/shared\.error &&/g) ?? []).length, 1)
+
+  // Ve o bölge de hiçbir yaşam döngüsü komutu taşımaz.
+  const sharedErrorAt = shared.indexOf('{shared.error &&')
+  const line = shared.slice(sharedErrorAt, shared.indexOf('\n', sharedErrorAt))
+  for (const forbidden of ['onStart', 'onFollow', 'onUnfollow']) {
+    assert.ok(!line.includes(forbidden))
   }
 })
 
@@ -227,14 +266,64 @@ test('the terminal card still has no follow control and keeps both exits', () =>
 test('an armed picking mode says so in plain, visible text', () => {
   const status = branchWith('{picking && (', 'journey-picking-status')
 
-  // Görünür cümle: imleç ya da ipucu balonu tek başına yeterli değildir.
-  assert.ok(status.includes('Haritadan bir durak'))
-  assert.ok(status.includes('Vazgeçmek için Esc'))
+  /* Görünür cümle: imleç ya da ipucu balonu tek başına yeterli değildir.
+
+     Cümlenin ADI artık sabit değil, YETKİDEN türetilmiş bir değerdir
+     (`pickableLabel`) — çünkü durak seçemeyen birine "bir durak seçin" demek,
+     seçemeyeceği bir şeye davet etmektir. Cümlenin İSKELETİ burada, adın
+     yetkiye göre nasıl kurulduğu ise aşağıdaki testte sabitlenir. */
+  assert.ok(status.includes('Haritadan bir {pickableLabel} seçin · Vazgeçmek için Esc'))
   assert.ok(!status.includes('title='))
+
+  // Ad SABİT yazılmaz: yetkiyi atlayan bir metin regresyonu burada düşer.
+  assert.ok(!/Haritadan bir (durak|yer|nokta)\b/.test(status))
 
   // Nazik canlı bölge — bir hata değil, sürmekte olan bir kip.
   assert.ok(status.includes('role="status"'))
   assert.ok(!status.includes('role="alert"'))
+})
+
+test('stop-picking guidance can only be produced for a user who may read the transport network', () => {
+  /* Faz 1 ayrımının SUNUM tarafı. Kullanıcı yetenekleri panele iki AYRI
+     bayrak olarak gelir ve ürün kapısıyla (`journey.use`) karıştırılmaz:
+
+         canUseTransport  ← transport.view
+         canUsePois       ← poi.view
+
+     Rehberlik cümlesindeki ad bu ikisinden türetilir. */
+  assert.match(
+    PANEL,
+    /const pickableLabel = pickableLabelOf\(\{ canUseStops: canUseTransport, canUsePois \}\)/,
+  )
+
+  const table = PANEL.slice(
+    PANEL.indexOf('function pickableLabelOf('),
+    PANEL.indexOf('function formatStepMetric('),
+  )
+  assert.ok(table.includes('function pickableLabelOf('), 'karar tablosu bulunamadı')
+
+  // Karar tablosunun TAMAMI — dört durumun dördü de sabitlenir.
+  assert.match(table, /if \(canUseStops && canUsePois\) return 'durak ya da yer'/)
+  assert.match(table, /if \(canUseStops\) return 'durak'/)
+  assert.match(table, /if \(canUsePois\) return 'yer'/)
+  assert.match(table, /\n\s*return 'nokta'/)
+
+  /* Ve asıl GÜVENLİK iddiası: "durak" sözü veren HER dal `canUseStops`
+     ardındadır. Yetkisiz bir kullanıcıya durak seçtiren bir rehberlik cümlesi
+     üretilemez — yeni bir dal eklenirse bu iddia düşer. */
+  const stopPromising = table
+    .split('\n')
+    .filter((line) => line.includes('return') && line.includes('durak'))
+
+  assert.equal(stopPromising.length, 2)
+  for (const line of stopPromising) {
+    assert.ok(line.includes('canUseStops'), `durak vaat eden korumasız dal: ${line.trim()}`)
+  }
+
+  /* Nokta seçici AYNI kuralı okur: iki yüzeyin metni ayrışamaz ve durak
+     listesi yetkisi olmayana boş geçilir (bkz. journey-center-permissions). */
+  assert.match(PANEL, /Haritadan bir \{pickableLabelOf\(\{ canUseStops, canUsePois \}\)\} seçebilirsiniz\./)
+  assert.ok(PANEL.includes('routeStops={canUseTransport ? stops : []}'))
 })
 
 test('the panel is told the EFFECTIVE picking state, and the slot keeps aria-pressed', () => {

@@ -31,10 +31,21 @@ import { journeyErrorMessage } from '../map/journeyPresentation.js'
  * ne de silahlı kalabilir. Aksi hâlde tek bir tıklama hem o aracın hem de
  * planlayıcının işine yarardı.
  *
- * @param {{ permitted?: boolean, workspaceAtRest?: boolean }} [options]
+ * @param {{ permitted?: boolean, canUseTransport?: boolean, workspaceAtRest?: boolean }} [options]
  */
-export default function useJourneyPlanner({ permitted = false, workspaceAtRest = true } = {}) {
-  const [state, dispatch] = useReducer(journeyPlannerReducer, undefined, initialJourneyPlannerState)
+export default function useJourneyPlanner({
+  permitted = false,
+  canUseTransport = true,
+  workspaceAtRest = true,
+} = {}) {
+  /* Başlangıç kipi, kullanıcının erişebildiği kipe göre seçilir; yalnızca ilk
+     kurulumda okunur (useReducer'ın init argümanı). Bu bir yetkilendirme
+     kararı DEĞİL, bir başlangıç seçimidir. */
+  const [state, dispatch] = useReducer(
+    journeyPlannerReducer,
+    canUseTransport,
+    (allowed) => initialJourneyPlannerState({ canUseTransport: allowed }),
+  )
   const [preview, setPreview] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -156,6 +167,15 @@ export default function useJourneyPlanner({ permitted = false, workspaceAtRest =
     assignWaypoint: (key, reference) => dispatch({ type: 'assignWaypoint', key, reference }),
     armSlot: (key) => dispatch({ type: 'armSlot', key }),
     disarmSlot: () => dispatch({ type: 'armSlot', key: null }),
+    /* ÜRÜN seçimi bir sunum kararıdır: ne kişisel yolculuğu ne de paylaşılan
+       hattı durdurur, hiçbir kanalı kapatmaz ve hiçbir takibi bırakmaz. */
+    setProduct: (product) => dispatch({ type: 'setProduct', product }),
+    /* BÖLÜM seçimi de bir sunum kararıdır: planlama taslağını silmez, çalışan
+       bir yolculuğu durdurmaz ve hiçbir kanal açmaz/kapatmaz. */
+    setSection: (section) => dispatch({ type: 'setSection', section }),
+    /* Kaydedilmiş bir tanımı taslağa yükler. BAŞLATMAZ: yükleme ile başlatma
+       ayrı kararlardır ve burada hiçbir istek yola çıkmaz. */
+    loadSaved: (draft) => dispatch({ type: 'loadSaved', draft }),
     openPanel: () => dispatch({ type: 'setPanel', panel: PANEL_STATES.OPEN }),
     collapsePanel: () => dispatch({ type: 'setPanel', panel: PANEL_STATES.COLLAPSED }),
     closePanel: () => dispatch({ type: 'setPanel', panel: PANEL_STATES.CLOSED }),
@@ -189,7 +209,12 @@ export default function useJourneyPlanner({ permitted = false, workspaceAtRest =
        dinlenme durumundayken silahlanır: görünmeyen bir yuvaya atama
        yapılmamalı, başka bir aracın tıklaması da paylaşılmamalıdır. Kural saf
        modüldedir; burada yalnızca uygulanır. */
-    isPicking: journeyPickingActive({
+    /* Nokta seçimi KİŞİSEL ürünün etkileşimidir: ürün kapısı yoksa hiç
+       silahlanamaz. Kural, çalışma alanının paylaşılan bölümünü kullanan ama
+       `journey.use` taşımayan kullanıcıda da doğru kalır — onun için kişisel
+       yüzey hiç çizilmez ve bir tıklama görünmeyen bir yuvaya yazamaz. */
+    isPicking: permitted && journeyPickingActive({
+      product: state.product,
       mode: state.mode,
       panel: state.panel,
       activeSlotKey: state.activeSlotKey,

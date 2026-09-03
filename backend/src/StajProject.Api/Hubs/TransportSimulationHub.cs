@@ -89,6 +89,54 @@ public sealed class TransportSimulationHub : Hub
             Context.ConnectionAborted);
     }
 
+    /// <summary>
+    /// AKTİF KEŞİF üyeliğine katılır: "aktif küme değişti" sinyallerini almaya
+    /// başlar.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Neden gerekli.</b> Rota grupları yalnızca BİLİNEN hatların yayınını
+    /// taşır; başka bir operatör HİÇ bilinmeyen bir hatta simülasyon
+    /// başlattığında istemci o rotanın grubunda değildir ve olayı hiç
+    /// göremez. Yoklamasız tek çözüm, rotadan bağımsız bir üyeliktir.
+    /// </para>
+    /// <para>
+    /// <b>Yetki AYNI etkin yetki motoruna sorulur</b> (<c>transport.view</c>)
+    /// ve rota grubuyla tam olarak aynı kapıdan geçer. Sinyal hangi hatların
+    /// çalıştığını açığa vurduğu için AYRIM GÖZETMEYEN bir yayın yapılmaz:
+    /// yetkisi olmayan bağlantı gruba hiç alınmaz. Rol adı, kullanıcı adı ya
+    /// da <c>IsAdmin</c> bir yetki kaynağı DEĞİLDİR.
+    /// </para>
+    /// <para>
+    /// Anlık liste burada DÖNDÜRÜLMEZ: aktif kümenin okuma otoritesi REST
+    /// ucudur (<c>GET api/transport/simulations/active</c>). İkisini
+    /// birleştirmek, aynı listenin iki farklı üretim yolu demekti.
+    /// </para>
+    /// </remarks>
+    public async Task JoinActiveSimulationDiscovery()
+    {
+        await EnsureCanViewAsync();
+
+        await Groups.AddToGroupAsync(
+            Context.ConnectionId,
+            TransportSimulationHubContract.DiscoveryGroup,
+            Context.ConnectionAborted);
+    }
+
+    /// <summary>
+    /// Keşif üyeliğinden ayrılır.
+    /// </summary>
+    /// <remarks>
+    /// Ayrılmak bir yetki gerektirmez: yalnızca çağıranın KENDİ bağlantısını
+    /// gruptan çıkarır ve hiçbir veriye erişim açmaz — rota grubundan
+    /// ayrılmayla aynı gerekçe.
+    /// </remarks>
+    public Task LeaveActiveSimulationDiscovery() =>
+        Groups.RemoveFromGroupAsync(
+            Context.ConnectionId,
+            TransportSimulationHubContract.DiscoveryGroup,
+            Context.ConnectionAborted);
+
     private static void EnsureValidRoute(int routeId)
     {
         if (routeId <= 0)
