@@ -37,7 +37,11 @@ export default function Topbar({ username, remaining, onLogout, onOpenMobileMenu
         <ThemeToggle />
 
         <div className="map-topbar-profile">
-          {username && <span className="map-topbar-username">{username}</span>}
+          {username && (
+            /* Ad kısaltılabildiği için tam hâli `title` ile erişilebilir kalır;
+               kısaltma bilgiyi GİZLEMEZ, yalnızca sığdırır. */
+            <span className="map-topbar-username" title={username}>{username}</span>
+          )}
           {remaining && (
             <span className="map-topbar-timer" aria-label={`Oturum süresi: ${remaining}`} title="Oturum süresi">
               <ClockIcon size={14} />

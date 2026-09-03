@@ -230,7 +230,8 @@ export default function Sidebar({
           <div className="map-sidebar-user">
             {!collapsed && (
               <>
-                <span className="map-sidebar-username">{username || '—'}</span>
+                {/* Ad kısaltılabilir; tam hâli `title` ile erişilebilir kalır. */}
+                <span className="map-sidebar-username" title={username || undefined}>{username || '—'}</span>
                 {remaining && (
                   <span className="map-sidebar-session" title="Kalan oturum süresi">
                     <ClockIcon size={13} />

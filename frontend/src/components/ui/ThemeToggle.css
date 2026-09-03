@@ -1,28 +1,57 @@
+/* Tema anahtarı — şerit denetimlerinin ORTAK görsel ailesi.
+   ------------------------------------------------------------------------
+   <b>Neden belirteçler.</b> Denetim daha önce kendi zeminini ham bir renkle
+   (koyu lacivert bir dolgu) yazıyordu. Koyu temada bu tesadüfen doğru
+   görünüyor, AÇIK temada ise beyaz şeridin ortasında ağır, gri-siyah bir hap
+   olarak duruyordu: sayfanın geri kalanı açıklaşırken bu tek bileşen koyu
+   kalıyordu, çünkü hiçbir tema onu yeniden tanımlayamıyordu.
+
+   Şimdi zemin, kenarlık ve parıltı — üst şeritteki hesap kapsülüyle AYNI
+   belirteçlerden gelir. Yeni bir tasarım sistemi kurulmaz; var olan marka
+   denetim ailesi paylaşılır ve her tema kendi değerini zaten taşır.
+
+   <b>Mekanik DEĞİŞMEZ.</b> Ölçüler, dokunma hedefi, ray/topuz geometrisi ve
+   üç adımlı sıra (Sistem → Koyu → Açık) aynıdır; değişen tek şey renklerin
+   nereden okunduğudur. */
 .theme-toggle {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   height: 40px;
   padding: 0 14px;
-  border: 1px solid rgba(150, 160, 200, 0.3);
-  border-radius: 999px;
-  background: rgba(5, 8, 18, 0.7);
+  border: 1px solid var(--brand-control-border);
+  border-radius: var(--radius-full);
+  background: var(--brand-control-surface);
+  box-shadow: var(--brand-control-glow);
+  /* Kapsülle aynı cam: afişin üzerinde okunur, ama yüzeyi ezmez. */
+  backdrop-filter: blur(calc(var(--blur-glass) / 2));
+  -webkit-backdrop-filter: blur(calc(var(--blur-glass) / 2));
   color: var(--text-secondary);
   cursor: pointer;
-  transition: border-color var(--transition-fast), background var(--transition-fast);
+  transition: border-color var(--transition-fast), background var(--transition-fast),
+    box-shadow var(--transition-fast);
 }
 
 .theme-toggle:hover {
-  border-color: rgba(168, 137, 250, 0.45);
+  border-color: var(--border-strong);
+}
+
+/* Klavye kullanıcısı denetimi KAYBETMEZ: odak halkası hem koyu hem açık
+   temada aynı marka rengiyle çizilir. */
+.theme-toggle:focus-visible {
+  outline: 2px solid var(--primary-light);
+  outline-offset: 2px;
 }
 
 .theme-toggle-icon {
   flex-shrink: 0;
-  color: rgba(226, 228, 245, 0.75);
+  color: var(--text-secondary);
 }
 
+/* Güneş her iki temada da OKUNUR: açık temada beyaz üzerinde soluk sarı
+   yerine kehribar tonu kullanılır. Değer belirteçten gelir. */
 .theme-toggle-icon-sun {
-  color: #ffd580;
+  color: var(--control-sun);
 }
 
 .theme-toggle-track {
@@ -32,12 +61,13 @@
   width: 34px;
   height: 18px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.14);
+  /* Kapalı ray da temaya AİTTİR: beyaz üzerinde beyaz bir ray görünmezdi. */
+  background: var(--control-track-off);
   transition: background var(--transition-fast);
 }
 
 .theme-toggle-track.is-dark {
-  background: linear-gradient(90deg, #7538ff, #974fff);
+  background: var(--gradient-primary);
 }
 
 .theme-toggle-knob {
@@ -47,8 +77,8 @@
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: #ffffff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  background: var(--surface-solid);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
   transition: transform 200ms var(--ease-out-premium);
 }
 

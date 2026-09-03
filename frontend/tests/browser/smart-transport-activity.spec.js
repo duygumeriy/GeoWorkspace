@@ -27,5 +27,11 @@ test('Activity History renders meaningful route and stop resource labels without
   expect(page).toContain("poi: 'POI'")
   expect(page).toContain('item.actorUsername')
   expect(page).toContain('item.resourceId')
-  expect(page).toContain('transportActivityContext(item.details)')
+  /* Ulaşım ve kişisel yolculuk aktiviteleri ARTIK aynı güvenli sunum
+     yardımcısını paylaşır; yardımcı bu yüzden ürün adını taşımaz. İddia
+     `activityContext(...)` alt dizesiyle DEĞİL, üretimdeki tam satırla
+     yazılır: alt dize eski `transportActivityContext` adıyla da eşleşir ve
+     testi sessizce zayıflatırdı. */
+  expect(page).toContain("import { activityContext } from '../../map/transportActivityPresentation.js'")
+  expect(page).toContain('const context = activityContext(item.details)')
 })

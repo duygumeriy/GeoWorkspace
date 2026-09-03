@@ -177,21 +177,31 @@
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
+/* --- Hesap kartı --------------------------------------------------------------
+   Üst şeritteki hesap kapsülüyle AYNI görsel aile: aynı yüzey, aynı kenarlık
+   ve aynı parıltı belirteçleri. Yerleşim dikeydir, çünkü kenar çubuğu dardır;
+   birebir aynı geometriyi zorlamak adı ve sayacı yan yana sıkıştırırdı.
+
+   Kart KISA tutulur: kimlik bir satır, durum bir satır, eylem bir düğme. */
 .map-sidebar-user {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
-  padding: 0.65rem 0.6rem;
+  gap: 0.3rem;
+  padding: 0.6rem 0.65rem;
   border-radius: var(--radius-md);
-  background: var(--surface-soft);
-  border: 1px solid var(--border-soft);
+  background: var(--brand-control-surface);
+  border: 1px solid var(--brand-control-border);
+  box-shadow: var(--brand-control-glow);
 }
 
+/* Daraltılmış rayda kart ÇİZİLMEZ: 76px'e sıkıştırılmış bir kutu, içinde
+   yalnızca bir simge taşıyan boş bir çerçeve olurdu. */
 .map-sidebar.is-collapsed .map-sidebar-user {
   /* No inner padding when collapsed, so the logout button keeps its 44px. */
   padding: 0;
   background: none;
   border: none;
+  box-shadow: none;
 }
 
 .map-sidebar-username {
@@ -203,15 +213,21 @@
   white-space: nowrap;
 }
 
+/* İKİNCİL ama OKUNUR: süre bir simgenin yanındaki metindir, simgenin kendisi
+   değildir. Renk üçüncül tondan ikincile çekilir — 11px bir sayaç, en soluk
+   tonda okunmayı zorlaştırıyordu. */
 .map-sidebar-session {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
-  font-size: 11px;
-  color: var(--text-tertiary);
+  font-size: 12px;
+  color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
 }
 
+/* Çıkış sakin durur, yönelince tehlike dilini konuşur — üst şeritteki
+   düğmeyle AYNI kural. Kalıcı kırmızı, kenar çubuğunun en alt köşesini
+   ekrandaki en yüksek sesli öğe yapıyordu. */
 .map-sidebar-logout {
   display: flex;
   align-items: center;
@@ -225,17 +241,29 @@
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-soft);
   background: none;
-  color: var(--danger);
+  color: var(--text-secondary);
   font-size: var(--font-small);
   font-weight: 600;
   font-family: inherit;
   cursor: pointer;
-  transition: background var(--transition-fast), border-color var(--transition-fast);
+  transition: background var(--transition-fast), border-color var(--transition-fast),
+    color var(--transition-fast);
 }
 
 .map-sidebar-logout:hover {
   background: var(--danger-soft);
   border-color: var(--danger);
+  color: var(--danger);
+}
+
+/* Vurgu yalnızca RENK değildir: klavye kullanıcısı aynı durumu bir halkayla
+   da görür ve düğmenin erişilebilir adı ("Çıkış Yap") her ölçüde durur. */
+.map-sidebar-logout:focus-visible {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+  color: var(--danger);
+  outline: 2px solid var(--danger);
+  outline-offset: 2px;
 }
 
 /* --- Daralt/genişlet: "Araçlar" rıhtımının görsel ailesi ----------------------
@@ -307,6 +335,8 @@
     padding: 0;
     background: none;
     border: none;
+    /* Rayda kart çizilmez; parıltı da onunla birlikte kalkar. */
+    box-shadow: none;
   }
 
   /* Çizim gizliyken levha da kalmaz: boş bir kutu bırakmaz. */

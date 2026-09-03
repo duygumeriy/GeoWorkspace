@@ -113,6 +113,13 @@
   --brand-header-safe-zone: 460px;
   --brand-control-surface: rgba(9, 13, 30, 0.72);
   --brand-control-border: rgba(139, 92, 246, 0.3);
+  /* Faz 12 · Şerit denetimlerinin ORTAK ailesi (tema anahtarı + hesap kapsülü).
+     Yüzey ve kenarlık zaten yukarıdaki iki belirteçten gelir; buradakiler o
+     ailenin eksik kalan üç parçasıdır ve HER temada yeniden tanımlanır —
+     bileşen düzeyinde ham renk yazılmaz. */
+  --brand-control-glow: 0 6px 18px -12px rgba(108, 60, 231, 0.85);
+  --control-sun: #ffd580;
+  --control-track-off: rgba(255, 255, 255, 0.16);
 }
 
 /* System preference: light, only when the user hasn't made an explicit choice */
@@ -165,6 +172,9 @@
     --brand-header-safe-zone: 460px;
     --brand-control-surface: rgba(255, 255, 255, 0.86);
     --brand-control-border: rgba(108, 60, 231, 0.2);
+    --brand-control-glow: 0 6px 18px -12px rgba(108, 60, 231, 0.45);
+    --control-sun: #d97706;
+    --control-track-off: rgba(30, 27, 75, 0.16);
   }
 }
 
@@ -223,6 +233,13 @@
   --brand-header-safe-zone: 460px;
   --brand-control-surface: rgba(9, 13, 30, 0.72);
   --brand-control-border: rgba(139, 92, 246, 0.3);
+  /* Faz 12 · Şerit denetimlerinin ORTAK ailesi (tema anahtarı + hesap kapsülü).
+     Yüzey ve kenarlık zaten yukarıdaki iki belirteçten gelir; buradakiler o
+     ailenin eksik kalan üç parçasıdır ve HER temada yeniden tanımlanır —
+     bileşen düzeyinde ham renk yazılmaz. */
+  --brand-control-glow: 0 6px 18px -12px rgba(108, 60, 231, 0.85);
+  --control-sun: #ffd580;
+  --control-track-off: rgba(255, 255, 255, 0.16);
 }
 
 /* Explicit light theme choice */
@@ -274,6 +291,9 @@
   --brand-header-safe-zone: 460px;
   --brand-control-surface: rgba(255, 255, 255, 0.86);
   --brand-control-border: rgba(108, 60, 231, 0.2);
+  --brand-control-glow: 0 6px 18px -12px rgba(108, 60, 231, 0.45);
+  --control-sun: #d97706;
+  --control-track-off: rgba(30, 27, 75, 0.16);
 }
 
 @supports not (backdrop-filter: blur(1px)) {
